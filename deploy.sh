@@ -61,8 +61,13 @@ else
   pm2 start ecosystem.config.cjs && pm2 save
 fi
 
-sleep 2
-if curl -fsS "http://127.0.0.1:$PORT_LIVE/api/health"; then
+# Startup can take longer after a migration or when new employees are added, so wait up to 30 seconds.
+UP=0
+for i in $(seq 1 15); do
+  sleep 2
+  if curl -fsS "http://127.0.0.1:$PORT_LIVE/api/health" >/dev/null 2>&1; then UP=1; break; fi
+done
+if [ "$UP" = 1 ] && curl -fsS "http://127.0.0.1:$PORT_LIVE/api/health"; then
   echo; echo "LIVE on port $PORT_LIVE"
 else
   echo "NOT ANSWERING on port $PORT_LIVE. Last log lines:"; pm2 logs leaddash-employees --lines 30 --nostream; exit 1
