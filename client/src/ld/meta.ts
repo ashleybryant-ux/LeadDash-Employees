@@ -1,6 +1,6 @@
 /** Display facts about each employee job, shared by every screen. */
 
-export type Kind = "grants" | "speaking" | "social" | "blog" | "website" | "video" | "inbox" | "custom";
+export type Kind = "grants" | "speaking" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "custom";
 
 export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Revenue" | "Marketing" | "Operations" | "Other" }> = {
   grants: { color: "#1b6b4a", work: "Opportunities", group: "Revenue" },
@@ -10,10 +10,11 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
   website: { color: "#4a5a1e", work: "Pages", group: "Marketing" },
   video: { color: "#8a2f3a", work: "Videos", group: "Marketing" },
   inbox: { color: "#3c4a8a", work: "Drafts", group: "Operations" },
+  hiring: { color: "#0f6e74", work: "Hiring", group: "Operations" },
   custom: { color: "#3d4c45", work: null, group: "Other" },
 };
 
-export const KIND_ORDER: Kind[] = ["grants", "speaking", "social", "blog", "website", "video", "inbox", "custom"];
+export const KIND_ORDER: Kind[] = ["grants", "speaking", "social", "blog", "website", "video", "inbox", "hiring", "custom"];
 export const GROUP_ORDER = ["Revenue", "Marketing", "Operations", "Other"] as const;
 
 /** Portraits live in client/public/avatars/<kind>.webp (256 px, from the Manus originals). */
@@ -25,6 +26,8 @@ export const AVATAR_FILES: Partial<Record<Kind, string>> = {
   website: "/avatars/website.webp",
   video: "/avatars/video.webp",
   inbox: "/avatars/inbox.webp",
+  // Quinn uses the default portrait until one is made to match the set.
+  hiring: "/avatars/custom.webp",
   custom: "/avatars/custom.webp",
 };
 
@@ -36,6 +39,7 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
   website: ["Plan a couples counseling page", "Plan a new home page", "Plan a careers page"],
   video: ["Find video ideas for this week", "Find trends for practice owners", "Plan a 30-second video"],
   inbox: ["Paste an email and I'll draft the reply", "How should I answer a fee question?", "Draft a follow-up"],
+  hiring: ["Find LPCs for outreach", "Check hiring status", "Write a job post", "What licenses expire soon?"],
   custom: ["What can you help with?"],
 };
 
@@ -47,6 +51,7 @@ export const GUIDELINE_LABELS: Record<Kind, { focus: string; avoid: string; sign
   website: { focus: "Pages to focus on", avoid: "Avoid", signAs: "Main call to action" },
   video: { focus: "Formats", avoid: "Avoid", signAs: "On-camera name" },
   inbox: { focus: "How to reply", avoid: "Never", signAs: "Sign replies as" },
+  hiring: { focus: "Roles to fill", avoid: "Never", signAs: "Sign messages as" },
   custom: { focus: "Focus on", avoid: "Avoid", signAs: "Sign as" },
 };
 
@@ -79,6 +84,13 @@ export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
     "Replies wait for your approval before anything is sent.",
     "Clients are referred to by initials only.",
     "Decisions that belong to you become placeholders.",
+  ],
+  hiring: [
+    "Scores count only your must-haves and nice-to-haves. Protected traits and gaps in work history are never considered.",
+    "Outreach uses work facts people published themselves. No home addresses, personal phones or personal accounts.",
+    "Quinn never logs into LinkedIn. You send LinkedIn messages from your own account.",
+    "Every message to a candidate waits for your approval.",
+    "Prospects nobody acted on are deleted after 90 days.",
   ],
   custom: ["Nothing is sent without your approval."],
 };

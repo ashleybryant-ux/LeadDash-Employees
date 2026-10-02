@@ -4,6 +4,8 @@ import type { AIEmployee, ChatMessage } from "../../drizzle/schema";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import * as tasks from "./tasks";
 import * as apply from "./apply";
+import * as hiring from "./hiring";
+import { writeReport } from "./onboarding";
 import type { Opportunity, OppKind } from "../../drizzle/schema";
 
 /**
@@ -15,7 +17,7 @@ import type { Opportunity, OppKind } from "../../drizzle/schema";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply";
+  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate";
   id: number;
   title: string;
   subtitle?: string;
@@ -29,17 +31,21 @@ export type ChatCard = {
 };
 
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "find_grants", "add_link", "apply", "find_and_apply", "check_status"],
-  speaking: ["none", "find_events", "add_link", "apply", "find_and_apply", "check_status"],
-  video: ["none", "find_videos"],
-  social: ["none", "write_post"],
-  blog: ["none", "write_article"],
-  website: ["none", "plan_page"],
-  inbox: ["none", "draft_reply"],
-  custom: ["none"],
+  grants: ["none", "report", "find_grants", "add_link", "apply", "find_and_apply", "check_status"],
+  speaking: ["none", "report", "find_events", "add_link", "apply", "find_and_apply", "check_status"],
+  video: ["none", "report", "find_videos"],
+  social: ["none", "report", "write_post"],
+  blog: ["none", "report", "write_article"],
+  website: ["none", "report", "plan_page"],
+  inbox: ["none", "report", "draft_reply"],
+  hiring: ["none", "report", "find_people", "write_job_post", "check_status"],
+  custom: ["none", "report"],
 };
 
 const ACTION_HELP: Record<string, string> = {
+  report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
+  find_people: "find_people: search the web for professionals to reach out to for an open role. Put the role or any focus (city, license, specialty) in `focus`.",
+  write_job_post: "write_job_post: write or rewrite the job post for a role. Put the role title in `target` ('' for the newest open role).",
   find_grants: "find_grants: search the web now. Set `oppKind` to grant, pitch (pitch competitions) or accelerator (accelerator or incubator programs); default grant. Put any focus the person gave in `focus`.",
   find_events: "find_events: search the web for speaking events taking proposals now. Set `oppKind` to speaking. Put any focus in `focus`.",
   add_link: "add_link: the person gave a link to an opportunity they found. Put the link in `url`.",
@@ -149,7 +155,32 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       const app = await apply.startApplication(org, pick.id, null);
       return { text: `I'm writing the ${pick.title} application now. I'll post it here when it's ready for you.`, cards: [apply.applicationCard(app, pick) as ChatCard], queries: [] };
     }
+    case "report": {
+      const text = await writeReport(emp, d.notes || d.reply || "Send me a report.");
+      return { text, cards: [], queries: [] };
+    }
+    case "find_people": {
+      const r = await hiring.findProspects(org, { focus: d.focus || undefined });
+      const best = [...r.created].sort((a, b) => b.fitScore - a.fitScore);
+      const text = r.created.length
+        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, "person", "people")} with public work profiles that fit${r.role ? ` the ${r.role.title} role` : ""}. ${best.length > 2 ? "The best 2 are below. The rest are on Outreach with a message drafted for each." : "Messages are drafted on Outreach."}`
+        : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find anyone new. Try a nearby city or another license type.`;
+      return { text, cards: best.slice(0, 2).map((p) => hiring.personCard(p) as ChatCard), queries: r.queries };
+    }
+    case "write_job_post": {
+      const roles = (await db.listHrRoles(org)).filter((r) => r.status === "open");
+      const t = d.target.trim().toLowerCase();
+      const role = (t && roles.find((r) => r.title.toLowerCase().includes(t))) || roles[0];
+      if (!role) return { text: "Add the role first on Hiring, then Roles, and I'll write the post.", cards: [], queries: [] };
+      await hiring.writeJobPost(org, role.id);
+      return { text: `The ${role.title} post is written. It's on Hiring, then Roles, with the places to post it.`, cards: [], queries: [] };
+    }
     case "check_status": {
+      if (emp.kind === "hiring") {
+        const facts = await hiring.hiringFacts(org);
+        const fresh = (await db.listHrPeople(org, "applicant")).filter((p) => p.stage === "new").slice(0, 3);
+        return { text: facts.split("\n").join(". ") + ".", cards: fresh.map((p) => hiring.personCard(p) as ChatCard), queries: [] };
+      }
       const apps = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id);
       const by = (st: string[]) => apps.filter((a) => st.includes(a.status));
       const waiting = by(["ready", "needs_answer", "needs_setup"]);

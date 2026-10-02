@@ -14,6 +14,8 @@ import Brain from "./ld/pages/Brain";
 import Workspace from "./ld/pages/Workspace";
 import Integrations from "./ld/pages/Integrations";
 import Team from "./ld/pages/Team";
+import Account from "./ld/pages/Account";
+import More from "./ld/pages/More";
 import { Rail, Switcher } from "./ld/ui";
 import "./ld/theme.css";
 
@@ -25,7 +27,7 @@ function NoWorkspace() {
       <main className="ld-main" style={{ maxWidth: 560 }}>
         <h1 className="ld-h1">No workspace yet</h1>
         <p className="ld-body">
-          {user?.role === "admin" ? "Create the first workspace to get your seven employees." : "Ask your workspace owner to add you."}
+          {user?.role === "admin" ? "Create the first workspace to get your employees." : "Ask your workspace owner to add you."}
         </p>
         {user?.role === "admin" && <Switcher onClose={() => {}} />}
       </main>
@@ -50,6 +52,8 @@ function Router() {
       <Route path="/workspace" component={Workspace} />
       <Route path="/integrations" component={Integrations} />
       <Route path="/team" component={Team} />
+      <Route path="/account" component={Account} />
+      <Route path="/more" component={More} />
       <Route>{() => <Redirect to="/chats" />}</Route>
     </Switch>
   );

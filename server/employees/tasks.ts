@@ -5,6 +5,7 @@ import { generateJson, generateText, searchJson, type JsonSchema } from "../_cor
 import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
 import { BASE_RULES, GUIDELINE_LABELS, parseGuidelines, rosterEntry } from "./roster";
+import { onboardingLines } from "./onboarding";
 
 // ==========================================
 // Shared helpers
@@ -35,7 +36,10 @@ export async function systemPromptFor(emp: AIEmployee, job: string) {
     g.signAs && `${labels.signAs}: ${g.signAs}`,
     emp.systemPrompt?.trim(),
   ].filter(Boolean);
-  const extra = guideLines.length ? `\n\nGuidelines from the workspace for ${emp.name} (follow these):\n${guideLines.join("\n")}` : "";
+  const onboard = onboardingLines(emp);
+  const extra =
+    (guideLines.length ? `\n\nGuidelines from the workspace for ${emp.name} (follow these):\n${guideLines.join("\n")}` : "") +
+    (onboard.length ? `\n\nWhat the owner told you during onboarding (follow these):\n${onboard.join("\n")}` : "");
   return {
     brain,
     system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${job}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}`,

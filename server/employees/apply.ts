@@ -8,6 +8,7 @@ import { download, fetchWebpage, htmlToText, packageLinks } from "./files";
 import { readFile, unsupportedNote, chunkText } from "./docs";
 import { findPassages, formatPassages, indexKnowledge } from "./kb";
 import { employeeFor, systemPromptFor, working, actor, withRealSource } from "./tasks";
+import { notify } from "../notify";
 
 /**
  * The applying engine: one workflow for every employee that applies for
@@ -1292,7 +1293,9 @@ export async function remindRegistrations(now = new Date()) {
     const emp = await db.getEmployeeByKind(r.organizationId, "grants");
     if (!emp) continue;
     const name = { sam: "SAM.gov", grants_gov: "Grants.gov", login_gov: "Login.gov", sbir: "SBIR.gov", state_supplier: "the state supplier portal", candid: "Candid" }[r.kind];
-    await postToChat(emp, days <= 0 ? `Your ${name} registration expired on ${r.expires}. Federal applications cannot go in until it is renewed.` : `Your ${name} registration expires ${r.expires}, in ${days} days. Renewal can take a few weeks, so start it now.`);
+    const text = days <= 0 ? `Your ${name} registration expired on ${r.expires}. Federal applications cannot go in until it is renewed.` : `Your ${name} registration expires ${r.expires}, in ${days} days. Renewal can take a few weeks, so start it now.`;
+    await postToChat(emp, text);
+    await notify(r.organizationId, "deadline", { title: `${name} registration ${days <= 0 ? "expired" : "expires soon"}`, body: text, url: "/workspace", tag: `reg-${r.id}` }).catch(() => {});
     await db.upsertRegistration(r.organizationId, r.kind, { details: JSON.stringify({ ...details, reminded: `${r.expires}-${mark}` }), ...(days <= 0 ? { status: "expired" } : {}) });
     sent++;
   }

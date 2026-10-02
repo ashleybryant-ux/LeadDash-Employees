@@ -118,7 +118,7 @@ export const Icons = {
 // Rail
 // ==========================================
 
-type RailKey = "chats" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team";
+type RailKey = "chats" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
 
 export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
@@ -160,6 +160,7 @@ export function Rail({ active }: { active: RailKey }) {
   return (
     <nav
       aria-label="Main"
+      className="ld-rail"
       style={{ width: 76, minHeight: "100vh", flexShrink: 0, boxSizing: "border-box", background: "#12211d", display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 0", gap: 6, position: "sticky", top: 0, height: "100vh", zIndex: 20 }}
     >
       <button
@@ -194,13 +195,16 @@ export function Rail({ active }: { active: RailKey }) {
           <div className="ld-card" style={{ position: "absolute", left: 60, bottom: 0, width: 240, padding: 12, display: "flex", flexDirection: "column", gap: 8, boxShadow: "0 12px 32px rgba(18,33,29,0.14)" }}>
             <span className="ld-strong">{user?.name || "Signed in"}</span>
             <span className="ld-small ld-muted">{user?.email}</span>
-            <button type="button" className="ld-btn" onClick={() => logout()}>
+            <Link href="/account" className="ld-btn" style={{ width: "100%" }} onClick={() => setMenu(false)}>
+              My account
+            </Link>
+            <button type="button" className="ld-btn" style={{ width: "100%" }} onClick={() => logout()}>
               Sign out
             </button>
           </div>
         )}
       </div>
-      {switcher && <Switcher onClose={() => setSwitcher(false)} style={{ position: "fixed", left: 84, top: 12 }} />}
+      {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 84, top: 12 }} />}
     </nav>
   );
 }
@@ -209,7 +213,7 @@ export function Rail({ active }: { active: RailKey }) {
 // Workspace switcher
 // ==========================================
 
-export function Switcher({ onClose, style }: { onClose: () => void; style?: React.CSSProperties }) {
+export function Switcher({ onClose, style, className }: { onClose: () => void; style?: React.CSSProperties; className?: string }) {
   const { organizations, currentOrgId, switchOrganization, refetchOrgs } = useTenant();
   const { user } = useAuth();
   const [creating, setCreating] = React.useState(false);
@@ -241,8 +245,8 @@ export function Switcher({ onClose, style }: { onClose: () => void; style?: Reac
   return (
     <div
       ref={ref}
-      className="ld-card"
-      style={{ width: 360, boxSizing: "border-box", padding: 12, boxShadow: "0 12px 32px rgba(18,33,29,0.14)", display: "flex", flexDirection: "column", gap: 2, zIndex: 50, color: "#14221c", ...style }}
+      className={`ld-card ${className ?? ""}`}
+      style={{ width: 360, maxWidth: "calc(100vw - 24px)", boxSizing: "border-box", padding: 12, boxShadow: "0 12px 32px rgba(18,33,29,0.14)", display: "flex", flexDirection: "column", gap: 2, zIndex: 50, color: "#14221c", ...style }}
     >
       {organizations.map((o) => (
         <button
@@ -299,18 +303,22 @@ export function Switcher({ onClose, style }: { onClose: () => void; style?: Reac
 
 export function ChatList({ activeKind }: { activeKind: string | null }) {
   const { currentOrgId, currentOrg } = useTenant();
+  const { user } = useAuth();
   const { list } = useEmployees();
   const summaries = trpc.chat.summaries.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 30_000 });
   const [switcher, setSwitcher] = React.useState(false);
   const sorted = [...list].sort((a, b) => KIND_ORDER.indexOf(a.kind as Kind) - KIND_ORDER.indexOf(b.kind as Kind) || a.id - b.id);
   return (
-    <aside style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "#fff", borderRight: "1px solid #e3e9e6", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
-      <div style={{ padding: "18px 18px 12px 18px", position: "relative" }}>
+    <aside className="ld-chatlist" style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "#fff", borderRight: "1px solid #e3e9e6", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
+      <div style={{ padding: "18px 18px 12px 18px", position: "relative" }} className="ld-between">
         <button type="button" onClick={() => setSwitcher((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 8, border: 0, background: "none", font: "inherit", fontSize: 16, fontWeight: 800, color: "#14221c", cursor: "pointer", padding: 0 }}>
           {currentOrg?.name ?? "Choose a workspace"}
           {Icons.chevron}
         </button>
-        {switcher && <Switcher onClose={() => setSwitcher(false)} style={{ position: "fixed", left: 88, top: 52 }} />}
+        <Link href="/account" className="ld-mobile-only" aria-label="My account" style={{ textDecoration: "none" }}>
+          <PersonAvatar name={user?.name || user?.email || "?"} size={32} />
+        </Link>
+        {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 88, top: 52 }} />}
       </div>
       {GROUP_ORDER.map((group) => {
         const people = sorted.filter((e) => KIND_META[(e.kind as Kind) ?? "custom"].group === group);
@@ -355,7 +363,7 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
 
 type Emp = { id: number; name: string; roleTitle: string; kind: string; status: string; avatar: string | null };
 
-export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "guidelines"; base: string }) {
+export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines"; base: string }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const toggle = trpc.employees.toggleStatus.useMutation({ onSuccess: () => utils.employees.list.invalidate() });
@@ -376,21 +384,25 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
     boxShadow: on ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
   });
   return (
-    <header style={{ boxSizing: "border-box", height: 72, padding: "0 24px", background: "#fff", borderBottom: "1px solid #e3e9e6", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, position: "sticky", top: 0, zIndex: 10 }}>
-      <div className="ld-row" style={{ gap: 12 }}>
+    <header className="ld-emphead" style={{ boxSizing: "border-box", height: 72, padding: "0 24px", background: "#fff", borderBottom: "1px solid #e3e9e6", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, position: "sticky", top: 0, zIndex: 10 }}>
+      <div className="ld-row ld-emphead-who" style={{ gap: 12 }}>
+        <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "#14221c", display: "flex" }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        </Link>
         <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={44} />
         <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
           <span style={{ fontWeight: 800, fontSize: 16 }}>{emp.name}</span>
           <span style={{ fontSize: 13, color: "#5b6b64" }}>{emp.roleTitle}</span>
         </span>
       </div>
-      <nav aria-label="Employee views" style={{ display: "flex", gap: 6, background: "#f1f5f3", padding: 4, borderRadius: 12 }}>
+      <nav aria-label="Employee views" className="ld-emptabs" style={{ display: "flex", gap: 6, background: "#f1f5f3", padding: 4, borderRadius: 12 }}>
         <Link href={base} style={tab(active === "chat")} className="ld-tablink">Chat</Link>
         {work && <Link href={`${base}/work`} style={tab(active === "work")}>{work}</Link>}
         <Link href={`${base}/knowledge`} style={tab(active === "knowledge")}>Knowledge</Link>
+        <Link href={`${base}/onboarding`} style={tab(active === "onboarding")}>Onboarding</Link>
         <Link href={`${base}/guidelines`} style={tab(active === "guidelines")}>Guidelines</Link>
       </nav>
-      <div className="ld-row">
+      <div className="ld-row ld-emphead-status">
         <span className={`ld-pill ${paused ? "gray" : "green"}`}>{paused ? "Paused" : emp.status === "working" ? "Working" : "Ready"}</span>
         <button
           type="button"
@@ -447,8 +459,50 @@ export function Page({ rail, children, maxWidth }: { rail: RailKey; children: Re
       <main className="ld-main" style={maxWidth ? { maxWidth } : undefined}>
         {children}
       </main>
+      <BottomNav active={rail} />
     </div>
   );
+}
+
+// ==========================================
+// Phone: bottom navigation (the rail is hidden on small screens)
+// ==========================================
+
+const MoreIcon = I(<><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></>);
+
+export function BottomNav({ active }: { active: RailKey }) {
+  const count = useApprovalCount();
+  const on = (k: RailKey) => (k === "more" ? ["brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
+  const item = (key: RailKey, label: string, href: string, icon: React.ReactNode, badge?: number) => (
+    <Link key={key} href={href} className={`ld-bn-item ${on(key) ? "on" : ""}`} aria-current={on(key) ? "page" : undefined}>
+      <span style={{ position: "relative", display: "flex" }}>
+        {icon}
+        {badge ? <span className="ld-bn-badge">{badge}</span> : null}
+      </span>
+      <span>{label}</span>
+    </Link>
+  );
+  return (
+    <nav className="ld-bottomnav" aria-label="Main">
+      {item("chats", "Chats", "/chats?list=1", Icons.chats)}
+      {item("approvals", "Approvals", "/approvals", Icons.approvals, count)}
+      {item("tasks", "Tasks", "/tasks", Icons.tasks)}
+      {item("more", "More", "/more", MoreIcon)}
+    </nav>
+  );
+}
+
+/** True on phone-size screens. */
+export function useIsMobile() {
+  const q = "(max-width: 760px)";
+  const [m, setM] = React.useState(() => typeof window !== "undefined" && window.matchMedia(q).matches);
+  React.useEffect(() => {
+    const mq = window.matchMedia(q);
+    const h = () => setM(mq.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
+  return m;
 }
 
 /** Renders an error from a mutation or query as one line. */

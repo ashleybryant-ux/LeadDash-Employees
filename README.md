@@ -32,6 +32,18 @@ Names can be changed per workspace. The `kind` column decides what an employee d
 - **Uploads:** large files go to `POST /api/upload/:slot` as the raw body (Knowledge files, RFPs, signed forms, pitch videos, award letters). nginx must allow them: `client_max_body_size 300m;`.
 - **Sending:** Submit marks the application approved and certified. Automatic sending through Grants.gov, Submittable, Sessionize, other portals and Gmail is not switched on yet; the person downloads the package, submits it, and presses Mark sent.
 
+## Hiring (Quinn)
+
+`server/employees/hiring.ts`. Roles with job posts and where to post them; outreach lists from public work profiles (LinkedIn profiles that show up in search, practice team pages, directories), each with a drafted message; resume screening against the role's must-haves only; license, NPI (NPPES Registry API), OIG exclusion list (the public LEIE file, cached monthly under `uploads/cache/`) and SAM.gov checks (needs `SAM_API_KEY`); interview, decline and offer drafts that wait in Approvals; the new hire checklist and team expirations. Quinn never logs into or automates LinkedIn, never considers protected traits or work gaps, and deletes untouched prospects after 90 days.
+
+## Onboarding and assignments
+
+Every employee has an Onboarding tab: fixed-choice questions about what the owner wants, "A day with ..." written from the answers, and Assignments (scheduled tasks such as "Send me a report" every day at 9:00 AM). Answers go into every instruction the employee gets. Every roster job is in every workspace; new jobs are added to existing workspaces at startup (`server/employees/roster-sync.ts`).
+
+## Phones and push notifications
+
+The layout switches to a bottom bar under 760px. The app is installable (manifest, icons, `client/public/sw.js`). Push uses Web Push with VAPID keys (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`); each person turns push on per device under My account and picks what they hear about. On iPhone, push works only from the app added to the Home Screen (iOS 16.4 and later).
+
 ## Screens
 
 Chat-first, from the approved mockup: a rail (Chats, Approvals, Tasks, Brain, Workspace, Integrations, Team), the employee list, and each employee's Chat, Work and Guidelines tabs. Chatting with an employee runs its job (find grants, write a post, draft a reply...) and the reply carries result cards. Tasks run on a schedule in the workspace time zone and post their results into the employee's chat.
@@ -40,7 +52,8 @@ Chat-first, from the approved mockup: a rail (Chats, Approvals, Tasks, Brain, Wo
 
 - Sending. Approving an item marks it approved; nothing goes to Gmail, Google Calendar, LinkedIn, Meta, X, WordPress, Grants.gov, Submittable or Sessionize yet. That is round 2 and needs each provider's connection.
 - Funding facts from LeadDash EHR (monthly totals, no client data) need an endpoint on the LeadDash EHR side.
-- Employee portraits. Put them in `client/public/avatars/<kind>.png` and list them in `client/src/ld/meta.ts` (`AVATAR_FILES`).
+- Quinn's own portrait. Quinn uses the default portrait (`client/public/avatars/custom.webp`) until one is made; put it at `client/public/avatars/hiring.webp` and point `AVATAR_FILES.hiring` at it in `client/src/ld/meta.ts`.
+- Reading candidate replies. Quinn cannot see your inbox yet, so you press Replied on Outreach.
 
 ## First-time setup on the EC2 box
 

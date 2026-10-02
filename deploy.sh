@@ -68,4 +68,4 @@ else
   echo "NOT ANSWERING on port $PORT_LIVE. Last log lines:"; pm2 logs leaddash-employees --lines 30 --nostream; exit 1
 fi
 echo "== checksums"
-md5sum server/routers.ts server/db.ts server/employees/apply.ts drizzle/schema.ts dist/index.js
+md5sum server/routers.ts server/db.ts server/employees/apply.ts server/employees/hiring.ts drizzle/schema.ts dist/index.js

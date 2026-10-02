@@ -43,6 +43,15 @@ export const ENV = {
   openAiKey: process.env.OPENAI_API_KEY || "",
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",
 
+  // Push notifications (Web Push). Generate once with: npx web-push generate-vapid-keys
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY || "",
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || "",
+  vapidSubject: process.env.VAPID_SUBJECT || "mailto:info@leaddash.io",
+
+  // Hiring checks
+  /** SAM.gov public API key (free, from a SAM.gov account). Used for the exclusion check. */
+  samApiKey: process.env.SAM_API_KEY || "",
+
   // Secrets at rest
   /** 32-byte key, base64 or hex. Encrypts connection secrets in the database. */
   secretsKey: process.env.SECRETS_KEY || "",

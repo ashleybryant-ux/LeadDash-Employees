@@ -8,7 +8,7 @@ import type { AppRow, Attachment, Question } from "../types";
 
 const COLS = "150px minmax(0,2.4fr) minmax(0,1.2fr) 120px 128px 128px";
 
-type TabKey = "all" | "applications" | "email" | "social" | "blog" | "pitches" | "submitted" | "done";
+type TabKey = "all" | "applications" | "hiring" | "email" | "social" | "blog" | "pitches" | "submitted" | "done";
 
 const KIND_TAB: Record<string, Exclude<TabKey, "all" | "done" | "applications" | "submitted">> = {
   email_draft: "email",
@@ -16,6 +16,7 @@ const KIND_TAB: Record<string, Exclude<TabKey, "all" | "done" | "applications" |
   social_post: "social",
   blog_post: "blog",
   speaking_pitch: "pitches",
+  hiring_email: "hiring",
 };
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -93,6 +94,7 @@ export default function Approvals() {
         tabs={[
           { key: "all", label: `All (${pending.length + waitingApps.length})` },
           { key: "applications", label: `Applications (${waitingApps.length})` },
+          { key: "hiring", label: `Hiring (${count("hiring")})` },
           { key: "email", label: `Email (${count("email")})` },
           { key: "social", label: `Social (${count("social")})` },
           { key: "blog", label: `Blog (${count("blog")})` },
@@ -120,7 +122,7 @@ export default function Approvals() {
           const channels = channelList(item.targetChannels);
           const isPending = item.status === "pending_approval";
           const st = DONE_STATUS[item.status] ?? { label: item.status, cls: "gray" };
-          const meta = parseJson<{ headline?: string }>(item.metadata, {});
+          const meta = parseJson<{ headline?: string; to?: string; email?: string }>(item.metadata, {});
           const isEditing = editing === item.id;
           return (
             <React.Fragment key={item.id}>
@@ -202,6 +204,18 @@ export default function Approvals() {
                       <textarea id={`body-${item.id}`} className="ld-ta" rows={8} value={draft} onChange={(e) => setDraft(e.target.value)} />
                     ) : (
                       <span className="ld-body ld-pre" style={{ lineHeight: 1.6 }}>{item.body || "No text."}</span>
+                    )}
+                    {item.kind === "hiring_email" && (
+                      <>
+                        <span className="ld-lbl" style={{ marginTop: 8 }}>To</span>
+                        <span className="ld-body">{[meta.to, meta.email].filter(Boolean).join(", ")}</span>
+                        {isPending && (
+                          <>
+                            <span className="ld-lbl" style={{ marginTop: 8 }}>After approval</span>
+                            <span className="ld-body">Held until Gmail is connected, or copy it and send it yourself</span>
+                          </>
+                        )}
+                      </>
                     )}
                     {item.kind === "social_post" && isPending && (
                       <>

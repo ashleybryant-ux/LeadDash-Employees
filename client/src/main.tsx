@@ -3,6 +3,7 @@ import { UNAUTHED_ERR_MSG } from "@shared/const";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
+import { registerServiceWorker } from "./ld/push";
 import superjson from "superjson";
 import App from "./App";
 import "./index.css";
@@ -45,3 +46,6 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </trpc.Provider>
 );
+
+// The service worker shows push notices and opens the right screen when one is tapped.
+if (import.meta.env.PROD) window.addEventListener("load", () => registerServiceWorker());

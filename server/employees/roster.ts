@@ -1,7 +1,8 @@
 import type { EmployeeKind } from "../../drizzle/schema";
 
 /**
- * The seven employees every new workspace starts with. One job each.
+ * The employees every workspace has. One job each. New jobs added here are
+ * given to every existing workspace at startup (ensureRoster).
  * Names can be changed per workspace; the kind decides what the employee does.
  */
 export type RosterEntry = {
@@ -88,6 +89,16 @@ export const ROSTER: RosterEntry[] = [
     searches: false,
     minutesPerTask: 10,
   },
+  {
+    kind: "hiring",
+    name: "Quinn",
+    roleTitle: "Hiring",
+    department: "Operations",
+    description: "Writes job posts, finds people for outreach, screens applicants and runs license and exclusion checks.",
+    capabilities: ["Job posts", "Outreach lists with sources", "Applicant scoring against your must-haves", "License, NPI and exclusion checks", "Onboarding checklists"],
+    searches: true,
+    minutesPerTask: 45,
+  },
 ];
 
 export function rosterEntry(kind: EmployeeKind) {
@@ -116,6 +127,7 @@ export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: 
   website: { focus: "Pages to focus on", avoid: "Avoid", signAs: "Main call to action" },
   video: { focus: "Formats", avoid: "Avoid", signAs: "On-camera name" },
   inbox: { focus: "How to reply", avoid: "Never", signAs: "Sign replies as" },
+  hiring: { focus: "Roles to fill", avoid: "Never", signAs: "Sign messages as" },
 };
 
 export type Guidelines = { focus: string; avoid: string; signAs: string };

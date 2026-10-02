@@ -1,0 +1,236 @@
+import { TRPCError } from "@trpc/server";
+import * as db from "../db";
+import type { AIEmployee, EmployeeKind } from "../../drizzle/schema";
+import { generateJson, generateText, type JsonSchema } from "../_core/llm";
+import { loadBrain } from "./brain";
+import { BASE_RULES } from "./roster";
+
+/**
+ * Onboarding: each employee asks what the owner wants from it and how the
+ * day-to-day should go. Answers are fixed choices where possible, with a few
+ * short typed answers. They go into every instruction the employee gets, and
+ * "A day with ..." is written from them. Assignments are scheduled tasks.
+ */
+
+export type Question = { key: string; label: string; type: "choice" | "multi" | "text"; options?: string[]; placeholder?: string };
+export type Template = { label: string; title: string; instructions: string; repeat: "daily" | "weekdays" | "weekly" | "monthly"; time: string; weekday?: number };
+
+const OFTEN = ["Every day", "Twice a week", "Weekly", "Only when I ask"];
+
+export const QUESTIONS: Record<EmployeeKind, Question[]> = {
+  grants: [
+    { key: "fundFor", label: "What should Morgan apply for?", type: "multi", options: ["Grants", "Pitch competitions", "Accelerators", "Government contracts"] },
+    { key: "often", label: "How often should Morgan look?", type: "choice", options: OFTEN },
+    { key: "autoStart", label: "When something scores 75 or higher", type: "choice", options: ["Start the application", "Ask me first"] },
+    { key: "minAward", label: "Smallest award worth applying for", type: "choice", options: ["Any amount", "$5,000", "$10,000", "$25,000"] },
+    { key: "region", label: "Where should funders be?", type: "choice", options: ["My state first, then national", "National only", "My state only"] },
+    { key: "priorities", label: "What should funding pay for?", type: "text", placeholder: "Clinician hiring, intern supervision, rural access" },
+  ],
+  speaking: [
+    { key: "formats", label: "What kind of speaking?", type: "multi", options: ["Conferences", "Webinars", "Podcasts", "Panels", "Workshops"] },
+    { key: "paid", label: "Pay", type: "choice", options: ["Paid only", "Paid or visibility", "Anything that fits"] },
+    { key: "travel", label: "Travel", type: "choice", options: ["Virtual only", "In my state", "Anywhere in the US"] },
+    { key: "often", label: "How often should Taylor look?", type: "choice", options: OFTEN },
+    { key: "topics", label: "Talks you give best", type: "text", placeholder: "Building a practice that pays you back; P.U.L.S.E. Framework" },
+  ],
+  social: [
+    { key: "platforms", label: "Where do you post?", type: "multi", options: ["LinkedIn", "Instagram", "Facebook", "X"] },
+    { key: "often", label: "How many posts?", type: "choice", options: ["Every weekday", "3 a week", "Weekly"] },
+    { key: "goal", label: "What should posts do?", type: "choice", options: ["Bring in clients", "Build my name", "Recruit staff", "All of these"] },
+    { key: "voice", label: "Voice", type: "choice", options: ["Warm and personal", "Expert and direct", "Playful"] },
+    { key: "avoid", label: "Never post about", type: "text", placeholder: "Client stories, politics" },
+  ],
+  blog: [
+    { key: "often", label: "How many articles?", type: "choice", options: ["Weekly", "Twice a month", "Monthly"] },
+    { key: "reader", label: "Who reads the blog?", type: "choice", options: ["Clients and families", "Other clinicians", "Practice owners"] },
+    { key: "length", label: "Length", type: "choice", options: ["800 words", "1,200 words", "2,000 words"] },
+    { key: "topics", label: "Topics to cover", type: "text", placeholder: "Couples counseling, anxiety in teens, insurance questions" },
+  ],
+  website: [
+    { key: "goal", label: "What should the site do most?", type: "choice", options: ["Book consultations", "Sell a product", "Recruit staff", "Build trust"] },
+    { key: "pages", label: "Pages to work on first", type: "text", placeholder: "Home, couples counseling, careers" },
+    { key: "voice", label: "Voice", type: "choice", options: ["Warm and personal", "Expert and direct", "Simple and short"] },
+  ],
+  video: [
+    { key: "platforms", label: "Where do videos go?", type: "multi", options: ["TikTok", "Instagram Reels", "YouTube Shorts"] },
+    { key: "often", label: "How many plans a week?", type: "choice", options: ["1", "2", "3", "5"] },
+    { key: "onCamera", label: "Who is on camera?", type: "choice", options: ["Me", "My team", "No faces, text and b-roll"] },
+    { key: "style", label: "Style", type: "choice", options: ["Teaching", "Story", "Trend-based", "Mix"] },
+    { key: "avoid", label: "Never film", type: "text", placeholder: "Clients, the office lobby" },
+  ],
+  inbox: [
+    { key: "tone", label: "Reply tone", type: "choice", options: ["Warm", "Brief and direct", "Formal"] },
+    { key: "urgent", label: "What counts as urgent?", type: "text", placeholder: "Payers, current clients, my attorney" },
+    { key: "never", label: "Never promise", type: "text", placeholder: "Discounts, dates I have not confirmed" },
+  ],
+  hiring: [
+    { key: "hiringFor", label: "Who are you hiring most?", type: "multi", options: ["Licensed clinicians", "Interns and candidates", "Front desk and billing", "Developers", "Sales"] },
+    { key: "often", label: "How often should Quinn look for people?", type: "choice", options: OFTEN },
+    { key: "outreach", label: "Outreach", type: "choice", options: ["Find people and draft messages", "Applicants only, no outreach"] },
+    { key: "screening", label: "Who screens first?", type: "choice", options: ["Quinn scores, I decide", "Show me every applicant unscored"] },
+    { key: "interviewFormat", label: "Interviews", type: "choice", options: ["Video call", "In person", "Either"] },
+    { key: "interviewHours", label: "Interview hours", type: "text", placeholder: "Tue and Thu, 10:00 AM to 2:00 PM" },
+    { key: "panel", label: "Who else interviews", type: "text", placeholder: "Name and title" },
+    { key: "greatFit", label: "What makes someone a great fit at your practice?", type: "text", placeholder: "Warm with families, organized with notes, open to feedback" },
+  ],
+  custom: [
+    { key: "goal", label: "What should this employee do for you?", type: "text", placeholder: "One or two sentences" },
+    { key: "often", label: "How often?", type: "choice", options: ["Every day", "Weekly", "Only when I ask"] },
+  ],
+};
+
+const REPORT = (what: string): Template => ({ label: "Send me a report", title: "Daily report", instructions: `Send me a report: ${what}`, repeat: "daily", time: "09:00" });
+
+export const TEMPLATES: Record<EmployeeKind, Template[]> = {
+  grants: [
+    REPORT("what you found, what you are writing, what is waiting on me, and deadlines in the next 30 days."),
+    { label: "Find and apply", title: "Find grants and start the best", instructions: "Search for grants and pitch competitions that fit, then start applications for the best fits.", repeat: "weekly", time: "08:00", weekday: 1 },
+    { label: "Check status", title: "Application status", instructions: "Check application status and tell me what changed.", repeat: "weekly", time: "08:30", weekday: 5 },
+  ],
+  speaking: [
+    REPORT("new speaking calls, pitches waiting on me, and proposal deadlines in the next 30 days."),
+    { label: "Find events", title: "Find speaking calls", instructions: "Find events taking speaker proposals that fit and start pitches for the best.", repeat: "weekly", time: "08:00", weekday: 1 },
+  ],
+  social: [
+    REPORT("posts waiting for approval and what went out this week."),
+    { label: "Write posts", title: "Write today's post", instructions: "Write today's post for my main platforms.", repeat: "weekdays", time: "08:30" },
+  ],
+  blog: [
+    REPORT("articles drafted and waiting for approval."),
+    { label: "Write an article", title: "Weekly article", instructions: "Write this week's article on a topic I have not covered yet.", repeat: "weekly", time: "09:00", weekday: 2 },
+  ],
+  website: [REPORT("page plans finished and what to work on next."), { label: "Plan a page", title: "Plan a page", instructions: "Plan the next page on my list.", repeat: "weekly", time: "10:00", weekday: 3 }],
+  video: [
+    REPORT("video plans ready to film this week."),
+    { label: "Find trends", title: "Weekly trend check", instructions: "Find video formats working this week and plan two videos.", repeat: "weekly", time: "10:00", weekday: 4 },
+  ],
+  inbox: [REPORT("replies waiting for approval and anything urgent.")],
+  hiring: [
+    REPORT("new applicants, outreach replies, interviews this week, and anything waiting on me."),
+    { label: "Find people", title: "Find people and draft outreach", instructions: "Find licensed clinicians for my open roles and draft outreach for the best 5.", repeat: "weekly", time: "08:00", weekday: 2 },
+    { label: "Check expirations", title: "Check team licenses and hours", instructions: "Send me a report: team licenses, certifications and supervision hours due in the next 90 days.", repeat: "weekly", time: "07:30", weekday: 1 },
+  ],
+  custom: [REPORT("what you did and what is waiting on me.")],
+};
+
+export function parseAnswers(raw: string | null | undefined): Record<string, string | string[]> {
+  try {
+    const v = raw ? JSON.parse(raw) : {};
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Flat string answers, for code that needs one value (interview hours...). */
+export async function onboardingAnswers(emp: AIEmployee): Promise<Record<string, string>> {
+  const a = parseAnswers(emp.onboarding);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(a)) out[k] = Array.isArray(v) ? v.join(", ") : String(v ?? "");
+  return out;
+}
+
+/** The answers as lines for the employee's instructions. */
+export function onboardingLines(emp: AIEmployee) {
+  const a = parseAnswers(emp.onboarding);
+  const qs = QUESTIONS[emp.kind] ?? [];
+  return qs
+    .map((q) => {
+      const v = a[q.key];
+      const val = Array.isArray(v) ? v.join(", ") : v;
+      return val ? `${q.label} ${val}` : "";
+    })
+    .filter(Boolean);
+}
+
+export function progress(emp: AIEmployee) {
+  const a = parseAnswers(emp.onboarding);
+  const qs = QUESTIONS[emp.kind] ?? [];
+  const answered = qs.filter((q) => {
+    const v = a[q.key];
+    return Array.isArray(v) ? v.length > 0 : !!String(v ?? "").trim();
+  }).length;
+  return { answered, total: qs.length };
+}
+
+export type DayItem = { when: string; what: string };
+
+export async function saveAnswers(emp: AIEmployee, answers: Record<string, string | string[]>) {
+  const qs = QUESTIONS[emp.kind] ?? [];
+  const clean: Record<string, string | string[]> = {};
+  for (const q of qs) {
+    const v = answers[q.key];
+    if (q.type === "multi") clean[q.key] = (Array.isArray(v) ? v : []).filter((x) => q.options?.includes(x));
+    else if (q.type === "choice") clean[q.key] = typeof v === "string" && q.options?.includes(v) ? v : "";
+    else clean[q.key] = typeof v === "string" ? v.trim().slice(0, 500) : "";
+  }
+  const p = progress({ ...emp, onboarding: JSON.stringify(clean) });
+  await db.updateEmployee(emp.id, emp.organizationId, { onboarding: JSON.stringify(clean), onboardedAt: p.answered === p.total ? new Date() : emp.onboardedAt });
+  const updated = (await db.getEmployeeForOrg(emp.id, emp.organizationId))!;
+  await writeDayToDay(updated).catch((err) => console.warn("[onboarding] day-to-day failed:", err instanceof Error ? err.message : err));
+  return db.getEmployeeForOrg(emp.id, emp.organizationId);
+}
+
+export async function writeDayToDay(emp: AIEmployee) {
+  const brain = await loadBrain(emp.organizationId);
+  const lines = onboardingLines(emp);
+  const tasks = (await db.listScheduledTasks(emp.organizationId)).filter((t) => t.employeeId === emp.id && t.enabled);
+  const out = await generateJson<{ items: DayItem[] }>({
+    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${brain.org?.name ?? "the workspace"}. Describe your day-to-day for the owner in 3 to 5 lines: when (Every morning, Tue and Fri, After a reply, Every Monday...) and what you do then, in one plain sentence each, first person is not needed. Base it on the owner's answers and assignments. Do not promise anything you cannot do: you cannot send email or post on your own yet; everything waits for approval.\n\n${BASE_RULES}`,
+    prompt: `Your job: ${emp.description ?? emp.roleTitle}\n\nOwner's answers:\n${lines.join("\n") || "(none yet)"}\n\nAssignments:\n${tasks.map((t) => `- ${t.title} (${t.repeat} at ${t.time})`).join("\n") || "(none)"}`,
+    schemaName: "day_to_day",
+    schema: { type: "object", additionalProperties: false, required: ["items"], properties: { items: { type: "array", items: { type: "object", additionalProperties: false, required: ["when", "what"], properties: { when: { type: "string" }, what: { type: "string" } } } } } } as JsonSchema,
+    maxTokens: 900,
+  });
+  const items = (out.items ?? []).slice(0, 6).map((i) => ({ when: i.when.slice(0, 40), what: i.what.slice(0, 300) }));
+  await db.updateEmployee(emp.id, emp.organizationId, { dayToDay: JSON.stringify(items) });
+  return items;
+}
+
+// ==========================================
+// Reports ("Every day at 9:00, send me a report")
+// ==========================================
+
+async function factsFor(emp: AIEmployee) {
+  const org = emp.organizationId;
+  const since = new Date(Date.now() - 7 * 86400_000);
+  const logs = (await db.listAuditLogsByOrg(org, 200)).filter((l) => l.actorName.startsWith(emp.name) && l.createdAt > since);
+  const waiting = (await db.listOutboundItemsByOrg(org)).filter((i) => i.employeeId === emp.id && i.status === "pending_approval");
+  const lines = [
+    `Work logged in the last 7 days (${logs.length}):`,
+    ...logs.slice(0, 25).map((l) => `- ${new Date(l.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}: ${l.action}${l.details ? ` (${l.details})` : ""}`),
+    `Waiting for the owner's approval: ${waiting.length}${waiting.length ? ` (${waiting.slice(0, 6).map((w) => w.title).join("; ")})` : ""}`,
+  ];
+  if (emp.kind === "grants" || emp.kind === "speaking") {
+    const apps = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id);
+    const opps = await db.listOpps(org);
+    const by = (s: string[]) => apps.filter((a) => s.includes(a.status));
+    lines.push(
+      `Applications: ${by(["writing"]).length} being written, ${by(["ready", "needs_answer", "needs_setup"]).length} waiting on the owner, ${by(["approved"]).length} approved to send, ${by(["submitted"]).length} submitted, ${by(["awarded"]).length} won`,
+      `Open opportunities not started: ${opps.filter((o) => o.status === "new" && o.employeeId === emp.id && o.fitCall !== "skip").length}`,
+      `Deadlines: ${opps.filter((o) => o.employeeId === emp.id && o.deadline && o.status !== "dismissed").slice(0, 8).map((o) => `${o.title} (${o.deadline})`).join("; ") || "none listed"}`
+    );
+  }
+  if (emp.kind === "hiring") {
+    const { hiringFacts } = await import("./hiring");
+    lines.push(await hiringFacts(org));
+    const team = await db.listHrTeamItems(org);
+    if (team.length) lines.push(`Team items: ${team.map((t) => `${t.person}: ${t.item}${t.due ? ` due ${t.due}` : ""}${t.progress ? ` (${t.progress})` : ""}`).join("; ")}`);
+  }
+  return lines.join("\n");
+}
+
+export async function writeReport(emp: AIEmployee, ask: string) {
+  const brain = await loadBrain(emp.organizationId);
+  const facts = await factsFor(emp);
+  const text = await generateText({
+    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${brain.org?.name ?? "the workspace"}. Write the report the owner asked for, from the facts given and nothing else. Lead with what needs the owner today, then what you did, then what is coming up. Short lines. If nothing happened, say so in one sentence. Never include a client's name.\n\n${BASE_RULES}`,
+    prompt: `The owner asked: ${ask}\n\nFacts:\n${facts}`,
+    maxTokens: 900,
+  });
+  return text.trim();
+}
+
+export function assertKind(emp: AIEmployee | null): asserts emp is AIEmployee {
+  if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+}

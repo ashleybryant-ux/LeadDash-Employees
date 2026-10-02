@@ -16,6 +16,7 @@ import {
   type User,
 } from "../drizzle/schema";
 import { ROSTER } from "./employees/roster";
+import { ensureRoster } from "./employees/roster-sync";
 import * as tasks from "./employees/tasks";
 import { sendChatMessage } from "./employees/chat";
 import * as apply from "./employees/apply";
@@ -26,7 +27,10 @@ import { runTaskNow } from "./employees/runner";
 import { fetchWebpage, saveDocument, saveImage } from "./employees/files";
 import { sendEmail } from "./_core/email";
 import { ENV } from "./_core/env";
-import { REPEATS } from "../drizzle/schema";
+import { REPEATS, HR_STAGES } from "../drizzle/schema";
+import * as hiring from "./employees/hiring";
+import { QUESTIONS, TEMPLATES, parseAnswers, progress as onboardingProgress, saveAnswers, writeDayToDay } from "./employees/onboarding";
+import { EVENT_LABELS, NOTIFY_EVENTS, pushReady, pushTo, readPrefs, type Prefs } from "./notify";
 
 // ==========================================
 // Access rules
@@ -82,23 +86,9 @@ async function workItemOf(organizationId: number, id: number, kind: "website_pla
   return item;
 }
 
-/** Creates the seven starting employees for a new workspace. */
+/** Gives a new workspace every employee on the roster. */
 async function deployRoster(organizationId: number) {
-  for (const r of ROSTER) {
-    await db.createEmployee({
-      organizationId,
-      kind: r.kind,
-      name: r.name,
-      avatar: null,
-      roleTitle: r.roleTitle,
-      department: r.department,
-      status: "active",
-      efficiency: 98,
-      description: r.description,
-      capabilities: JSON.stringify(r.capabilities),
-      systemPrompt: null,
-    });
-  }
+  await ensureRoster(organizationId);
 }
 
 export const appRouter = router({
@@ -1077,6 +1067,7 @@ export const appRouter = router({
           time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 08:30"),
           onDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
           enabled: z.boolean().default(true),
+          notify: z.enum(["push", "email", "chat"]).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -1094,6 +1085,7 @@ export const appRouter = router({
           ...rule,
           enabled: input.enabled,
           nextRunAt: next,
+          ...(input.notify ? { notify: input.notify } : {}),
         };
         const saved = input.id
           ? await db.updateScheduledTask(input.id, input.organizationId, data)
@@ -1334,6 +1326,277 @@ export const appRouter = router({
         await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Removed from Knowledge", details: item.title });
         return { success: true };
       }),
+  }),
+
+  // ==========================================
+  // My account: name, push devices, "Tell me when"
+  // ==========================================
+  account: router({
+    get: protectedProcedure.query(async ({ ctx }) => {
+      const devices = await db.listPushSubscriptions([ctx.user.id]);
+      const me = (await db.getUserById(ctx.user.id)) ?? ctx.user;
+      return {
+        name: me.name,
+        email: me.email,
+        prefs: readPrefs(me.notifyPrefs),
+        events: NOTIFY_EVENTS.map((k) => ({ key: k, label: EVENT_LABELS[k] })),
+        pushReady: pushReady(),
+        vapidPublicKey: ENV.vapidPublicKey || null,
+        devices: devices.map((d) => ({ id: d.id, device: d.device, endpoint: d.endpoint, createdAt: d.createdAt, lastSentAt: d.lastSentAt })),
+      };
+    }),
+
+    savePrefs: protectedProcedure
+      .input(z.object(Object.fromEntries(NOTIFY_EVENTS.map((k) => [k, z.object({ push: z.boolean(), email: z.boolean() }).optional()]))))
+      .mutation(async ({ ctx, input }) => {
+        const clean = Object.fromEntries(Object.entries(input).filter(([, v]) => v)) as Partial<Prefs>;
+        const me = (await db.getUserById(ctx.user.id)) ?? ctx.user;
+        const prefs = { ...readPrefs(me.notifyPrefs), ...clean };
+        await db.updateUser(ctx.user.id, { notifyPrefs: JSON.stringify(prefs) });
+        return prefs;
+      }),
+
+    subscribe: protectedProcedure
+      .input(
+        z.object({
+          endpoint: z.string().url().max(2000),
+          keys: z.object({ p256dh: z.string().min(10).max(500), auth: z.string().min(4).max(200) }),
+          device: z.string().trim().min(1).max(80),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!pushReady()) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Push is not set up on the server yet." });
+        if (!/^https:\/\//.test(input.endpoint)) throw new TRPCError({ code: "BAD_REQUEST", message: "That push address is not valid." });
+        await db.savePushSubscription({ userId: ctx.user.id, endpoint: input.endpoint, p256dh: input.keys.p256dh, auth: input.keys.auth, device: input.device });
+        return { success: true };
+      }),
+
+    removeDevice: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.deletePushSubscription(input.id, ctx.user.id);
+      return { success: true };
+    }),
+
+    testPush: protectedProcedure.mutation(async ({ ctx }) => {
+      const sent = await pushTo([ctx.user.id], { title: "LeadDash Employees", body: "Push notifications are on for this device.", url: "/account", tag: "test" });
+      if (!sent) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No device took the test. Turn push on here first." });
+      return { sent };
+    }),
+  }),
+
+  // ==========================================
+  // Onboarding (every employee)
+  // ==========================================
+  onboarding: router({
+    get: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+      if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+      const tasksFor = (await db.listScheduledTasks(input.organizationId)).filter((t) => t.employeeId === emp.id);
+      return {
+        questions: QUESTIONS[emp.kind] ?? [],
+        answers: parseAnswers(emp.onboarding),
+        dayToDay: (() => {
+          try {
+            return emp.dayToDay ? (JSON.parse(emp.dayToDay) as { when: string; what: string }[]) : [];
+          } catch {
+            return [];
+          }
+        })(),
+        progress: onboardingProgress(emp),
+        templates: TEMPLATES[emp.kind] ?? [],
+        assignments: tasksFor.map((t) => ({ ...t, repeatLabel: describeRule(t) })),
+      };
+    }),
+
+    save: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), answers: z.record(z.string(), z.union([z.string().max(500), z.array(z.string().max(100)).max(12)])) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+        const saved = await saveAnswers(emp, input.answers);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Onboarded employee", details: emp.name });
+        return saved;
+      }),
+
+    rewriteDay: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+      if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+      return writeDayToDay(emp);
+    }),
+  }),
+
+  // ==========================================
+  // Hiring (Quinn)
+  // ==========================================
+  hiring: router({
+    roles: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const [roles, people] = await Promise.all([db.listHrRoles(input.organizationId), db.listHrPeople(input.organizationId, "applicant")]);
+      return roles.map((r) => ({ ...r, applicants: people.filter((p) => p.roleId === r.id).length }));
+    }),
+
+    saveRole: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().optional(),
+          title: z.string().trim().min(2).max(120),
+          employment: z.enum(["w2", "1099"]),
+          hours: z.enum(["full", "part"]),
+          place: z.enum(["in_person", "telehealth", "both"]),
+          payFrom: z.string().trim().max(60),
+          payTo: z.string().trim().max(60),
+          licenses: z.array(z.string().max(40)).max(12),
+          mustHave: z.string().trim().max(1000),
+          niceToHave: z.string().trim().max(1000),
+          post: z.string().max(20_000).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, id, licenses, ...rest } = input;
+        const data = { ...rest, licenses: JSON.stringify(licenses), payFrom: rest.payFrom || null, payTo: rest.payTo || null };
+        const role = id ? await db.updateHrRole(id, organizationId, data) : await db.createHrRole({ organizationId, ...data });
+        if (!role) throw new TRPCError({ code: "NOT_FOUND", message: "That role is not in this workspace." });
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: id ? "Edited role" : "Added role", details: role.title });
+        return role;
+      }),
+
+    setRoleStatus: protectedProcedure.input(orgInput.extend({ id: z.number(), status: z.enum(["open", "closed"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return db.updateHrRole(input.id, input.organizationId, { status: input.status });
+    }),
+
+    writePost: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return hiring.writeJobPost(input.organizationId, input.id);
+    }),
+
+    markPosted: protectedProcedure.input(orgInput.extend({ id: z.number(), target: z.string().max(120), posted: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const role = await db.getHrRole(input.id, input.organizationId);
+      if (!role) throw new TRPCError({ code: "NOT_FOUND", message: "That role is not in this workspace." });
+      const targets = hiring.parse<hiring.Target[]>(role.targets, []).map((t) => (t.name === input.target ? { ...t, status: input.posted ? ("posted" as const) : ("ready" as const) } : t));
+      return db.updateHrRole(input.id, input.organizationId, { targets: JSON.stringify(targets) });
+    }),
+
+    people: protectedProcedure.input(orgInput.extend({ source: z.enum(["applicant", "prospect"]).optional() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const [people, roles, queue] = await Promise.all([db.listHrPeople(input.organizationId, input.source), db.listHrRoles(input.organizationId), db.listOutboundItemsByOrg(input.organizationId, "hiring_email")]);
+      return people.map(({ resumeText, ...p }) => ({
+        ...p,
+        roleTitle: roles.find((r) => r.id === p.roleId)?.title ?? null,
+        queued: queue.some((q) => q.status === "pending_approval" && hiring.parse<{ personId?: number }>(q.metadata, {}).personId === p.id),
+      }));
+    }),
+
+    find: protectedProcedure.input(orgInput.extend({ roleId: z.number().nullable().optional(), focus: z.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const r = await hiring.findProspects(input.organizationId, { roleId: input.roleId ?? null, focus: input.focus });
+      return { added: r.created.length, searches: r.queries.length };
+    }),
+
+    rewriteMessage: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return hiring.rewriteMessage(input.organizationId, input.id);
+    }),
+
+    saveMessage: protectedProcedure.input(orgInput.extend({ id: z.number(), message: z.string().max(5000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return db.updateHrPerson(input.id, input.organizationId, { message: input.message });
+    }),
+
+    markSent: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return hiring.markContacted(input.organizationId, input.id);
+    }),
+
+    emailPerson: protectedProcedure.input(orgInput.extend({ id: z.number(), purpose: z.enum(["outreach", "follow_up", "interview", "decline", "offer"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return hiring.queueEmail(input.organizationId, input.id, input.purpose);
+    }),
+
+    move: protectedProcedure.input(orgInput.extend({ id: z.number(), stage: z.enum(HR_STAGES) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const p = await hiring.moveTo(input.organizationId, input.id, input.stage);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Moved candidate", details: `${p?.name ?? "Person"} to ${input.stage}` });
+      return p;
+    }),
+
+    runChecks: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return hiring.runChecks(input.organizationId, input.id);
+    }),
+
+    rescreen: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return hiring.rescreen(input.organizationId, input.id);
+    }),
+
+    offer: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), startDate: z.string().regex(/^\d{2}\/\d{2}\/\d{4}$/, "Type the start date as MM/DD/YYYY"), pay: z.string().trim().min(1).max(120) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return hiring.draftOffer(input.organizationId, input.id, { startDate: input.startDate, pay: input.pay });
+      }),
+
+    saveOffer: protectedProcedure.input(orgInput.extend({ id: z.number(), letter: z.string().max(40_000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const p = await db.getHrPerson(input.id, input.organizationId);
+      if (!p) throw new TRPCError({ code: "NOT_FOUND", message: "That person is not in this workspace." });
+      const hire = hiring.parse<hiring.NewHire>(p.onboarding, { paperwork: [], credentialing: [] });
+      return db.updateHrPerson(input.id, input.organizationId, { onboarding: JSON.stringify({ ...hire, offerLetter: input.letter }) });
+    }),
+
+    hire: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return hiring.markHired(input.organizationId, input.id);
+    }),
+
+    saveChecklist: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number(),
+          list: z.enum(["paperwork", "credentialing"]),
+          items: z.array(z.object({ item: z.string().trim().min(1).max(120), detail: z.string().max(200), status: z.enum(["to_do", "waiting", "pending", "done", "stuck"]) })).max(40),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return hiring.updateChecklist(input.organizationId, input.id, input.list, input.items);
+      }),
+
+    team: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await db.listHrTeamItems(input.organizationId)).map((t) => ({ ...t, daysLeft: hiring.daysUntil(t.due) }));
+    }),
+
+    saveTeamItem: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().optional(),
+          person: z.string().trim().min(1).max(120),
+          item: z.string().trim().min(1).max(160),
+          due: z.string().regex(/^(\d{2}\/\d{2}\/\d{4})?$/, "Type the date as MM/DD/YYYY"),
+          progress: z.string().trim().max(120),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return db.saveHrTeamItem(input.organizationId, { id: input.id, person: input.person, item: input.item, due: input.due || null, progress: input.progress || null });
+      }),
+
+    deleteTeamItem: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await db.deleteHrTeamItem(input.id, input.organizationId);
+      return { success: true };
+    }),
+
+    remind: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return hiring.remindTeamItem(input.organizationId, input.id);
+    }),
   }),
 
   // ==========================================

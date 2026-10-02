@@ -5,6 +5,7 @@ import { storagePut, storagePutStream } from "./storage";
 import { readFile, unsupportedNote } from "./employees/docs";
 import { indexKnowledge } from "./employees/kb";
 import { addOpportunity, parse, type Attachment, type Extras, type Award } from "./employees/apply";
+import { addApplicant } from "./employees/hiring";
 
 /**
  * File uploads that are too big to send as JSON: Knowledge documents, a host's
@@ -19,6 +20,7 @@ const LIMITS: Record<string, number> = {
   attachment: 25_000_000,
   letter: 25_000_000,
   video: 250_000_000,
+  resume: 20_000_000,
 };
 
 const KNOWLEDGE_CATEGORY: Record<string, string> = {
@@ -116,6 +118,14 @@ export function registerUploads(app: Express) {
         indexKnowledge(item);
         await db.logAction({ organizationId: orgId, actorType: "human_user", actorName: who, action: `Added to ${emp.name}'s Knowledge`, details: item.title });
         return res.json({ id: item.id });
+      }
+
+      if (slot === "resume") {
+        const read = await readFile(buf, name, mime);
+        const saved = await storagePut(`org-${orgId}/resumes/${name}`, buf, mime);
+        const roleId = Number(req.query.roleId) || null;
+        const person = await addApplicant(orgId, { roleId, text: read.text, resumeUrl: saved.url, fileName: name });
+        return res.json({ id: person.id, name: person.name, score: person.fitScore });
       }
 
       if (slot === "rfp") {

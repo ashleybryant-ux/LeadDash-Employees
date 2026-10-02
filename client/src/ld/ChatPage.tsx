@@ -2,7 +2,7 @@ import React from "react";
 import { Link, Redirect } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
-import { Avatar, ChatList, EmpHeader, ErrorLine, PersonAvatar, Rail, useEmployees, useGo } from "./ui";
+import { Avatar, BottomNav, ChatList, EmpHeader, ErrorLine, PersonAvatar, Rail, useEmployees, useGo, useIsMobile } from "./ui";
 import { SUGGESTIONS, fmtDate, fmtTime, isSameDay, parseJson, type Kind } from "./meta";
 import Guidelines from "./work/Guidelines";
 import ApplyWork from "./apply/ApplyWork";
@@ -13,6 +13,8 @@ import Posts from "./work/Posts";
 import Articles from "./work/Articles";
 import Pages from "./work/Pages";
 import Videos from "./work/Videos";
+import HiringWork from "./hiring/HiringWork";
+import Onboarding from "./Onboarding";
 
 export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
 
@@ -24,15 +26,19 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   blog: Articles,
   website: Pages,
   video: Videos,
+  hiring: HiringWork,
 };
 
 /** /chats, /chats/:kind, /chats/:kind/work, /chats/:kind/guidelines, /chats/e/:id[...] */
 export default function ChatPage({ params }: { params: { kind?: string; id?: string; tab?: string; appId?: string; view?: string } }) {
   const { list, isLoading } = useEmployees();
   const emp = params.id ? list.find((e) => e.id === Number(params.id)) : params.kind ? list.find((e) => e.kind === params.kind) : null;
-  const tab = (params.appId ? "work" : params.tab === "work" || params.tab === "guidelines" || params.tab === "knowledge" ? params.tab : "chat") as "chat" | "work" | "knowledge" | "guidelines";
+  const tab = (params.appId ? "work" : params.tab === "work" || params.tab === "guidelines" || params.tab === "knowledge" || params.tab === "onboarding" ? params.tab : "chat") as "chat" | "work" | "knowledge" | "onboarding" | "guidelines";
 
-  if (!params.kind && !params.id && list.length > 0) {
+  const mobile = useIsMobile();
+  // On a phone, /chats is the list of employees; on a computer it opens the first chat.
+  const listOnly = !params.kind && !params.id && mobile;
+  if (!params.kind && !params.id && list.length > 0 && !listOnly) {
     const first = list.find((e) => e.kind === "grants") ?? list[0];
     return <Redirect to={first.kind === "custom" ? `/chats/e/${first.id}` : `/chats/${first.kind}`} />;
   }
@@ -42,10 +48,10 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
   const activeKey = emp ? (emp.kind === "custom" ? `e${emp.id}` : emp.kind) : null;
 
   return (
-    <div className="ld">
+    <div className={`ld ${emp ? "has-emp" : "list-only"}`}>
       <Rail active="chats" />
       <ChatList activeKind={activeKey} />
-      <section style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <section className="ld-chatmain" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         {!emp ? (
           <div className="ld-empty" style={{ marginTop: 120 }}>{isLoading ? "Loading..." : "Pick an employee on the left."}</div>
         ) : (
@@ -55,10 +61,12 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
             {tab === "work" && params.appId && <ApplicationPage emp={emp} appId={Number(params.appId)} view={params.view === "review" ? "review" : "main"} />}
             {tab === "work" && !params.appId && Work && <Work emp={emp} />}
             {tab === "knowledge" && <Knowledge emp={emp} />}
+            {tab === "onboarding" && <Onboarding emp={emp} />}
             {tab === "guidelines" && <Guidelines emp={emp} />}
           </>
         )}
       </section>
+      {(!emp || tab !== "chat") && <BottomNav active="chats" />}
     </div>
   );
 }
@@ -68,7 +76,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate";
   id: number;
   title: string;
   subtitle?: string;
@@ -118,8 +126,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   let lastDay: Date | null = null;
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div style={{ flex: 1, padding: "24px 32px", display: "flex", flexDirection: "column", gap: 22, maxWidth: 900, boxSizing: "border-box", width: "100%" }}>
+    <div className="ld-chatpane" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div className="ld-chatmsgs" style={{ flex: 1, padding: "24px 32px", display: "flex", flexDirection: "column", gap: 22, maxWidth: 900, boxSizing: "border-box", width: "100%" }}>
         {list.length === 0 && !pending && (
           <div className="ld-empty" style={{ textAlign: "left", padding: "8px 0" }}>
             {emp.description}
@@ -185,8 +193,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
         <div ref={bottom} />
       </div>
 
-      <div style={{ padding: "0 32px 24px 32px", display: "flex", flexDirection: "column", gap: 12, maxWidth: 900, boxSizing: "border-box", width: "100%", position: "sticky", bottom: 0, background: "#f8fafb", paddingTop: 12 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="ld-composer" style={{ padding: "0 32px 24px 32px", display: "flex", flexDirection: "column", gap: 12, maxWidth: 900, boxSizing: "border-box", width: "100%", position: "sticky", bottom: 0, background: "#f8fafb", paddingTop: 12 }}>
+        <div className="ld-sugs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(SUGGESTIONS[emp.kind as Kind] ?? []).map((s) => (
             <button key={s} type="button" className="ld-sug" onClick={() => (s.startsWith("Paste") ? setText("") : submit(s))} disabled={send.isPending}>
               {s}
@@ -251,7 +259,14 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   const skip = trpc.opps.skip.useMutation({ onSuccess: () => { setDone("Skipped"); utils.opps.invalidate(); } });
   const submit = trpc.applications.submit.useMutation({ onSuccess: () => { setDone("Approved"); utils.applications.invalidate(); } });
   const answer = trpc.applications.answer.useMutation({ onSuccess: (_r, v) => { setDone(v.answer); utils.applications.invalidate(); } });
-  const err = start.error || skip.error || submit.error || answer.error;
+  const move = trpc.hiring.move.useMutation({
+    onSuccess: (_r, v) => {
+      setDone(v.stage === "interview" ? "Moved to Interview" : v.stage === "hold" ? "On hold" : "Passed");
+      utils.hiring.people.invalidate();
+      utils.publishing.listApprovalQueue.invalidate();
+    },
+  });
+  const err = start.error || skip.error || submit.error || answer.error || move.error;
 
   if (card.type === "question") {
     return (
@@ -301,12 +316,31 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   } else if (card.type === "submitted") {
     pill = <span className="ld-pill green">Submitted</span>;
     actions = <Link href={`${base}/app/${card.id}`} className="ld-btn">Open</Link>;
+  } else if (card.type === "prospect") {
+    pill = <span className={`ld-pill ${(card.score ?? 0) >= 60 ? "green" : "gray"}`}>{`Fit · ${card.score ?? 0}`}</span>;
+    actions = (
+      <>
+        <Link href={`${base}/work?tab=outreach`} className="ld-btn p">Reach out</Link>
+        <button type="button" className="ld-btn" disabled={move.isPending} onClick={() => move.mutate({ organizationId: currentOrgId, id: card.id, stage: "passed" })}>Pass</button>
+      </>
+    );
+  } else if (card.type === "candidate") {
+    pill = <span className={`ld-pill ${(card.score ?? 0) >= 60 ? "green" : "gray"}`}>{card.score ?? 0}</span>;
+    actions =
+      card.status === "new" ? (
+        <>
+          <button type="button" className="ld-btn p" disabled={move.isPending} onClick={() => move.mutate({ organizationId: currentOrgId, id: card.id, stage: "interview" })}>Interview</button>
+          <button type="button" className="ld-btn" disabled={move.isPending} onClick={() => move.mutate({ organizationId: currentOrgId, id: card.id, stage: "hold" })}>Hold</button>
+        </>
+      ) : (
+        <Link href={`${base}/work?tab=candidates`} className="ld-btn">Open</Link>
+      );
   } else if (card.type === "post" || card.type === "article" || card.type === "reply") actions = <Link href="/approvals" className="ld-btn p">Review</Link>;
   else if (card.type === "page" || card.type === "video") actions = <Link href={`${base}/work`} className="ld-btn">Open plan</Link>;
   else actions = <Link href={`${base}/work`} className="ld-btn">Open</Link>;
 
   return (
-    <div className="ld-card" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: card.imageUrl ? "96px minmax(0, 1fr) 128px" : "minmax(0, 1fr) 128px", gap: 16, alignItems: "start" }}>
+    <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: card.imageUrl ? "96px minmax(0, 1fr) 128px" : "minmax(0, 1fr) 128px", gap: 16, alignItems: "start" }}>
       {card.imageUrl && <img src={card.imageUrl} alt="" style={{ width: 96, height: 120, objectFit: "cover", borderRadius: 8 }} />}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
         <div className="ld-row" style={{ gap: 10, flexWrap: "wrap" }}>

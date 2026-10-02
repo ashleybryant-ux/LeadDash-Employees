@@ -30,6 +30,11 @@ import {
   employeeQuestions,
   registrations,
   portalLogins,
+  pushSubscriptions,
+  hrRoles,
+  hrPeople,
+  hrTeamItems,
+  type HrStage,
   type InsertOpportunity,
   type InsertApplication,
   type RegistrationKind,
@@ -49,9 +54,17 @@ import {
   type WorkItemKind,
   type Provider,
 } from "../drizzle/schema";
+import { EventEmitter } from "node:events";
 import { ENV } from "./_core/env";
 
 type DB = BetterSQLite3Database<typeof schema>;
+
+/**
+ * Things worth telling someone about. server/notify.ts listens and sends push
+ * notices and emails; keeping it an event here avoids db importing notify.
+ */
+export const dbEvents = new EventEmitter();
+
 
 let _db: DB | null = null;
 let _sqlite: Database.Database | null = null;
@@ -545,6 +558,7 @@ export async function getOutboundItemForOrg(id: number, orgId: number) {
 
 export async function createOutboundItem(item: InsertOutboundItem) {
   const rows = getDb().insert(outboundItems).values(item).returning().all();
+  if (rows[0]?.status === "pending_approval") dbEvents.emit("approval", rows[0]);
   return rows[0];
 }
 
@@ -812,12 +826,15 @@ export async function createApplication(item: InsertApplication) {
 }
 
 export async function updateApplication(id: number, orgId: number, data: Partial<InsertApplication>) {
+  const before = data.status === "ready" ? await getApplication(id, orgId) : null;
   getDb()
     .update(applications)
     .set(data)
     .where(and(eq(applications.id, id), eq(applications.organizationId, orgId)))
     .run();
-  return getApplication(id, orgId);
+  const after = await getApplication(id, orgId);
+  if (after && data.status === "ready" && before?.status !== "ready") dbEvents.emit("application_ready", after);
+  return after;
 }
 
 /** Applications left "writing" by a restart are marked so they can be resumed. */
@@ -1072,4 +1089,121 @@ export async function listTaskRuns(orgId: number, limit = 50) {
     .orderBy(desc(taskRuns.id))
     .limit(limit)
     .all();
+}
+
+// ==========================================
+// Push notifications
+// ==========================================
+
+export async function listPushSubscriptions(userIds: number[]) {
+  if (userIds.length === 0) return [];
+  return getDb().select().from(pushSubscriptions).where(inArray(pushSubscriptions.userId, userIds)).all();
+}
+
+export async function savePushSubscription(row: typeof pushSubscriptions.$inferInsert) {
+  const existing = getDb().select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, row.endpoint)).limit(1).all()[0];
+  if (existing) {
+    getDb().update(pushSubscriptions).set({ userId: row.userId, p256dh: row.p256dh, auth: row.auth, device: row.device }).where(eq(pushSubscriptions.id, existing.id)).run();
+    return { ...existing, ...row };
+  }
+  return getDb().insert(pushSubscriptions).values(row).returning().all()[0];
+}
+
+export async function deletePushSubscription(id: number, userId: number) {
+  getDb().delete(pushSubscriptions).where(and(eq(pushSubscriptions.id, id), eq(pushSubscriptions.userId, userId))).run();
+}
+
+export async function deletePushEndpoint(endpoint: string) {
+  getDb().delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint)).run();
+}
+
+export async function touchPushSubscription(id: number) {
+  getDb().update(pushSubscriptions).set({ lastSentAt: new Date() }).where(eq(pushSubscriptions.id, id)).run();
+}
+
+/** Everyone who should hear about a workspace: its team plus LeadDash staff. */
+export async function notifyRecipients(orgId: number) {
+  const members = getDb().select().from(organizationMembers).where(eq(organizationMembers.organizationId, orgId)).all();
+  const staff = getDb().select().from(users).where(eq(users.role, "admin")).all();
+  const ids = Array.from(new Set([...members.map((m) => m.userId), ...staff.map((u) => u.id)]));
+  return getUsersByIds(ids);
+}
+
+// ==========================================
+// Hiring (Quinn)
+// ==========================================
+
+export async function listHrRoles(orgId: number) {
+  return getDb().select().from(hrRoles).where(eq(hrRoles.organizationId, orgId)).orderBy(desc(hrRoles.id)).all();
+}
+
+export async function getHrRole(id: number, orgId: number) {
+  return getDb().select().from(hrRoles).where(and(eq(hrRoles.id, id), eq(hrRoles.organizationId, orgId))).limit(1).all()[0] || null;
+}
+
+export async function createHrRole(row: typeof hrRoles.$inferInsert) {
+  return getDb().insert(hrRoles).values(row).returning().all()[0];
+}
+
+export async function updateHrRole(id: number, orgId: number, data: Partial<typeof hrRoles.$inferInsert>) {
+  getDb().update(hrRoles).set(data).where(and(eq(hrRoles.id, id), eq(hrRoles.organizationId, orgId))).run();
+  return getHrRole(id, orgId);
+}
+
+export async function listHrPeople(orgId: number, source?: "applicant" | "prospect") {
+  const all = getDb().select().from(hrPeople).where(eq(hrPeople.organizationId, orgId)).orderBy(desc(hrPeople.fitScore), desc(hrPeople.id)).all();
+  return source ? all.filter((p) => p.source === source) : all;
+}
+
+export async function getHrPerson(id: number, orgId: number) {
+  return getDb().select().from(hrPeople).where(and(eq(hrPeople.id, id), eq(hrPeople.organizationId, orgId))).limit(1).all()[0] || null;
+}
+
+export async function createHrPerson(row: typeof hrPeople.$inferInsert) {
+  return getDb().insert(hrPeople).values(row).returning().all()[0];
+}
+
+export async function updateHrPerson(id: number, orgId: number, data: Partial<typeof hrPeople.$inferInsert>) {
+  getDb().update(hrPeople).set(data).where(and(eq(hrPeople.id, id), eq(hrPeople.organizationId, orgId))).run();
+  return getHrPerson(id, orgId);
+}
+
+export async function setHrStage(id: number, orgId: number, stage: HrStage) {
+  return updateHrPerson(id, orgId, { stage });
+}
+
+/** Deletes prospect cards nobody acted on once their 90 days are up (Do not contact stays). */
+export async function purgeHrProspects(now = new Date()) {
+  getDb()
+    .delete(hrPeople)
+    .where(and(eq(hrPeople.source, "prospect"), inArray(hrPeople.stage, ["prospect", "contacted", "passed"]), lt(hrPeople.purgeAt, now)))
+    .run();
+}
+
+export async function listHrTeamItems(orgId: number) {
+  return getDb().select().from(hrTeamItems).where(eq(hrTeamItems.organizationId, orgId)).orderBy(hrTeamItems.id).all();
+}
+
+export async function getHrTeamItem(id: number, orgId: number) {
+  return getDb().select().from(hrTeamItems).where(and(eq(hrTeamItems.id, id), eq(hrTeamItems.organizationId, orgId))).limit(1).all()[0] || null;
+}
+
+export async function saveHrTeamItem(orgId: number, data: { id?: number; person: string; item: string; due: string | null; progress: string | null }) {
+  if (data.id) {
+    getDb().update(hrTeamItems).set({ person: data.person, item: data.item, due: data.due, progress: data.progress }).where(and(eq(hrTeamItems.id, data.id), eq(hrTeamItems.organizationId, orgId))).run();
+    return getHrTeamItem(data.id, orgId);
+  }
+  return getDb().insert(hrTeamItems).values({ organizationId: orgId, person: data.person, item: data.item, due: data.due, progress: data.progress }).returning().all()[0];
+}
+
+export async function deleteHrTeamItem(id: number, orgId: number) {
+  getDb().delete(hrTeamItems).where(and(eq(hrTeamItems.id, id), eq(hrTeamItems.organizationId, orgId))).run();
+}
+
+export async function markHrTeamItemReminded(id: number, orgId: number) {
+  getDb().update(hrTeamItems).set({ lastRemindedAt: new Date() }).where(and(eq(hrTeamItems.id, id), eq(hrTeamItems.organizationId, orgId))).run();
+}
+
+export async function listAllOrganizationIds() {
+  return getDb().select({ id: organizations.id }).from(organizations).all().map((r) => r.id);
 }

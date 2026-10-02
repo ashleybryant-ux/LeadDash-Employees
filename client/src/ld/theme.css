@@ -92,3 +92,78 @@
 .ld-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 999px; background: #5b6b64; margin-right: 4px; animation: ld-pulse 1.2s infinite; }
 .ld-dots span:nth-child(2) { animation-delay: 0.2s; }
 .ld-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+/* Fixed-choice buttons in editors (pick one or several). */
+.ld-chip { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid #cfd9d4; background: #fff; font: inherit; font-size: 13px; font-weight: 700; color: #14221c; cursor: pointer; white-space: nowrap; }
+.ld-chip:hover { background: #f4f8f6; }
+.ld-chip.on { background: #e6f2ec; border-color: #1b6b4a; color: #155c3e; }
+.ld-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+/* ==========================================
+ * Phone layout (760px and narrower)
+ * The rail becomes a bottom bar, the chat list and a chat are separate
+ * screens, and every table row stacks so nothing scrolls sideways.
+ * ========================================== */
+.ld-bottomnav { display: none; }
+.ld-mobile-only { display: none !important; }
+
+@media (max-width: 760px) {
+  .ld { flex-direction: column; min-height: 100dvh; }
+  .ld-rail { display: none !important; }
+  .ld-mobile-only { display: flex !important; }
+
+  .ld-bottomnav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    background: #12211d; justify-content: space-around; align-items: center;
+    padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+  }
+  .ld-bn-item { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; color: #a9c0b6 !important; text-decoration: none; min-width: 64px; }
+  .ld-bn-item.on { color: #fff !important; }
+  .ld-bn-badge { position: absolute; top: -4px; right: -10px; background: #e88a3a; color: #1a1209; font-size: 10px; font-weight: 800; border-radius: 999px; padding: 0 5px; line-height: 16px; }
+
+  /* Chats: list and conversation are separate screens. */
+  .ld-chatlist { width: 100% !important; height: auto !important; position: static !important; border-right: 0 !important; padding-bottom: 84px; min-height: 100dvh; }
+  .ld.has-emp .ld-chatlist { display: none !important; }
+  .ld.list-only .ld-chatmain { display: none !important; }
+  .ld-chatmain { min-height: 100dvh !important; }
+
+  .ld-emphead { height: auto !important; flex-wrap: wrap; padding: 10px 12px !important; gap: 8px !important; padding-top: calc(10px + env(safe-area-inset-top)) !important; }
+  .ld-emphead-who { flex: 1; min-width: 0; }
+  .ld-emptabs { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .ld-emptabs::-webkit-scrollbar { display: none; }
+  .ld-emptabs a { flex-shrink: 0; padding: 0 12px !important; }
+  .ld-emphead-status .ld-pill { display: none; }
+
+  .ld-chatmsgs { padding: 16px 14px !important; gap: 18px !important; }
+  .ld-composer { padding: 10px 12px calc(12px + env(safe-area-inset-bottom)) !important; }
+  .ld-sugs { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; }
+  .ld-sugs::-webkit-scrollbar { display: none; }
+  .ld-resultcard { grid-template-columns: minmax(0, 1fr) !important; }
+  .ld-resultcard > div:last-child { flex-direction: row !important; flex-wrap: wrap; }
+  .ld-resultcard .ld-btn { flex: 1; width: auto; min-width: 120px; }
+
+  /* Pages */
+  .ld-main { padding: 16px 14px 96px 14px !important; max-width: none !important; gap: 16px; }
+  .ld-h1 { font-size: 22px; }
+  .ld-tabs, .ld-ftabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .ld-tabs::-webkit-scrollbar, .ld-ftabs::-webkit-scrollbar { display: none; }
+  .ld-tab, .ld-ft { flex-shrink: 0; }
+  .ld-ftbody { border-radius: 0 0 12px 12px; }
+
+  /* Tables stack: header hidden, first cell full width, the rest two across. */
+  .ld-hd { display: none !important; }
+  .ld-main .ld-rw[style] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; gap: 8px 10px; padding: 14px; }
+  .ld-main .ld-rw > :not(.ld-btn) { grid-column: 1 / -1; }
+  .ld-main .ld-rw .ld-btn { width: 100%; }
+  .ld-main .ld-rw > span:empty { display: none; }
+  .ld-main .ld-expand[style] { display: flex !important; flex-direction: column; gap: 16px !important; padding: 4px 14px 18px 14px; }
+  .ld-main [style*="grid-template-columns"]:not(.ld-rw):not(.ld-keep) { grid-template-columns: minmax(0, 1fr) !important; }
+  .ld-main .ld-keep.ld-keep-check { grid-template-columns: 84px minmax(0, 1fr) 96px !important; }
+  .ld-kv { grid-template-columns: minmax(0, 1fr) !important; gap: 2px 0; }
+  .ld-kv .ld-k { margin-top: 8px; }
+  .ld-between { flex-wrap: wrap; }
+  .ld-sh { flex-wrap: wrap; }
+
+  .ld-switcher-pop { left: 12px !important; top: 60px !important; }
+  input, select, textarea { font-size: 16px !important; } /* stops iPhone zooming into fields */
+}

@@ -29,6 +29,8 @@ export const users = sqliteTable("users", {
   name: text("name"),
   /** admin = LeadDash staff (support access to every workspace). user = everyone else. */
   role: text("role", { enum: ["user", "admin"] }).notNull().default("user"),
+  /** JSON {event: {push: boolean, email: boolean}} for the "Tell me when" choices. */
+  notifyPrefs: text("notifyPrefs"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
   lastSignedIn: integer("lastSignedIn", { mode: "timestamp" }),
@@ -131,6 +133,7 @@ export const EMPLOYEE_KINDS = [
   "blog",
   "website",
   "video",
+  "hiring",
   "custom",
 ] as const;
 export type EmployeeKind = (typeof EMPLOYEE_KINDS)[number];
@@ -156,6 +159,11 @@ export const aiEmployees = sqliteTable(
     systemPrompt: text("systemPrompt"),
     /** JSON {focus, avoid, signAs}: the three Guidelines fields. */
     guidelines: text("guidelines"),
+    /** JSON {questionKey: answer}: the Onboarding answers. */
+    onboarding: text("onboarding"),
+    /** JSON [{when, what}]: "A day with" this employee, written from the answers. */
+    dayToDay: text("dayToDay"),
+    onboardedAt: integer("onboardedAt", { mode: "timestamp" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -393,7 +401,7 @@ export const externalConnections = sqliteTable(
 export type ExternalConnection = typeof externalConnections.$inferSelect;
 export type InsertExternalConnection = typeof externalConnections.$inferInsert;
 
-export const OUTBOUND_KINDS = ["email_draft", "calendar_hold", "social_post", "blog_post", "speaking_pitch"] as const;
+export const OUTBOUND_KINDS = ["email_draft", "calendar_hold", "social_post", "blog_post", "speaking_pitch", "hiring_email"] as const;
 export type OutboundKind = (typeof OUTBOUND_KINDS)[number];
 
 export const outboundItems = sqliteTable(
@@ -504,6 +512,8 @@ export const scheduledTasks = sqliteTable(
     /** For "once": the local date "YYYY-MM-DD". */
     onDate: text("onDate"),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    /** How the person hears about each run: a push notice, an email, or only the chat. */
+    notify: text("notify", { enum: ["push", "email", "chat"] }).notNull().default("chat"),
     nextRunAt: integer("nextRunAt", { mode: "timestamp" }),
     lastRunAt: integer("lastRunAt", { mode: "timestamp" }),
     lastStatus: text("lastStatus", { enum: ["ok", "failed"] }),
@@ -727,3 +737,128 @@ export const portalLogins = sqliteTable(
 );
 
 export type PortalLogin = typeof portalLogins.$inferSelect;
+
+// ==========================================
+// Push notifications
+// ==========================================
+
+/** One row per browser or phone that turned on push. */
+export const pushSubscriptions = sqliteTable(
+  "push_subscriptions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("userId").notNull(),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    /** "iPhone", "Chrome on Mac"... from the browser. */
+    device: text("device").notNull(),
+    lastSentAt: integer("lastSentAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("push_subscriptions_user_idx").on(t.userId)]
+);
+
+export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
+
+// ==========================================
+// Hiring (Quinn)
+// ==========================================
+
+export const hrRoles = sqliteTable(
+  "hr_roles",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    title: text("title").notNull(),
+    employment: text("employment", { enum: ["w2", "1099"] }).notNull().default("w2"),
+    hours: text("hours", { enum: ["full", "part"] }).notNull().default("full"),
+    place: text("place", { enum: ["in_person", "telehealth", "both"] }).notNull().default("both"),
+    payFrom: text("payFrom"),
+    payTo: text("payTo"),
+    /** JSON string[]: LPC, LMFT, LCSW, Licensed candidate, LADC... */
+    licenses: text("licenses").notNull().default("[]"),
+    mustHave: text("mustHave"),
+    niceToHave: text("niceToHave"),
+    /** The job post Quinn wrote. */
+    post: text("post"),
+    /** JSON [{name, status, url}]: where the post goes. */
+    targets: text("targets").notNull().default("[]"),
+    status: text("status", { enum: ["open", "closed"] }).notNull().default("open"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("hr_roles_org_idx").on(t.organizationId)]
+);
+
+export type HrRole = typeof hrRoles.$inferSelect;
+
+export const HR_STAGES = ["prospect", "contacted", "replied", "dnc", "new", "interview", "hold", "offer", "passed", "hired"] as const;
+export type HrStage = (typeof HR_STAGES)[number];
+
+/** Applicants and outreach prospects. Prospects hold work facts only. */
+export const hrPeople = sqliteTable(
+  "hr_people",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    roleId: integer("roleId"),
+    source: text("source", { enum: ["applicant", "prospect"] }).notNull(),
+    stage: text("stage", { enum: HR_STAGES }).notNull(),
+    name: text("name").notNull(),
+    /** "LPC", "LMFT, LADC"... */
+    credentials: text("credentials"),
+    currentRole: text("currentRole"),
+    location: text("location"),
+    /** "LinkedIn", "Practice team page"... */
+    foundOn: text("foundOn"),
+    sourceUrl: text("sourceUrl"),
+    /** A work email: from the applicant, or published on the person's practice site. */
+    email: text("email"),
+    resumeUrl: text("resumeUrl"),
+    resumeText: text("resumeText"),
+    fitScore: integer("fitScore").notNull().default(0),
+    fitReason: text("fitReason"),
+    /** JSON [{item, met: "yes"|"no"|"unknown", kind: "must"|"nice"}]. */
+    mustHaves: text("mustHaves").notNull().default("[]"),
+    /** JSON [{name, detail, status: "clear"|"flag"|"manual"|"needs_setup", url, checkedAt}]. */
+    checks: text("checks").notNull().default("[]"),
+    /** The outreach message Quinn drafted. */
+    message: text("message"),
+    contactedAt: integer("contactedAt", { mode: "timestamp" }),
+    followUpAt: integer("followUpAt", { mode: "timestamp" }),
+    appliedOn: text("appliedOn"),
+    /** MM/DD/YYYY. */
+    startDate: text("startDate"),
+    /** JSON {paperwork: [{item, detail, status}], credentialing: [...]} once hired. */
+    onboarding: text("onboarding"),
+    /** Prospects nobody acted on are deleted after this. */
+    purgeAt: integer("purgeAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("hr_people_org_idx").on(t.organizationId)]
+);
+
+export type HrPerson = typeof hrPeople.$inferSelect;
+
+/** Team expirations and hour counts: licenses, CE, supervision, CPR... */
+export const hrTeamItems = sqliteTable(
+  "hr_team_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    person: text("person").notNull(),
+    item: text("item").notNull(),
+    /** MM/DD/YYYY, or "" for hour counts. */
+    due: text("due"),
+    /** "1,240 of 3,000 hours", "12 of 20 CE hours"... */
+    progress: text("progress"),
+    lastRemindedAt: integer("lastRemindedAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("hr_team_items_org_idx").on(t.organizationId)]
+);
+
+export type HrTeamItem = typeof hrTeamItems.$inferSelect;

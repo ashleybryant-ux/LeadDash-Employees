@@ -14,11 +14,15 @@ import { startScheduler } from "../employees/runner";
 import { registerUploads } from "../uploads";
 import { ensureIndexed } from "../employees/kb";
 import { markStuckApplications } from "../db";
+import { ensureAllRosters } from "../employees/roster-sync";
+import { pushReady, startNotifications } from "../notify";
 
 async function startServer() {
   // Open the database and run any pending migrations before taking traffic.
   getDb();
   await markStuckApplications();
+  await ensureAllRosters();
+  startNotifications();
   ensureIndexed().catch((err) => console.error("[knowledge] indexing failed:", err));
 
   const app = express();
@@ -58,7 +62,7 @@ async function startServer() {
   });
 
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey() });
+    res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey(), push: pushReady() });
   });
 
   // Stored files (W-9s, licenses, RFPs, videos, downloads, images). Keys are
