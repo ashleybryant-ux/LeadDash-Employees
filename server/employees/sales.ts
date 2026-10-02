@@ -10,6 +10,7 @@ import { afterSent, localParts, postNow } from "../social";
 import { partsIn, zonedToUtc } from "./schedule";
 import { actor, employeeFor, systemPromptFor, withRealSource, working } from "./tasks";
 import { gate, handoff, logActivity, workLink } from "./team";
+import { NPI_HOST, npiKinds, npiPractices, parseArea, type NpiPractice } from "./npi";
 
 /**
  * The sales team.
@@ -102,6 +103,17 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
   const { settings } = await salesSettings(orgId);
   const referral = settings.sells === "therapy";
   const result = await working(emp, async () => {
+    // Start from licensed practices in the federal NPI Registry when the area names a state.
+    const org = await db.getOrganizationById(orgId);
+    const places = parseArea(opts.focus || settings.area || (referral ? org?.state ?? "" : ""));
+    const known = await db.listProspects(orgId);
+    const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const npi: NpiPractice[] = (await npiPractices(places, npiKinds(settings.sells, settings.partnerTypes), 60).catch(() => [] as NpiPractice[]))
+      .filter((c) => !known.some((p) => normName(p.name) === normName(c.name)))
+      .slice(0, 30);
+    const npiList = npi.length
+      ? `\n\nStart from these licensed ${referral ? "offices" : "practices"} from the federal NPI Registry (name | city | phone | authorized official | specialty | NPI page). Pick the best fits, find each one's own website, and get the email from it:\n${npi.map((c) => `- ${c.name} | ${c.city} | ${c.phone || "no phone"} | ${[c.official, c.officialTitle].filter(Boolean).join(", ") || "no official listed"} | ${c.specialty} | ${c.url}`).join("\n")}\nIf you cannot find a practice's website, you may still return it with its NPI page as sourceUrl and its NPI phone.`
+      : "";
     const { system, brain } = await systemPromptFor(
       emp,
       referral
@@ -111,12 +123,13 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
 - Score fit 0 to 100: how likely they see people this practice serves. Say why in one sentence using something real from their page.
 - Return up to 10, best first.`
         : `Your job: find businesses that could buy what this workspace sells, from its Brain.
-- Search one angle at a time: group practice and clinic sites with "Our team" pages, therapist directories, state licensing lookups, practices posting job openings.
-- For each: the business name, city, the owner or decision maker and their title, a work email and phone only if printed on their own site (otherwise ""), its website, which page you found it on and that page's URL, and its size (how many clinicians) if stated.
+- Search one angle at a time: group practice and clinic sites with "Our team" pages, therapist directories, the state licensing board's license lookup (for example the Texas Behavioral Health Executive Council or the Oklahoma LPC board), practices posting job openings.
+- Check the owner on the state licensing board's lookup when you can, and say in foundOn which sources you used (for example "NPI Registry, Texas BHEC license lookup, practice website").
+- For each: the business name, city, the owner or decision maker and their title, a work email and phone only if printed on their own site or in the NPI Registry (otherwise ""), its website, which page you found it on and that page's URL, and its size (how many clinicians) if stated.
 - Score fit 0 to 100 against what the workspace sells. Say why in one sentence using something real from their page (books by phone only, hiring, takes insurance...).
 - Return up to 10, best first.`
     );
-    const prompt = `${referral ? `Area: ${settings.area || brain.org?.state || "near the practice"}` : `Area: ${opts.focus ? "" : settings.area || "the United States"}`}${opts.focus ? `\nFocus on: ${opts.focus}` : ""}`;
+    const prompt = `${referral ? `Area: ${settings.area || brain.org?.state || "near the practice"}` : `Area: ${opts.focus ? "" : settings.area || "the United States"}`}${opts.focus ? `\nFocus on: ${opts.focus}` : ""}${npiList}`;
     const res = await searchJson<{ items: Found[] }>({
       system,
       prompt,
@@ -125,10 +138,16 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
       maxUses: Math.max(ENV.searchMaxUses, 10),
     });
     const existing = await db.listProspects(orgId);
-    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const norm = normName;
     const created: SalesProspect[] = [];
-    for (const f of withRealSource(res.data.items, res.sources)) {
-      if (!f.name?.trim() || existing.some((p) => norm(p.name) === norm(f.name))) continue;
+    const sources = npi.length ? [...res.sources, { url: `${NPI_HOST}/` }] : res.sources;
+    for (const found of withRealSource(res.data.items, sources)) {
+      if (!found.name?.trim() || existing.some((p) => norm(p.name) === norm(found.name))) continue;
+      // Fill what the website did not show from the practice's NPI Registry record.
+      const n = npi.find((c) => norm(c.name) === norm(found.name) || (found.sourceUrl ?? "").includes(c.npi));
+      const f = n
+        ? { ...found, city: found.city || n.city, phone: found.phone || n.phone, contactName: found.contactName || n.official, contactTitle: found.contactTitle || n.officialTitle, foundOn: found.foundOn || "NPI Registry" }
+        : found;
       const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email ?? "") ? f.email.trim() : null;
       created.push(
         await db.createProspect({
@@ -146,11 +165,11 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
           sourceUrl: f.sourceUrl,
           fitScore: Math.max(0, Math.min(100, Math.round(f.fitScore || 0))),
           fitReason: f.fitReason?.slice(0, 600) || null,
-          details: JSON.stringify({ size: f.size || "", partnerType: f.partnerType || "" }),
+          details: JSON.stringify({ size: f.size || "", partnerType: f.partnerType || "", ...(n ? { npi: n.npi, specialty: n.specialty } : {}) }),
         })
       );
     }
-    await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: "Searched for prospects", details: `Ran ${res.queries.length} searches and added ${created.length}.` });
+    await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: "Searched for prospects", details: `Ran ${res.queries.length} searches${npi.length ? ` from ${npi.length} NPI Registry practices` : ""} and added ${created.length}.` });
     return { created: created.sort((a, b) => b.fitScore - a.fitScore), queries: res.queries };
   });
 
