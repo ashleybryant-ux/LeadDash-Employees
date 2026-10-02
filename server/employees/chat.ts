@@ -106,6 +106,12 @@ function transcript(history: ChatMessage[]) {
 
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
+function worth(n: number, total: number) {
+  if (n === 0) return total === 1 ? "It scored under 60, so I marked it Skip. You can still apply from the card." : "None scored 60 or higher, so I marked them Skip. You can still apply to any of them.";
+  if (n === total) return total === 1 ? "It is worth applying to." : `All ${n} are worth applying to.`;
+  return `${n} ${n === 1 ? "is" : "are"} worth applying to.`;
+}
+
 async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; cards: ChatCard[]; queries: string[] }> {
   const org = emp.organizationId;
   switch (d.action) {
@@ -117,7 +123,7 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       const cards: ChatCard[] = r.created.map(oppCard);
       const thing = { grant: "open grant", pitch: "pitch competition", accelerator: "accelerator program", speaking: "event taking proposals" }[r.kind];
       let text = r.created.length
-        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, `new ${thing}`)}. ${r.created.filter((o) => o.fitCall === "apply").length} are worth applying to.`
+        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, `new ${thing}`)}. ${worth(r.created.filter((o) => o.fitCall === "apply").length, r.created.length)}`
         : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find new ones beyond what's already on Opportunities.`;
       if (d.action === "find_and_apply") {
         const best = r.created.filter((o) => o.fitCall === "apply" && o.fitScore >= 75).sort((a, b) => b.fitScore - a.fitScore).slice(0, 2);

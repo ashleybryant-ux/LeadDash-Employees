@@ -827,6 +827,8 @@ export async function markStuckApplications() {
     .set({ status: "error", errorNote: "The server restarted while this was being written. Press Write again." })
     .where(eq(applications.status, "writing"))
     .run();
+  // "Apply" needs a score of 60 or more (older searches could label a 52 as Apply).
+  getDb().update(opportunities).set({ fitCall: "skip" }).where(and(eq(opportunities.fitCall, "apply"), lt(opportunities.fitScore, 60))).run();
 }
 
 // ==========================================

@@ -252,15 +252,25 @@ const FIND_JOB: Record<OppKind, string> = {
 - Read the legal entity in the Brain. Most foundation grants fund 501(c)(3) nonprofits only. For a for-profit, mark a nonprofit-only grant "partner" if it allows a nonprofit lead applicant with the business as a partner or contractor, otherwise "skip". Government contracts and small-business programs often accept for-profits.
 - Leave out anything whose deadline has passed. Prefer funders in the workspace's state, then national programs.`,
   pitch: `Your job: find startup pitch competitions taking applications now that fit this company.
-- Note the prize, whether equity is taken, the company stage required, the region, and pitch day.
+- Search widely, one angle per search: the company's state and city (state innovation agencies, universities, chambers, startup weeks), its region, its sector (health tech, software, SaaS), founder-focused competitions (women founders, Black founders, veteran founders) when the Brain says the founder qualifies, corporate and bank-sponsored competitions, and national virtual competitions.
+- Rolling or monthly competitions count. Include ones whose application opens soon if the date is posted.
+- Note the prize, whether equity is taken, the company stage required, the region, the entry fee, and pitch day.
 - Leave out competitions whose deadline has passed or whose stage or region rules exclude the company.`,
   accelerator: `Your job: find accelerator and incubator programs taking applications now that fit this company.
+- Search widely, one angle per search: the company's state and region, its sector (health tech, software, SaaS), founder-focused programs when the Brain says the founder qualifies, corporate programs, and remote national programs.
+- Rolling admissions count.
 - Note investment or stipend, equity taken, stage required, location, and program dates.
 - Leave out programs whose deadline has passed or that exclude the company's stage, sector or region.`,
   speaking: `Your job: find conferences, summits and events taking speaker proposals now that fit the speaker in the Brain.
 - Only events with an open call for proposals, speaker application, or a booking contact. Leave out events whose proposal deadline has passed.
 - Note what the slot pays, the audience, location and event date, and the session this speaker should pitch.`,
 };
+
+/** "Apply" needs a score of 60 or more, so the label and the number always agree. */
+function callFor(call: string, score: number): "apply" | "partner" | "skip" {
+  if (call === "skip" || call === "partner") return call;
+  return Math.round(score || 0) >= 60 ? "apply" : "skip";
+}
 
 /** Federal listings from the Grants.gov search API (no key needed). Failures are ignored. */
 async function grantsGovListings(keyword: string) {
@@ -295,8 +305,9 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
     const { system, brain } = await systemPromptFor(
       emp,
       `${FIND_JOB[kind]}
-- Score each one 0 to 100 for fit (eligibility first, then fit with the workspace's work, award size compared to effort, competition, time left). Mark it "apply", "partner" or "skip" and say why in one or two sentences.
-- Return 3 to 6, best fit first. If you find fewer real ones, return fewer.`
+- Score each one 0 to 100 for fit (eligibility first, then fit with the workspace's work, award size compared to effort, competition, time left). Mark it "apply" only when the score is 60 or higher. Below 60, mark it "skip", or "partner" when a partner could lead. Say why in one or two sentences.
+- A request for "this quarter" or "this month" means deadlines in that window; still include rolling ones.
+- Return up to 8, best fit first. Include lower scores too so the person sees what is out there. If you find fewer real ones, return fewer.`
     );
     const federal =
       kind === "grant" ? await grantsGovListings(opts.focus || brain.org?.focusAreas?.split(/[,;\n]/)[0] || brain.org?.description?.slice(0, 60) || "behavioral health") : [];
@@ -305,7 +316,7 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
         ? `\n\nOpen federal listings from Grants.gov to check (include any that fit, with this URL as the source):\n${federal.map((f) => `- ${f.title} (${f.agency}, ${f.number}, closes ${f.closeDate || "not listed"}): ${f.url}`).join("\n")}`
         : ""
     }`;
-    const result = await searchJson<{ items: Found[] }>({ system, prompt, schemaName: "opportunities", schema: FOUND_SCHEMA });
+    const result = await searchJson<{ items: Found[] }>({ system, prompt, schemaName: "opportunities", schema: FOUND_SCHEMA, maxUses: Math.max(ENV.searchMaxUses, 10) });
     const sources = [...result.sources, ...federal.map((f) => ({ url: f.url, title: f.title }))];
     const existing = await db.listOpps(orgId);
     const created: Opportunity[] = [];
@@ -332,7 +343,7 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
           angle: f.angle || null,
           summary: f.summary || null,
           fitScore: Math.max(0, Math.min(100, Math.round(f.fitScore || 0))),
-          fitCall: f.fitCall === "skip" || f.fitCall === "partner" ? f.fitCall : "apply",
+          fitCall: callFor(f.fitCall, f.fitScore),
           fitReason: f.fitReason || null,
           searchQueries: JSON.stringify(result.queries),
         })
@@ -409,7 +420,7 @@ Use only what the text says; use "" for anything it does not state.`
     angle: details.angle || null,
     summary: details.summary || null,
     fitScore: Math.max(0, Math.min(100, Math.round(details.fitScore || 0))),
-    fitCall: details.fitCall === "skip" || details.fitCall === "partner" ? details.fitCall : "apply",
+    fitCall: callFor(details.fitCall, details.fitScore),
     fitReason: details.fitReason || null,
   });
   if (input.file) {
