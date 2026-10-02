@@ -32,7 +32,7 @@ export default function SignIn() {
   const busy = requestCode.isPending || verifyCode.isPending;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFB] text-[#14221c] flex items-center justify-center px-4 py-10" style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
+    <div className="min-h-screen bg-[#F8FAFB] text-[#14221c] flex flex-col items-center justify-center gap-4 px-4 py-10" style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
       <div className="w-full max-w-[400px] bg-white border border-[#e3e9e6] rounded-2xl p-8 flex flex-col gap-[18px]">
         <div className="flex items-center gap-2.5">
           <div className="h-[34px] w-[34px] rounded-[9px] bg-[#12211d] text-white font-extrabold text-sm flex items-center justify-center">LD</div>
@@ -119,6 +119,11 @@ export default function SignIn() {
           </form>
         )}
       </div>
+      <nav aria-label="About LeadDash Employees" className="flex gap-5 text-[13px] font-bold">
+        <a href="/about" className="text-[#3d4c45] no-underline hover:underline">About</a>
+        <a href="/privacy" className="text-[#3d4c45] no-underline hover:underline">Privacy</a>
+        <a href="/terms" className="text-[#3d4c45] no-underline hover:underline">Terms</a>
+      </nav>
     </div>
   );
 }

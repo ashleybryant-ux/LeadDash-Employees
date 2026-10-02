@@ -48,6 +48,10 @@ Every employee has an Onboarding tab: fixed-choice questions about what the owne
 
 LeadDash staff see an App review access card on My account. While it is on and before its end date, the review email (review@leaddash.io by default) signs in on the normal sign-in page with the fixed 6-digit code shown on the card; no email is sent. The reviewer only reaches the Demo practice workspace (sample data, made on first use), cannot change its team, and sees a bar across the top. Turning it off, a new code, or the end date signs the reviewer out; turning it off or the end date also disconnects anything they connected. Ten wrong codes lock it for 15 minutes.
 
+## Public pages
+
+`/about`, `/privacy` and `/terms` are plain HTML from `server/public-pages.ts`, open without signing in. `/about` is the App home page listed in Google's and Meta's app settings. Change the policy text there, and update the effective date when you do.
+
 ## Phones and push notifications
 
 The layout switches to a bottom bar under 760px. The app is installable (manifest, icons, `client/public/sw.js`). Push uses Web Push with VAPID keys (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`); each person turns push on per device under My account and picks what they hear about. On iPhone, push works only from the app added to the Home Screen (iOS 16.4 and later).

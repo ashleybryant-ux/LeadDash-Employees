@@ -17,6 +17,7 @@ import { markStuckApplications } from "../db";
 import { ensureAllRosters } from "../employees/roster-sync";
 import { pushReady, startNotifications } from "../notify";
 import { readyApps, registerOAuth } from "../integrations";
+import { registerPublicPages } from "../public-pages";
 
 async function startServer() {
   // Open the database and run any pending migrations before taking traffic.
@@ -87,6 +88,7 @@ async function startServer() {
 
   // One-click connections (Google, LinkedIn, Meta, X) and signed image links for Meta.
   registerOAuth(app);
+  registerPublicPages(app);
 
   app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
 
