@@ -46,9 +46,14 @@ export type SalesSettings = {
   hoursFrom: string; // "09:00"
   hoursTo: string; // "16:00"
   days: number[]; // 0-6
+  linkedin: LinkedInSettings;
 };
 
-const DEFAULTS: Omit<SalesSettings, "token"> = { sells: "therapy", partnerTypes: ["Schools", "Pediatric offices"], area: "", meetingMinutes: 30, hoursFrom: "09:00", hoursTo: "16:00", days: [1, 2, 3, 4, 5] };
+/** Jada's LinkedIn step: she finds the owner's profile and writes the note; the owner sends it. */
+export type LinkedInSettings = { on: boolean; when: "next_day" | "same_day"; note: boolean };
+const LINKEDIN_DEFAULTS: LinkedInSettings = { on: true, when: "next_day", note: true };
+
+const DEFAULTS: Omit<SalesSettings, "token"> = { sells: "therapy", partnerTypes: ["Schools", "Pediatric offices"], area: "", meetingMinutes: 30, hoursFrom: "09:00", hoursTo: "16:00", days: [1, 2, 3, 4, 5], linkedin: LINKEDIN_DEFAULTS };
 
 export function readSales(raw: string | null | undefined): SalesSettings {
   let v: Partial<SalesSettings> = {};
@@ -66,6 +71,11 @@ export function readSales(raw: string | null | undefined): SalesSettings {
     hoursFrom: /^\d{2}:\d{2}$/.test(v.hoursFrom ?? "") ? v.hoursFrom! : DEFAULTS.hoursFrom,
     hoursTo: /^\d{2}:\d{2}$/.test(v.hoursTo ?? "") ? v.hoursTo! : DEFAULTS.hoursTo,
     days: Array.isArray(v.days) ? v.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6) : DEFAULTS.days,
+    linkedin: {
+      on: typeof v.linkedin?.on === "boolean" ? v.linkedin.on : LINKEDIN_DEFAULTS.on,
+      when: v.linkedin?.when === "same_day" ? "same_day" : "next_day",
+      note: typeof v.linkedin?.note === "boolean" ? v.linkedin.note : LINKEDIN_DEFAULTS.note,
+    },
   };
 }
 
@@ -96,7 +106,7 @@ export function salesLinks(token: string) {
 // Riley: find prospects
 // ==========================================
 
-type Found = { name: string; city: string; contactName: string; contactTitle: string; email: string; phone: string; website: string; foundOn: string; sourceUrl: string; size: string; partnerType: string; fitScore: number; fitReason: string };
+type Found = { name: string; city: string; contactName: string; contactTitle: string; email: string; phone: string; website: string; foundOn: string; sourceUrl: string; size: string; partnerType: string; fitScore: number; fitReason: string; linkedin: string };
 
 export async function findProspects(orgId: number, opts: { focus?: string } = {}) {
   const emp = await employeeFor(orgId, "prospecting");
@@ -119,13 +129,13 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
       referral
         ? `Your job: find referral partners for this practice: places whose people could send clients to it (${settings.partnerTypes.join(", ") || "schools, pediatric offices, primary care"}), near the practice.
 - Search one angle at a time: school district counseling pages, pediatric and primary care office sites, employee assistance program directories, family law firm sites, church staff pages.
-- For each: the organization's name, city, the best person to contact (a counselor, practice manager, office manager or attorney) and their title, a work email and phone only if printed on their own site (otherwise ""), its website, which page you found it on and that page's URL, the partner type, and its size if stated.
+- For each: the organization's name, city, the best person to contact (a counselor, practice manager, office manager or attorney) and their title, a work email and phone only if printed on their own site (otherwise ""), its website, which page you found it on and that page's URL, the partner type, its size if stated, and that person's LinkedIn profile URL (linkedin.com/in/...) only if a search result showed it (otherwise "").
 - Score fit 0 to 100: how likely they see people this practice serves. Say why in one sentence using something real from their page.
 - Return up to 10, best first.`
         : `Your job: find businesses that could buy what this workspace sells, from its Brain.
 - Search one angle at a time: group practice and clinic sites with "Our team" pages, therapist directories, the state licensing board's license lookup (for example the Texas Behavioral Health Executive Council or the Oklahoma LPC board), practices posting job openings.
 - Check the owner on the state licensing board's lookup when you can, and say in foundOn which sources you used (for example "NPI Registry, Texas BHEC license lookup, practice website").
-- For each: the business name, city, the owner or decision maker and their title, a work email and phone only if printed on their own site or in the NPI Registry (otherwise ""), its website, which page you found it on and that page's URL, and its size (how many clinicians) if stated.
+- For each: the business name, city, the owner or decision maker and their title, a work email and phone only if printed on their own site or in the NPI Registry (otherwise ""), its website, which page you found it on and that page's URL, its size (how many clinicians) if stated, and the owner's LinkedIn profile URL (linkedin.com/in/...) only if a search result showed it (otherwise "").
 - Score fit 0 to 100 against what the workspace sells. Say why in one sentence using something real from their page (books by phone only, hiring, takes insurance...).
 - Return up to 10, best first.`
     );
@@ -134,7 +144,7 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
       system,
       prompt,
       schemaName: "prospects",
-      schema: obj({ items: arr(obj({ name: str, city: str, contactName: str, contactTitle: str, email: str, phone: str, website: str, foundOn: str, sourceUrl: str, size: str, partnerType: str, fitScore: int, fitReason: str })) }),
+      schema: obj({ items: arr(obj({ name: str, city: str, contactName: str, contactTitle: str, email: str, phone: str, website: str, foundOn: str, sourceUrl: str, size: str, partnerType: str, fitScore: int, fitReason: str, linkedin: str })) }),
       maxUses: Math.max(ENV.searchMaxUses, 10),
     });
     const existing = await db.listProspects(orgId);
@@ -165,7 +175,7 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
           sourceUrl: f.sourceUrl,
           fitScore: Math.max(0, Math.min(100, Math.round(f.fitScore || 0))),
           fitReason: f.fitReason?.slice(0, 600) || null,
-          details: JSON.stringify({ size: f.size || "", partnerType: f.partnerType || "", ...(n ? { npi: n.npi, specialty: n.specialty } : {}) }),
+          details: JSON.stringify({ size: f.size || "", partnerType: f.partnerType || "", ...(n ? { npi: n.npi, specialty: n.specialty } : {}), ...(linkedinUrl(f.linkedin) ? { linkedinUrl: linkedinUrl(f.linkedin), linkedinFoundBy: `${emp.name}, while researching the practice` } : {}) }),
         })
       );
     }
@@ -229,7 +239,62 @@ function addWeekdays(tz: string, at: Date, days: number) {
   return new Date(at.getTime() + days * 86400_000);
 }
 
-type Seq = { subject: string; email1: string; email2: string; email3: string };
+type Seq = { subject: string; email1: string; email2: string; email3: string; linkedinNote?: string };
+
+// ==========================================
+// Jada: LinkedIn step (the owner sends it from their own LinkedIn)
+// ==========================================
+
+export type LinkedInStep = { url: string; note: string; due: string; status: "waiting" | "todo" | "done" | "skipped" | "cancelled"; foundBy: string; sequence: string; doneAt?: string };
+
+/** A clean linkedin.com/in/ profile link, or null. */
+export function linkedinUrl(raw: string | null | undefined) {
+  const m = String(raw ?? "").trim().match(/^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/([A-Za-z0-9\-_%]+)\/?/i);
+  return m ? `https://www.linkedin.com/in/${m[1]}` : null;
+}
+
+const details = (p: SalesProspect) => {
+  try {
+    return JSON.parse(p.details || "{}") as Record<string, any>;
+  } catch {
+    return {} as Record<string, any>;
+  }
+};
+const stepOf = (p: SalesProspect): LinkedInStep | null => details(p).linkedin ?? null;
+async function setStep(orgId: number, p: SalesProspect, patch: Partial<LinkedInStep> | null) {
+  const d = details(p);
+  if (patch === null) delete d.linkedin;
+  else d.linkedin = { ...(d.linkedin ?? {}), ...patch };
+  return db.updateProspect(p.id, orgId, { details: JSON.stringify(d) });
+}
+
+/** Trims a note to LinkedIn's 200-character limit for free accounts, at a word. */
+export function fitNote(note: string, max = 200) {
+  const t = note.replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 20)).replace(/[,;:\s]+$/, "");
+}
+
+/** Jada looks for the owner's public LinkedIn profile when Riley did not find it. */
+async function findLinkedIn(jada: AIEmployee, p: SalesProspect): Promise<{ url: string; foundBy: string } | null> {
+  if (!p.contactName) return null;
+  try {
+    const res = await searchJson<{ url: string; page: string }>({
+      system: `Find one person's public LinkedIn profile. Return its linkedin.com/in/ URL only if a search result is clearly that person's profile (same name and the same practice or city). Otherwise return "". In page, say where you found the link, for example "the practice's team page" or "a search result".`,
+      prompt: `${p.contactName}${p.contactTitle ? `, ${p.contactTitle}` : ""} at ${p.name}${p.city ? `, ${p.city}` : ""}`,
+      schemaName: "linkedin_profile",
+      schema: obj({ url: str, page: str }),
+      maxUses: 2,
+      maxTokens: 800,
+    });
+    const url = linkedinUrl(res.data.url);
+    if (!url) return null;
+    return { url, foundBy: `${jada.name}, from ${res.data.page || "a search result"}` };
+  } catch {
+    return null;
+  }
+}
 
 export async function startOutreach(orgId: number, ids: number[]) {
   const jada = await employeeFor(orgId, "outreach");
@@ -245,6 +310,7 @@ export async function startOutreach(orgId: number, ids: number[]) {
     if (!p || !p.email) continue;
     const already = (await db.listOutboundItemsByOrg(orgId, "outreach_email")).some((m) => JSON.parse(m.metadata || "{}").prospectId === p.id && m.status !== "cancelled");
     if (already) continue;
+    const noteWanted = settings.linkedin.on && settings.linkedin.note;
     const seq = await working(jada, async () => {
       const { system } = await systemPromptFor(
         jada,
@@ -253,7 +319,8 @@ export async function startOutreach(orgId: number, ids: number[]) {
 - Email 2 (3 business days later, only if no reply): 1 or 2 sentences that add one new useful fact and the link.
 - Email 3 (5 business days after that): 1 or 2 sentences that close politely and leave the link open.
 - A plain subject line under 8 words, no clickbait. Plain text, no bullet points, no markdown.
-- Never say you came across their profile or that you were impressed.`
+- Never say you came across their profile or that you were impressed.${noteWanted ? `
+- linkedinNote: a LinkedIn connection note from the owner, under 190 characters, first name greeting, one real reason to connect, no link, no pitch, signed with the owner's first name.` : ""}`
       );
       return generateJson<Seq>({
         system,
@@ -264,7 +331,7 @@ Booking link: ${links.booking}
 Signer:
 ${signer}`,
         schemaName: "outreach_sequence",
-        schema: obj({ subject: str, email1: str, email2: str, email3: str }),
+        schema: noteWanted ? obj({ subject: str, email1: str, email2: str, email3: str, linkedinNote: str }) : obj({ subject: str, email1: str, email2: str, email3: str }),
         maxTokens: 1500,
       });
     });
@@ -292,6 +359,15 @@ ${signer}`,
         metadata: JSON.stringify({ prospectId: p.id, step, sequence, email: p.email, recipient: p.contactName ?? p.name, rule: step === 1 ? "first_email" : "follow_up" }),
       });
     }
+    if (settings.linkedin.on) {
+      const known = linkedinUrl(details(p).linkedinUrl);
+      const found = known ? { url: known, foundBy: details(p).linkedinFoundBy || `${jada.name}, from the practice's research` } : await findLinkedIn(jada, p);
+      if (found) {
+        const due = settings.linkedin.when === "same_day" ? send1 : addWeekdays(tz, send1, 1);
+        const fresh = (await db.getProspect(p.id, orgId)) ?? p;
+        await setStep(orgId, fresh, { url: found.url, note: noteWanted ? fitNote(seq.linkedinNote ?? "") : "", due: due.toISOString(), status: firstAuto ? "todo" : "waiting", foundBy: found.foundBy, sequence });
+      }
+    }
     made++;
   }
   if (made) {
@@ -309,6 +385,9 @@ const isOpen = (m: OutboundItem) => ["pending_approval", "scheduled", "changes_r
 export async function stopSequence(orgId: number, prospectId: number) {
   const mails = (await db.listOutboundItemsByOrg(orgId, "outreach_email")).filter((m) => JSON.parse(m.metadata || "{}").prospectId === prospectId && isOpen(m));
   for (const m of mails) await db.updateOutboundItem(m.id, orgId, { status: "cancelled", scheduledFor: null });
+  const p = await db.getProspect(prospectId, orgId);
+  const st = p ? stepOf(p) : null;
+  if (p && st && (st.status === "waiting" || st.status === "todo")) await setStep(orgId, p, { status: "cancelled" });
   return mails.length;
 }
 
@@ -323,6 +402,9 @@ export async function approveSequence(orgId: number, sequence: string, who: stri
   }
   const step1 = mails.find((m) => JSON.parse(m.metadata || "{}").step === 1);
   if (step1) await noteApproval(step1);
+  const pid = JSON.parse(mails[0].metadata || "{}").prospectId;
+  const p = pid ? await db.getProspect(pid, orgId) : null;
+  if (p && stepOf(p)?.status === "waiting") await setStep(orgId, p, { status: "todo" });
   return mails.length;
 }
 
@@ -366,6 +448,7 @@ export async function listSequences(orgId: number) {
       sequence,
       tab,
       prospect: p ? { id: p.id, name: p.name, contactName: p.contactName, contactTitle: p.contactTitle, city: p.city, fitScore: p.fitScore, email: p.email, stage: p.stage } : null,
+      linkedin: p && stepOf(p)?.sequence === sequence ? stepOf(p) : null,
       sent,
       steps: full.map((m) => ({ id: m.id, step: JSON.parse(m.metadata || "{}").step as number, title: m.title, body: m.body ?? "", status: m.status, scheduledFor: m.scheduledFor, publishedAt: m.publishedAt })),
       createdAt: full[0]?.createdAt ?? items[0].createdAt,
@@ -378,6 +461,37 @@ export async function updateStep(orgId: number, itemId: number, title: string, b
   if (!m || m.kind !== "outreach_email") throw new TRPCError({ code: "NOT_FOUND", message: "That email is not in this workspace." });
   if (!isOpen(m)) throw new TRPCError({ code: "BAD_REQUEST", message: "This email has already gone out." });
   return db.updateOutboundItem(m.id, orgId, { title: title.slice(0, 255), body });
+}
+
+/** The LinkedIn tab: requests to send, soonest first. */
+export async function listLinkedIn(orgId: number) {
+  const prospects = await db.listProspects(orgId);
+  const mails = await db.listOutboundItemsByOrg(orgId, "outreach_email");
+  return prospects
+    .map((p) => ({ p, st: stepOf(p) }))
+    .filter((x): x is { p: SalesProspect; st: LinkedInStep } => !!x.st && x.st.status === "todo")
+    .map(({ p, st }) => {
+      const first = mails.find((m) => { const md = JSON.parse(m.metadata || "{}"); return md.sequence === st.sequence && md.step === 1; });
+      return { prospectId: p.id, name: p.name, contactName: p.contactName, contactTitle: p.contactTitle, ...st, email1: first ? { status: first.status, publishedAt: first.publishedAt, scheduledFor: first.scheduledFor } : null };
+    })
+    .sort((a, b) => a.due.localeCompare(b.due));
+}
+
+export async function linkedinAction(orgId: number, prospectId: number, action: "done" | "skip") {
+  const p = await db.getProspect(prospectId, orgId);
+  const st = p ? stepOf(p) : null;
+  if (!p || !st) throw new TRPCError({ code: "NOT_FOUND", message: "That LinkedIn step is not in this workspace." });
+  await setStep(orgId, p, action === "done" ? { status: "done", doneAt: new Date().toISOString() } : { status: "skipped" });
+  return { ok: true };
+}
+
+export async function updateLinkedInNote(orgId: number, prospectId: number, note: string) {
+  const p = await db.getProspect(prospectId, orgId);
+  const st = p ? stepOf(p) : null;
+  if (!p || !st) throw new TRPCError({ code: "NOT_FOUND", message: "That LinkedIn step is not in this workspace." });
+  if (note.trim().length > 300) throw new TRPCError({ code: "BAD_REQUEST", message: "LinkedIn notes can be up to 300 characters with Premium, 200 without." });
+  await setStep(orgId, p, { note: note.replace(/\s+/g, " ").trim() });
+  return { ok: true };
 }
 
 // ==========================================

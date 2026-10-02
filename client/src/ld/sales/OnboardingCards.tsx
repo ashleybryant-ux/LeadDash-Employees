@@ -250,3 +250,39 @@ export function LeadSetupCard({ emp, rule }: { emp: EmployeeRow; rule: Rule | un
     </section>
   );
 }
+
+/** Jada: the LinkedIn step she adds to each sequence. The owner sends it from their own LinkedIn. */
+export function LinkedInStepCard({ emp }: { emp: EmployeeRow }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.sales.settings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [editing, setEditing] = React.useState(false);
+  const [d, setD] = React.useState({ on: true, when: "next_day" as "next_day" | "same_day", note: true });
+  const save = trpc.sales.saveSettings.useMutation({ onSuccess: async () => { setEditing(false); await utils.sales.settings.invalidate(); } });
+  if (!q.data) return null;
+  const s = q.data.linkedin;
+  const cur = editing ? d : s;
+  const row = (label: string, view: string, edit: React.ReactNode, note?: string) => (
+    <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: "220px minmax(0,1fr)", gap: 12, alignItems: "center", padding: "10px 0", borderBottom: "1px solid #eef2f0" }}>
+      <span className="ld-strong" style={{ fontSize: 14 }}>{label}</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+        {editing ? edit : <span className="ld-body">{view}</span>}
+        {note && <span style={small}>{note}</span>}
+      </div>
+    </div>
+  );
+  return (
+    <section className={`ld-card ${editing ? "editing" : ""}`}>
+      <div style={grid} className="ld-keep-check">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+          <span className="ld-lbl">LinkedIn step</span>
+          {row("Add a LinkedIn step", cur.on ? "Yes" : "No", <Choice options={[{ key: "yes", label: "Yes" }, { key: "no", label: "No" }]} value={d.on ? "yes" : "no"} onChange={(v) => setD({ ...d, on: v === "yes" })} />, `${emp.name} finds the owner's profile and writes the note. You send it from your LinkedIn.`)}
+          {cur.on && row("When", cur.when === "same_day" ? "Same day as email 1" : "Day after email 1", <Choice options={[{ key: "next_day", label: "Day after email 1" }, { key: "same_day", label: "Same day as email 1" }]} value={d.when} onChange={(v) => setD({ ...d, when: v })} />)}
+          {cur.on && row("Note", cur.note ? "Short note" : "No note", <Choice options={[{ key: "yes", label: "Short note" }, { key: "no", label: "No note" }]} value={d.note ? "yes" : "no"} onChange={(v) => setD({ ...d, note: v === "yes" })} />, "Notes can be up to 200 characters on a free LinkedIn account (300 with Premium). Free accounts can send only a few notes a month.")}
+          <ErrorLine error={save.error} />
+        </div>
+        <Buttons editing={editing} saving={save.isPending} onEdit={() => { setD({ ...s }); setEditing(true); }} onSave={() => save.mutate({ organizationId: currentOrgId, linkedin: d })} onCancel={() => setEditing(false)} />
+      </div>
+    </section>
+  );
+}

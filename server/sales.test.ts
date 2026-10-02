@@ -175,4 +175,37 @@ describe("the sales team", () => {
     expect(r.reply.content).toBe("Theo published Sleep and anxiety this month.");
     expect(String(text.mock.calls[0][0].prompt)).toContain("Theo's facts");
   });
+  it("Jada adds a LinkedIn step the owner sends: waits with the sequence, shows on the LinkedIn tab, stops with it", async () => {
+    vi.spyOn(llm, "searchJson").mockImplementation(async (opts: any) => {
+      if (opts.schemaName === "linkedin_profile") return { data: { url: "https://www.linkedin.com/in/renee-alvarez-lpc/?trk=x", page: "the practice's team page" }, sources: [], queries: [] } as any;
+      return { data: { items: [{ name: "Hill Country Counseling Group", city: "Austin, TX", contactName: "Renee Alvarez", contactTitle: "Owner", email: "renee@hc.example", phone: "", website: "https://hc.example", foundOn: "Team page", sourceUrl: "https://hc.example/team", size: "", partnerType: "", fitScore: 90, fitReason: "Phone booking only.", linkedin: "" }] }, sources: [{ url: "https://hc.example/team", title: "Team" }], queries: ["q"] } as any;
+    });
+    vi.spyOn(llm, "generateJson").mockImplementation(async () => ({ subject: "Hi", email1: "One", email2: "Two", email3: "Three", linkedinNote: "Hi Renee, I work with group practices in Texas on online intake and would like to connect. ".repeat(4) }) as any);
+    const { orgId, owner } = await makeWorkspace("sl-linkedin");
+    const c = caller(owner);
+    await c.sales.saveSettings({ organizationId: orgId, sells: "software" });
+    await sales.findProspects(orgId);
+    await until(async () => (await db.listOutboundItemsByOrg(orgId, "outreach_email")).length === 3 && !!JSON.parse((await db.listProspects(orgId))[0].details || "{}").linkedin);
+    const seq = (await c.sales.sequences({ organizationId: orgId }))[0];
+    expect(seq.tab).toBe("waiting");
+    expect(seq.linkedin).toMatchObject({ url: "https://www.linkedin.com/in/renee-alvarez-lpc", status: "waiting", foundBy: "Jada, from the practice's team page" });
+    expect(seq.linkedin!.note.length).toBeLessThanOrEqual(200);
+    expect(await c.sales.linkedin({ organizationId: orgId })).toHaveLength(0);
+
+    await c.sales.approveSequence({ organizationId: orgId, sequence: seq.sequence });
+    const rows = await c.sales.linkedin({ organizationId: orgId });
+    expect(rows).toHaveLength(1);
+    await c.sales.linkedinNote({ organizationId: orgId, prospectId: rows[0].prospectId, note: "Hi Renee, glad to connect. Ashley" });
+    expect((await c.sales.linkedin({ organizationId: orgId }))[0].note).toBe("Hi Renee, glad to connect. Ashley");
+    await c.sales.linkedinAction({ organizationId: orgId, prospectId: rows[0].prospectId, action: "done" });
+    expect(await c.sales.linkedin({ organizationId: orgId })).toHaveLength(0);
+
+    // Turned off: no step. Stopping a sequence cancels a step that is still to do.
+    await c.sales.saveSettings({ organizationId: orgId, linkedin: { on: false, when: "next_day", note: true } });
+    expect((await c.sales.settings({ organizationId: orgId })).linkedin.on).toBe(false);
+    const p = (await db.listProspects(orgId))[0];
+    await db.updateProspect(p.id, orgId, { details: JSON.stringify({ linkedin: { url: "https://www.linkedin.com/in/x", note: "", due: new Date().toISOString(), status: "todo", foundBy: "Jada", sequence: seq.sequence } }) });
+    await sales.stopSequence(orgId, p.id);
+    expect(JSON.parse((await db.getProspect(p.id, orgId))!.details!).linkedin.status).toBe("cancelled");
+  });
 });

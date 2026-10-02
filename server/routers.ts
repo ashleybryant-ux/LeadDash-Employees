@@ -1603,6 +1603,7 @@ export const appRouter = router({
           hoursFrom: z.string().regex(/^\d{2}:\d{2}$/).optional(),
           hoursTo: z.string().regex(/^\d{2}:\d{2}$/).optional(),
           days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+          linkedin: z.object({ on: z.boolean(), when: z.enum(["next_day", "same_day"]), note: z.boolean() }).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -1644,6 +1645,21 @@ export const appRouter = router({
     sequences: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       return sales.listSequences(input.organizationId);
+    }),
+
+    linkedin: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return sales.listLinkedIn(input.organizationId);
+    }),
+
+    linkedinAction: protectedProcedure.input(orgInput.extend({ prospectId: z.number().int().positive(), action: z.enum(["done", "skip"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return sales.linkedinAction(input.organizationId, input.prospectId, input.action);
+    }),
+
+    linkedinNote: protectedProcedure.input(orgInput.extend({ prospectId: z.number().int().positive(), note: z.string().max(400) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return sales.updateLinkedInNote(input.organizationId, input.prospectId, input.note);
     }),
 
     approveSequence: protectedProcedure.input(orgInput.extend({ sequence: z.string().max(40) })).mutation(async ({ ctx, input }) => {
