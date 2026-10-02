@@ -31,6 +31,8 @@ import { REPEATS, HR_STAGES } from "../drizzle/schema";
 import * as hiring from "./employees/hiring";
 import { QUESTIONS, TEMPLATES, parseAnswers, progress as onboardingProgress, saveAnswers, writeDayToDay } from "./employees/onboarding";
 import * as integrations from "./integrations";
+import * as review from "./review";
+import { isStaffEmail } from "./_core/auth";
 import { EVENT_LABELS, NOTIFY_EVENTS, pushReady, pushTo, readPrefs, type Prefs } from "./notify";
 
 // ==========================================
@@ -47,6 +49,10 @@ const RANK: Record<Role, number> = { reviewer: 1, member: 2, admin: 3, owner: 4 
  */
 async function requireMember(ctx: TrpcContext & { user: User }, organizationId: number, minRole: Role = "reviewer") {
   if (ctx.user.role === "admin") return { role: "owner" as Role, support: true };
+  // The app reviewer only ever reaches the demo workspace.
+  if (review.isReviewUser(ctx.user) && !review.isDemoOrg(organizationId)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `Access denied: you are not an authorized member of organization #${organizationId}.` });
+  }
   const membership = await db.getOrganizationMembership(organizationId, ctx.user.id);
   if (!membership) {
     throw new TRPCError({
@@ -58,6 +64,11 @@ async function requireMember(ctx: TrpcContext & { user: User }, organizationId: 
     throw new TRPCError({ code: "FORBIDDEN", message: "Your role in this workspace cannot do that." });
   }
   return { role: membership.role as Role, support: false };
+}
+
+/** The app reviewer can look around the demo workspace but cannot change its team. */
+function blockReviewer(ctx: TrpcContext & { user: User }) {
+  if (review.isReviewUser(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "The review account cannot change the team." });
 }
 
 /** The person's real name for the audit trail and approvals. */
@@ -100,7 +111,9 @@ export const appRouter = router({
   // ==========================================
   auth: router({
     me: publicProcedure.query(({ ctx }) =>
-      ctx.user ? { id: ctx.user.id, email: ctx.user.email, name: ctx.user.name, role: ctx.user.role } : null
+      ctx.user
+        ? { id: ctx.user.id, email: ctx.user.email, name: ctx.user.name, role: ctx.user.role, reviewer: review.isReviewUser(ctx.user) }
+        : null
     ),
 
     requestCode: publicProcedure
@@ -111,7 +124,7 @@ export const appRouter = router({
       .input(z.object({ email: z.string().trim().email().max(320), code: z.string().min(6).max(12) }))
       .mutation(async ({ ctx, input }) => {
         const user = await verifyCode(input.email, input.code, ctx.req, ctx.res);
-        return { id: user.id, email: user.email, name: user.name, role: user.role };
+        return { id: user.id, email: user.email, name: user.name, role: user.role, reviewer: review.isReviewUser(user) };
       }),
 
     logout: publicProcedure.mutation(async ({ ctx }) => {
@@ -136,7 +149,8 @@ export const appRouter = router({
   organizations: router({
     list: protectedProcedure.query(async ({ ctx }) => {
       if (ctx.user.role === "admin") return db.listOrganizations();
-      return db.listOrganizationsForUser(ctx.user.id);
+      const mine = await db.listOrganizationsForUser(ctx.user.id);
+      return review.isReviewUser(ctx.user) ? mine.filter((o) => review.isDemoOrg(o.id)) : mine;
     }),
 
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
@@ -260,6 +274,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
         await requireMember(ctx, input.organizationId, "admin");
         let user = await db.getUserByEmail(input.email);
         if (!user) user = await db.createUser({ email: input.email, name: input.name || null });
@@ -286,6 +301,7 @@ export const appRouter = router({
     updateRole: protectedProcedure
       .input(orgInput.extend({ userId: z.number(), role: z.enum(["owner", "admin", "member", "reviewer"]) }))
       .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
         const members = await db.listMembers(input.organizationId).catch(() => []);
         const target = members.find((m) => m.userId === input.userId);
         // Making or unmaking an owner takes an owner.
@@ -308,6 +324,7 @@ export const appRouter = router({
     remove: protectedProcedure
       .input(orgInput.extend({ userId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
         await requireMember(ctx, input.organizationId, "admin");
         const members = await db.listMembers(input.organizationId);
         const target = members.find((m) => m.userId === input.userId);
@@ -1379,6 +1396,7 @@ export const appRouter = router({
       return {
         name: me.name,
         email: me.email,
+        staff: me.role === "admin",
         prefs: readPrefs(me.notifyPrefs),
         events: NOTIFY_EVENTS.map((k) => ({ key: k, label: EVENT_LABELS[k] })),
         pushReady: pushReady(),
@@ -1422,6 +1440,39 @@ export const appRouter = router({
       if (!sent) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No device took the test. Turn push on here first." });
       return { sent };
     }),
+  }),
+
+  // ==========================================
+  // App review access (LeadDash staff only)
+  // ==========================================
+  review: router({
+    get: adminProcedure.query(() => review.reviewView()),
+
+    save: adminProcedure
+      .input(
+        z.object({
+          enabled: z.boolean(),
+          email: z.string().trim().email().max(320),
+          endsOn: z.string().trim().max(10).nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const taken = async (email: string) => {
+          if (isStaffEmail(email)) return true;
+          const user = await db.getUserByEmail(email);
+          if (!user) return false;
+          if (user.role === "admin") return true;
+          const orgs = await db.listOrganizationsForUser(user.id);
+          return orgs.some((o) => !review.isDemoOrg(o.id));
+        };
+        try {
+          return await review.saveReview({ enabled: input.enabled, email: input.email, endsOn: input.endsOn || null }, taken);
+        } catch (err) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : "Could not save." });
+        }
+      }),
+
+    newCode: adminProcedure.mutation(() => review.newReviewCode()),
   }),
 
   // ==========================================

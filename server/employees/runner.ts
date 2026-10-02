@@ -5,6 +5,7 @@ import { nextRun } from "./schedule";
 import { remindRegistrations } from "./apply";
 import { notify } from "../notify";
 import { hiringDaily } from "./hiring";
+import { sweepExpired } from "../review";
 
 /**
  * Runs scheduled tasks. Every minute it picks up tasks whose time has come,
@@ -104,6 +105,7 @@ export function startScheduler() {
       await tick();
       await remindRegistrations();
       await hiringDaily();
+      await sweepExpired();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

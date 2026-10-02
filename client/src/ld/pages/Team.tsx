@@ -46,14 +46,18 @@ export default function Team() {
   const ownerCount = members.filter((m) => m.role === "owner").length;
   const me = members.find((m) => m.userId === user?.id);
   const canMakeOwner = user?.role === "admin" || me?.role === "owner";
+  // The app review account can see the team but not change it.
+  const readOnly = !!user?.reviewer;
 
   return (
     <Page rail="team" maxWidth={980}>
       <div className="ld-between">
         <h1 className="ld-h1">Team</h1>
-        <button type="button" className="ld-btn p" onClick={() => setInviting(true)}>
-          Invite
-        </button>
+        {!readOnly && (
+          <button type="button" className="ld-btn p" onClick={() => setInviting(true)}>
+            Invite
+          </button>
+        )}
       </div>
 
       <div className="ld-card" style={{ overflow: "hidden" }}>
@@ -61,7 +65,7 @@ export default function Team() {
         {members.map((m) => {
           const name = m.name?.trim() || m.email;
           const isOpen = editing === m.userId;
-          const hideEdit = m.userId === user?.id && m.role === "owner" && ownerCount === 1;
+          const hideEdit = readOnly || (m.userId === user?.id && m.role === "owner" && ownerCount === 1);
           return (
             <React.Fragment key={m.userId}>
               <div className={`ld-rw ${isOpen ? "open" : ""}`} style={{ gridTemplateColumns: COLS }}>

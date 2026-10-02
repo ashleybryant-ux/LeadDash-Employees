@@ -18,6 +18,7 @@ import Account from "./ld/pages/Account";
 import More from "./ld/pages/More";
 import { Rail, Switcher } from "./ld/ui";
 import "./ld/theme.css";
+import { useEffect } from "react";
 
 function NoWorkspace() {
   const { user } = useAuth();
@@ -74,8 +75,24 @@ function Gate() {
   if (!user) return <SignIn />;
   return (
     <TenantProvider>
+      {user.reviewer && <ReviewBar />}
       <Router />
     </TenantProvider>
+  );
+}
+
+/** Shown across the top while the Google or Meta app reviewer is signed in. */
+function ReviewBar() {
+  const { organizations } = useTenant();
+  useEffect(() => {
+    document.documentElement.classList.add("ld-review");
+    return () => document.documentElement.classList.remove("ld-review");
+  }, []);
+  return (
+    <div className="ld-reviewbar" role="status">
+      <span>Review account · {organizations[0]?.name ?? "Demo practice"}</span>
+      <span className="ld-reviewbar-note">Sample data. No real clients.</span>
+    </div>
   );
 }
 

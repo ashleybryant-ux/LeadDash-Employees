@@ -44,6 +44,10 @@ Every employee has an Onboarding tab: fixed-choice questions about what the owne
 
 `server/integrations.ts`. LeadDash registers one app with Google, LinkedIn, Meta and X and puts the keys in `.env` (`GOOGLE_CLIENT_ID`, `LINKEDIN_CLIENT_ID`, `META_APP_ID`, `X_CLIENT_ID` and their secrets). Each workspace then presses Connect on Integrations; the sign-in comes back to `/api/oauth/<app>/callback` and the tokens are saved encrypted. Approve in Approvals then posts (LinkedIn profile, Facebook Page, Instagram, X, Google Business Profile), sends (Gmail, from `gmail.send` only, so no yearly Google security audit) or adds the hold to Google Calendar. Items whose channel is not connected wait, and Try again resends only what failed. Instagram and Facebook fetch images from a signed link (`/media/...`) that expires after a day.
 
+## App review access
+
+LeadDash staff see an App review access card on My account. While it is on and before its end date, the review email (review@leaddash.io by default) signs in on the normal sign-in page with the fixed 6-digit code shown on the card; no email is sent. The reviewer only reaches the Demo practice workspace (sample data, made on first use), cannot change its team, and sees a bar across the top. Turning it off, a new code, or the end date signs the reviewer out; turning it off or the end date also disconnects anything they connected. Ten wrong codes lock it for 15 minutes.
+
 ## Phones and push notifications
 
 The layout switches to a bottom bar under 760px. The app is installable (manifest, icons, `client/public/sw.js`). Push uses Web Push with VAPID keys (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`); each person turns push on per device under My account and picks what they hear about. On iPhone, push works only from the app added to the Home Screen (iOS 16.4 and later).

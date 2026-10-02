@@ -6,6 +6,7 @@ import { getSessionCookieOptions } from "./cookies";
 import { randomCode, randomToken, safeEqual, sha256 } from "./crypto";
 import { sendEmail } from "./email";
 import { ENV } from "./env";
+import { ensureReviewer, isReviewEmail, reviewCanSignIn, reviewCodeMatches } from "../review";
 
 const CODE_MINUTES = 10;
 const MAX_ATTEMPTS = 5;
@@ -22,6 +23,8 @@ export function isStaffEmail(email: string) {
 /** Who may sign in: LeadDash staff, or anyone currently on a workspace. */
 async function canSignIn(email: string) {
   if (isStaffEmail(email)) return true;
+  // The app review email signs in only while review access is on.
+  if (isReviewEmail(email)) return reviewCanSignIn(email);
   const user = await db.getUserByEmail(email);
   if (!user) return false;
   return (await db.countMembershipsForUser(user.id)) > 0;
@@ -43,6 +46,12 @@ export async function requestCode(rawEmail: string) {
     return { sent: true };
   }
 
+  // The reviewer types the fixed code from App review access; no email goes out.
+  if (isReviewEmail(email)) {
+    await db.createLoginCode(email, sha256(randomToken()), new Date(Date.now() + CODE_MINUTES * 60_000));
+    return { sent: true };
+  }
+
   const code = randomCode();
   await db.createLoginCode(email, sha256(code), new Date(Date.now() + CODE_MINUTES * 60_000));
   // Not awaited, so a real account answers as fast as an unknown email.
@@ -60,6 +69,15 @@ export async function verifyCode(rawEmail: string, rawCode: string, req: Request
   const code = rawCode.replace(/\D/g, "");
   const fail = () => new TRPCError({ code: "UNAUTHORIZED", message: "That code is not right or has expired." });
   if (code.length !== 6) throw fail();
+
+  if (isReviewEmail(email)) {
+    if (!reviewCodeMatches(email, code)) throw fail();
+    const reviewer = await ensureReviewer(email);
+    await db.updateUser(reviewer.id, { lastSignedIn: new Date() });
+    await startSession(reviewer.id, req, res);
+    return reviewer;
+  }
+
   if (!db.consumeLoginCode(email, sha256(code), MAX_ATTEMPTS, safeEqual)) throw fail();
 
   // Re-check: someone removed from every workspace after the code was sent cannot finish.
@@ -76,11 +94,15 @@ export async function verifyCode(rawEmail: string, rawCode: string, req: Request
   if (!user) throw fail();
   await db.updateUser(user.id, { lastSignedIn: new Date() });
 
+  await startSession(user.id, req, res);
+  return user;
+}
+
+async function startSession(userId: number, req: Request, res: Response) {
   const token = randomToken();
   const expiresAt = new Date(Date.now() + ENV.sessionDays * 86400_000);
-  await db.createSession(user.id, sha256(token), expiresAt, req.ip ?? null);
+  await db.createSession(userId, sha256(token), expiresAt, req.ip ?? null);
   res.cookie(SESSION_COOKIE, token, { ...getSessionCookieOptions(req), maxAge: ENV.sessionDays * 86400_000 });
-  return user;
 }
 
 export async function signOut(tokenHash: string | null | undefined, req: Request, res: Response) {

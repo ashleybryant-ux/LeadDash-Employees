@@ -34,6 +34,8 @@ import {
   hrRoles,
   hrPeople,
   hrTeamItems,
+  reviewAccess,
+  type ReviewAccess,
   type HrStage,
   type InsertOpportunity,
   type InsertApplication,
@@ -1206,4 +1208,22 @@ export async function markHrTeamItemReminded(id: number, orgId: number) {
 
 export async function listAllOrganizationIds() {
   return getDb().select({ id: organizations.id }).from(organizations).all().map((r) => r.id);
+}
+
+// ==========================================
+// App review access (one row, id 1)
+// ==========================================
+
+export function getReviewAccess(): ReviewAccess | null {
+  return getDb().select().from(reviewAccess).where(eq(reviewAccess.id, 1)).get() ?? null;
+}
+
+export function saveReviewAccess(data: Partial<typeof reviewAccess.$inferInsert>): ReviewAccess {
+  const existing = getReviewAccess();
+  if (existing) {
+    getDb().update(reviewAccess).set(data).where(eq(reviewAccess.id, 1)).run();
+  } else {
+    getDb().insert(reviewAccess).values({ ...data, id: 1 }).run();
+  }
+  return getReviewAccess()!;
 }

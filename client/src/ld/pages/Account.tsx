@@ -2,7 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ErrorLine, Page } from "../ui";
-import { fmtDate } from "../meta";
+import { fmtDate, fmtTime } from "../meta";
 import { currentSubscription, needsHomeScreen, pushSupported, subscribe, unsubscribeHere } from "../push";
 
 type Prefs = Record<string, { push: boolean; email: boolean }>;
@@ -20,6 +20,7 @@ export default function Account() {
       ) : (
         <>
           <YouCard name={a.name ?? ""} email={a.email} />
+          {a.staff && <ReviewCard />}
           <PushCard pushReady={a.pushReady} vapid={a.vapidPublicKey} devices={a.devices} />
           <PrefsCard prefs={a.prefs as Prefs} events={a.events} />
           <section className="ld-card ld-between" style={{ padding: "14px 18px" }}>
@@ -212,6 +213,132 @@ function PrefsCard({ prefs, events }: { prefs: Prefs; events: { key: string; lab
           );
         })}
         <ErrorLine error={save.error} />
+      </div>
+    </section>
+  );
+}
+
+/** "11/30/2026" to "Nov 30, 2026". */
+function showEnds(mmddyyyy: string | null) {
+  if (!mmddyyyy) return "No end date";
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(mmddyyyy);
+  return m ? fmtDate(new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2]))) : mmddyyyy;
+}
+
+const spaced = (code: string) => `${code.slice(0, 3)} ${code.slice(3)}`;
+
+/** LeadDash staff only: the sign-in Google and Meta reviewers use. */
+function ReviewCard() {
+  const utils = trpc.useUtils();
+  const q = trpc.review.get.useQuery();
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState({ enabled: true, email: "", endsOn: "" });
+  const [copied, setCopied] = React.useState(false);
+  const save = trpc.review.save.useMutation({
+    onSuccess: async (v) => {
+      utils.review.get.setData(undefined, v);
+      setEditing(false);
+    },
+  });
+  const newCode = trpc.review.newCode.useMutation({ onSuccess: (v) => utils.review.get.setData(undefined, v) });
+  const r = q.data;
+  if (!r) return q.error ? <ErrorLine error={q.error} /> : null;
+
+  const open = () => {
+    save.reset();
+    setDraft({ enabled: r.enabled || !r.code, email: r.email, endsOn: r.endsOn ?? "" });
+    setEditing(true);
+  };
+  const copySteps = async () => {
+    if (!r.code) return;
+    const text = [
+      `Sign in at ${window.location.origin}`,
+      `1. Enter ${r.email} and press Send code.`,
+      `2. Type the code ${r.code} and press Sign in. No email is needed.`,
+      `The account opens a sample workspace. Every person and number in it is made up.`,
+      r.endsOn ? `Access ends ${showEnds(r.endsOn)}.` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copy these steps:", text);
+    }
+  };
+
+  return (
+    <section className={`ld-card ${editing ? "editing" : ""}`}>
+      <div className="ld-sh">
+        <span className="ld-st" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          App review access
+          {!editing && <span className={`ld-pill ${r.active ? "green" : "gray"}`}>{r.active ? "On" : "Off"}</span>}
+        </span>
+        {editing ? (
+          <span className="ld-row">
+            <button type="button" className="ld-btn" onClick={() => setEditing(false)}>Cancel</button>
+            <button
+              type="button"
+              className="ld-btn p"
+              disabled={save.isPending || !draft.email.trim()}
+              onClick={() => save.mutate({ enabled: draft.enabled, email: draft.email.trim(), endsOn: draft.endsOn.trim() || null })}
+            >
+              {save.isPending ? "Saving..." : "Save"}
+            </button>
+          </span>
+        ) : (
+          <span className="ld-row">
+            <button type="button" className="ld-btn" disabled={!r.active} onClick={copySteps}>{copied ? "Copied" : "Copy steps"}</button>
+            <button type="button" className="ld-btn" onClick={open}>Edit</button>
+          </span>
+        )}
+      </div>
+      {editing ? (
+        <div className="ld-kv" style={{ alignItems: "center" }}>
+          <span className="ld-k">Access</span>
+          <span className="ld-row">
+            <button type="button" className={`ld-chip ${draft.enabled ? "on" : ""}`} aria-pressed={draft.enabled} onClick={() => setDraft((d) => ({ ...d, enabled: true }))}>On</button>
+            <button type="button" className={`ld-chip ${!draft.enabled ? "on" : ""}`} aria-pressed={!draft.enabled} onClick={() => setDraft((d) => ({ ...d, enabled: false }))}>Off</button>
+          </span>
+          <label className="ld-k" htmlFor="rv-email">Email</label>
+          <input id="rv-email" className="ld-in" style={{ maxWidth: 320 }} type="email" value={draft.email} maxLength={320} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} />
+          <span className="ld-k">Code</span>
+          <span className="ld-row" style={{ gap: 12 }}>
+            <span style={r.code ? { fontWeight: 800, letterSpacing: "0.18em", fontSize: 16 } : { color: "#8a9a93" }}>{r.code ? spaced(r.code) : "Made when you save"}</span>
+            {r.code && (
+              <button
+                type="button"
+                className="ld-btn"
+                disabled={newCode.isPending}
+                onClick={() => {
+                  if (window.confirm("Make a new code? The old one stops working and the reviewer is signed out.")) newCode.mutate();
+                }}
+              >
+                New code
+              </button>
+            )}
+          </span>
+          <label className="ld-k" htmlFor="rv-ends">Ends</label>
+          <input id="rv-ends" className="ld-in" style={{ maxWidth: 160 }} type="text" inputMode="numeric" placeholder="MM/DD/YYYY" maxLength={10} value={draft.endsOn} onChange={(e) => setDraft((d) => ({ ...d, endsOn: e.target.value }))} />
+        </div>
+      ) : (
+        <div className="ld-kv">
+          <span className="ld-k">Email</span>
+          <span style={{ overflowWrap: "anywhere" }}>{r.email}</span>
+          <span className="ld-k">Code</span>
+          <span style={r.code ? { fontWeight: 800, letterSpacing: "0.18em", fontSize: 16 } : { color: "#8a9a93" }}>{r.code ? spaced(r.code) : "Made when you turn it on"}</span>
+          <span className="ld-k">Opens</span>
+          <span>{r.opens}</span>
+          <span className="ld-k">Ends</span>
+          <span>{showEnds(r.endsOn)}</span>
+          <span className="ld-k">Last sign-in</span>
+          <span>{r.lastSignInAt ? `${fmtDate(r.lastSignInAt)} at ${fmtTime(r.lastSignInAt)}` : "Never"}</span>
+        </div>
+      )}
+      <div style={{ padding: "0 18px 12px" }}>
+        <ErrorLine error={save.error ?? newCode.error} />
       </div>
     </section>
   );

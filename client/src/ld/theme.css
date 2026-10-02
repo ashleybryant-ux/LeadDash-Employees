@@ -99,6 +99,19 @@
 .ld-chip.on { background: #e6f2ec; border-color: #1b6b4a; color: #155c3e; }
 .ld-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 
+/* App review account: a bar across the top, everything below moves down 34px. */
+.ld-reviewbar {
+  position: fixed; top: 0; left: 76px; right: 0; height: 34px; z-index: 30; box-sizing: border-box;
+  background: #12211d; color: #fff; font-family: "Plus Jakarta Sans", system-ui, sans-serif; font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 36px; white-space: nowrap;
+}
+.ld-reviewbar-note { color: #a9c0b6; overflow: hidden; text-overflow: ellipsis; }
+.ld-reviewbar > span:first-child { flex-shrink: 0; }
+html.ld-review .ld-main { padding-top: 66px; }
+html.ld-review .ld-chatlist { margin-top: 34px; top: 34px !important; height: calc(100vh - 34px) !important; }
+html.ld-review .ld-chatmain { padding-top: 34px; box-sizing: border-box; }
+html.ld-review .ld-emphead { top: 34px !important; }
+
 /* ==========================================
  * Phone layout (760px and narrower)
  * The rail becomes a bottom bar, the chat list and a chat are separate
@@ -109,6 +122,9 @@
 
 @media (max-width: 760px) {
   .ld { flex-direction: column; min-height: 100dvh; }
+  .ld-reviewbar { left: 0; padding: 0 14px; font-size: 12px; }
+  html.ld-review .ld-main { padding-top: 50px !important; }
+  html.ld-review .ld-chatlist { height: auto !important; }
   .ld-rail { display: none !important; }
   .ld-mobile-only { display: flex !important; }
 

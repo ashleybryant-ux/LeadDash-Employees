@@ -862,3 +862,27 @@ export const hrTeamItems = sqliteTable(
 );
 
 export type HrTeamItem = typeof hrTeamItems.$inferSelect;
+
+// ==========================================
+// App review access (Google and Meta reviewers)
+// ==========================================
+
+/**
+ * One row (id 1). While enabled and before endsAt, the review email signs in
+ * with a fixed code instead of an emailed one, and only reaches the demo workspace.
+ */
+export const reviewAccess = sqliteTable("review_access", {
+  id: integer("id").primaryKey(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+  email: text("email").notNull().default("review@leaddash.io"),
+  /** The 6-digit code, encrypted with SECRETS_KEY so staff can read it back. */
+  codeEncrypted: text("codeEncrypted"),
+  /** MM/DD/YYYY. Access ends at the end of this day (Central time). */
+  endsOn: text("endsOn"),
+  /** The demo workspace the reviewer lands in. */
+  organizationId: integer("organizationId"),
+  lastSignInAt: integer("lastSignInAt", { mode: "timestamp" }),
+  updatedAt: updatedAt(),
+});
+
+export type ReviewAccess = typeof reviewAccess.$inferSelect;

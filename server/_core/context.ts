@@ -5,6 +5,7 @@ import * as db from "../db";
 import { SESSION_COOKIE } from "@shared/const";
 import { sha256 } from "./crypto";
 import { ENV } from "./env";
+import { isReviewUser, reviewCanSignIn, sweepExpired } from "../review";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -24,6 +25,14 @@ export async function authenticateRequest(req: CreateExpressContextOptions["req"
   if (user && user.role === "admin" && !ENV.adminEmails.includes(user.email.toLowerCase())) {
     user = await db.updateUser(user.id, { role: "user" });
     if (user && (await db.countMembershipsForUser(user.id)) === 0) {
+      await db.revokeSessionsForUser(user.id);
+      return { user: null, tokenHash: null };
+    }
+  }
+  // The app reviewer is signed out the moment review access is off or past its end date.
+  if (user && isReviewUser(user)) {
+    await sweepExpired();
+    if (!reviewCanSignIn(user.email)) {
       await db.revokeSessionsForUser(user.id);
       return { user: null, tokenHash: null };
     }
