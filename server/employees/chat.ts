@@ -10,6 +10,8 @@ import type { Opportunity, OppKind } from "../../drizzle/schema";
 import { channelName, planSchedule, postNow, type Plan } from "../social";
 import * as sales from "./sales";
 import { askTeammate, gate } from "./team";
+import * as projects from "./projects";
+import * as coo from "./coo";
 
 /**
  * Chat with an employee. Each message is answered in two steps:
@@ -20,7 +22,7 @@ import { askTeammate, gate } from "./team";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales";
+  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda";
   id: number;
   title: string;
   subtitle?: string;
@@ -46,10 +48,19 @@ const ACTIONS: Record<string, string[]> = {
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate"],
   outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate"],
   leads: ["none", "report", "check_status", "ask_teammate"],
+  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "ask_teammate"],
+  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "check_status", "set_goal", "ask_teammate"],
   custom: ["none", "report", "ask_teammate"],
 };
 
 const ACTION_HELP: Record<string, string> = {
+  plan_launch: "plan_launch: plan a launch back from its launch date. Put the launch name in `title`, the launch date as YYYY-MM-DD in `date`, and everything the person said about it (goals, targets, who does what) in `notes`.",
+  move_launch: "move_launch: move a launch to a new date. Put the launch name in `target` ('' for the next launch) and the new date as YYYY-MM-DD in `date`.",
+  send_report: "send_report: write the weekly status report for a launch now. Put the launch name in `target` ('' for the next launch).",
+  write_agenda: "write_agenda: write or rewrite the agenda for an upcoming meeting. Put the meeting name in `target` ('' for the next one) and anything to add or change in `notes`.",
+  schedule_meeting: "schedule_meeting: set up a one-time meeting. Put its name in `title`, the date as YYYY-MM-DD in `date`, the start time like 10:00 AM in `time`, the length in minutes in `count` (15, 30, 45, 60 or 90), who attends (names or emails) in `attendees`, and employees whose updates belong on the agenda (names, comma-separated) in `notes`.",
+  meeting_notes: "meeting_notes: the person pasted notes from a meeting. Put the meeting name in `target` ('' for the most recent) and the full notes in `message`.",
+  set_goal: "set_goal: set a weekly goal on the scorecard. Put one of practices_contacted, demos_booked, reply_minutes, posts_published, articles_published, grant_apps_sent, tasks_on_time, approvals_waiting in `target` and the goal number in `count`.",
   ask_teammate: "ask_teammate: the person asks you to check with another employee (\"ask Theo what he published\", \"how many demos does Malik have\"). Put that employee's name or job in `teammate` and the question in `message`.",
   find_prospects: "find_prospects: search the web now for businesses (or referral partners) that fit. Put any area, type or size the person gave in `focus`.",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
@@ -221,7 +232,60 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       await sales.passToOutreach(org, withEmail.map((p) => p.id));
       return { text: `Starting email sequences for ${plural(withEmail.length, "prospect")}. They'll be on the Outreach tab in a minute.`, cards: [], queries: [] };
     }
+    case "plan_launch": {
+      const r = await projects.planLaunch(org, { name: d.title || undefined, date: d.date, brief: [d.notes, d.message].filter(Boolean).join("\n") || d.reply });
+      const counts = await projects.planCounts(org, r.launch.id);
+      const text = r.auto
+        ? `I planned ${r.launch.name} with ${plural(counts.milestones, "milestone")} and ${plural(counts.tasks, "task")}, and started it${r.launch.clickupListId ? " in ClickUp" : ""}. I'll check it every morning.`
+        : `I worked back from the launch date and built ${plural(counts.milestones, "milestone")} and ${plural(counts.tasks, "task")} with ${plural(counts.owners, "owner")}. Once you approve, ${(await db.getConnectionByProvider(org, "clickup"))?.status === "connected" ? "I'll create the list in ClickUp and " : "I'll "}check it every morning.`;
+      return { text, cards: [projects.planCard(r.launch, counts) as ChatCard], queries: [] };
+    }
+    case "move_launch": {
+      const l = await projects.findLaunch(org, d.target);
+      if (!l) return { text: "There's no launch to move yet.", cards: [], queries: [] };
+      const r = await projects.moveLaunch(org, l.id, d.date);
+      return { text: `I moved ${r.launch.name} ${Math.abs(r.days)} day${Math.abs(r.days) === 1 ? "" : "s"} ${r.days >= 0 ? "later" : "earlier"} and shifted ${plural(r.moved, "open task")} with it${r.launch.clickupListId ? " in ClickUp too" : ""}.`, cards: [], queries: [] };
+    }
+    case "send_report": {
+      const l = await projects.findLaunch(org, d.target);
+      if (!l || l.status !== "active") return { text: "There's no active launch to report on yet.", cards: [], queries: [] };
+      const r = await projects.weeklyReport(org, l.id);
+      const b = JSON.parse(r.body);
+      return { text: `Week ${r.week} of ${r.weeks}: ${r.status === "behind" ? "behind" : "on track"}. ${b.overall} The full report is on Launches, Reports.`, cards: [], queries: [] };
+    }
+    case "write_agenda": {
+      await coo.ensureMeetings(org);
+      const m = await coo.nextMeetingFor(org, d.target);
+      if (!m) return { text: "There's no meeting coming up. Add a repeating meeting on my Onboarding tab or ask me to schedule one.", cards: [], queries: [] };
+      let next = await coo.buildAgenda(org, m.id);
+      if (d.notes.trim()) {
+        const items = JSON.parse(next.agenda || "[]") as coo.AgendaItem[];
+        const extra = { item: d.notes.trim().slice(0, 160), who: "", minutes: 5 };
+        next = await coo.editMeeting(org, m.id, { agenda: [...items.slice(0, -1), extra, ...items.slice(-1)], minutes: next.minutes });
+      }
+      return { text: `Here's the agenda for ${next.title}.${next.status === "invited" ? " The invite already went out, so I updated the calendar event." : " Press Send invite and it goes out with the meeting link."}`, cards: [coo.meetingCard(next) as ChatCard], queries: [] };
+    }
+    case "schedule_meeting": {
+      const emps = await db.listEmployeesByOrg(org);
+      const ups = emps.filter((e) => d.notes.toLowerCase().includes(e.name.toLowerCase())).map((e) => e.kind);
+      const m = await coo.scheduleMeeting(org, { title: d.title || "Meeting", date: d.date, time: d.time, minutes: Number(d.count) || 30, attendees: d.attendees, updatesFrom: ups });
+      return { text: `I set up ${m.title} and wrote the agenda. Press Send invite and it goes out with the meeting link.`, cards: [coo.meetingCard(m) as ChatCard], queries: [] };
+    }
+    case "meeting_notes": {
+      const m = await coo.lastMeetingFor(org, d.target);
+      if (!m) return { text: "I don't have a past meeting to attach these to yet.", cards: [], queries: [] };
+      const r = await coo.saveNotes(org, m.id, d.message || d.notes);
+      const items = JSON.parse(r.actionItems || "[]") as coo.ActionItem[];
+      const sent = items.some((i) => i.status === "in_clickup" || i.status === "task");
+      return { text: `I found ${plural(items.length, "action item")} in your notes from ${m.title}${items.length ? `: ${items.map((i) => `${i.text} (${i.owner})`).join("; ")}` : ""}.${sent ? " Nora added them to the launch plan." : ""}`, cards: [], queries: [] };
+    }
+    case "set_goal": {
+      const row = await coo.setGoal(org, d.target, Number.isFinite(Number(d.count)) ? Number(d.count) : null);
+      return { text: `The weekly goal for ${row.label.toLowerCase()} is now ${d.count}${row.unit}.`, cards: [], queries: [] };
+    }
     case "check_status": {
+      if (emp.kind === "projects") return { text: await projects.projectsStatus(org), cards: [], queries: [] };
+      if (emp.kind === "coo") return { text: await coo.cooStatus(org), cards: [], queries: [] };
       if (emp.kind === "prospecting" || emp.kind === "outreach" || emp.kind === "leads") return { text: await sales.salesStatus(org, emp.kind), cards: [], queries: [] };
       if (emp.kind === "hiring") {
         const facts = await hiring.hiringFacts(org);

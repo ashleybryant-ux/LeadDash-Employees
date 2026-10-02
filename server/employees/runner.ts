@@ -7,6 +7,8 @@ import { notify } from "../notify";
 import { hiringDaily } from "./hiring";
 import { sweepExpired } from "../review";
 import { postDue } from "../social";
+import { morningChecks } from "./projects";
+import { cooTicks } from "./coo";
 
 /**
  * Runs scheduled tasks. Every minute it picks up tasks whose time has come,
@@ -109,6 +111,8 @@ export function startScheduler() {
       await remindRegistrations();
       await hiringDaily();
       await sweepExpired();
+      await cooTicks();
+      await morningChecks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

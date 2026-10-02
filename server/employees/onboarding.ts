@@ -87,6 +87,14 @@ export const QUESTIONS: Record<EmployeeKind, Question[]> = {
     { key: "tone", label: "Reply tone", type: "choice", options: ["Warm", "Brief and direct", "Formal"] },
     { key: "never", label: "Never promise", type: "text", placeholder: "Prices not on the website, dates I have not confirmed" },
   ],
+  coo: [
+    { key: "style", label: "Agenda style", type: "choice", options: ["Short: decisions first", "Full: every team reports"] },
+    { key: "always", label: "Always on the agenda", type: "text", placeholder: "Cash on hand, open hiring, anything late" },
+  ],
+  projects: [
+    { key: "buffer", label: "Finish tasks before their milestone by", type: "choice", options: ["1 day", "2 days", "1 week"] },
+    { key: "how", label: "How you like plans", type: "text", placeholder: "Small tasks, one owner each, nothing due on Mondays" },
+  ],
   custom: [
     { key: "goal", label: "What should this employee do for you?", type: "text", placeholder: "One or two sentences" },
     { key: "often", label: "How often?", type: "choice", options: ["Every day", "Weekly", "Only when I ask"] },
@@ -130,6 +138,8 @@ export const TEMPLATES: Record<EmployeeKind, Template[]> = {
   ],
   outreach: [REPORT("sequences sending, replies, and demos booked from outreach this week.")],
   leads: [REPORT("new leads, who I replied to, and meetings booked this week.")],
+  coo: [REPORT("this week's scorecard, meetings coming up, and open action items.")],
+  projects: [REPORT("launches behind, tasks due this week, and KPIs off pace.")],
   custom: [REPORT("what you did and what is waiting on me.")],
 };
 
@@ -257,6 +267,14 @@ export async function factsFor(emp: AIEmployee) {
       `Leads: ${leads.filter((l) => l.status === "new").length} new, ${leads.filter((l) => l.status === "replied").length} replied, ${leads.filter((l) => l.status === "booked").length} booked, ${leads.filter((l) => l.status === "closed").length} closed`,
       `Meetings booked in the next 7 days: ${booked.map((l) => `${l.company || l.name} (${fmt(l.bookedFor)}, came from ${l.source})`).join("; ") || "none"}`
     );
+  }
+  if (emp.kind === "projects") {
+    const { projectsStatus } = await import("./projects");
+    lines.push(await projectsStatus(org));
+  }
+  if (emp.kind === "coo") {
+    const { cooStatus } = await import("./coo");
+    lines.push(await cooStatus(org));
   }
   if (emp.kind === "hiring") {
     const { hiringFacts } = await import("./hiring");

@@ -100,6 +100,8 @@ export const organizations = sqliteTable("organizations", {
   signerTitle: text("signerTitle"),
   /** JSON sales settings: what the workspace sells, who Riley looks for, lead form token, meeting hours. */
   sales: text("sales"),
+  /** JSON leadership settings: Simone's meetings (link, repeating meetings, agenda timing) and Nora's ClickUp choices. */
+  ops: text("ops"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -139,6 +141,8 @@ export const EMPLOYEE_KINDS = [
   "prospecting",
   "outreach",
   "leads",
+  "coo",
+  "projects",
   "custom",
 ] as const;
 export type EmployeeKind = (typeof EMPLOYEE_KINDS)[number];
@@ -378,7 +382,7 @@ export type InsertAuditLog = typeof auditLogs.$inferInsert;
 // Connections and the approval queue
 // ==========================================
 
-export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize", "threads", "tiktok"] as const;
+export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize", "threads", "tiktok", "clickup", "zoom"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const externalConnections = sqliteTable(
@@ -982,3 +986,165 @@ export const teamActivity = sqliteTable(
 );
 
 export type TeamActivity = typeof teamActivity.$inferSelect;
+
+// ==========================================
+// Nora (Projects): launches, milestones, tasks, KPIs and status reports
+// ==========================================
+
+export const LAUNCH_STATUSES = ["planning", "active", "done", "dropped"] as const;
+
+export const launches = sqliteTable(
+  "launches",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    launchDate: integer("launchDate", { mode: "timestamp" }).notNull(),
+    status: text("status", { enum: LAUNCH_STATUSES }).notNull().default("planning"),
+    /** What the owner asked for, kept for re-planning. */
+    brief: text("brief"),
+    clickupListId: text("clickupListId"),
+    clickupListUrl: text("clickupListUrl"),
+    /** JSON {doneStatus, openStatus, syncedAt}. */
+    clickup: text("clickup"),
+    approvedBy: text("approvedBy"),
+    approvedAt: integer("approvedAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("launches_org_idx").on(t.organizationId)]
+);
+export type Launch = typeof launches.$inferSelect;
+
+export const launchMilestones = sqliteTable(
+  "launch_milestones",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    launchId: integer("launchId").notNull(),
+    name: text("name").notNull(),
+    dueDate: integer("dueDate", { mode: "timestamp" }).notNull(),
+    position: integer("position").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("launch_milestones_launch_idx").on(t.launchId)]
+);
+export type LaunchMilestone = typeof launchMilestones.$inferSelect;
+
+export const TASK_STATUSES = ["todo", "in_progress", "done"] as const;
+
+export const launchTasks = sqliteTable(
+  "launch_tasks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    launchId: integer("launchId").notNull(),
+    milestoneId: integer("milestoneId"),
+    title: text("title").notNull(),
+    details: text("details"),
+    /** An employee's kind ("blog") or "person". */
+    ownerType: text("ownerType", { enum: ["employee", "person"] }).notNull().default("person"),
+    ownerKind: text("ownerKind"),
+    /** A team member's name, or the employee's name. */
+    ownerName: text("ownerName").notNull(),
+    ownerEmail: text("ownerEmail"),
+    dueDate: integer("dueDate", { mode: "timestamp" }).notNull(),
+    status: text("status", { enum: TASK_STATUSES }).notNull().default("todo"),
+    waitingOn: text("waitingOn"),
+    /** Nora's latest note, e.g. "Due in 3 days and not started. I reminded Jordan." */
+    note: text("note"),
+    clickupTaskId: text("clickupTaskId"),
+    clickupUrl: text("clickupUrl"),
+    clickupStatus: text("clickupStatus"),
+    remindedAt: integer("remindedAt", { mode: "timestamp" }),
+    doneAt: integer("doneAt", { mode: "timestamp" }),
+    /** Where it came from: "plan" or a meeting id ("meeting:12"). */
+    source: text("source").notNull().default("plan"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("launch_tasks_launch_idx").on(t.launchId), index("launch_tasks_org_idx").on(t.organizationId)]
+);
+export type LaunchTask = typeof launchTasks.$inferSelect;
+
+export const KPI_SOURCES = ["demos_booked", "new_leads", "practices_contacted", "reply_rate", "posts_published", "articles_published", "tasks_on_time", "manual"] as const;
+export type KpiSource = (typeof KPI_SOURCES)[number];
+
+export const launchKpis = sqliteTable(
+  "launch_kpis",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    launchId: integer("launchId").notNull(),
+    name: text("name").notNull(),
+    target: integer("target").notNull(),
+    unit: text("unit", { enum: ["count", "percent"] }).notNull().default("count"),
+    byDate: integer("byDate", { mode: "timestamp" }).notNull(),
+    source: text("source", { enum: KPI_SOURCES }).notNull().default("manual"),
+    /** For "You enter it". */
+    manualValue: integer("manualValue"),
+    position: integer("position").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("launch_kpis_launch_idx").on(t.launchId)]
+);
+export type LaunchKpi = typeof launchKpis.$inferSelect;
+
+export const launchReports = sqliteTable(
+  "launch_reports",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    launchId: integer("launchId").notNull(),
+    week: integer("week").notNull(),
+    weeks: integer("weeks").notNull(),
+    status: text("status", { enum: ["on_track", "behind"] }).notNull(),
+    /** JSON {overall, done, behind, next, needsYou}. */
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("launch_reports_launch_idx").on(t.launchId)]
+);
+export type LaunchReport = typeof launchReports.$inferSelect;
+
+// ==========================================
+// Simone (COO): meetings
+// ==========================================
+
+export const MEETING_STATUSES = ["draft", "invited", "cancelled", "held"] as const;
+
+export const meetings = sqliteTable(
+  "meetings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    /** The repeating meeting it came from (ops.recurring[].id), or null for a one-time meeting. */
+    seriesId: text("seriesId"),
+    title: text("title").notNull(),
+    startsAt: integer("startsAt", { mode: "timestamp" }).notNull(),
+    minutes: integer("minutes").notNull().default(30),
+    /** JSON [{name, email}]. */
+    attendees: text("attendees").notNull().default("[]"),
+    /** JSON employee kinds whose work goes on the agenda. */
+    updatesFrom: text("updatesFrom").notNull().default("[]"),
+    /** JSON [{at: "9:05", item, who, minutes}]. */
+    agenda: text("agenda"),
+    status: text("status", { enum: MEETING_STATUSES }).notNull().default("draft"),
+    linkKind: text("linkKind", { enum: ["meet", "zoom"] }).notNull().default("meet"),
+    link: text("link"),
+    calendarEventId: text("calendarEventId"),
+    eventUrl: text("eventUrl"),
+    zoomMeetingId: text("zoomMeetingId"),
+    inviteSentAt: integer("inviteSentAt", { mode: "timestamp" }),
+    notes: text("notes"),
+    notesAt: integer("notesAt", { mode: "timestamp" }),
+    /** JSON [{text, owner, ownerKind, taskId, status}]. */
+    actionItems: text("actionItems"),
+    recapSentAt: integer("recapSentAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("meetings_org_idx").on(t.organizationId)]
+);
+export type Meeting = typeof meetings.$inferSelect;

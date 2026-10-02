@@ -24,7 +24,7 @@ import { payloadFor, postChannels, type Payload, type SocialChannel } from "@sha
 // Apps (set once in .env by LeadDash)
 // ==========================================
 
-export type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x" | "threads" | "tiktok";
+export type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x" | "threads" | "tiktok" | "clickup" | "zoom";
 
 type AppDef = {
   provider: Provider;
@@ -40,6 +40,7 @@ const GRAPH_VERSION = "v26.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const THREADS = "https://graph.threads.net/v1.0";
 const TIKTOK = "https://open.tiktokapis.com/v2";
+const CLICKUP = "https://api.clickup.com/api/v2";
 const LINKEDIN_VERSION = process.env.LINKEDIN_VERSION || "202609";
 
 export const APPS: Record<AppKey, AppDef> = {
@@ -100,6 +101,24 @@ export const APPS: Record<AppKey, AppDef> = {
     authUrl: "https://www.tiktok.com/v2/auth/authorize/",
     tokenUrl: `${TIKTOK}/oauth/token/`,
     scopes: ["user.info.basic", "video.publish"],
+  },
+  // ClickUp has no scopes: the person picks which Workspaces the app may use when they approve.
+  clickup: {
+    provider: "clickup",
+    clientId: () => process.env.CLICKUP_CLIENT_ID || "",
+    clientSecret: () => process.env.CLICKUP_CLIENT_SECRET || "",
+    authUrl: "https://app.clickup.com/api",
+    tokenUrl: "https://api.clickup.com/api/v2/oauth/token",
+    scopes: [],
+  },
+  // Zoom scopes are set on the app in Zoom's App Marketplace (create meetings, read recordings).
+  zoom: {
+    provider: "zoom",
+    clientId: () => process.env.ZOOM_CLIENT_ID || "",
+    clientSecret: () => process.env.ZOOM_CLIENT_SECRET || "",
+    authUrl: "https://zoom.us/oauth/authorize",
+    tokenUrl: "https://zoom.us/oauth/token",
+    scopes: [],
   },
 };
 
@@ -210,7 +229,7 @@ async function accessToken(orgId: number, provider: Provider) {
     const a = APPS[key];
     try {
       const d =
-        key === "x"
+        key === "x" || key === "zoom"
           ? await postForm(a.tokenUrl, { grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: a.clientId() }, { authorization: `Basic ${Buffer.from(`${a.clientId()}:${a.clientSecret()}`).toString("base64")}` })
           : key === "tiktok"
             ? await postForm(a.tokenUrl, { grant_type: "refresh_token", refresh_token: t.refreshToken, client_key: a.clientId(), client_secret: a.clientSecret() })
@@ -236,6 +255,8 @@ const LABEL: Record<string, string> = {
   threads: "Threads",
   tiktok: "TikTok",
   wordpress: "WordPress",
+  clickup: "ClickUp",
+  zoom: "Zoom",
   submittable: "Submittable",
   sessionize: "Sessionize",
 };
@@ -267,8 +288,9 @@ function back(res: Response, params: Record<string, string>) {
 export function authorizeUrl(key: AppKey, state: string, verifier?: string) {
   const a = APPS[key];
   const q = new URLSearchParams({ [key === "tiktok" ? "client_key" : "client_id"]: a.clientId(), redirect_uri: redirectUri(key), response_type: "code", state });
+  if (key === "clickup") return `${a.authUrl}?${new URLSearchParams({ client_id: a.clientId(), redirect_uri: redirectUri(key), state }).toString()}`;
   if (key === "meta" || key === "threads" || key === "tiktok") q.set("scope", a.scopes.join(","));
-  else q.set("scope", a.scopes.join(" "));
+  else if (a.scopes.length) q.set("scope", a.scopes.join(" "));
   if (key === "google" || key === "google_business") {
     q.set("access_type", "offline");
     q.set("prompt", "consent");
@@ -360,6 +382,16 @@ async function exchange(key: AppKey, code: string, verifier?: string) {
   if (key === "x") {
     return postForm(a.tokenUrl, { code, grant_type: "authorization_code", client_id: a.clientId(), redirect_uri: redirectUri(key), code_verifier: verifier ?? "" }, { authorization: `Basic ${Buffer.from(`${a.clientId()}:${a.clientSecret()}`).toString("base64")}` });
   }
+  if (key === "clickup") {
+    const q = new URLSearchParams({ client_id: a.clientId(), client_secret: a.clientSecret(), code });
+    const r = await fetch(`${a.tokenUrl}?${q}`, { method: "POST", headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.access_token) throw new Error(providerError(d, r.status));
+    return d;
+  }
+  if (key === "zoom") {
+    return postForm(a.tokenUrl, { code, grant_type: "authorization_code", redirect_uri: redirectUri(key) }, { authorization: `Basic ${Buffer.from(`${a.clientId()}:${a.clientSecret()}`).toString("base64")}` });
+  }
   if (key === "tiktok") {
     const d = await postForm(a.tokenUrl, { client_key: a.clientId(), client_secret: a.clientSecret(), code, grant_type: "authorization_code", redirect_uri: redirectUri(key) });
     if (!d.access_token) throw new Error(providerError(d, 400));
@@ -436,6 +468,21 @@ export async function finishConnect(orgId: number, key: AppKey, code: string, ve
     label = info.username ? `@${info.username}` : info.nickname || "TikTok account";
     handle = info.username ? `@${info.username}` : null;
     settings = { openId: d.open_id ?? null, username: info.username, nickname: info.nickname };
+  } else if (key === "clickup") {
+    const me = await api(`${CLICKUP}/user`, { token: tokens.accessToken });
+    const teams = await api(`${CLICKUP}/team`, { token: tokens.accessToken });
+    const team = teams.data.teams?.[0];
+    if (!team) throw new Error("No ClickUp Workspace came back. Choose a Workspace when ClickUp asks");
+    const spaces = await api(`${CLICKUP}/team/${team.id}/space?archived=false`, { token: tokens.accessToken });
+    const list = (spaces.data.spaces ?? []).map((sp: any) => ({ id: String(sp.id), name: String(sp.name) }));
+    label = team.name || "ClickUp Workspace";
+    handle = me.data.user?.email ?? null;
+    settings = { teamId: String(team.id), teamName: team.name ?? null, userId: me.data.user?.id ?? null, userEmail: me.data.user?.email ?? null, spaces: list, spaceId: list[0]?.id ?? null, spaceName: list[0]?.name ?? null };
+  } else if (key === "zoom") {
+    const me = await api("https://api.zoom.us/v2/users/me", { token: tokens.accessToken });
+    label = me.data.email || [me.data.first_name, me.data.last_name].filter(Boolean).join(" ") || "Zoom account";
+    handle = me.data.email ?? null;
+    settings = { email: me.data.email ?? null, userId: me.data.id ?? null };
   } else if (key === "meta") {
     const me = await api(`${GRAPH}/me?fields=id,name`, { token: tokens.accessToken });
     const pages = await api(`${GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50`, { token: tokens.accessToken });
@@ -1108,4 +1155,107 @@ export async function dispatch(item: OutboundItem): Promise<{ status: OutboundIt
 
 export function channelLabel(ch: string) {
   return ch === "gmail" ? "Gmail" : ch === "calendar" ? "Google Calendar" : LABEL[ch] ?? ch;
+}
+
+
+// ==========================================
+// Meetings (Simone): calendar invites with Google Meet or Zoom links
+// ==========================================
+
+/** A one-hour-or-less Zoom meeting on the connected Zoom account. */
+export async function createZoomMeeting(orgId: number, m: { topic: string; start: Date; minutes: number; tz: string; agenda: string }) {
+  const { token } = await accessToken(orgId, "zoom");
+  const { data } = await api("https://api.zoom.us/v2/users/me/meetings", {
+    method: "POST",
+    token,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ topic: m.topic.slice(0, 200), type: 2, start_time: m.start.toISOString().replace(/\.\d{3}Z$/, "Z"), duration: m.minutes, timezone: m.tz, agenda: m.agenda.slice(0, 2000), settings: { join_before_host: true, waiting_room: false } }),
+  });
+  return { id: String(data.id), joinUrl: String(data.join_url) };
+}
+
+/** The meeting's transcript text from Zoom cloud recording, or null when there is none yet. */
+export async function zoomTranscript(orgId: number, meetingId: string) {
+  const { token } = await accessToken(orgId, "zoom");
+  try {
+    const { data } = await api(`https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}/recordings`, { token });
+    const file = (data.recording_files ?? []).find((f: any) => f.file_type === "TRANSCRIPT" && f.download_url);
+    if (!file) return null;
+    const r = await fetch(file.download_url, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60_000) });
+    if (!r.ok) return null;
+    const vtt = await r.text();
+    return vtt.replace(/^WEBVTT.*$/m, "").replace(/^\d+\s*$/gm, "").replace(/^\d{2}:\d{2}:\d{2}\.\d{3} --> .*$/gm, "").replace(/\n{2,}/g, "\n").trim().slice(0, 60_000);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Puts a meeting on the connected Google Calendar and emails the invite to every attendee.
+ * With linkKind "meet" Google adds a Meet link; with "zoom" the Zoom link goes in the event.
+ */
+export async function inviteMeeting(orgId: number, m: { eventId?: string | null; summary: string; description: string; start: Date; minutes: number; tz: string; attendees: string[]; zoomUrl?: string | null }) {
+  const { token } = await accessToken(orgId, "google_workspace");
+  const end = new Date(m.start.getTime() + m.minutes * 60_000);
+  const body: Record<string, unknown> = {
+    summary: m.summary,
+    description: m.zoomUrl ? `Join on Zoom: ${m.zoomUrl}\n\n${m.description}` : m.description,
+    start: { dateTime: m.start.toISOString(), timeZone: m.tz },
+    end: { dateTime: end.toISOString(), timeZone: m.tz },
+    attendees: m.attendees.filter((a) => emailIn(a)).map((email) => ({ email: emailIn(email)! })),
+    ...(m.zoomUrl ? { location: m.zoomUrl } : { conferenceData: { createRequest: { requestId: crypto.randomBytes(10).toString("hex"), conferenceSolutionKey: { type: "hangoutsMeet" } } } }),
+  };
+  const url = m.eventId
+    ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(m.eventId)}?sendUpdates=all&conferenceDataVersion=1`
+    : "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all&conferenceDataVersion=1";
+  const { data } = await api(url, { method: m.eventId ? "PATCH" : "POST", token, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const meet = (data.conferenceData?.entryPoints ?? []).find((e: any) => e.entryPointType === "video")?.uri ?? data.hangoutLink ?? null;
+  return { eventId: String(data.id), eventUrl: (data.htmlLink as string | undefined) ?? null, link: m.zoomUrl ?? meet };
+}
+
+export async function cancelCalendarEvent(orgId: number, eventId: string) {
+  const { token } = await accessToken(orgId, "google_workspace");
+  await api(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}?sendUpdates=all`, { method: "DELETE", token }).catch(() => null);
+}
+
+// ==========================================
+// ClickUp (Nora): a list for each launch, tasks kept in sync
+// ==========================================
+
+export async function clickupSettings(orgId: number) {
+  const conn = await db.getConnectionByProvider(orgId, "clickup");
+  if (!conn || conn.status !== "connected") return null;
+  try {
+    return JSON.parse(conn.settings || "{}") as { teamId: string; teamName: string | null; userId: number | null; userEmail: string | null; spaces: { id: string; name: string }[]; spaceId: string | null; spaceName: string | null };
+  } catch {
+    return null;
+  }
+}
+
+export async function clickup(orgId: number, pathName: string, init: { method?: string; body?: unknown } = {}) {
+  const { token } = await accessToken(orgId, "clickup");
+  const { data } = await api(`${CLICKUP}${pathName}`, { method: init.method ?? "GET", token, headers: init.body ? { "content-type": "application/json" } : {}, body: init.body ? JSON.stringify(init.body) : undefined });
+  return data;
+}
+
+/** Refreshes the Space list and saves the chosen Space. */
+export async function chooseClickupSpace(orgId: number, spaceId?: string) {
+  const conn = await db.getConnectionByProvider(orgId, "clickup");
+  const cur = await clickupSettings(orgId);
+  if (!conn || !cur) throw new Error("ClickUp is not connected");
+  const spaces = await clickup(orgId, `/team/${cur.teamId}/space?archived=false`);
+  const list = (spaces.spaces ?? []).map((sp: any) => ({ id: String(sp.id), name: String(sp.name) }));
+  const pick = list.find((x: { id: string }) => x.id === (spaceId ?? cur.spaceId)) ?? list[0] ?? null;
+  const next = { ...cur, spaces: list, spaceId: pick?.id ?? null, spaceName: pick?.name ?? null };
+  await db.upsertExternalConnection({ ...conn, settings: JSON.stringify(next), accountLabel: conn.accountLabel, lastCheckedAt: new Date() });
+  return next;
+}
+
+/** ClickUp members by email, for assigning tasks to people. */
+export async function clickupMembers(orgId: number) {
+  const cur = await clickupSettings(orgId);
+  if (!cur) return [] as { id: number; email: string; name: string }[];
+  const data = await clickup(orgId, "/team");
+  const team = (data.teams ?? []).find((t: any) => String(t.id) === cur.teamId) ?? data.teams?.[0];
+  return (team?.members ?? []).map((m: any) => ({ id: Number(m.user?.id), email: String(m.user?.email ?? "").toLowerCase(), name: String(m.user?.username ?? "") }));
 }

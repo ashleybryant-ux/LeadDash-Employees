@@ -181,6 +181,9 @@ html.ld-review .ld-emphead { top: 34px !important; }
   .ld-main .ld-rw.ld-act > .ld-btn { order: 5; }
   .ld-main .ld-expand[style] { display: flex !important; flex-direction: column; gap: 16px !important; padding: 4px 14px 18px 14px; }
   .ld-main .ld-expand[style] > div > .ld-btn { width: 100%; }
+  .ld-agenda[style] { grid-template-columns: 44px minmax(0, 1fr) !important; row-gap: 2px !important; }
+  .ld-agenda .ld-ag-who { grid-column: 2; font-size: 13px; color: #3d4c45; }
+  .ld-agenda .ld-ag-min { grid-column: 2; font-size: 12px; margin-bottom: 8px; }
   .ld-main [style*="grid-template-columns"]:not(.ld-rw):not(.ld-keep) { grid-template-columns: minmax(0, 1fr) !important; }
   .ld-main .ld-keep.ld-keep-check { grid-template-columns: 84px minmax(0, 1fr) 96px !important; }
   .ld-kv { grid-template-columns: minmax(0, 1fr) !important; gap: 2px 0; }

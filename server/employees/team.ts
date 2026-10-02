@@ -28,6 +28,16 @@ export const RULES: Partial<Record<EmployeeKind, Rule[]>> = {
   inbox: [{ key: "new_email", label: "New emails you ask for", default: "first5" }],
   social: [{ key: "posts", label: "New posts", default: "ask" }],
   blog: [{ key: "pass_to_social", label: "Passing new articles to Sienna", default: "auto" }],
+  coo: [
+    { key: "invites", label: "Sending invites and agendas", default: "ask" },
+    { key: "recap", label: "Sending the recap", default: "ask" },
+    { key: "action_items", label: "Action items to Nora", default: "auto" },
+  ],
+  projects: [
+    { key: "create_plan", label: "Creating a launch plan", default: "ask" },
+    { key: "update_tasks", label: "Updating tasks and dates", default: "auto" },
+    { key: "remind", label: "Reminding owners", default: "auto" },
+  ],
 };
 
 export const ALWAYS_ASKS = "Anything that signs for you, spends money, or makes an offer: grant and pitch submissions, ad budgets, job offers.";

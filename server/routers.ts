@@ -35,6 +35,10 @@ import * as review from "./review";
 import * as social from "./social";
 import * as sales from "./employees/sales";
 import * as team from "./employees/team";
+import * as projects from "./employees/projects";
+import * as coo from "./employees/coo";
+import { opsFor, saveOps, MEETING_MINUTES } from "./employees/ops";
+import { KPI_SOURCES } from "../drizzle/schema";
 import { postProblems, SOCIAL_CHANNELS, TIKTOK_PRIVACY, type SocialChannel } from "@shared/post-model";
 import { isStaffEmail } from "./_core/auth";
 import { EVENT_LABELS, NOTIFY_EVENTS, pushReady, pushTo, readPrefs, type Prefs } from "./notify";
@@ -1712,6 +1716,177 @@ export const appRouter = router({
   // ==========================================
   // Team: Activity across employees
   // ==========================================
+  // ==========================================
+  // Nora (Projects): launches
+  // ==========================================
+  projects: router({
+    launches: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await db.listLaunches(input.organizationId)).filter((l) => l.status !== "dropped").map((l) => ({ id: l.id, name: l.name, launchDate: l.launchDate, status: l.status }));
+    }),
+    launch: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return projects.launchView(input.organizationId, input.id);
+    }),
+    owners: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const emps = (await db.listEmployeesByOrg(input.organizationId)).filter((e) => e.kind !== "projects" && e.kind !== "coo");
+      const people = (await db.listMembers(input.organizationId)).map((m) => m.name || m.email);
+      return [...people, ...emps.map((e) => e.name)];
+    }),
+    approvePlan: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return projects.approvePlan(input.organizationId, input.id, personName(ctx.user));
+    }),
+    dropLaunch: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return projects.dropLaunch(input.organizationId, input.id);
+    }),
+    markTask: protectedProcedure.input(orgInput.extend({ taskId: z.number().int().positive(), done: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return projects.markTaskDone(input.organizationId, input.taskId, input.done);
+    }),
+    updateTask: protectedProcedure
+      .input(orgInput.extend({ taskId: z.number().int().positive(), title: z.string().max(200).optional(), details: z.string().max(2000).optional(), owner: z.string().max(120).optional(), due: z.string().max(10).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, taskId, ...rest } = input;
+        return projects.updateTask(organizationId, taskId, rest);
+      }),
+    saveKpi: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int().positive().optional(), launchId: z.number().int().positive(), name: z.string().min(1).max(120), target: z.number().min(0).max(1_000_000), by: z.string().max(10), source: z.enum(KPI_SOURCES), manualValue: z.number().min(0).max(1_000_000).nullable().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, ...rest } = input;
+        return projects.saveKpi(organizationId, rest);
+      }),
+    removeKpi: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await db.deleteKpi(input.id, input.organizationId);
+      return { ok: true };
+    }),
+    sendReport: protectedProcedure.input(orgInput.extend({ launchId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return projects.weeklyReport(input.organizationId, input.launchId);
+    }),
+    settings: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const { ops } = await opsFor(input.organizationId);
+      const cu = await integrations.clickupSettings(input.organizationId);
+      return { clickup: cu ? { teamName: cu.teamName, spaces: cu.spaces, spaceId: cu.spaceId, spaceName: cu.spaceName } : null, taskOwners: ops.taskOwners, checkTime: ops.checkTime, reportDay: ops.reportDay };
+    }),
+    saveSettings: protectedProcedure
+      .input(orgInput.extend({ spaceId: z.string().max(40).optional(), taskOwners: z.enum(["people", "employees"]), checkTime: z.enum(["07:30", "08:30", "09:30"]), reportDay: z.union([z.literal(1), z.literal(5)]) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        if (input.spaceId && (await integrations.clickupSettings(input.organizationId))) await integrations.chooseClickupSpace(input.organizationId, input.spaceId);
+        await saveOps(input.organizationId, { taskOwners: input.taskOwners, checkTime: input.checkTime, reportDay: input.reportDay });
+        return { ok: true };
+      }),
+    refreshSpaces: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return integrations.chooseClickupSpace(input.organizationId);
+    }),
+  }),
+
+  // ==========================================
+  // Simone (COO): meetings and the scorecard
+  // ==========================================
+  coo: router({
+    meetings: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return coo.meetingsView(input.organizationId);
+    }),
+    meeting: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const v = await coo.meetingsView(input.organizationId);
+      const m = [...v.upcoming, ...v.past].find((x) => x.id === input.id);
+      if (m) return m;
+      const raw = await db.getMeeting(input.id, input.organizationId);
+      if (!raw) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
+      return { ...raw, state: "cancelled" as const, attendees: JSON.parse(raw.attendees || "[]") as coo.Attendee[], updatesFrom: JSON.parse(raw.updatesFrom || "[]") as string[], agenda: JSON.parse(raw.agenda || "[]") as coo.AgendaItem[], actionItems: JSON.parse(raw.actionItems || "[]") as coo.ActionItem[] };
+    }),
+    sendInvite: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const m = await db.getMeeting(input.id, input.organizationId);
+      if (m && !m.agenda) await coo.buildAgenda(input.organizationId, m.id);
+      return coo.sendInvite(input.organizationId, input.id, personName(ctx.user));
+    }),
+    rebuildAgenda: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return coo.buildAgenda(input.organizationId, input.id);
+    }),
+    editMeeting: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().int().positive(),
+          title: z.string().max(160).optional(),
+          date: z.string().max(10).optional(),
+          time: z.string().max(5).optional(),
+          minutes: z.number().int().optional(),
+          attendees: z.array(z.string().max(200)).max(30).optional(),
+          agenda: z.array(z.object({ item: z.string().max(200), who: z.string().max(120), minutes: z.number().int().min(1).max(120) })).max(12).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, id, ...rest } = input;
+        return coo.editMeeting(organizationId, id, rest);
+      }),
+    cancelMeeting: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return coo.cancelMeeting(input.organizationId, input.id);
+    }),
+    saveNotes: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive(), notes: z.string().min(1).max(30_000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return coo.saveNotes(input.organizationId, input.id, input.notes);
+    }),
+    sendItems: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return coo.sendItems(input.organizationId, input.id);
+    }),
+    sendRecap: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return coo.sendRecap(input.organizationId, input.id, personName(ctx.user));
+    }),
+    scorecard: protectedProcedure.input(orgInput.extend({ weeksBack: z.number().int().min(0).max(26) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return coo.scorecard(input.organizationId, new Date(Date.now() - input.weeksBack * 7 * 86_400_000));
+    }),
+    settings: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const { ops } = await opsFor(input.organizationId);
+      const people = (await db.listMembers(input.organizationId)).map((m) => ({ name: m.name || m.email, email: m.email }));
+      const emps = (await db.listEmployeesByOrg(input.organizationId)).filter((e) => e.kind !== "coo").map((e) => ({ kind: e.kind, name: e.name }));
+      const conn = async (p: "zoom" | "google_workspace") => (await db.getConnectionByProvider(input.organizationId, p))?.status === "connected";
+      return { meetingLink: ops.meetingLink, recurring: ops.recurring, agendaWhen: ops.agendaWhen, afterMeeting: ops.afterMeeting, people, employees: emps, zoom: await conn("zoom"), google: await conn("google_workspace"), minutes: [...MEETING_MINUTES] };
+    }),
+    saveSettings: protectedProcedure
+      .input(
+        orgInput.extend({
+          meetingLink: z.enum(["meet", "zoom"]),
+          agendaWhen: z.enum(["day_before", "morning_of"]),
+          afterMeeting: z.enum(["notes", "zoom"]),
+          recurring: z.array(z.object({ id: z.string().max(20), name: z.string().min(1).max(120), day: z.number().int().min(0).max(6), time: z.string().regex(/^\d{2}:\d{2}$/), minutes: z.number().int(), attendees: z.array(z.string().max(200)).max(30), updatesFrom: z.array(z.string().max(30)).max(20) })).max(12),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const { organizationId, ...rest } = input;
+        if (rest.meetingLink === "zoom" && (await db.getConnectionByProvider(organizationId, "zoom"))?.status !== "connected") throw new TRPCError({ code: "BAD_REQUEST", message: "Connect Zoom on Integrations first, or keep Google Meet." });
+        const saved = await saveOps(organizationId, rest);
+        // Upcoming drafts follow the new choices; invites already sent stay as they are.
+        for (const m of (await db.listMeetings(organizationId)).filter((m) => m.status === "draft" && new Date(m.startsAt) > new Date() && m.seriesId)) {
+          const s = saved.recurring.find((r) => r.id === m.seriesId);
+          if (!s) await db.updateMeeting(m.id, organizationId, { status: "cancelled" });
+          else await db.updateMeeting(m.id, organizationId, { linkKind: saved.meetingLink });
+        }
+        await coo.ensureMeetings(organizationId);
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved meeting settings", details: `${saved.recurring.length} repeating meetings` });
+        return { ok: true };
+      }),
+  }),
+
   team: router({
     activity: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

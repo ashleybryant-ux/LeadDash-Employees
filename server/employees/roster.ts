@@ -9,7 +9,7 @@ export type RosterEntry = {
   kind: Exclude<EmployeeKind, "custom">;
   name: string;
   roleTitle: string;
-  department: "Revenue" | "Sales" | "Marketing" | "Operations";
+  department: "Leadership" | "Revenue" | "Sales" | "Marketing" | "Operations";
   description: string;
   capabilities: string[];
   /** Searches the web for this job. */
@@ -19,6 +19,26 @@ export type RosterEntry = {
 };
 
 export const ROSTER: RosterEntry[] = [
+  {
+    kind: "coo",
+    name: "Simone",
+    roleTitle: "COO",
+    department: "Leadership",
+    description: "Runs the meeting schedule across every team: writes each agenda from the week's work, sends the invites with a meeting link, turns your notes into action items, and keeps the company scorecard.",
+    capabilities: ["Agendas from the week's work", "Invites with Google Meet or Zoom links", "Action items from your notes", "Company scorecard"],
+    searches: false,
+    minutesPerTask: 45,
+  },
+  {
+    kind: "projects",
+    name: "Nora",
+    roleTitle: "Projects",
+    department: "Leadership",
+    description: "Plans launches back from the launch date, keeps every task, owner and due date in ClickUp, checks progress every morning, tracks launch KPIs and sends a weekly status report.",
+    capabilities: ["Launch plans with milestones", "ClickUp lists and tasks", "Morning check and reminders", "Launch KPIs and weekly reports"],
+    searches: false,
+    minutesPerTask: 60,
+  },
   {
     kind: "grants",
     name: "Morgan",
@@ -161,6 +181,8 @@ export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: 
   prospecting: { focus: "Look for", avoid: "Skip", signAs: "Ideal fit" },
   outreach: { focus: "What to lead with", avoid: "Never say", signAs: "Sign emails as" },
   leads: { focus: "How to reply", avoid: "Never promise", signAs: "Sign replies as" },
+  coo: { focus: "What every agenda covers", avoid: "Never put on an agenda", signAs: "Sign invites as" },
+  projects: { focus: "How you like plans", avoid: "Never schedule", signAs: "Sign reports as" },
 };
 
 export type Guidelines = { focus: string; avoid: string; signAs: string };

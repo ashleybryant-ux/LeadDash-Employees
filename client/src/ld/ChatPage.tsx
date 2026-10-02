@@ -17,6 +17,9 @@ import HiringWork from "./hiring/HiringWork";
 import Prospects from "./work/Prospects";
 import Outreach from "./work/Outreach";
 import Leads from "./work/Leads";
+import Launches from "./work/Launches";
+import Meetings from "./work/Meetings";
+import { LaunchPlanCard, MeetingAgendaCard } from "./lead/Cards";
 import Onboarding from "./Onboarding";
 import type { Outputs } from "./types";
 
@@ -34,6 +37,8 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   prospecting: Prospects,
   outreach: Outreach,
   leads: Leads,
+  projects: Launches,
+  coo: Meetings,
 };
 
 /** /chats, /chats/:kind, /chats/:kind/work, /chats/:kind/guidelines, /chats/e/:id[...] */
@@ -83,7 +88,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda";
   id: number;
   title: string;
   subtitle?: string;
@@ -365,6 +370,8 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   const err = start.error || skip.error || submit.error || answer.error || move.error || outreach.error || notFit.error;
 
   if (card.type === "schedule_plan" && card.plan) return <PlanCard card={card} emp={emp} />;
+  if (card.type === "launch_plan") return <LaunchPlanCard id={card.id} />;
+  if (card.type === "meeting_agenda") return <MeetingAgendaCard id={card.id} />;
 
   if (card.type === "question") {
     return (

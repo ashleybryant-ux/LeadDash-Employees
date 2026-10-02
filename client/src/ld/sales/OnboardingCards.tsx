@@ -26,7 +26,7 @@ const grid: React.CSSProperties = { padding: "18px 20px", display: "grid", gridT
 const col: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 8 };
 const small: React.CSSProperties = { fontSize: 12, color: "#5b6b64", lineHeight: 1.45 };
 
-function Choice<T extends string>({ options, value, onChange }: { options: { key: T; label: string }[]; value: T; onChange: (v: T) => void }) {
+export function Choice<T extends string>({ options, value, onChange }: { options: { key: T; label: string }[]; value: T; onChange: (v: T) => void }) {
   return (
     <div className="ld-row" style={{ flexWrap: "wrap" }}>
       {options.map((o) => (
@@ -38,7 +38,7 @@ function Choice<T extends string>({ options, value, onChange }: { options: { key
   );
 }
 
-function Buttons({ editing, saving, onEdit, onSave, onCancel }: { editing: boolean; saving: boolean; onEdit: () => void; onSave: () => void; onCancel: () => void }) {
+export function Buttons({ editing, saving, onEdit, onSave, onCancel }: { editing: boolean; saving: boolean; onEdit: () => void; onSave: () => void; onCancel: () => void }) {
   return (
     <div style={col}>
       {editing ? (
@@ -61,7 +61,7 @@ export function WorksOnOwnCard({ emp, rules, alwaysAsks, firstN }: { emp: Employ
   const [draft, setDraft] = React.useState<Record<string, Mode>>({});
   const save = trpc.onboarding.saveRules.useMutation({ onSuccess: async () => { setEditing(false); await utils.onboarding.get.invalidate(); } });
   if (!rules.length) return null;
-  const pronoun = ["Sienna", "Jada", "Riley", "Morgan", "Elena", "Avery", "Taylor", "Jordan"].includes(emp.name) ? "her" : ["Theo", "Malik", "Quinn"].includes(emp.name) ? "his" : "its";
+  const pronoun = ["Sienna", "Jada", "Riley", "Morgan", "Elena", "Avery", "Taylor", "Jordan", "Nora", "Simone"].includes(emp.name) ? "her" : ["Theo", "Malik", "Quinn"].includes(emp.name) ? "his" : "its";
   return (
     <section className={`ld-card ${editing ? "editing" : ""}`}>
       <div style={grid} className="ld-keep-check">

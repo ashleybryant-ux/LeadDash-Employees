@@ -43,6 +43,13 @@
       "when": 1790978280345,
       "tag": "0005_sales",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790983093540,
+      "tag": "0006_leadership",
+      "breakpoints": true
     }
   ]
 }

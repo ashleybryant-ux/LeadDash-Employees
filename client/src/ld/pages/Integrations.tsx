@@ -1,17 +1,20 @@
 import React from "react";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, FolderTabs, Page } from "../ui";
 import { parseJson } from "../meta";
 
-type Provider = "google_workspace" | "linkedin" | "facebook" | "instagram" | "wordpress" | "x" | "google_business" | "submittable" | "sessionize" | "threads" | "tiktok";
-type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x" | "threads" | "tiktok";
+type Provider = "google_workspace" | "linkedin" | "facebook" | "instagram" | "wordpress" | "x" | "google_business" | "submittable" | "sessionize" | "threads" | "tiktok" | "clickup" | "zoom";
+type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x" | "threads" | "tiktok" | "clickup" | "zoom";
 
 type CatalogItem = { key: string; name: string; provider: Provider; logo: string; color: string; desc: string; app?: AppKey };
 
 /** One-click cards: each signs in with the company. WordPress, Submittable and Sessionize still take a sign-in. */
 const CATALOG: CatalogItem[] = [
-  { key: "google", name: "Google", provider: "google_workspace", app: "google", logo: "G", color: "#db4437", desc: "Gmail and Calendar. Avery sends replies and places holds you approve." },
+  { key: "google", name: "Google", provider: "google_workspace", app: "google", logo: "G", color: "#db4437", desc: "Gmail, Calendar and Google Meet. Avery sends replies you approve, and Simone adds a Meet link to each meeting she schedules." },
+  { key: "clickup", name: "ClickUp", provider: "clickup", app: "clickup", logo: "CU", color: "#7b68ee", desc: "Nora creates a list for each launch and keeps tasks, owners and due dates in sync." },
+  { key: "zoom", name: "Zoom", provider: "zoom", app: "zoom", logo: "Z", color: "#0b5cff", desc: "Simone adds a Zoom link instead of Google Meet, and can read the transcript when cloud recording is on." },
   { key: "linkedin", name: "LinkedIn", provider: "linkedin", app: "linkedin", logo: "in", color: "#0a66c2", desc: "Sienna posts to your profile after you approve." },
   { key: "meta", name: "Facebook and Instagram", provider: "facebook", app: "meta", logo: "f", color: "#1877f2", desc: "Sienna posts and Reels to your page and Instagram after you approve." },
   { key: "tiktok", name: "TikTok", provider: "tiktok", app: "tiktok", logo: "tt", color: "#010101", desc: "Sienna posts videos to TikTok after you approve." },
@@ -22,7 +25,7 @@ const CATALOG: CatalogItem[] = [
   { key: "submittable", name: "Submittable", provider: "submittable", logo: "S", color: "#c2410c", desc: "Morgan fills and submits foundation forms." },
   { key: "sessionize", name: "Sessionize", provider: "sessionize", logo: "Se", color: "#9a4d14", desc: "Taylor submits speaker applications." },
 ];
-const MAIN = ["google", "linkedin", "meta", "tiktok", "threads", "x", "gbp", "wordpress"];
+const MAIN = ["google", "clickup", "zoom", "linkedin", "meta", "tiktok", "threads", "x", "gbp", "wordpress"];
 
 type FieldDef = { key: string; label: string; secret?: boolean };
 
@@ -157,7 +160,7 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
   const refresh = () => Promise.all([utils.publishing.listConnections.invalidate(), utils.publishing.connectInfo.invalidate()]);
   const disconnect = trpc.publishing.disconnect.useMutation({ onSuccess: refresh });
   const choose = trpc.publishing.choosePage.useMutation({ onSuccess: refresh });
-  const settings = parseJson<{ pages?: { id: string; name: string; igUsername: string | null }[]; pageId?: string; pageName?: string; igUsername?: string | null; setupNote?: string; userName?: string }>(conn?.settings ?? null, {});
+  const settings = parseJson<{ pages?: { id: string; name: string; igUsername: string | null }[]; pageId?: string; pageName?: string; igUsername?: string | null; setupNote?: string; userName?: string; spaceName?: string | null }>(conn?.settings ?? null, {});
   const [pick, setPick] = React.useState<string | null>(settings.pageId ?? null);
   const connect = () => {
     window.location.href = `/api/oauth/${item.app}/start?organizationId=${currentOrgId}`;
@@ -177,6 +180,7 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
     right = (
       <>
         <span style={okTile}>Connected</span>
+        {item.app === "clickup" && <Link href="/chats/projects/onboarding" className="ld-btn">Change space</Link>}
         <button type="button" className="ld-btn" disabled={disconnect.isPending} onClick={() => disconnect.mutate({ organizationId: currentOrgId, provider: item.provider })}>Disconnect</button>
       </>
     );
@@ -197,6 +201,8 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
     status === "connected"
       ? item.app === "meta"
         ? `Posting to ${settings.pageName ?? "your page"}${settings.igUsername ? ` and Instagram @${settings.igUsername}` : ""}`
+        : item.app === "clickup"
+          ? `${conn?.accountLabel}${settings.spaceName ? ` · ${settings.spaceName} space` : " · choose a space on Nora's Onboarding tab"}`
         : `Connected as ${conn?.accountLabel}`
       : status === "error"
         ? "The sign-in expired. Press Reconnect."

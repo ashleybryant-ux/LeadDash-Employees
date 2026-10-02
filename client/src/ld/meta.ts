@@ -1,8 +1,10 @@
 /** Display facts about each employee job, shared by every screen. */
 
-export type Kind = "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "custom";
+export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "custom";
 
-export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Revenue" | "Sales" | "Marketing" | "Operations" | "Other" }> = {
+export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Leadership" | "Revenue" | "Sales" | "Marketing" | "Operations" | "Other" }> = {
+  coo: { color: "#334155", work: "Meetings", group: "Leadership" },
+  projects: { color: "#6b4f1d", work: "Launches", group: "Leadership" },
   grants: { color: "#1b6b4a", work: "Opportunities", group: "Revenue" },
   speaking: { color: "#9a4d14", work: "Opportunities", group: "Revenue" },
   prospecting: { color: "#4b3f8f", work: "Prospects", group: "Sales" },
@@ -17,8 +19,8 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
   custom: { color: "#3d4c45", work: null, group: "Other" },
 };
 
-export const KIND_ORDER: Kind[] = ["grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring", "custom"];
-export const GROUP_ORDER = ["Revenue", "Sales", "Marketing", "Operations", "Other"] as const;
+export const KIND_ORDER: Kind[] = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring", "custom"];
+export const GROUP_ORDER = ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"] as const;
 
 /** Portraits live in client/public/avatars/<kind>.webp (256 px, from the Manus originals). */
 export const AVATAR_FILES: Partial<Record<Kind, string>> = {
@@ -35,6 +37,8 @@ export const AVATAR_FILES: Partial<Record<Kind, string>> = {
 };
 
 export const SUGGESTIONS: Record<Kind, string[]> = {
+  coo: ["Write Monday's agenda", "Schedule a sales check-in", "Turn my notes into tasks", "How did we do this week?"],
+  projects: ["Plan a launch", "What's behind this week?", "Move launch day", "Send me the status report"],
   grants: ["Find grants for this quarter", "Find pitch competitions", "Apply to the best fit", "Check application status"],
   speaking: ["Find speaking events for the spring", "Find paid speaking events", "Apply to the best fit", "Check application status"],
   prospecting: ["Find practices in a state", "Find practices hiring", "Find referral partners", "What did you find this week?"],
@@ -50,6 +54,8 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
 };
 
 export const GUIDELINE_LABELS: Record<Kind, { focus: string; avoid: string; signAs: string }> = {
+  coo: { focus: "What every agenda covers", avoid: "Never put on an agenda", signAs: "Sign invites as" },
+  projects: { focus: "How you like plans", avoid: "Never schedule", signAs: "Sign reports as" },
   grants: { focus: "Look for", avoid: "Skip", signAs: "Sign proposals as" },
   speaking: { focus: "Talks to pitch", avoid: "Skip", signAs: "Sign pitches as" },
   social: { focus: "Topics", avoid: "Avoid", signAs: "Sign posts as" },
@@ -65,6 +71,18 @@ export const GUIDELINE_LABELS: Record<Kind, { focus: string; avoid: string; sign
 };
 
 export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
+  coo: [
+    "Invites and recaps wait for your approval unless you set them to go on their own.",
+    "Agendas come from what happened this week: Activity, launch reports and the scorecard.",
+    "Employees give updates; only people get invites.",
+    "No client names or health information in agendas, invites or recaps.",
+  ],
+  projects: [
+    "A new launch plan waits for your approval before anything goes to ClickUp.",
+    "Every task has one owner and a due date before its milestone.",
+    "KPIs count from what the app already tracks; anything else you enter yourself.",
+    "No client names or health information in tasks or reports.",
+  ],
   grants: [
     "Every opportunity comes with the host's page.",
     "Nothing is submitted without your Submit tap, which certifies the application.",

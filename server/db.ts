@@ -58,6 +58,12 @@ import {
   type OutboundKind,
   type WorkItemKind,
   type Provider,
+  launches,
+  launchMilestones,
+  launchTasks,
+  launchKpis,
+  launchReports,
+  meetings,
 } from "../drizzle/schema";
 import { EventEmitter } from "node:events";
 import { ENV } from "./_core/env";
@@ -1302,4 +1308,87 @@ export async function addActivity(row: typeof teamActivity.$inferInsert) {
 
 export async function listActivity(orgId: number, limit = 200) {
   return getDb().select().from(teamActivity).where(eq(teamActivity.organizationId, orgId)).orderBy(desc(teamActivity.createdAt), desc(teamActivity.id)).limit(limit).all();
+}
+
+// ==========================================
+// Leadership: launches (Nora) and meetings (Simone)
+// ==========================================
+
+export async function listLaunches(orgId: number) {
+  return getDb().select().from(launches).where(eq(launches.organizationId, orgId)).orderBy(desc(launches.launchDate), desc(launches.id)).all();
+}
+export async function getLaunch(id: number, orgId: number) {
+  return getDb().select().from(launches).where(and(eq(launches.id, id), eq(launches.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export async function createLaunch(row: typeof launches.$inferInsert) {
+  return getDb().insert(launches).values(row).returning().all()[0];
+}
+export async function updateLaunch(id: number, orgId: number, data: Partial<typeof launches.$inferInsert>) {
+  getDb().update(launches).set(data).where(and(eq(launches.id, id), eq(launches.organizationId, orgId))).run();
+  return getLaunch(id, orgId);
+}
+
+export async function listMilestones(launchId: number, orgId: number) {
+  return getDb().select().from(launchMilestones).where(and(eq(launchMilestones.launchId, launchId), eq(launchMilestones.organizationId, orgId))).orderBy(launchMilestones.position, launchMilestones.dueDate).all();
+}
+export async function createMilestone(row: typeof launchMilestones.$inferInsert) {
+  return getDb().insert(launchMilestones).values(row).returning().all()[0];
+}
+export async function updateMilestone(id: number, orgId: number, data: Partial<typeof launchMilestones.$inferInsert>) {
+  getDb().update(launchMilestones).set(data).where(and(eq(launchMilestones.id, id), eq(launchMilestones.organizationId, orgId))).run();
+}
+
+export async function listLaunchTasks(launchId: number, orgId: number) {
+  return getDb().select().from(launchTasks).where(and(eq(launchTasks.launchId, launchId), eq(launchTasks.organizationId, orgId))).orderBy(launchTasks.dueDate, launchTasks.id).all();
+}
+export async function listOrgLaunchTasks(orgId: number) {
+  return getDb().select().from(launchTasks).where(eq(launchTasks.organizationId, orgId)).all();
+}
+export async function getLaunchTask(id: number, orgId: number) {
+  return getDb().select().from(launchTasks).where(and(eq(launchTasks.id, id), eq(launchTasks.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export async function createLaunchTask(row: typeof launchTasks.$inferInsert) {
+  return getDb().insert(launchTasks).values(row).returning().all()[0];
+}
+export async function updateLaunchTask(id: number, orgId: number, data: Partial<typeof launchTasks.$inferInsert>) {
+  getDb().update(launchTasks).set(data).where(and(eq(launchTasks.id, id), eq(launchTasks.organizationId, orgId))).run();
+  return getLaunchTask(id, orgId);
+}
+
+export async function listKpis(launchId: number, orgId: number) {
+  return getDb().select().from(launchKpis).where(and(eq(launchKpis.launchId, launchId), eq(launchKpis.organizationId, orgId))).orderBy(launchKpis.position, launchKpis.id).all();
+}
+export async function getKpi(id: number, orgId: number) {
+  return getDb().select().from(launchKpis).where(and(eq(launchKpis.id, id), eq(launchKpis.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export async function createKpi(row: typeof launchKpis.$inferInsert) {
+  return getDb().insert(launchKpis).values(row).returning().all()[0];
+}
+export async function updateKpi(id: number, orgId: number, data: Partial<typeof launchKpis.$inferInsert>) {
+  getDb().update(launchKpis).set(data).where(and(eq(launchKpis.id, id), eq(launchKpis.organizationId, orgId))).run();
+  return getKpi(id, orgId);
+}
+export async function deleteKpi(id: number, orgId: number) {
+  getDb().delete(launchKpis).where(and(eq(launchKpis.id, id), eq(launchKpis.organizationId, orgId))).run();
+}
+
+export async function listLaunchReports(launchId: number, orgId: number) {
+  return getDb().select().from(launchReports).where(and(eq(launchReports.launchId, launchId), eq(launchReports.organizationId, orgId))).orderBy(desc(launchReports.createdAt), desc(launchReports.id)).all();
+}
+export async function createLaunchReport(row: typeof launchReports.$inferInsert) {
+  return getDb().insert(launchReports).values(row).returning().all()[0];
+}
+
+export async function listMeetings(orgId: number) {
+  return getDb().select().from(meetings).where(eq(meetings.organizationId, orgId)).orderBy(meetings.startsAt, meetings.id).all();
+}
+export async function getMeeting(id: number, orgId: number) {
+  return getDb().select().from(meetings).where(and(eq(meetings.id, id), eq(meetings.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export async function createMeeting(row: typeof meetings.$inferInsert) {
+  return getDb().insert(meetings).values(row).returning().all()[0];
+}
+export async function updateMeeting(id: number, orgId: number, data: Partial<typeof meetings.$inferInsert>) {
+  getDb().update(meetings).set(data).where(and(eq(meetings.id, id), eq(meetings.organizationId, orgId))).run();
+  return getMeeting(id, orgId);
 }
