@@ -3,10 +3,10 @@ import express from "express";
 import { createServer } from "http";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
-import { createContext } from "./context";
+import { authenticateRequest, createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { ENV } from "./env";
-import { getDb, purgeExpiredAuthRecords } from "../db";
+import { getDb, getOrganizationMembership, purgeExpiredAuthRecords } from "../db";
 import { uploadsRoot } from "../storage";
 import { aiStatus } from "./llm";
 import { hasSecretsKey } from "./crypto";
@@ -61,8 +61,24 @@ async function startServer() {
     res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey() });
   });
 
-  // Generated images and banners. Keys are random; nothing here is client data.
-  app.use("/files", express.static(uploadsRoot(), { fallthrough: false, maxAge: "7d", dotfiles: "deny" }));
+  // Stored files (W-9s, licenses, RFPs, videos, downloads, images). Keys are
+  // random, and every request must also come from a signed-in person on the
+  // workspace the file belongs to (org-<id>/...). LeadDash staff have support access.
+  const files = express.static(uploadsRoot(), { fallthrough: false, maxAge: "1h", dotfiles: "deny" });
+  app.use("/files", async (req, res, next) => {
+    try {
+      const { user } = await authenticateRequest(req);
+      if (!user) return res.status(401).send("Sign in to open this file.");
+      const org = decodeURIComponent(req.path).match(/^\/org-(\d+)\//)?.[1];
+      if (org && user.role !== "admin" && !(await getOrganizationMembership(Number(org), user.id))) {
+        return res.status(403).send("This file belongs to another workspace.");
+      }
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      return files(req, res, next);
+    } catch (err) {
+      return next(err);
+    }
+  });
 
   app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
 
