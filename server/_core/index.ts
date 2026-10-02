@@ -1,0 +1,65 @@
+import "dotenv/config";
+import express from "express";
+import { createServer } from "http";
+import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { appRouter } from "../routers";
+import { createContext } from "./context";
+import { serveStatic, setupVite } from "./vite";
+import { ENV } from "./env";
+import { getDb, purgeExpiredAuthRecords } from "../db";
+import { uploadsRoot } from "../storage";
+import { aiStatus } from "./llm";
+import { hasSecretsKey } from "./crypto";
+
+async function startServer() {
+  // Open the database and run any pending migrations before taking traffic.
+  getDb();
+
+  const app = express();
+  const server = createServer(app);
+
+  // Behind nginx on the EC2 box: trust the first proxy for req.ip and https detection.
+  app.set("trust proxy", 1);
+  app.disable("x-powered-by");
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("X-Frame-Options", "DENY");
+    next();
+  });
+
+  app.use(express.json({ limit: "2mb" }));
+  app.use(express.urlencoded({ limit: "2mb", extended: true }));
+
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey() });
+  });
+
+  // Generated images and banners. Keys are random; nothing here is client data.
+  app.use("/files", express.static(uploadsRoot(), { fallthrough: false, maxAge: "7d", dotfiles: "deny" }));
+
+  app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
+
+  if (process.env.NODE_ENV === "development") {
+    await setupVite(app, server);
+  } else {
+    serveStatic(app);
+  }
+
+  // Clear expired sign-in codes and sessions every hour.
+  setInterval(() => purgeExpiredAuthRecords().catch(() => {}), 3600_000).unref();
+
+  server.listen(ENV.port, "127.0.0.1", () => {
+    const ai = aiStatus();
+    console.log(`LeadDash Employees listening on http://127.0.0.1:${ENV.port}/`);
+    console.log(
+      `AI: writing ${ai.writing ? "on" : "OFF"}, web search ${ai.webSearch ? "on" : "OFF"}, images ${ai.images ? "on" : "OFF"}; secrets key ${hasSecretsKey() ? "set" : "MISSING"}`
+    );
+    if (ENV.adminEmails.length === 0) console.warn("ADMIN_EMAILS is empty: nobody can create workspaces.");
+  });
+}
+
+startServer().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

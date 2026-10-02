@@ -1,0 +1,247 @@
+import { TRPCError } from "@trpc/server";
+import { ENV } from "./env";
+
+/**
+ * Two routes to the model:
+ *
+ * 1. Writing (drafts, proposals, posts, replies) goes through the AssemblyAI
+ *    LLM Gateway: the same key, endpoint and BAA DashNotes already uses. It is
+ *    OpenAI-compatible and supports JSON-schema structured output.
+ *
+ * 2. Finding things on the web (grants, speaking events, video trends) goes to
+ *    Anthropic directly, because it needs Anthropic's server-side web search
+ *    tool. Nothing from a client chart is ever sent on this route.
+ */
+
+/** A setup problem, not a crash: shown to the person as-is. */
+export class AiNotConfiguredError extends TRPCError {
+  constructor(message: string) {
+    super({ code: "PRECONDITION_FAILED", message });
+  }
+}
+
+export type JsonSchema = Record<string, unknown>;
+
+type GatewayMessage = { role: "system" | "user" | "assistant"; content: string };
+
+async function callGateway(body: Record<string, unknown>, timeoutMs = 120_000) {
+  if (!ENV.assemblyAiKey) {
+    throw new AiNotConfiguredError("Writing is not set up yet: ASSEMBLYAI_API_KEY is missing on the server.");
+  }
+  const res = await fetch(ENV.llmGatewayUrl, {
+    method: "POST",
+    headers: { authorization: ENV.assemblyAiKey, "content-type": "application/json" },
+    body: JSON.stringify({ model: ENV.llmModel, ...body }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`AI gateway error ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const data = JSON.parse(text);
+  if (data.request_id) console.log(`[ai] gateway request ${data.request_id} (${ENV.llmModel})`);
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map((p: any) => p?.text ?? "").join("");
+  throw new Error("AI gateway returned no text");
+}
+
+/** Plain text (markdown allowed). */
+export async function generateText(opts: {
+  system: string;
+  prompt: string;
+  maxTokens?: number;
+  temperature?: number;
+}): Promise<string> {
+  const messages: GatewayMessage[] = [
+    { role: "system", content: opts.system },
+    { role: "user", content: opts.prompt },
+  ];
+  const out = await callGateway({
+    messages,
+    max_tokens: opts.maxTokens ?? 3000,
+    temperature: opts.temperature ?? 0.5,
+  });
+  return out.trim();
+}
+
+/** Output constrained to a JSON schema. */
+export async function generateJson<T>(opts: {
+  system: string;
+  prompt: string;
+  schemaName: string;
+  schema: JsonSchema;
+  maxTokens?: number;
+  temperature?: number;
+}): Promise<T> {
+  const messages: GatewayMessage[] = [
+    { role: "system", content: opts.system },
+    { role: "user", content: opts.prompt },
+  ];
+  const out = await callGateway({
+    messages,
+    max_tokens: opts.maxTokens ?? 4000,
+    temperature: opts.temperature ?? 0.4,
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: opts.schemaName, schema: opts.schema, strict: true },
+    },
+  });
+  const parsed = extractJson(out);
+  if (parsed === undefined) throw new Error("AI returned something that was not valid JSON");
+  return parsed as T;
+}
+
+/** Finds the first complete JSON object or array in a string. */
+export function extractJson(text: string): unknown {
+  const tagged = text.match(/<json>([\s\S]*?)<\/json>/i);
+  const candidates = [tagged?.[1], text];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const trimmed = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      /* keep looking */
+    }
+    const start = trimmed.search(/[[{]/);
+    if (start === -1) continue;
+    const open = trimmed[start];
+    const close = open === "{" ? "}" : "]";
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === open) depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(trimmed.slice(start, i + 1));
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+export type SearchResult<T> = {
+  data: T;
+  /** The searches the model actually ran. */
+  queries: string[];
+  /** Every page the search returned or the answer cited. */
+  sources: { url: string; title: string }[];
+};
+
+/**
+ * Runs a web-search turn on Anthropic's API, then returns structured output.
+ * The model is told to answer only from what it found, and the parsed result
+ * is converted to the schema through the gateway if the model's own JSON is
+ * malformed.
+ */
+export async function searchJson<T>(opts: {
+  system: string;
+  prompt: string;
+  schemaName: string;
+  schema: JsonSchema;
+  maxUses?: number;
+  maxTokens?: number;
+}): Promise<SearchResult<T>> {
+  if (!ENV.anthropicKey) {
+    throw new AiNotConfiguredError(
+      "Web search is not set up yet: ANTHROPIC_API_KEY is missing on the server."
+    );
+  }
+
+  const system =
+    opts.system +
+    `\n\nToday's date is ${new Date().toISOString().slice(0, 10)}.` +
+    "\nUse web search. Describe only what you found in search results, never from memory. Every item must carry the exact URL of the page it came from." +
+    "\nWhen you are done searching, reply with one JSON object that matches this schema, wrapped in <json></json> tags, and nothing after it:\n" +
+    JSON.stringify(opts.schema);
+
+  const messages: any[] = [{ role: "user", content: opts.prompt }];
+  const queries: string[] = [];
+  const sources = new Map<string, string>();
+  let finalText = "";
+
+  // pause_turn means a long search was paused; send the turn back to resume it.
+  for (let round = 0; round < 4; round++) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ENV.anthropicKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ENV.anthropicModel,
+        max_tokens: opts.maxTokens ?? 8000,
+        system,
+        messages,
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: opts.maxUses ?? ENV.searchMaxUses }],
+      }),
+      signal: AbortSignal.timeout(240_000),
+    });
+    const raw = await res.text();
+    if (!res.ok) throw new Error(`Web search error ${res.status}: ${raw.slice(0, 300)}`);
+    const data = JSON.parse(raw);
+
+    for (const block of data.content ?? []) {
+      if (block.type === "server_tool_use" && block.name === "web_search" && block.input?.query) {
+        queries.push(String(block.input.query));
+      } else if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
+        for (const r of block.content) {
+          if (r?.url) sources.set(r.url, r.title || r.url);
+        }
+      } else if (block.type === "text") {
+        finalText += block.text;
+        for (const c of block.citations ?? []) {
+          if (c?.url) sources.set(c.url, c.title || c.url);
+        }
+      }
+    }
+
+    if (data.stop_reason === "pause_turn") {
+      messages.push({ role: "assistant", content: data.content });
+      continue;
+    }
+    break;
+  }
+
+  let parsed = extractJson(finalText);
+  if (parsed === undefined) {
+    // Let the gateway restructure the findings rather than failing the whole run.
+    parsed = await generateJson<T>({
+      system: "Convert the research notes into the JSON schema exactly. Do not add facts that are not in the notes.",
+      prompt: finalText,
+      schemaName: opts.schemaName,
+      schema: opts.schema,
+    });
+  }
+
+  return {
+    data: parsed as T,
+    queries,
+    sources: Array.from(sources, ([url, title]) => ({ url, title })),
+  };
+}
+
+export function aiStatus() {
+  return {
+    writing: Boolean(ENV.assemblyAiKey),
+    webSearch: Boolean(ENV.anthropicKey),
+    images: Boolean(ENV.openAiKey),
+  };
+}
