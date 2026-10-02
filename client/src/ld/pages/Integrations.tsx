@@ -5,21 +5,22 @@ import { ErrorLine, FolderTabs, Page } from "../ui";
 import { parseJson } from "../meta";
 
 type Provider = "google_workspace" | "linkedin" | "facebook" | "instagram" | "wordpress" | "x" | "google_business" | "submittable" | "sessionize";
+type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x";
 
-type CatalogItem = { key: string; name: string; provider: Provider; logo: string; color: string; desc: string };
+type CatalogItem = { key: string; name: string; provider: Provider; logo: string; color: string; desc: string; app?: AppKey };
 
+/** One-click cards: each signs in with the company. WordPress, Submittable and Sessionize still take a sign-in. */
 const CATALOG: CatalogItem[] = [
-  { key: "facebook", name: "Facebook", provider: "facebook", logo: "f", color: "#1877f2", desc: "Sienna posts to your page after you approve." },
-  { key: "linkedin", name: "LinkedIn", provider: "linkedin", logo: "in", color: "#0a66c2", desc: "Sienna posts to your profile or page after you approve." },
-  { key: "instagram", name: "Instagram", provider: "instagram", logo: "IG", color: "#c13584", desc: "Sienna posts images and captions after you approve." },
-  { key: "gmail", name: "Gmail", provider: "google_workspace", logo: "G", color: "#db4437", desc: "Avery reads your inbox and sends replies you approve." },
-  { key: "gcal", name: "Google Calendar", provider: "google_workspace", logo: "31", color: "#4285f4", desc: "Avery places holds you approve." },
+  { key: "google", name: "Google", provider: "google_workspace", app: "google", logo: "G", color: "#db4437", desc: "Gmail and Calendar. Avery sends replies and places holds you approve." },
+  { key: "linkedin", name: "LinkedIn", provider: "linkedin", app: "linkedin", logo: "in", color: "#0a66c2", desc: "Sienna posts to your profile after you approve." },
+  { key: "meta", name: "Facebook and Instagram", provider: "facebook", app: "meta", logo: "f", color: "#1877f2", desc: "Sienna posts to your page and Instagram after you approve." },
+  { key: "x", name: "X", provider: "x", app: "x", logo: "X", color: "#111111", desc: "Sienna posts the short version after you approve." },
+  { key: "gbp", name: "Google Business Profile", provider: "google_business", app: "google_business", logo: "GB", color: "#34a853", desc: "Sienna posts updates to your listing after you approve." },
   { key: "wordpress", name: "WordPress", provider: "wordpress", logo: "W", color: "#21759b", desc: "Theo saves approved articles as drafts on your site." },
-  { key: "x", name: "X", provider: "x", logo: "X", color: "#111111", desc: "Sienna posts the short version after you approve." },
-  { key: "gbp", name: "Google Business Profile", provider: "google_business", logo: "GB", color: "#34a853", desc: "Sienna posts updates to your listing after you approve." },
   { key: "submittable", name: "Submittable", provider: "submittable", logo: "S", color: "#c2410c", desc: "Morgan fills and submits foundation forms." },
   { key: "sessionize", name: "Sessionize", provider: "sessionize", logo: "Se", color: "#9a4d14", desc: "Taylor submits speaker applications." },
 ];
+const MAIN = ["google", "linkedin", "meta", "x", "gbp", "wordpress"];
 
 type FieldDef = { key: string; label: string; secret?: boolean };
 
@@ -31,20 +32,9 @@ function fieldsFor(p: Provider): FieldDef[] {
       { key: "username", label: "Sign-in email" },
       { key: "appPassword", label: "Password", secret: true },
     ];
-  if (p === "wordpress")
-    return [
-      { key: "username", label: "Username" },
-      { key: "appPassword", label: "Application password", secret: true },
-    ];
-  if (p === "facebook" || p === "instagram")
-    return [
-      { key: "appId", label: "App ID" },
-      { key: "appSecret", label: "App secret", secret: true },
-      { key: "pageId", label: "Page or account ID" },
-    ];
   return [
-    { key: "clientId", label: "Client ID" },
-    { key: "clientSecret", label: "Client secret", secret: true },
+    { key: "username", label: "Username" },
+    { key: "appPassword", label: "Application password", secret: true },
   ];
 }
 
@@ -71,28 +61,45 @@ const tile: React.CSSProperties = {
   cursor: "pointer",
   boxSizing: "border-box",
 };
-const okTile: React.CSSProperties = { ...tile, background: "#e6f2ec", color: "#155c3e" };
+const okTile: React.CSSProperties = { ...tile, background: "#e6f2ec", color: "#155c3e", cursor: "default" };
 const warnTile: React.CSSProperties = { ...tile, background: "#fdf0e3", color: "#8a4510" };
 
 export default function Integrations() {
   const { currentOrgId } = useTenant();
   const q = trpc.publishing.listConnections.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
-  const [tab, setTab] = React.useState<"all" | "connected" | "applying">(
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "applying" ? "applying" : "all"
-  );
+  const info = trpc.publishing.connectInfo.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const [tab, setTab] = React.useState<"all" | "connected" | "applying">(params.get("tab") === "applying" ? "applying" : "all");
   const [search, setSearch] = React.useState("");
   const [open, setOpen] = React.useState<string | null>(null);
+  const [notice] = React.useState<{ ok: boolean; text: string } | null>(() => {
+    const c = params.get("connected");
+    const e = params.get("error");
+    if (c) return { ok: true, text: `${CATALOG.find((x) => x.app === c)?.name ?? "Account"} is connected.` };
+    if (e) return { ok: false, text: e };
+    return null;
+  });
+  React.useEffect(() => {
+    if (params.get("connected") || params.get("error")) window.history.replaceState(null, "", "/integrations");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const conns = (q.data ?? []) as Conn[];
   const connOf = (p: Provider) => conns.find((c) => c.provider === p);
+  const main = CATALOG.filter((c) => MAIN.includes(c.key));
   const isConnected = (c: CatalogItem) => connOf(c.provider)?.status === "connected";
-  const connectedCount = CATALOG.filter(isConnected).length;
+  const connectedCount = main.filter(isConnected).length;
   const needle = search.trim().toLowerCase();
-  const shown = CATALOG.filter((c) => (tab === "all" || (tab === "connected" && isConnected(c))) && (!needle || c.name.toLowerCase().includes(needle)));
+  const shown = main.filter((c) => (tab === "all" || (tab === "connected" && isConnected(c))) && (!needle || c.name.toLowerCase().includes(needle)));
 
   return (
     <Page rail="integrations" maxWidth={1140}>
       <h1 className="ld-h1">Integrations</h1>
+      {notice && (
+        <div role="status" className="ld-card" style={{ padding: "12px 16px", borderColor: notice.ok ? "#1b6b4a" : "#e2a7a1", background: notice.ok ? "#f1f8f4" : "#fdf3f2", fontSize: 14, fontWeight: 600, color: notice.ok ? "#155c3e" : "#b42318" }}>
+          {notice.text}
+        </div>
+      )}
       <label htmlFor="int-search" className="ld-sr">Search integrations</label>
       <input
         id="int-search"
@@ -102,58 +109,132 @@ export default function Integrations() {
         onChange={(e) => setSearch(e.target.value)}
         style={{ height: 44, border: "1px solid #cfd9d4", borderRadius: 10, padding: "0 14px", font: "inherit", fontSize: 14, background: "#fff", boxSizing: "border-box" }}
       />
-      <p className="ld-small ld-muted" style={{ margin: 0 }}>Sending is not switched on yet. Approved items wait until each channel is verified.</p>
 
       <FolderTabs
         value={tab}
         onChange={setTab}
         tabs={[
-          { key: "all", label: `All (${CATALOG.length})` },
+          { key: "all", label: `All (${main.length})` },
           { key: "connected", label: `Connected (${connectedCount})` },
           { key: "applying", label: "Applying (5)" },
         ]}
       >
         {tab === "applying" ? (
-          <Applying conns={conns} open={open} setOpen={setOpen} />
+          <Applying conns={conns} open={open} setOpen={setOpen} ready={info.data?.apps} />
         ) : (
-        <div style={{ padding: 18, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, alignItems: "start" }}>
-          {shown.length === 0 && (
-            <div className="ld-empty" style={{ gridColumn: "1 / -1" }}>
-              {q.isLoading ? "Loading..." : tab === "connected" ? "Nothing is connected yet." : "No integrations match."}
-            </div>
-          )}
-          {shown.map((c) => {
-            const conn = connOf(c.provider);
-            const isOpen = open === c.key;
-            const toggle = () => setOpen(isOpen ? null : c.key);
-            let right: React.ReactNode;
-            if (conn?.status === "connected") right = <button type="button" style={okTile} onClick={toggle} aria-expanded={isOpen}>Connected</button>;
-            else if (conn?.status === "pending") right = <button type="button" style={warnTile} onClick={toggle} aria-expanded={isOpen}>Not verified</button>;
-            else if (conn?.status === "error") right = <button type="button" style={warnTile} onClick={toggle} aria-expanded={isOpen}>Needs attention</button>;
-            else right = <button type="button" className="ld-btn p" onClick={toggle} aria-expanded={isOpen}>Connect</button>;
-            return (
-              <div
-                key={c.key}
-                style={{ background: "#fff", border: `1px solid ${isOpen ? "#1b6b4a" : "#e3e9e6"}`, borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}
-              >
-                <div style={{ display: "grid", gridTemplateColumns: "44px minmax(0,1fr) 128px", gap: 14, alignItems: "center" }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 10, background: c.color, color: "#fff", fontWeight: 800, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }} aria-hidden="true">
-                    {c.logo}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: 15 }}>{c.name}</div>
-                    <div style={{ fontSize: 13, color: "#3d4c45", lineHeight: 1.45 }}>{c.desc}</div>
-                  </div>
-                  {right}
-                </div>
-                {isOpen && <ConnectForm item={c} conn={conn} onDone={() => setOpen(null)} />}
+          <div className="ld-intgrid" style={{ padding: 18, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, alignItems: "start" }}>
+            {shown.length === 0 && (
+              <div className="ld-empty" style={{ gridColumn: "1 / -1" }}>
+                {q.isLoading ? "Loading..." : tab === "connected" ? "Nothing is connected yet." : "No integrations match."}
               </div>
-            );
-          })}
-        </div>
+            )}
+            {shown.map((c) =>
+              c.app ? (
+                <OneClick key={c.key} item={c} conn={connOf(c.provider)} ready={info.data?.apps?.[c.app] ?? false} loading={info.isLoading} />
+              ) : (
+                <div key={c.key} style={tileBox(open === c.key)}>
+                  <TileHead logo={c.logo} color={c.color} name={c.name} desc={c.desc} right={<StatusTile conn={connOf(c.provider)} isOpen={open === c.key} toggle={() => setOpen(open === c.key ? null : c.key)} />} />
+                  {open === c.key && <ConnectForm item={c} conn={connOf(c.provider)} onDone={() => setOpen(null)} />}
+                </div>
+              )
+            )}
+          </div>
         )}
       </FolderTabs>
     </Page>
+  );
+}
+
+// ==========================================
+// One-click card
+// ==========================================
+
+function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Conn | undefined; ready: boolean; loading: boolean }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const refresh = () => Promise.all([utils.publishing.listConnections.invalidate(), utils.publishing.connectInfo.invalidate()]);
+  const disconnect = trpc.publishing.disconnect.useMutation({ onSuccess: refresh });
+  const choose = trpc.publishing.choosePage.useMutation({ onSuccess: refresh });
+  const settings = parseJson<{ pages?: { id: string; name: string; igUsername: string | null }[]; pageId?: string; pageName?: string; igUsername?: string | null; setupNote?: string; userName?: string }>(conn?.settings ?? null, {});
+  const [pick, setPick] = React.useState<string | null>(settings.pageId ?? null);
+  const connect = () => {
+    window.location.href = `/api/oauth/${item.app}/start?organizationId=${currentOrgId}`;
+  };
+  const status = conn?.status ?? "disconnected";
+  const choosing = item.app === "meta" && status === "pending" && (settings.pages?.length ?? 0) > 1;
+
+  let right: React.ReactNode;
+  if (choosing) {
+    right = (
+      <>
+        <button type="button" className="ld-btn p" disabled={!pick || choose.isPending} onClick={() => pick && choose.mutate({ organizationId: currentOrgId, pageId: pick })}>Save</button>
+        <button type="button" className="ld-btn" disabled={disconnect.isPending} onClick={() => disconnect.mutate({ organizationId: currentOrgId, provider: item.provider })}>Cancel</button>
+      </>
+    );
+  } else if (status === "connected") {
+    right = (
+      <>
+        <span style={okTile}>Connected</span>
+        <button type="button" className="ld-btn" disabled={disconnect.isPending} onClick={() => disconnect.mutate({ organizationId: currentOrgId, provider: item.provider })}>Disconnect</button>
+      </>
+    );
+  } else if (status === "error") {
+    right = (
+      <>
+        <button type="button" className="ld-btn p" disabled={!ready} onClick={connect}>Reconnect</button>
+        <button type="button" className="ld-btn" disabled={disconnect.isPending} onClick={() => disconnect.mutate({ organizationId: currentOrgId, provider: item.provider })}>Disconnect</button>
+      </>
+    );
+  } else if (!ready) {
+    right = <span style={{ ...tile, background: "#eef2f0", color: "#5b6b64", cursor: "default" }}>{loading ? "..." : "Coming soon"}</span>;
+  } else {
+    right = <button type="button" className="ld-btn p" onClick={connect}>Connect</button>;
+  }
+
+  const account =
+    status === "connected"
+      ? item.app === "meta"
+        ? `Posting to ${settings.pageName ?? "your page"}${settings.igUsername ? ` and Instagram @${settings.igUsername}` : ""}`
+        : `Connected as ${conn?.accountLabel}`
+      : status === "error"
+        ? "The sign-in expired. Press Reconnect."
+        : choosing
+          ? `Signed in as ${settings.userName ?? conn?.accountLabel}`
+          : null;
+
+  return (
+    <div style={{ ...tileBox(choosing), display: "grid", gridTemplateColumns: "44px minmax(0,1fr) 128px", gap: 14, alignItems: "start" }} className="ld-oneclick ld-keep">
+      <div style={{ width: 44, height: 44, borderRadius: 10, background: item.color, color: "#fff", fontWeight: 800, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }} aria-hidden="true">
+        {item.logo}
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>{item.name}</div>
+        <div style={{ fontSize: 13, color: "#3d4c45", lineHeight: 1.45, marginTop: 2 }}>{item.desc}</div>
+        {account && <div style={{ fontSize: 13, fontWeight: 700, color: status === "error" ? "#8a4510" : "#155c3e", marginTop: 6, overflowWrap: "anywhere" }}>{account}</div>}
+        {status === "connected" && item.app === "google_business" && settings.setupNote && (
+          <div style={{ fontSize: 12, color: "#8a4510", marginTop: 4 }}>Google has not opened Business Profile access for LeadDash yet. Posts will wait until it does.</div>
+        )}
+        {choosing && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <span className="ld-lbl">Post to which page?</span>
+            <div className="ld-row" style={{ flexWrap: "wrap" }}>
+              {settings.pages!.map((pg) => (
+                <button key={pg.id} type="button" className={`ld-chip ${pick === pg.id ? "on" : ""}`} aria-pressed={pick === pg.id} onClick={() => setPick(pg.id)}>
+                  {pg.name}
+                </button>
+              ))}
+            </div>
+            {pick && (
+              <span style={{ fontSize: 13, color: "#3d4c45" }}>
+                {settings.pages!.find((x) => x.id === pick)?.igUsername ? `Instagram: @${settings.pages!.find((x) => x.id === pick)?.igUsername} (linked to this page)` : "No Instagram business account is linked to this page."}
+              </span>
+            )}
+          </div>
+        )}
+        <ErrorLine error={disconnect.error || choose.error} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{right}</div>
+    </div>
   );
 }
 
@@ -183,11 +264,11 @@ function TileHead({ logo, color, name, desc, right }: { logo: string; color: str
   );
 }
 
-function Applying({ conns, open, setOpen }: { conns: Conn[]; open: string | null; setOpen: (k: string | null) => void }) {
+function Applying({ conns, open, setOpen, ready }: { conns: Conn[]; open: string | null; setOpen: (k: string | null) => void; ready?: Record<AppKey, boolean> }) {
   const connOf = (p: Provider) => conns.find((c) => c.provider === p);
   const item = (key: string) => CATALOG.find((c) => c.key === key)!;
   const toggle = (k: string) => setOpen(open === k ? null : k);
-  const gmail = { ...item("gmail"), desc: "Morgan and Taylor send email applications." };
+  const gmail = { ...item("google"), key: "gmail", name: "Gmail", desc: "Morgan and Taylor send email applications." };
   return (
     <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
       <Signer />
@@ -196,6 +277,8 @@ function Applying({ conns, open, setOpen }: { conns: Conn[]; open: string | null
         {[item("submittable"), { key: "portals" } as CatalogItem, gmail, item("sessionize")].map((c) =>
           c.key === "portals" ? (
             <Portals key="portals" isOpen={open === "portals"} toggle={() => toggle("portals")} />
+          ) : c.app ? (
+            <OneClick key={c.key} item={c} conn={connOf(c.provider)} ready={ready?.[c.app] ?? false} loading={!ready} />
           ) : (
             <div key={c.key} style={tileBox(open === c.key)}>
               <TileHead logo={c.logo} color={c.color} name={c.name} desc={c.desc} right={<StatusTile conn={connOf(c.provider)} isOpen={open === c.key} toggle={() => toggle(c.key)} />} />
@@ -204,7 +287,7 @@ function Applying({ conns, open, setOpen }: { conns: Conn[]; open: string | null
           )
         )}
       </div>
-      <p className="ld-small ld-muted" style={{ margin: 0 }}>Sign-ins are saved encrypted. Automatic sending through each one is switched on after it is verified.</p>
+      <p className="ld-small ld-muted" style={{ margin: 0 }}>Sign-ins are saved encrypted.</p>
     </div>
   );
 }

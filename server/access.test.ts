@@ -46,7 +46,7 @@ describe("access control", () => {
     await caller(owner).members.add({ organizationId: orgId, email: "new@roles.test", name: "New Person" });
     const item = await db.createOutboundItem({ organizationId: orgId, kind: "email_draft", status: "pending_approval", title: "Hello" });
     const approved = await caller(reviewer).publishing.approveAndDispatch({ organizationId: orgId, itemId: item.id, action: "approve_for_dispatch", reviewerName: "Someone Else" });
-    expect(approved?.status).toBe("approved");
+    expect(approved?.status).toBe("blocked_connection"); // approved, waiting until Gmail is connected
     expect(approved?.approvedBy).toBe(reviewer.name); // the signed-in person, never a name the browser sends
   });
 

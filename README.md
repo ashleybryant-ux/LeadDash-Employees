@@ -40,6 +40,10 @@ Names can be changed per workspace. The `kind` column decides what an employee d
 
 Every employee has an Onboarding tab: fixed-choice questions about what the owner wants, "A day with ..." written from the answers, and Assignments (scheduled tasks such as "Send me a report" every day at 9:00 AM). Answers go into every instruction the employee gets. Every roster job is in every workspace; new jobs are added to existing workspaces at startup (`server/employees/roster-sync.ts`).
 
+## One-click integrations
+
+`server/integrations.ts`. LeadDash registers one app with Google, LinkedIn, Meta and X and puts the keys in `.env` (`GOOGLE_CLIENT_ID`, `LINKEDIN_CLIENT_ID`, `META_APP_ID`, `X_CLIENT_ID` and their secrets). Each workspace then presses Connect on Integrations; the sign-in comes back to `/api/oauth/<app>/callback` and the tokens are saved encrypted. Approve in Approvals then posts (LinkedIn profile, Facebook Page, Instagram, X, Google Business Profile), sends (Gmail, from `gmail.send` only, so no yearly Google security audit) or adds the hold to Google Calendar. Items whose channel is not connected wait, and Try again resends only what failed. Instagram and Facebook fetch images from a signed link (`/media/...`) that expires after a day.
+
 ## Phones and push notifications
 
 The layout switches to a bottom bar under 760px. The app is installable (manifest, icons, `client/public/sw.js`). Push uses Web Push with VAPID keys (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`); each person turns push on per device under My account and picks what they hear about. On iPhone, push works only from the app added to the Home Screen (iOS 16.4 and later).
@@ -50,7 +54,8 @@ Chat-first, from the approved mockup: a rail (Chats, Approvals, Tasks, Brain, Wo
 
 ## What is not built yet
 
-- Sending. Approving an item marks it approved; nothing goes to Gmail, Google Calendar, LinkedIn, Meta, X, WordPress, Grants.gov, Submittable or Sessionize yet. That is round 2 and needs each provider's connection.
+- Sending through WordPress, Grants.gov, Submittable and Sessionize. Approved blog posts and applications still wait for you.
+- LinkedIn company pages (needs LinkedIn's Community Management API approval) and reading your Gmail inbox (restricted Google scopes need a yearly security assessment).
 - Funding facts from LeadDash EHR (monthly totals, no client data) need an endpoint on the LeadDash EHR side.
 - Quinn's own portrait. Quinn uses the default portrait (`client/public/avatars/custom.webp`) until one is made; put it at `client/public/avatars/hiring.webp` and point `AVATAR_FILES.hiring` at it in `client/src/ld/meta.ts`.
 - Reading candidate replies. Quinn cannot see your inbox yet, so you press Replied on Outreach.

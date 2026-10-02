@@ -16,6 +16,7 @@ import { ensureIndexed } from "../employees/kb";
 import { markStuckApplications } from "../db";
 import { ensureAllRosters } from "../employees/roster-sync";
 import { pushReady, startNotifications } from "../notify";
+import { readyApps, registerOAuth } from "../integrations";
 
 async function startServer() {
   // Open the database and run any pending migrations before taking traffic.
@@ -62,7 +63,7 @@ async function startServer() {
   });
 
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey(), push: pushReady() });
+    res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey(), push: pushReady(), connect: readyApps() });
   });
 
   // Stored files (W-9s, licenses, RFPs, videos, downloads, images). Keys are
@@ -83,6 +84,9 @@ async function startServer() {
       return next(err);
     }
   });
+
+  // One-click connections (Google, LinkedIn, Meta, X) and signed image links for Meta.
+  registerOAuth(app);
 
   app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
 

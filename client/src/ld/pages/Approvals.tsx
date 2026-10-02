@@ -49,8 +49,27 @@ function joinAnd(list: string[]) {
   return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 }
 
+type Dispatch = { channel: string; ok: boolean; url?: string | null; error?: string };
+const CH_NAME: Record<string, string> = { linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", x: "X", google_business: "Google Business Profile", gmail: "Gmail", calendar: "Google Calendar" };
+
+/** Which channels an item goes out on, by the names the server uses. */
+function itemChannels(kind: string, targetChannels: string | null): string[] {
+  if (kind === "social_post") return channelList(targetChannels).length ? parseJson<string[]>(targetChannels, []).filter((c) => c in CH_NAME) : [];
+  if (kind === "calendar_hold") return ["calendar"];
+  if (kind === "email_draft" || kind === "hiring_email" || kind === "speaking_pitch") return ["gmail"];
+  return [];
+}
+
+function doneLabel(kind: string, status: string, dispatch: Dispatch[]) {
+  if (status === "published") return { label: kind === "calendar_hold" ? "On calendar" : kind === "social_post" || kind === "blog_post" ? "Posted" : "Sent", cls: "green" };
+  if (status === "approved" && dispatch.some((d) => !d.ok)) return { label: dispatch.some((d) => d.ok) ? "Partly posted" : kind === "social_post" ? "Did not post" : "Did not send", cls: "red" };
+  return DONE_STATUS[status] ?? { label: status, cls: "gray" };
+}
+
 export default function Approvals() {
   const { currentOrgId } = useTenant();
+  const info = trpc.publishing.connectInfo.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const live = info.data?.channels ?? {};
   const utils = trpc.useUtils();
   const { list: employees } = useEmployees();
   const q = trpc.publishing.listApprovalQueue.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
@@ -121,8 +140,14 @@ export default function Approvals() {
           const isOpen = open === item.id;
           const channels = channelList(item.targetChannels);
           const isPending = item.status === "pending_approval";
-          const st = DONE_STATUS[item.status] ?? { label: item.status, cls: "gray" };
-          const meta = parseJson<{ headline?: string; to?: string; email?: string }>(item.metadata, {});
+          const meta = parseJson<{ headline?: string; to?: string; email?: string; dispatch?: Dispatch[] }>(item.metadata, {});
+          const dispatch = meta.dispatch ?? [];
+          const st = doneLabel(item.kind, item.status, dispatch);
+          const chans = itemChannels(item.kind, item.targetChannels);
+          const liveChans = chans.filter((c) => live[c]);
+          const goLabel = liveChans.length === 0 ? "Approve" : item.kind === "social_post" ? "Post" : item.kind === "calendar_hold" ? "Add" : "Send";
+          const canRetry = (item.status === "approved" && dispatch.some((d) => !d.ok)) || item.status === "blocked_connection";
+          const viewUrl = dispatch.find((d) => d.ok && d.url)?.url ?? null;
           const isEditing = editing === item.id;
           return (
             <React.Fragment key={item.id}>
@@ -151,7 +176,7 @@ export default function Approvals() {
                       disabled={act.isPending}
                       onClick={() => act.mutate({ organizationId: currentOrgId, itemId: item.id, action: "approve_for_dispatch" })}
                     >
-                      Approve
+                      {act.isPending && act.variables?.itemId === item.id ? "Working..." : goLabel}
                     </button>
                     <button
                       type="button"
@@ -165,7 +190,15 @@ export default function Approvals() {
                 ) : (
                   <>
                     <span className={`ld-pill ${st.cls}`}>{st.label}</span>
-                    <span />
+                    {canRetry ? (
+                      <button type="button" className="ld-btn p" disabled={act.isPending} onClick={() => act.mutate({ organizationId: currentOrgId, itemId: item.id, action: "retry" })}>
+                        {act.isPending && act.variables?.itemId === item.id ? "Working..." : "Try again"}
+                      </button>
+                    ) : viewUrl ? (
+                      <a className="ld-btn" href={viewUrl} target="_blank" rel="noreferrer noopener">{item.kind === "social_post" ? "View post" : "Open"}</a>
+                    ) : (
+                      <span />
+                    )}
                   </>
                 )}
               </div>
@@ -205,19 +238,41 @@ export default function Approvals() {
                     ) : (
                       <span className="ld-body ld-pre" style={{ lineHeight: 1.6 }}>{item.body || "No text."}</span>
                     )}
+                    {chans.length > 0 && isPending && liveChans.length > 0 && (
+                      <>
+                        <span className="ld-lbl" style={{ marginTop: 8 }}>{item.kind === "social_post" ? "Posts to" : "Goes out through"}</span>
+                        <span className="ld-body">{liveChans.map((c) => CH_NAME[c]).join(", ")}{chans.length > liveChans.length ? `. Not connected yet: ${chans.filter((c) => !live[c]).map((c) => CH_NAME[c]).join(", ")}` : ""}</span>
+                      </>
+                    )}
+                    {dispatch.length > 0 && (
+                      <>
+                        <span className="ld-lbl" style={{ marginTop: 8 }}>Result</span>
+                        {dispatch.map((d) => (
+                          <span key={d.channel} className="ld-body" style={{ color: d.ok ? "#155c3e" : "#b42318" }}>
+                            {CH_NAME[d.channel] ?? d.channel}: {d.ok ? (item.kind === "social_post" ? "posted" : item.kind === "calendar_hold" ? "added" : "sent") : d.error}
+                            {d.ok && d.url ? (
+                              <>
+                                {" "}
+                                <a href={d.url} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 600 }}>Open</a>
+                              </>
+                            ) : null}
+                          </span>
+                        ))}
+                      </>
+                    )}
                     {item.kind === "hiring_email" && (
                       <>
                         <span className="ld-lbl" style={{ marginTop: 8 }}>To</span>
                         <span className="ld-body">{[meta.to, meta.email].filter(Boolean).join(", ")}</span>
-                        {isPending && (
+                        {isPending && !live.gmail && (
                           <>
                             <span className="ld-lbl" style={{ marginTop: 8 }}>After approval</span>
-                            <span className="ld-body">Held until Gmail is connected, or copy it and send it yourself</span>
+                            <span className="ld-body">Held until Google is connected on Integrations, or copy it and send it yourself</span>
                           </>
                         )}
                       </>
                     )}
-                    {item.kind === "social_post" && isPending && (
+                    {item.kind === "social_post" && isPending && liveChans.length === 0 && (
                       <>
                         <span className="ld-lbl" style={{ marginTop: 8 }}>After approval</span>
                         <span className="ld-body">

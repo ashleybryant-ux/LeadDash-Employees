@@ -164,6 +164,9 @@
   .ld-between { flex-wrap: wrap; }
   .ld-sh { flex-wrap: wrap; }
 
+  .ld-main .ld-oneclick { grid-template-columns: 44px minmax(0, 1fr) !important; }
+  .ld-main .ld-oneclick > :last-child { grid-column: 1 / -1; flex-direction: row !important; }
+  .ld-main .ld-oneclick > :last-child > * { flex: 1; width: auto !important; }
   .ld-switcher-pop { left: 12px !important; top: 60px !important; }
   input, select, textarea { font-size: 16px !important; } /* stops iPhone zooming into fields */
 }

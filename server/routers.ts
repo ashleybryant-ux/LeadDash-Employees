@@ -30,6 +30,7 @@ import { ENV } from "./_core/env";
 import { REPEATS, HR_STAGES } from "../drizzle/schema";
 import * as hiring from "./employees/hiring";
 import { QUESTIONS, TEMPLATES, parseAnswers, progress as onboardingProgress, saveAnswers, writeDayToDay } from "./employees/onboarding";
+import * as integrations from "./integrations";
 import { EVENT_LABELS, NOTIFY_EVENTS, pushReady, pushTo, readPrefs, type Prefs } from "./notify";
 
 // ==========================================
@@ -961,7 +962,7 @@ export const appRouter = router({
       .input(
         orgInput.extend({
           itemId: z.number(),
-          action: z.enum(["approve_for_dispatch", "request_revisions", "cancel"]),
+          action: z.enum(["approve_for_dispatch", "request_revisions", "cancel", "retry"]),
           reviewerName: z.string().optional(), // ignored: the signed-in person is the reviewer
           notes: z.string().max(5000).optional(),
         })
@@ -971,24 +972,64 @@ export const appRouter = router({
         const item = await db.getOutboundItemForOrg(input.itemId, input.organizationId);
         if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Outbound item not found in this organization." });
         if (item.status === "published") throw new TRPCError({ code: "BAD_REQUEST", message: "This has already gone out." });
-
         const reviewer = personName(ctx.user);
-        const status =
-          input.action === "approve_for_dispatch" ? "approved" : input.action === "request_revisions" ? "changes_requested" : "cancelled";
+
+        if (input.action === "request_revisions" || input.action === "cancel") {
+          const status = input.action === "request_revisions" ? "changes_requested" : "cancelled";
+          const updated = await db.updateOutboundItem(input.itemId, input.organizationId, { status, reviewerNotes: input.notes ?? null });
+          await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: reviewer, action: status === "changes_requested" ? "Sent back" : "Cancelled", details: `"${item.title}".${input.notes ? ` Note: ${input.notes}` : ""}` });
+          return updated;
+        }
+
+        // Approve (or try again): post or send to every connected channel it is meant for.
+        if (input.action === "retry" && item.status === "pending_approval") throw new TRPCError({ code: "BAD_REQUEST", message: "Approve it first." });
+        const { status, results } = await integrations.dispatch(item);
+        const meta = (() => {
+          try {
+            return JSON.parse(item.metadata || "{}");
+          } catch {
+            return {};
+          }
+        })();
         const updated = await db.updateOutboundItem(input.itemId, input.organizationId, {
           status,
-          reviewerNotes: input.notes ?? null,
-          ...(status === "approved" ? { approvedBy: reviewer, approvedAt: new Date() } : {}),
+          reviewerNotes: input.notes ?? item.reviewerNotes ?? null,
+          metadata: JSON.stringify({ ...meta, dispatch: results }),
+          ...(item.approvedBy ? {} : { approvedBy: reviewer, approvedAt: new Date() }),
+          ...(status === "published" ? { publishedAt: new Date(), externalReference: results.find((r) => r.url)?.url ?? null } : {}),
         });
+        const ok = results.filter((r) => r.ok).map((r) => integrations.channelLabel(r.channel));
+        const failed = results.filter((r) => !r.ok).map((r) => `${integrations.channelLabel(r.channel)} (${r.error})`);
         await db.logAction({
           organizationId: input.organizationId,
           actorType: "human_user",
           actorName: reviewer,
-          action: status === "approved" ? "Approved" : status === "changes_requested" ? "Sent back" : "Cancelled",
-          details: `"${item.title}". ${status === "approved" ? "Held until the channel is connected; nothing is sent automatically yet." : ""}${input.notes ? ` Note: ${input.notes}` : ""}`.trim(),
+          action: input.action === "retry" ? "Tried again" : "Approved",
+          details: `"${item.title}". ${ok.length ? `Went out on ${ok.join(", ")}.` : ""}${failed.length ? ` Not sent: ${failed.join("; ")}.` : ""}${results.length === 0 ? "Held: nothing connected can send this yet." : ""}`.trim(),
         });
         return updated;
       }),
+
+    /** Which Connect buttons work, and what each workspace has connected. */
+    connectInfo: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return { apps: integrations.readyApps(), channels: await integrations.channelState(input.organizationId) };
+    }),
+
+    choosePage: protectedProcedure.input(orgInput.extend({ pageId: z.string().min(1).max(64) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const conn = await integrations.choosePage(input.organizationId, input.pageId).catch((e) => {
+        throw new TRPCError({ code: "BAD_REQUEST", message: e instanceof Error ? e.message : "Could not save the Page." });
+      });
+      return conn ? publicConnection(conn) : null;
+    }),
+
+    disconnect: protectedProcedure.input(orgInput.extend({ provider: z.enum(PROVIDERS) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      await integrations.disconnect(input.organizationId, input.provider);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Disconnected account", details: input.provider });
+      return { success: true };
+    }),
   }),
 
   // ==========================================
