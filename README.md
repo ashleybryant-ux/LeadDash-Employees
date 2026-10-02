@@ -50,7 +50,7 @@ LeadDash staff see an App review access card on My account. While it is on and b
 
 ## Public pages
 
-`/about`, `/privacy` and `/terms` are plain HTML from `server/public-pages.ts`, open without signing in. `/about` is the App home page listed in Google's and Meta's app settings. Change the policy text there, and update the effective date when you do.
+The site root (for visitors without a session), `/about`, `/privacy` and `/terms` are plain HTML from `server/public-pages.ts`, open without signing in. The sign-in screen is at `/signin`. `/about` is the App home page listed in Google's and Meta's app settings. Change the policy text there, and update the effective date when you do.
 
 ## Phones and push notifications
 

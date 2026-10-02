@@ -15,6 +15,12 @@ describe("public pages", () => {
     expect(privacyPage()).toContain("will adhere to the <a href=\"https://developers.google.com/terms/api-services-user-data-policy\">Google API Services User Data Policy</a>, including the Limited Use requirements");
   });
 
+  it("About names the app in its main heading and links to the sign-in screen", () => {
+    const html = aboutPage();
+    expect(html).toContain("<h1>LeadDash Employees</h1>");
+    expect(html).toContain('href="/signin"');
+  });
+
   it("Terms name the company and Oklahoma law", () => {
     const html = termsPage();
     expect(html).toContain("LeadDash Marketing LLC");

@@ -245,7 +245,7 @@ export function registerOAuth(app: Express) {
     if (!APPS[key]) return res.status(404).send("Unknown connection.");
     if (!appReady(key)) return back(res, { error: `${LABEL[APPS[key].provider]} is not set up on this server yet.` });
     const { user: signedIn } = await authenticateRequest(req);
-    if (!signedIn) return res.redirect("/");
+    if (!signedIn) return res.redirect("/signin");
     const user = Number.isFinite(orgId) && orgId > 0 ? await canManage(req, orgId) : null;
     if (!user) return back(res, { error: "Only a workspace owner or admin can connect accounts." });
     sweep();

@@ -286,7 +286,7 @@ export const appRouter = router({
         void sendEmail(
           user.email,
           `You've been added to ${org?.name ?? "a workspace"} on LeadDash Employees`,
-          `${personName(ctx.user)} added you to ${org?.name ?? "a workspace"} on LeadDash Employees as ${input.role}.\n\nSign in with this email address at ${ENV.appUrl}`
+          `${personName(ctx.user)} added you to ${org?.name ?? "a workspace"} on LeadDash Employees as ${input.role}.\n\nSign in with this email address at ${ENV.appUrl}/signin`
         ).catch((err) => console.error("[team] invite email failed:", err));
         await db.logAction({
           organizationId: input.organizationId,

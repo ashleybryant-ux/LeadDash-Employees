@@ -4,6 +4,8 @@
  * server so reviewers and crawlers see the full text without running the app.
  */
 import type { Express } from "express";
+import { parse as parseCookies } from "cookie";
+import { SESSION_COOKIE } from "@shared/const";
 
 const COMPANY = "LeadDash Marketing LLC";
 const ADDRESS = "11901 N. MacArthur Blvd, Suite C6, Oklahoma City, OK 73162";
@@ -29,6 +31,7 @@ h2{font-size:22px;margin:40px 0 14px;font-weight:800}
 .doc h2{font-size:18px;margin:32px 0 10px}
 p,li{font-size:15px;line-height:1.65;color:#2a3a33}
 ul{padding-left:22px}
+.tag{font-size:24px;line-height:1.35;font-weight:700;color:#14221c;margin:0 0 14px;max-width:760px}
 .lead{font-size:18px;line-height:1.6;color:#3d4c45;max-width:720px}
 .muted{color:#5b6b64;font-size:13px}
 .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
@@ -82,8 +85,8 @@ function shell(key: Key, title: string, description: string, body: string) {
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="/about"><span class="lg">LD</span>LeadDash Employees</a>
-  <nav class="nav" aria-label="Site"><a href="/privacy"${cur("privacy")}>Privacy</a><a href="/terms"${cur("terms")}>Terms</a><a class="btn" href="/">Sign in</a></nav>
+  <a class="brand" href="/"><span class="lg">LD</span>LeadDash Employees</a>
+  <nav class="nav" aria-label="Site"><a href="/privacy"${cur("privacy")}>Privacy</a><a href="/terms"${cur("terms")}>Terms</a><a class="btn" href="/signin">Sign in</a></nav>
 </header>
 ${body}
 <footer class="foot">
@@ -125,8 +128,9 @@ export function aboutPage() {
       `<div class="emp"><img class="av" src="/avatars/${file}.webp" alt="" width="40" height="40"><div class="en">${name}</div><div class="ej">${job}</div><div class="ed">${does}</div></div>`
   ).join("");
   const body = `<main class="wrap">
-<h1>AI employees for your business.<br>You approve everything they send.</h1>
-<p class="lead">LeadDash Employees finds grants, writes posts and articles, drafts emails and meeting invites, plans pages and videos, and helps you hire. Each employee works from what you tell it about your business, and nothing is sent, posted or submitted until you approve it.</p>
+<h1>LeadDash Employees</h1>
+<p class="tag">AI employees for your business. You approve everything they send.</p>
+<p class="lead">LeadDash Employees is a web app that gives a small business a team of AI employees. It finds grants, writes posts and articles, drafts emails and meeting invites, plans pages and videos, and helps you hire. Each employee works from what you tell it about your business, and nothing is sent, posted or submitted until you approve it.</p>
 <p class="muted">A product of ${COMPANY}, Oklahoma City.</p>
 <h2>The employees</h2>
 <div class="grid">${grid}</div>
@@ -257,8 +261,17 @@ export function termsPage() {
   return shell("terms", "Terms of service · LeadDash Employees", "The terms for using LeadDash Employees.", body);
 }
 
-/** Registers the three pages before the app's catch-all, so they never need a sign-in. */
+/**
+ * Registers the pages before the app's catch-all, so they never need a sign-in.
+ * The site root shows About to anyone without a session (Google's home page
+ * check must not land on a sign-in screen); signed-in people get the app.
+ * The sign-in screen itself lives at /signin.
+ */
 export function registerPublicPages(app: Express) {
+  app.get("/", (req, res, next) => {
+    if (parseCookies(req.headers.cookie ?? "")[SESSION_COOKIE]) return next();
+    res.set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).send(aboutPage());
+  });
   const pages: Record<string, () => string> = { "/about": aboutPage, "/privacy": privacyPage, "/terms": termsPage };
   const cache = new Map<string, string>();
   for (const [route, render] of Object.entries(pages)) {

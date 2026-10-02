@@ -58,7 +58,7 @@ export async function requestCode(rawEmail: string) {
   void sendEmail(
     email,
     `Your LeadDash Employees code: ${code}`,
-    `Your sign-in code is ${code}\n\nIt works for ${CODE_MINUTES} minutes. If you did not ask for it, you can ignore this email.\n\n${ENV.appUrl}`,
+    `Your sign-in code is ${code}\n\nIt works for ${CODE_MINUTES} minutes. If you did not ask for it, you can ignore this email.\n\n${ENV.appUrl}/signin`,
     `<div style="font-family:Arial,sans-serif;font-size:15px;color:#14221c"><p>Your sign-in code is</p><p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p><p>It works for ${CODE_MINUTES} minutes. If you did not ask for it, you can ignore this email.</p></div>`
   ).catch((err) => console.error("[auth] sign-in email failed:", err));
   return { sent: true };
