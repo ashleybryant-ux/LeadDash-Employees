@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import * as db from "./db";
 import { authenticateRequest } from "./_core/context";
-import { storagePut } from "./storage";
+import { storagePut, storagePutStream } from "./storage";
 import { readFile, unsupportedNote } from "./employees/docs";
 import { indexKnowledge } from "./employees/kb";
 import { addOpportunity, parse, type Attachment, type Extras, type Award } from "./employees/apply";
@@ -18,7 +18,7 @@ const LIMITS: Record<string, number> = {
   rfp: 30_000_000,
   attachment: 25_000_000,
   letter: 25_000_000,
-  video: 300_000_000,
+  video: 250_000_000,
 };
 
 const KNOWLEDGE_CATEGORY: Record<string, string> = {
@@ -75,6 +75,20 @@ export function registerUploads(app: Express) {
       const who = user.name?.trim() || user.email;
       const old = unsupportedNote(name);
       if (old && slot !== "video") return res.status(400).json({ error: old });
+
+      if (slot === "video") {
+        const application = await db.getApplication(Number(req.query.applicationId), orgId);
+        if (!application) return res.status(404).json({ error: "That application is not in this workspace." });
+        if (!/^video\//.test(mime) && !/\.(mp4|mov|m4v|webm)$/i.test(name)) return res.status(400).json({ error: "Upload an MP4, MOV or WebM video." });
+        const declared = Number(req.headers["content-length"] || 0);
+        if (declared > max) return res.status(400).json({ error: `Files must be under ${Math.round(max / 1_000_000)} MB.` });
+        const saved = await storagePutStream(`org-${orgId}/videos/${name}`, req, max);
+        if (saved.size === 0) return res.status(400).json({ error: "The file was empty." });
+        const extras = parse<Extras>(application.extras, {});
+        await db.updateApplication(application.id, orgId, { extras: JSON.stringify({ ...extras, videoUrl: saved.url, videoName: name }) });
+        return res.json({ url: saved.url });
+      }
+
       const buf = await readBody(req, max);
       if (buf.length === 0) return res.status(400).json({ error: "The file was empty." });
 
@@ -113,14 +127,6 @@ export function registerUploads(app: Express) {
       const appId = Number(req.query.applicationId);
       const application = await db.getApplication(appId, orgId);
       if (!application) return res.status(404).json({ error: "That application is not in this workspace." });
-
-      if (slot === "video") {
-        if (!/^video\//.test(mime) && !/\.(mp4|mov|m4v|webm)$/i.test(name)) return res.status(400).json({ error: "Upload an MP4, MOV or WebM video." });
-        const saved = await storagePut(`org-${orgId}/videos/${name}`, buf, mime);
-        const extras = parse<Extras>(application.extras, {});
-        await db.updateApplication(appId, orgId, { extras: JSON.stringify({ ...extras, videoUrl: saved.url, videoName: name }) });
-        return res.json({ url: saved.url });
-      }
 
       if (slot === "letter") {
         const saved = await storagePut(`org-${orgId}/awards/${name}`, buf, mime);

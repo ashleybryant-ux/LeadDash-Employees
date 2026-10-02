@@ -35,3 +35,32 @@ export async function storagePut(
   await fs.promises.writeFile(full, data);
   return { key, url: `/files/${key}` };
 }
+
+/** Streams a large upload (a pitch video) straight to disk, never holding it in memory. */
+export async function storagePutStream(relKey: string, source: NodeJS.ReadableStream, maxBytes: number): Promise<{ key: string; url: string; size: number }> {
+  const key = safeKey(relKey);
+  const full = path.join(uploadsRoot(), key);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  const out = fs.createWriteStream(full);
+  let size = 0;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      source.on("data", (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > maxBytes) {
+          reject(new Error(`Files must be under ${Math.round(maxBytes / 1_000_000)} MB.`));
+          (source as any).destroy?.();
+        }
+      });
+      source.on("error", reject);
+      out.on("error", reject);
+      out.on("finish", () => resolve());
+      source.pipe(out);
+    });
+  } catch (err) {
+    out.destroy();
+    await fs.promises.rm(full, { force: true });
+    throw err;
+  }
+  return { key, url: `/files/${key}`, size };
+}
