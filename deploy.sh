@@ -19,10 +19,21 @@ echo "== npm ci"
 npm ci --no-audit --no-fund
 
 echo "== tests"
-npm test --silent
+nice -n 19 npm test --silent
 
-echo "== build"
-npm run build
+echo "== memory check"
+# The build needs about 1.5 GB. On a small server, building without enough
+# memory freezes the whole box, including LeadDash EHR on port 4000.
+AVAIL_MB=$(awk '/MemAvailable/ {m=$2} /SwapFree/ {s=$2} END {print int((m+s)/1024)}' /proc/meminfo)
+echo "available memory plus swap: ${AVAIL_MB} MB"
+if [ "$AVAIL_MB" -lt 1500 ]; then
+  echo "NOT ENOUGH MEMORY TO BUILD SAFELY (need 1500 MB). Nothing was changed. Add swap with:"
+  echo "sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab && free -h"
+  exit 1
+fi
+
+echo "== build (low priority, so the EHR keeps answering)"
+NODE_OPTIONS=--max-old-space-size=1024 nice -n 19 npm run build
 
 echo "== boot check on port $PORT_CHECK (copy of the database)"
 TMP=$(mktemp -d)
