@@ -38,7 +38,7 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
   blog: ["Write an article about intake mistakes", "Suggest five article topics", "Write a how-to article"],
   website: ["Plan a couples counseling page", "Plan a new home page", "Plan a careers page"],
   video: ["Find video ideas for this week", "Find trends for practice owners", "Plan a 30-second video"],
-  inbox: ["Paste an email and I'll draft the reply", "How should I answer a fee question?", "Draft a follow-up"],
+  inbox: ["Paste an email and I'll draft the reply", "Email someone to set a meeting", "Put a meeting on my calendar"],
   hiring: ["Find LPCs for outreach", "Check hiring status", "Write a job post", "What licenses expire soon?"],
   custom: ["What can you help with?"],
 };

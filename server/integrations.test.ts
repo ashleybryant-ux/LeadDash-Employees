@@ -125,3 +125,23 @@ describe("one-click connections", () => {
     expect(integrations.toLocalDateTime("10/05/2026", "2:30 PM")).toBe("2026-10-05T14:30:00");
   });
 });
+
+describe("Avery writes new emails and holds from chat", () => {
+  it("turns 'send an email to x and ask for a meeting today at 3pm' into a Gmail-ready draft", async () => {
+    const llm = await import("./_core/llm");
+    const spy = vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => {
+      if (opts.schemaName === "chat_decision")
+        return { reply: "", action: "write_email", focus: "", topic: "", platforms: [], title: "", notes: "", page: "", goal: "", from: "Ashley", subject: "", message: "Ask for a meeting Friday, October 2, 2026 at 3:00 PM.", url: "", oppKind: "", target: "", to: "ashley@legacyfs.org", date: "", time: "", attendees: "" } as any;
+      if (opts.schemaName === "new_email") return { subject: "Meeting today at 3:00 PM", body: "Hi Ashley,\nCould we meet today at 3:00 PM?" } as any;
+      return {} as any;
+    });
+    const { orgId, owner } = await makeWorkspace("int-avery");
+    const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "send an email to ashley@legacyfs.org and ask for a meeting today at 3pm" });
+    expect(r.reply.content).toContain("ashley@legacyfs.org");
+    const q = await caller(owner).publishing.listApprovalQueue({ organizationId: orgId, kind: "email_draft" });
+    expect(q[0].title).toBe("Meeting today at 3:00 PM");
+    expect(JSON.parse(q[0].metadata!).email).toBe("ashley@legacyfs.org");
+    spy.mockRestore();
+  });
+});

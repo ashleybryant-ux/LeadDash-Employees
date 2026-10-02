@@ -37,12 +37,14 @@ const ACTIONS: Record<string, string[]> = {
   social: ["none", "report", "write_post"],
   blog: ["none", "report", "write_article"],
   website: ["none", "report", "plan_page"],
-  inbox: ["none", "report", "draft_reply"],
+  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status"],
   custom: ["none", "report"],
 };
 
 const ACTION_HELP: Record<string, string> = {
+  write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
+  calendar_hold: "calendar_hold: the person wants a meeting or hold on their calendar. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, and the agenda in `notes`. It waits for their approval, then goes on their connected Google Calendar.",
   report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
   find_people: "find_people: search the web for professionals to reach out to for an open role. Put the role or any focus (city, license, specialty) in `focus`.",
   write_job_post: "write_job_post: write or rewrite the job post for a role. Put the role title in `target` ('' for the newest open role).",
@@ -64,7 +66,7 @@ function decisionSchema(kind: string): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["reply", "action", "focus", "topic", "platforms", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target"],
+    required: ["reply", "action", "focus", "topic", "platforms", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees"],
     properties: {
       reply: { type: "string", description: "What you say back. If you are about to do a job, one short sentence saying what you are doing." },
       action: { type: "string", enum: ACTIONS[kind] ?? ["none"] },
@@ -81,6 +83,10 @@ function decisionSchema(kind: string): JsonSchema {
       url: str,
       oppKind: { type: "string", enum: ["", "grant", "pitch", "accelerator", "speaking"] },
       target: str,
+      to: str,
+      date: str,
+      time: str,
+      attendees: str,
     },
   };
 }
@@ -101,6 +107,10 @@ type Decision = {
   url: string;
   oppKind: "" | OppKind;
   target: string;
+  to: string;
+  date: string;
+  time: string;
+  attendees: string;
 };
 
 function transcript(history: ChatMessage[]) {
@@ -238,6 +248,27 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
         queries: [],
       };
     }
+    case "write_email": {
+      const to = (d.to.match(/[^\s<>"',;]+@[^\s<>"',;]+\.[a-z]{2,}/i) ?? [])[0];
+      if (!to) return { text: "Who should it go to? Send me their email address.", cards: [], queries: [] };
+      const o = await tasks.composeEmail(org, { to, toName: d.from || undefined, purpose: d.message || d.reply });
+      const live = (await db.getConnectionByProvider(org, "google_workspace"))?.status === "connected";
+      return {
+        text: live ? `The email to ${to} is ready. Press Send in Approvals and it goes out from your Gmail.` : `The email to ${to} is ready in Approvals. Connect Google on Integrations and Send will mail it from your Gmail.`,
+        cards: [{ type: "reply", id: o.id, title: o.title, subtitle: `To ${to}`, body: (o.body ?? "").slice(0, 280) }],
+        queries: [],
+      };
+    }
+    case "calendar_hold": {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { text: "What day should it go on? Tell me the date and time.", cards: [], queries: [] };
+      const h = await tasks.createCalendarHold(org, { title: d.title || "Meeting", date: d.date, time: d.time || "9:00 AM", attendees: d.attendees || "", agenda: d.notes || "" });
+      const when = new Date(`${d.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+      return {
+        text: `The hold is ready for ${when} at ${d.time || "9:00 AM"}. Press Add in Approvals and it goes on your Google Calendar.`,
+        cards: [{ type: "reply", id: h.id, title: h.title, subtitle: `${when} at ${d.time || "9:00 AM"}`, body: d.attendees ? `With ${d.attendees}` : "" }],
+        queries: [],
+      };
+    }
     case "draft_reply": {
       if (!d.message.trim()) return { text: "Paste the message you got and I'll draft the reply.", cards: [], queries: [] };
       const o = await tasks.draftEmailReply(org, { subject: d.subject || "Your message", recipient: d.from || "Sender", context: d.message });
@@ -264,6 +295,15 @@ function oppCard(o: Opportunity): ChatCard {
     call: o.fitCall,
     score: o.fitScore,
   };
+}
+
+async function nowIn(orgId: number) {
+  const org = await db.getOrganizationById(orgId);
+  const tz = org?.timezone || "America/Chicago";
+  const d = new Date();
+  const local = d.toLocaleString("en-US", { timeZone: tz, weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const iso = d.toLocaleDateString("en-CA", { timeZone: tz });
+  return `${local} (${iso}, ${tz})`;
 }
 
 export async function sendChatMessage(opts: {
@@ -306,6 +346,7 @@ export async function sendChatMessage(opts: {
     const { system } = await tasks.systemPromptFor(
       emp,
       `You are chatting with ${opts.authorName}. Answer questions about your work directly and briefly.
+Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
 Actions you can take:

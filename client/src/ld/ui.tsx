@@ -392,7 +392,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
         <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={44} />
         <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
           <span style={{ fontWeight: 800, fontSize: 16 }}>{emp.name}</span>
-          <span style={{ fontSize: 13, color: "#5b6b64" }}>{emp.roleTitle}</span>
+          <span style={{ fontSize: 13, color: "#5b6b64", whiteSpace: "nowrap" }}>{emp.roleTitle}</span>
         </span>
       </div>
       <nav aria-label="Employee views" className="ld-emptabs" style={{ display: "flex", gap: 6, background: "#f1f5f3", padding: 4, borderRadius: 12 }}>

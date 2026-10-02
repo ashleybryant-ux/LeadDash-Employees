@@ -278,6 +278,37 @@ ${input.desiredOutcome ? `\nWhat the owner wants to happen: ${input.desiredOutco
   });
 }
 
+/** A new email (not a reply) to someone, from the owner. Waits in Approvals; Send goes out through the connected Gmail. */
+export async function composeEmail(organizationId: number, input: { to: string; toName?: string; purpose: string }) {
+  const emp = await employeeFor(organizationId, "inbox");
+  return working(emp, async () => {
+    const { system } = await systemPromptFor(
+      emp,
+      `Your job: write a new email from the owner to the person named, for the purpose given.
+- A short, specific subject line, then the email: greeting, 2 to 5 sentences, sign-off with the owner's name from the Brain.
+- Use the exact dates and times given. Where a decision belongs to the owner, put a bracketed placeholder.`
+    );
+    const out = await generateJson<{ subject: string; body: string }>({
+      system,
+      prompt: `To: ${input.toName ? `${input.toName} <${input.to}>` : input.to}\nWhat the owner wants: ${input.purpose}`,
+      schemaName: "new_email",
+      schema: obj({ subject: str, body: str }),
+    });
+    const created = await db.createOutboundItem({
+      organizationId,
+      employeeId: emp.id,
+      kind: "email_draft",
+      status: "pending_approval",
+      title: out.subject || "New email",
+      body: out.body,
+      targetChannels: JSON.stringify(["Gmail"]),
+      metadata: JSON.stringify({ recipient: input.toName || input.to, email: input.to, whatTheyWant: input.purpose, urgency: "today", newEmail: true }),
+    });
+    await db.logAction({ organizationId, actorType: "employee", actorName: actor(emp), action: "Drafted email", details: `To ${input.to}: "${created.title}" is waiting for approval.` });
+    return created;
+  });
+}
+
 export async function createCalendarHold(
   organizationId: number,
   input: { title: string; date: string; time: string; attendees: string; agenda: string }
