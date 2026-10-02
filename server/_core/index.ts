@@ -10,6 +10,7 @@ import { getDb, purgeExpiredAuthRecords } from "../db";
 import { uploadsRoot } from "../storage";
 import { aiStatus } from "./llm";
 import { hasSecretsKey } from "./crypto";
+import { startScheduler } from "../employees/runner";
 
 async function startServer() {
   // Open the database and run any pending migrations before taking traffic.
@@ -28,7 +29,7 @@ async function startServer() {
     next();
   });
 
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "16mb" })); // Brain uploads arrive as base64
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
 
   // Sign-in protection: at most 30 sign-in calls per 15 minutes per address, and
@@ -62,6 +63,9 @@ async function startServer() {
   } else {
     serveStatic(app);
   }
+
+  // Scheduled tasks (checks once a minute).
+  if (process.env.NODE_ENV !== "test") startScheduler();
 
   // Clear expired sign-in codes and sessions every hour.
   setInterval(() => purgeExpiredAuthRecords().catch(() => {}), 3600_000).unref();

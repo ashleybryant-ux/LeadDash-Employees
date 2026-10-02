@@ -28,15 +28,25 @@ export function formatBrain(org: Organization | null, entries: OrganizationKnowl
     if (org.focusAreas) lines.push(`Focus areas: ${org.focusAreas}`);
     if (org.ein) lines.push(`EIN: ${org.ein}`);
     if (org.annualBudget) lines.push(`Annual budget: ${org.annualBudget}`);
+    if (org.entity) lines.push(`Legal entity: ${org.entity}`);
+    if (org.description) lines.push(`What it is: ${org.description}`);
+    if (org.audience) lines.push(`Who it serves: ${org.audience}`);
+    if (org.brandColors) lines.push(`Brand colors: ${org.brandColors}`);
+    if (org.fonts) lines.push(`Fonts: ${org.fonts}`);
   }
   const order = Object.keys(CATEGORY_LABELS) as KnowledgeCategory[];
   for (const cat of order) {
-    const items = entries.filter((e) => e.category === cat);
+    const items = entries.filter((e) => e.category === cat && e.kind !== "image");
     if (items.length === 0) continue;
     lines.push("", `## ${CATEGORY_LABELS[cat]}`);
     for (const item of items) {
-      lines.push(`### ${item.title}`, item.content.trim());
+      lines.push(`### ${item.title}${item.sourceUrl ? ` (${item.sourceUrl})` : ""}`, item.content.trim().slice(0, 6000));
     }
+  }
+  const images = entries.filter((e) => e.kind === "image");
+  if (images.length) {
+    lines.push("", "## Images on file");
+    for (const i of images) lines.push(`- ${i.title}${i.content ? `: ${i.content}` : ""}`);
   }
   if (entries.length === 0) {
     lines.push("", "(The Brain has no entries yet. Use placeholders for any fact not listed above.)");

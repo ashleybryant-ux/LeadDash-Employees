@@ -15,6 +15,13 @@ import {
 } from "../drizzle/schema";
 import { ROSTER } from "./employees/roster";
 import * as tasks from "./employees/tasks";
+import { sendChatMessage } from "./employees/chat";
+import { describeRule, isValidTimeZone, nextRun } from "./employees/schedule";
+import { runTaskNow } from "./employees/runner";
+import { fetchWebpage, saveDocument, saveImage } from "./employees/files";
+import { sendEmail } from "./_core/email";
+import { ENV } from "./_core/env";
+import { REPEATS } from "../drizzle/schema";
 
 // ==========================================
 // Access rules
@@ -203,11 +210,20 @@ export const appRouter = router({
           annualBudget: z.string().max(100).optional(),
           website: z.string().max(255).optional(),
           state: z.string().max(50).optional(),
+          description: z.string().max(4000).optional(),
+          audience: z.string().max(2000).optional(),
+          entity: z.string().max(255).optional(),
+          brandColors: z.string().max(500).optional(),
+          fonts: z.string().max(255).optional(),
+          timezone: z.string().max(64).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.id, "admin");
         const { id, ...data } = input;
+        if (data.timezone && !isValidTimeZone(data.timezone)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "That time zone is not recognized. Use a name like America/Chicago." });
+        }
         const updated = await db.updateOrganization(id, data);
         await db.logAction({
           organizationId: id,
@@ -217,6 +233,14 @@ export const appRouter = router({
           details: `Updated: ${Object.keys(data).join(", ") || "nothing"}.`,
         });
         return updated;
+      }),
+
+    uploadLogo: protectedProcedure
+      .input(z.object({ id: z.number(), data: z.string().max(12_000_000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.id, "admin");
+        const saved = await saveImage(input.id, input.data, "logo");
+        return db.updateOrganization(input.id, { logoUrl: saved.url });
       }),
   }),
 
@@ -245,6 +269,12 @@ export const appRouter = router({
           throw new TRPCError({ code: "CONFLICT", message: "That person cannot be added to this workspace." });
         }
         await db.addOrganizationMember({ organizationId: input.organizationId, userId: user.id, role: input.role });
+        const org = await db.getOrganizationById(input.organizationId);
+        void sendEmail(
+          user.email,
+          `You've been added to ${org?.name ?? "a workspace"} on LeadDash Employees`,
+          `${personName(ctx.user)} added you to ${org?.name ?? "a workspace"} on LeadDash Employees as ${input.role}.\n\nSign in with this email address at ${ENV.appUrl}`
+        ).catch((err) => console.error("[team] invite email failed:", err));
         await db.logAction({
           organizationId: input.organizationId,
           actorType: "human_user",
@@ -341,11 +371,15 @@ export const appRouter = router({
           organizationId: z.number(),
           name: z.string().trim().min(1).max(100).optional(),
           systemPrompt: z.string().max(4000).nullable().optional(),
+          guidelines: z
+            .object({ focus: z.string().max(2000), avoid: z.string().max(2000), signAs: z.string().max(200) })
+            .optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "admin");
-        const { id, organizationId, ...data } = input;
+        const { id, organizationId, guidelines, ...rest } = input;
+        const data = { ...rest, ...(guidelines ? { guidelines: JSON.stringify(guidelines) } : {}) };
         const emp = await db.updateEmployee(id, organizationId, data);
         if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "Employee not found in this workspace." });
         return emp;
@@ -861,6 +895,137 @@ export const appRouter = router({
   }),
 
   // ==========================================
+  // Chats
+  // ==========================================
+  chat: router({
+    summaries: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.chatSummaries(input.organizationId, ctx.user.id);
+    }),
+
+    list: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+        return db.listChatMessages(input.organizationId, input.employeeId);
+      }),
+
+    markRead: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id);
+        return { success: true };
+      }),
+
+    send: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().min(1).max(20_000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const result = await sendChatMessage({
+          organizationId: input.organizationId,
+          employeeId: input.employeeId,
+          text: input.text,
+          authorName: personName(ctx.user),
+          userId: ctx.user.id,
+        });
+        await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id);
+        return result;
+      }),
+  }),
+
+  // ==========================================
+  // Scheduled tasks
+  // ==========================================
+  tasks: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const [list, employees] = await Promise.all([db.listScheduledTasks(input.organizationId), db.listEmployeesByOrg(input.organizationId)]);
+      return list.map((t) => ({
+        ...t,
+        repeatLabel: describeRule(t),
+        employeeName: employees.find((e) => e.id === t.employeeId)?.name ?? "Employee",
+        employeeKind: employees.find((e) => e.id === t.employeeId)?.kind ?? "custom",
+      }));
+    }),
+
+    runs: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const [runs, list] = await Promise.all([db.listTaskRuns(input.organizationId), db.listScheduledTasks(input.organizationId)]);
+      return runs.map((r) => ({ ...r, title: list.find((t) => t.id === r.taskId)?.title ?? "Deleted task" }));
+    }),
+
+    save: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().optional(),
+          employeeId: z.number(),
+          title: z.string().trim().min(2).max(200),
+          instructions: z.string().trim().min(5).max(4000),
+          repeat: z.enum(REPEATS),
+          weekday: z.number().int().min(0).max(6).nullable().optional(),
+          monthDay: z.number().int().min(1).max(28).nullable().optional(),
+          time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 08:30"),
+          onDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+          enabled: z.boolean().default(true),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+        const org = await db.getOrganizationById(input.organizationId);
+        const rule = { repeat: input.repeat, time: input.time, weekday: input.weekday ?? null, monthDay: input.monthDay ?? null, onDate: input.onDate ?? null };
+        const next = input.enabled ? nextRun(rule, org?.timezone || "America/Chicago") : null;
+        if (input.enabled && !next) throw new TRPCError({ code: "BAD_REQUEST", message: "That date and time has already passed." });
+        const data = {
+          employeeId: input.employeeId,
+          title: input.title,
+          instructions: input.instructions,
+          ...rule,
+          enabled: input.enabled,
+          nextRunAt: next,
+        };
+        const saved = input.id
+          ? await db.updateScheduledTask(input.id, input.organizationId, data)
+          : await db.createScheduledTask({ organizationId: input.organizationId, createdBy: personName(ctx.user), ...data });
+        if (!saved) throw new TRPCError({ code: "NOT_FOUND", message: "That task is not in this workspace." });
+        await db.logAction({
+          organizationId: input.organizationId,
+          actorType: "human_user",
+          actorName: personName(ctx.user),
+          action: input.id ? "Edited task" : "Added task",
+          details: `${input.title} (${describeRule(rule)}, ${emp.name})`,
+        });
+        return saved;
+      }),
+
+    delete: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const task = await db.getScheduledTaskForOrg(input.id, input.organizationId);
+        if (!task) throw new TRPCError({ code: "NOT_FOUND", message: "That task is not in this workspace." });
+        await db.deleteScheduledTask(input.id, input.organizationId);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Deleted task", details: task.title });
+        return { success: true };
+      }),
+
+    runNow: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const task = await db.getScheduledTaskForOrg(input.id, input.organizationId);
+        if (!task) throw new TRPCError({ code: "NOT_FOUND", message: "That task is not in this workspace." });
+        const result = await runTaskNow(task, true);
+        if (!result) throw new TRPCError({ code: "CONFLICT", message: "That task is already running." });
+        return { employeeId: task.employeeId, reply: result.reply };
+      }),
+  }),
+
+  // ==========================================
   // Brain
   // ==========================================
   knowledge: router({
@@ -927,6 +1092,66 @@ export const appRouter = router({
           details: `Entry #${input.id}`,
         });
         return { success: true };
+      }),
+
+    addWebpage: protectedProcedure
+      .input(orgInput.extend({ url: z.string().trim().min(4).max(2000), title: z.string().trim().max(255).optional(), category: z.enum(KNOWLEDGE_CATEGORIES).default("mission_profile") }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const page = await fetchWebpage(/^https?:\/\//i.test(input.url) ? input.url : `https://${input.url}`);
+        if (page.text.length < 20) throw new TRPCError({ code: "BAD_REQUEST", message: "That page had no readable text." });
+        const item = await db.createKnowledgeItem({
+          organizationId: input.organizationId,
+          kind: "webpage",
+          title: (input.title || page.title).slice(0, 255),
+          category: input.category,
+          content: page.text,
+          sourceUrl: page.url,
+        });
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Added webpage to Brain", details: page.url });
+        return item;
+      }),
+
+    uploadImage: protectedProcedure
+      .input(orgInput.extend({ title: z.string().trim().min(1).max(255), note: z.string().max(2000).default(""), data: z.string().max(12_000_000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const saved = await saveImage(input.organizationId, input.data);
+        const item = await db.createKnowledgeItem({
+          organizationId: input.organizationId,
+          kind: "image",
+          title: input.title,
+          category: "mission_profile",
+          content: input.note,
+          fileUrl: saved.url,
+        });
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Added image to Brain", details: input.title });
+        return item;
+      }),
+
+    uploadDocument: protectedProcedure
+      .input(
+        orgInput.extend({
+          title: z.string().trim().min(1).max(255),
+          fileName: z.string().max(255),
+          mimeType: z.string().max(100),
+          category: z.enum(KNOWLEDGE_CATEGORIES).default("mission_profile"),
+          data: z.string().max(14_000_000),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const saved = await saveDocument(input.organizationId, input.data, input.fileName, input.mimeType);
+        const item = await db.createKnowledgeItem({
+          organizationId: input.organizationId,
+          kind: "document",
+          title: input.title,
+          category: input.category,
+          content: saved.text || "(No readable text was found in this file.)",
+          fileUrl: saved.url,
+        });
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Added document to Brain", details: input.title });
+        return item;
       }),
   }),
 

@@ -36,7 +36,7 @@ describe("access control", () => {
     const { orgId, owner } = await makeWorkspace("roster");
     const employees = await caller(owner).employees.list({ organizationId: orgId });
     expect(employees.map((e) => e.kind).sort()).toEqual(["blog", "grants", "inbox", "social", "speaking", "video", "website"]);
-    expect(employees.find((e) => e.kind === "video")?.name).toBe("Nico");
+    expect(employees.find((e) => e.kind === "video")?.name).toBe("Elena");
   });
 
   it("only admins and owners manage the team; reviewers can approve", async () => {

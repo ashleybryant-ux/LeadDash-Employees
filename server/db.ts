@@ -19,6 +19,12 @@ import {
   auditLogs,
   externalConnections,
   outboundItems,
+  chatMessages,
+  chatReads,
+  scheduledTasks,
+  taskRuns,
+  type InsertChatMessage,
+  type InsertScheduledTask,
   type InsertOrganization,
   type InsertOrganizationMember,
   type InsertAIEmployee,
@@ -600,4 +606,132 @@ export async function logAction(item: InsertAuditLog) {
   } catch (err) {
     console.warn("[audit] failed to write:", err);
   }
+}
+
+// ==========================================
+// Chat
+// ==========================================
+
+export async function listChatMessages(orgId: number, employeeId: number, limit = 200) {
+  const rows = getDb()
+    .select()
+    .from(chatMessages)
+    .where(and(eq(chatMessages.organizationId, orgId), eq(chatMessages.employeeId, employeeId)))
+    .orderBy(desc(chatMessages.id))
+    .limit(limit)
+    .all();
+  return rows.reverse();
+}
+
+export async function createChatMessage(msg: InsertChatMessage) {
+  const rows = getDb().insert(chatMessages).values(msg).returning().all();
+  return rows[0];
+}
+
+/** Last message and unread count for every employee in a workspace, for one person. */
+export async function chatSummaries(orgId: number, userId: number) {
+  const sqlite = (getDb(), _sqlite!);
+  const last = sqlite
+    .prepare(
+      `SELECT m.employeeId, m.authorName, m.content, m.role, m.createdAt
+       FROM chat_messages m
+       JOIN (SELECT employeeId, MAX(id) AS id FROM chat_messages WHERE organizationId = ? GROUP BY employeeId) x ON x.id = m.id`
+    )
+    .all(orgId) as { employeeId: number; authorName: string; content: string; role: string; createdAt: number }[];
+  const unread = sqlite
+    .prepare(
+      `SELECT m.employeeId, COUNT(*) AS n
+       FROM chat_messages m
+       LEFT JOIN chat_reads r ON r.organizationId = m.organizationId AND r.employeeId = m.employeeId AND r.userId = ?
+       WHERE m.organizationId = ? AND m.role = 'employee' AND (r.lastReadAt IS NULL OR m.createdAt > r.lastReadAt)
+       GROUP BY m.employeeId`
+    )
+    .all(userId, orgId) as { employeeId: number; n: number }[];
+  return last.map((l) => ({
+    employeeId: l.employeeId,
+    authorName: l.authorName,
+    content: l.content,
+    role: l.role,
+    createdAt: new Date(l.createdAt * 1000),
+    unread: unread.find((u) => u.employeeId === l.employeeId)?.n ?? 0,
+  }));
+}
+
+export async function markChatRead(orgId: number, employeeId: number, userId: number) {
+  getDb()
+    .insert(chatReads)
+    .values({ organizationId: orgId, employeeId, userId, lastReadAt: new Date() })
+    .onConflictDoUpdate({
+      target: [chatReads.organizationId, chatReads.employeeId, chatReads.userId],
+      set: { lastReadAt: new Date() },
+    })
+    .run();
+}
+
+// ==========================================
+// Scheduled tasks
+// ==========================================
+
+export async function listScheduledTasks(orgId: number) {
+  return getDb()
+    .select()
+    .from(scheduledTasks)
+    .where(eq(scheduledTasks.organizationId, orgId))
+    .orderBy(scheduledTasks.nextRunAt, scheduledTasks.id)
+    .all();
+}
+
+export async function getScheduledTaskForOrg(id: number, orgId: number) {
+  const rows = getDb()
+    .select()
+    .from(scheduledTasks)
+    .where(and(eq(scheduledTasks.id, id), eq(scheduledTasks.organizationId, orgId)))
+    .limit(1)
+    .all();
+  return rows[0] || null;
+}
+
+export async function createScheduledTask(task: InsertScheduledTask) {
+  const rows = getDb().insert(scheduledTasks).values(task).returning().all();
+  return rows[0];
+}
+
+export async function updateScheduledTask(id: number, orgId: number, data: Partial<InsertScheduledTask>) {
+  getDb()
+    .update(scheduledTasks)
+    .set(data)
+    .where(and(eq(scheduledTasks.id, id), eq(scheduledTasks.organizationId, orgId)))
+    .run();
+  return getScheduledTaskForOrg(id, orgId);
+}
+
+export async function deleteScheduledTask(id: number, orgId: number) {
+  getDb()
+    .delete(scheduledTasks)
+    .where(and(eq(scheduledTasks.id, id), eq(scheduledTasks.organizationId, orgId)))
+    .run();
+}
+
+/** Tasks due now, across every workspace (the runner's view). */
+export async function dueScheduledTasks(now: Date) {
+  return getDb()
+    .select()
+    .from(scheduledTasks)
+    .where(and(eq(scheduledTasks.enabled, true), lt(scheduledTasks.nextRunAt, new Date(now.getTime() + 1000))))
+    .all();
+}
+
+export async function createTaskRun(run: typeof taskRuns.$inferInsert) {
+  const rows = getDb().insert(taskRuns).values(run).returning().all();
+  return rows[0];
+}
+
+export async function listTaskRuns(orgId: number, limit = 50) {
+  return getDb()
+    .select()
+    .from(taskRuns)
+    .where(eq(taskRuns.organizationId, orgId))
+    .orderBy(desc(taskRuns.id))
+    .limit(limit)
+    .all();
 }

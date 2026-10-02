@@ -82,6 +82,17 @@ export const organizations = sqliteTable("organizations", {
   website: text("website"),
   state: text("state"),
   logoUrl: text("logoUrl"),
+  /** What the business is, in a sentence or two. */
+  description: text("description"),
+  /** Who it serves. */
+  audience: text("audience"),
+  /** Legal entity, e.g. "LeadDash Marketing LLC (for-profit)". Grant eligibility depends on it. */
+  entity: text("entity"),
+  /** JSON array of hex colors. */
+  brandColors: text("brandColors"),
+  fonts: text("fonts"),
+  /** IANA time zone for scheduled tasks, e.g. America/Chicago. */
+  timezone: text("timezone").notNull().default("America/Chicago"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -140,6 +151,8 @@ export const aiEmployees = sqliteTable(
     capabilities: text("capabilities"),
     /** Extra instructions the workspace adds on top of the built-in ones for this job. */
     systemPrompt: text("systemPrompt"),
+    /** JSON {focus, avoid, signAs}: the three Guidelines fields. */
+    guidelines: text("guidelines"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -273,7 +286,11 @@ export const organizationKnowledge = sqliteTable(
     organizationId: integer("organizationId").notNull(),
     title: text("title").notNull(),
     category: text("category", { enum: KNOWLEDGE_CATEGORIES }).notNull(),
+    /** fact = typed by a person; webpage = fetched from a URL; image / document = uploaded file. */
+    kind: text("kind", { enum: ["fact", "webpage", "image", "document"] }).notNull().default("fact"),
     content: text("content").notNull(),
+    sourceUrl: text("sourceUrl"),
+    fileUrl: text("fileUrl"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -308,7 +325,7 @@ export type InsertAuditLog = typeof auditLogs.$inferInsert;
 // Connections and the approval queue
 // ==========================================
 
-export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x"] as const;
+export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const externalConnections = sqliteTable(
@@ -382,3 +399,100 @@ export const outboundItems = sqliteTable(
 
 export type OutboundItem = typeof outboundItems.$inferSelect;
 export type InsertOutboundItem = typeof outboundItems.$inferInsert;
+
+// ==========================================
+// Chat with each employee
+// ==========================================
+
+export const chatMessages = sqliteTable(
+  "chat_messages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    role: text("role", { enum: ["user", "employee"] }).notNull(),
+    /** The person's real name, the employee's name, or "Scheduled task". */
+    authorName: text("authorName").notNull(),
+    userId: integer("userId"),
+    content: text("content").notNull(),
+    /** JSON array of result cards shown under the message (grants, events, posts...). */
+    cards: text("cards"),
+    /** JSON array of the web searches run for this reply. */
+    searchQueries: text("searchQueries"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("chat_messages_org_emp_idx").on(t.organizationId, t.employeeId)]
+);
+
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatMessage = typeof chatMessages.$inferInsert;
+
+/** When each person last opened each chat, for unread counts. */
+export const chatReads = sqliteTable(
+  "chat_reads",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    userId: integer("userId").notNull(),
+    lastReadAt: integer("lastReadAt", { mode: "timestamp" }).notNull(),
+  },
+  (t) => [uniqueIndex("chat_reads_unique").on(t.organizationId, t.employeeId, t.userId)]
+);
+
+// ==========================================
+// Scheduled tasks
+// ==========================================
+
+export const REPEATS = ["once", "daily", "weekdays", "weekly", "monthly"] as const;
+export type Repeat = (typeof REPEATS)[number];
+
+export const scheduledTasks = sqliteTable(
+  "scheduled_tasks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    title: text("title").notNull(),
+    /** Sent to the employee as a chat message each time the task runs. */
+    instructions: text("instructions").notNull(),
+    repeat: text("repeat", { enum: REPEATS }).notNull(),
+    /** 0 = Sunday ... 6 = Saturday, for weekly. */
+    weekday: integer("weekday"),
+    /** 1-28, for monthly. */
+    monthDay: integer("monthDay"),
+    /** Local time "HH:MM" in the workspace time zone. */
+    time: text("time").notNull(),
+    /** For "once": the local date "YYYY-MM-DD". */
+    onDate: text("onDate"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    nextRunAt: integer("nextRunAt", { mode: "timestamp" }),
+    lastRunAt: integer("lastRunAt", { mode: "timestamp" }),
+    lastStatus: text("lastStatus", { enum: ["ok", "failed"] }),
+    lastError: text("lastError"),
+    createdBy: text("createdBy"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("scheduled_tasks_org_idx").on(t.organizationId)]
+);
+
+export type ScheduledTask = typeof scheduledTasks.$inferSelect;
+export type InsertScheduledTask = typeof scheduledTasks.$inferInsert;
+
+export const taskRuns = sqliteTable(
+  "task_runs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    taskId: integer("taskId").notNull(),
+    status: text("status", { enum: ["ok", "failed"] }).notNull(),
+    error: text("error"),
+    messageId: integer("messageId"),
+    startedAt: integer("startedAt", { mode: "timestamp" }).notNull(),
+    finishedAt: integer("finishedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("task_runs_org_idx").on(t.organizationId, t.taskId)]
+);
+
+export type TaskRun = typeof taskRuns.$inferSelect;

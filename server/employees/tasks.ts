@@ -4,7 +4,7 @@ import type { AIEmployee, EmployeeKind } from "../../drizzle/schema";
 import { generateJson, generateText, searchJson, type JsonSchema } from "../_core/llm";
 import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
-import { BASE_RULES, rosterEntry } from "./roster";
+import { BASE_RULES, GUIDELINE_LABELS, parseGuidelines, rosterEntry } from "./roster";
 
 // ==========================================
 // Shared helpers
@@ -24,10 +24,18 @@ export async function employeeFor(organizationId: number, kind: EmployeeKind): P
   return emp;
 }
 
-async function systemPromptFor(emp: AIEmployee, job: string) {
+export async function systemPromptFor(emp: AIEmployee, job: string) {
   const brain = await loadBrain(emp.organizationId);
   const orgName = brain.org?.name ?? "the workspace";
-  const extra = emp.systemPrompt?.trim() ? `\n\nInstructions from the workspace for ${emp.name}:\n${emp.systemPrompt.trim()}` : "";
+  const g = parseGuidelines(emp.guidelines);
+  const labels = emp.kind !== "custom" ? GUIDELINE_LABELS[emp.kind] : { focus: "Focus on", avoid: "Avoid", signAs: "Sign as" };
+  const guideLines = [
+    g.focus && `${labels.focus}: ${g.focus}`,
+    g.avoid && `${labels.avoid}: ${g.avoid}`,
+    g.signAs && `${labels.signAs}: ${g.signAs}`,
+    emp.systemPrompt?.trim(),
+  ].filter(Boolean);
+  const extra = guideLines.length ? `\n\nGuidelines from the workspace for ${emp.name} (follow these):\n${guideLines.join("\n")}` : "";
   return {
     brain,
     system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${job}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}`,

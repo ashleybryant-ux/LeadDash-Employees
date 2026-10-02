@@ -30,7 +30,7 @@ export const ROSTER: RosterEntry[] = [
   },
   {
     kind: "speaking",
-    name: "Des",
+    name: "Taylor",
     roleTitle: "Speaking",
     department: "Revenue",
     description: "Finds conferences and events taking speaker proposals and writes the pitch.",
@@ -60,7 +60,7 @@ export const ROSTER: RosterEntry[] = [
   },
   {
     kind: "website",
-    name: "Wren",
+    name: "Jordan",
     roleTitle: "Website",
     department: "Marketing",
     description: "Plans website pages section by section, with the copy for each.",
@@ -70,7 +70,7 @@ export const ROSTER: RosterEntry[] = [
   },
   {
     kind: "video",
-    name: "Nico",
+    name: "Elena",
     roleTitle: "Video",
     department: "Marketing",
     description: "Finds video formats that are working now and turns them into a shot list and script.",
@@ -106,3 +106,25 @@ export const BASE_RULES = `Rules for everything you write:
 - If a fact you need is missing from the Brain, write a bracketed placeholder like [CLINICIAN NAME] instead of making it up.
 - Never include a client's name or any client health information. If a pasted message contains it, refer to the person by initials only and leave clinical details out.
 - Follow the workspace's voice, names and signatures exactly as the Brain states them.`;
+
+/** The three Guidelines fields, labeled for each job. */
+export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: string; avoid: string; signAs: string }> = {
+  grants: { focus: "Look for", avoid: "Skip", signAs: "Sign proposals as" },
+  speaking: { focus: "Talks to pitch", avoid: "Skip", signAs: "Sign pitches as" },
+  social: { focus: "Topics", avoid: "Avoid", signAs: "Sign posts as" },
+  blog: { focus: "Topics", avoid: "Avoid", signAs: "Author name" },
+  website: { focus: "Pages to focus on", avoid: "Avoid", signAs: "Main call to action" },
+  video: { focus: "Formats", avoid: "Avoid", signAs: "On-camera name" },
+  inbox: { focus: "How to reply", avoid: "Never", signAs: "Sign replies as" },
+};
+
+export type Guidelines = { focus: string; avoid: string; signAs: string };
+
+export function parseGuidelines(raw: string | null | undefined): Guidelines {
+  try {
+    const g = raw ? JSON.parse(raw) : {};
+    return { focus: String(g.focus ?? ""), avoid: String(g.avoid ?? ""), signAs: String(g.signAs ?? "") };
+  } catch {
+    return { focus: "", avoid: "", signAs: "" };
+  }
+}
