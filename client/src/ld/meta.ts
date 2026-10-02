@@ -16,8 +16,17 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
 export const KIND_ORDER: Kind[] = ["grants", "speaking", "social", "blog", "website", "video", "inbox", "custom"];
 export const GROUP_ORDER = ["Revenue", "Marketing", "Operations", "Other"] as const;
 
-/** Portrait files, once provided, live in client/public/avatars/<kind>.png. */
-export const AVATAR_FILES: Partial<Record<Kind, string>> = {};
+/** Portraits live in client/public/avatars/<kind>.webp (256 px, from the Manus originals). */
+export const AVATAR_FILES: Partial<Record<Kind, string>> = {
+  grants: "/avatars/grants.webp",
+  speaking: "/avatars/speaking.webp",
+  social: "/avatars/social.webp",
+  blog: "/avatars/blog.webp",
+  website: "/avatars/website.webp",
+  video: "/avatars/video.webp",
+  inbox: "/avatars/inbox.webp",
+  custom: "/avatars/custom.webp",
+};
 
 export const SUGGESTIONS: Record<Kind, string[]> = {
   grants: ["Find grants for this quarter", "Find pitch competitions", "Apply to the best fit", "Check application status"],

@@ -49,7 +49,7 @@ export function Avatar({ name, kind, src, size = 44 }: { name: string; kind?: st
   };
   if (file && !broken) {
     return (
-      <span style={style}>
+      <span style={{ ...style, background: "transparent" }}>
         <img src={file} alt={name} onError={() => setBroken(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       </span>
     );
