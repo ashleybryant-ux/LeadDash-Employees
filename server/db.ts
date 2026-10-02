@@ -564,6 +564,16 @@ export async function createOutboundItem(item: InsertOutboundItem) {
   return rows[0];
 }
 
+/** Approved posts whose scheduled time has come, in every workspace. */
+export async function dueScheduledPosts(now: Date) {
+  return getDb()
+    .select()
+    .from(outboundItems)
+    .where(and(eq(outboundItems.status, "scheduled"), lt(outboundItems.scheduledFor, new Date(now.getTime() + 1000))))
+    .orderBy(outboundItems.scheduledFor)
+    .all();
+}
+
 export async function updateOutboundItem(id: number, orgId: number, data: Partial<InsertOutboundItem>) {
   getDb()
     .update(outboundItems)

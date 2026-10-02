@@ -15,6 +15,7 @@ import Pages from "./work/Pages";
 import Videos from "./work/Videos";
 import HiringWork from "./hiring/HiringWork";
 import Onboarding from "./Onboarding";
+import type { Outputs } from "./types";
 
 export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
 
@@ -76,7 +77,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan";
   id: number;
   title: string;
   subtitle?: string;
@@ -87,7 +88,10 @@ type Card = {
   score?: number;
   status?: string;
   options?: string[];
+  plan?: Plan;
 };
+
+type Plan = Outputs["social"]["schedulePlan"];
 
 function ChatPane({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
@@ -244,6 +248,78 @@ function DaySep({ date }: { date: Date }) {
   );
 }
 
+const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "10/06/2026" to "Tue, Oct 6, 2026". */
+function dayLabel(mmddyyyy: string) {
+  const [m, d, y] = mmddyyyy.split("/").map(Number);
+  return `${WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}, ${MO[m - 1]} ${d}, ${y}`;
+}
+
+/** Sienna's plan for the next posts on one account: Schedule all, Other times, Open calendar. */
+function PlanCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const [plan, setPlan] = React.useState<Plan>(card.plan!);
+  const [others, setOthers] = React.useState(false);
+  const [done, setDone] = React.useState<string | null>(null);
+  const apply = trpc.social.applyPlan.useMutation({
+    onSuccess: async (r) => {
+      setDone(r.waiting ? `Scheduled ${r.scheduled + r.waiting}. ${r.waiting} post once approved.` : `Scheduled ${r.scheduled}`);
+      await Promise.all([utils.social.listPosts.invalidate(), utils.publishing.listApprovalQueue.invalidate()]);
+    },
+  });
+  const other = trpc.social.schedulePlan.useMutation({
+    onSuccess: (p) => {
+      setPlan(p);
+      setOthers(false);
+    },
+  });
+  const base = emp.kind === "custom" ? `/chats/e/${emp.id}` : `/chats/${emp.kind}`;
+  return (
+    <div className="ld-card" style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 6 }}>
+      <span className="ld-lbl">{card.title}</span>
+      <span className="ld-small ld-muted">{plan.label}</span>
+      {plan.rows.map((r) => (
+        <div key={r.itemId} className="ld-keep" style={{ display: "grid", gridTemplateColumns: "150px 80px minmax(0,1fr)", gap: 12, padding: "7px 0", borderBottom: "1px solid #eef2f0", fontSize: 14 }}>
+          <span>{dayLabel(r.date)}</span>
+          <span>{r.time}</span>
+          <span style={{ minWidth: 0 }}>
+            {r.title}
+            {r.needsApproval && <span className="ld-muted" style={{ fontSize: 12, marginLeft: 6 }}>Needs approval</span>}
+          </span>
+        </div>
+      ))}
+      {done ? (
+        <div className="ld-row" style={{ marginTop: 10, flexWrap: "wrap" }}>
+          <span className="ld-pill green">{done}</span>
+          <Link href={`${base}/work`} className="ld-btn">Open calendar</Link>
+        </div>
+      ) : (
+        <>
+          <div className="ld-row" style={{ marginTop: 10, flexWrap: "wrap" }}>
+            <button type="button" className="ld-btn p" style={{ width: "auto", minWidth: 128 }} disabled={apply.isPending || plan.rows.length === 0} onClick={() => apply.mutate({ organizationId: currentOrgId, rows: plan.rows.map((r) => ({ itemId: r.itemId, at: r.at })) })}>
+              {apply.isPending ? "Scheduling..." : `Schedule all ${plan.rows.length}`}
+            </button>
+            <button type="button" className="ld-btn" aria-expanded={others} onClick={() => setOthers(!others)}>Other times</button>
+            <Link href={`${base}/work`} className="ld-btn">Open calendar</Link>
+          </div>
+          {others && (
+            <div className="ld-row" style={{ flexWrap: "wrap", marginTop: 6 }}>
+              {plan.choices.map((c) => (
+                <button key={c.key} type="button" className={`ld-chip ${plan.patternKey === c.key ? "on" : ""}`} disabled={other.isPending} onClick={() => other.mutate({ organizationId: currentOrgId, channel: plan.channel, itemIds: plan.rows.map((r) => r.itemId), patternKey: c.key })}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      <ErrorLine error={apply.error || other.error} />
+    </div>
+  );
+}
+
 function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
@@ -267,6 +343,8 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
     },
   });
   const err = start.error || skip.error || submit.error || answer.error || move.error;
+
+  if (card.type === "schedule_plan" && card.plan) return <PlanCard card={card} emp={emp} />;
 
   if (card.type === "question") {
     return (

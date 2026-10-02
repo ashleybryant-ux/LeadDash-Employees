@@ -21,6 +21,7 @@ const LIMITS: Record<string, number> = {
   letter: 25_000_000,
   video: 250_000_000,
   resume: 20_000_000,
+  post_media: 250_000_000,
 };
 
 const KNOWLEDGE_CATEGORY: Record<string, string> = {
@@ -76,7 +77,20 @@ export function registerUploads(app: Express) {
       if (!user) return res.status(403).json({ error: "You cannot upload to this workspace." });
       const who = user.name?.trim() || user.email;
       const old = unsupportedNote(name);
-      if (old && slot !== "video") return res.status(400).json({ error: old });
+      if (old && slot !== "video" && slot !== "post_media") return res.status(400).json({ error: old });
+
+      // Images and videos for Sienna's posts.
+      if (slot === "post_media") {
+        const isVideo = /^video\//.test(mime) || /\.(mp4|mov|m4v|webm)$/i.test(name);
+        const isImage = /^image\/(jpeg|png|webp|gif)$/.test(mime) || /\.(jpe?g|png|webp|gif)$/i.test(name);
+        if (!isVideo && !isImage) return res.status(400).json({ error: "Upload a JPG, PNG or WebP image, or an MP4 or MOV video." });
+        const cap = isVideo ? max : 30_000_000;
+        const declared = Number(req.headers["content-length"] || 0);
+        if (declared > cap) return res.status(400).json({ error: `${isVideo ? "Videos" : "Images"} must be under ${Math.round(cap / 1_000_000)} MB.` });
+        const saved = await storagePutStream(`org-${orgId}/social/${name}`, req, cap);
+        if (saved.size === 0) return res.status(400).json({ error: "The file was empty." });
+        return res.json({ url: saved.url, kind: isVideo ? "video" : "image", size: saved.size });
+      }
 
       if (slot === "video") {
         const application = await db.getApplication(Number(req.query.applicationId), orgId);

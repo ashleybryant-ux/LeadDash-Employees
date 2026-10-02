@@ -6,6 +6,7 @@ import { remindRegistrations } from "./apply";
 import { notify } from "../notify";
 import { hiringDaily } from "./hiring";
 import { sweepExpired } from "../review";
+import { postDue } from "../social";
 
 /**
  * Runs scheduled tasks. Every minute it picks up tasks whose time has come,
@@ -102,6 +103,8 @@ export function startScheduler() {
     if (busy) return;
     busy = true;
     try {
+      // Posts first: a scheduled post should not wait behind a long task.
+      await postDue();
       await tick();
       await remindRegistrations();
       await hiringDaily();

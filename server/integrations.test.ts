@@ -56,16 +56,16 @@ describe("one-click connections", () => {
     expect(JSON.stringify(pub)).not.toContain("li-token");
 
     routes.push([/api\.linkedin\.com\/rest\/posts/, () => new Response(null, { status: 201, headers: { "x-restli-id": "urn:li:share:999" } })]);
-    const post = await db.createOutboundItem({ organizationId: orgId, kind: "social_post", status: "pending_approval", title: "Intake", body: "We cut the wait to 4 days.", targetChannels: JSON.stringify(["linkedin", "instagram"]) });
+    const post = await db.createOutboundItem({ organizationId: orgId, kind: "social_post", status: "pending_approval", title: "Intake", body: "We cut the wait to 4 days.", targetChannels: JSON.stringify(["linkedin", "facebook"]) });
     const done = await caller(owner).publishing.approveAndDispatch({ organizationId: orgId, itemId: post.id, action: "approve_for_dispatch" });
     const sent = calls.find((c) => c.url.includes("/rest/posts"))!;
     expect(sent.init.headers["LinkedIn-Version"]).toMatch(/^\d{6}$/);
     expect(JSON.parse(sent.init.body)).toMatchObject({ author: "urn:li:person:abc123", commentary: "We cut the wait to 4 days.", lifecycleState: "PUBLISHED" });
-    // Instagram is not connected, so the item is approved but not fully posted.
+    // Facebook is not connected, so the item is approved but not fully posted.
     expect(done?.status).toBe("approved");
     const d = JSON.parse(done!.metadata!).dispatch;
     expect(d.find((x: any) => x.channel === "linkedin")).toMatchObject({ ok: true, url: "https://www.linkedin.com/feed/update/urn:li:share:999/" });
-    expect(d.find((x: any) => x.channel === "instagram").error).toMatch(/not connected/);
+    expect(d.find((x: any) => x.channel === "facebook").error).toMatch(/not connected/);
 
     const before = calls.filter((c) => c.url.includes("/rest/posts")).length;
     await caller(owner).publishing.approveAndDispatch({ organizationId: orgId, itemId: post.id, action: "retry" });
@@ -103,13 +103,16 @@ describe("one-click connections", () => {
 
     routes.push([/\/p1\/feed/, () => json({ id: "p1_55" })]);
     const post = await db.createOutboundItem({ organizationId: orgId, kind: "social_post", status: "pending_approval", title: "Open house", body: "Join us.", targetChannels: JSON.stringify(["facebook", "instagram"]) });
+    // Instagram needs an image, so approval stops and says so before anything posts.
+    await expect(caller(owner).publishing.approveAndDispatch({ organizationId: orgId, itemId: post.id, action: "approve_for_dispatch" })).rejects.toThrow(/Instagram posts need an image/);
+    expect(calls.some((c) => c.url.includes("/p1/feed"))).toBe(false);
+    await db.updateOutboundItem(post.id, orgId, { targetChannels: JSON.stringify(["facebook"]) });
     const done = await caller(owner).publishing.approveAndDispatch({ organizationId: orgId, itemId: post.id, action: "approve_for_dispatch" });
     const feed = calls.find((c) => c.url.includes("/p1/feed"))!;
     expect(feed.init.headers.authorization).toBe("Bearer page-1");
     const d = JSON.parse(done!.metadata!).dispatch;
     expect(d.find((x: any) => x.channel === "facebook").ok).toBe(true);
-    expect(d.find((x: any) => x.channel === "instagram").error).toMatch(/need an image/);
-    expect(done?.status).toBe("approved");
+    expect(done?.status).toBe("published");
 
     await caller(owner).publishing.disconnect({ organizationId: orgId, provider: "facebook" });
     expect((await db.getConnectionByProvider(orgId, "facebook"))?.secretsEncrypted).toBeNull();

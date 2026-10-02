@@ -7,6 +7,7 @@ import * as apply from "./apply";
 import * as hiring from "./hiring";
 import { writeReport } from "./onboarding";
 import type { Opportunity, OppKind } from "../../drizzle/schema";
+import { channelName, planSchedule, type Plan } from "../social";
 
 /**
  * Chat with an employee. Each message is answered in two steps:
@@ -17,7 +18,7 @@ import type { Opportunity, OppKind } from "../../drizzle/schema";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate";
+  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan";
   id: number;
   title: string;
   subtitle?: string;
@@ -28,13 +29,14 @@ export type ChatCard = {
   score?: number;
   status?: string;
   options?: string[];
+  plan?: Plan;
 };
 
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "find_grants", "add_link", "apply", "find_and_apply", "check_status"],
   speaking: ["none", "report", "find_events", "add_link", "apply", "find_and_apply", "check_status"],
   video: ["none", "report", "find_videos"],
-  social: ["none", "report", "write_post"],
+  social: ["none", "report", "write_post", "schedule_posts"],
   blog: ["none", "report", "write_article"],
   website: ["none", "report", "plan_page"],
   inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold"],
@@ -55,7 +57,8 @@ const ACTION_HELP: Record<string, string> = {
   find_and_apply: "find_and_apply: search now, then start applications for the best fits (used by scheduled tasks like a morning search). Set `oppKind` and `focus` as for a search.",
   check_status: "check_status: report what is open, what is waiting for the person, what is submitted, and what is due soon.",
   find_videos: "find_videos: search for current short-form video trends and plan videos. Put any focus in `focus`.",
-  write_post: "write_post: write a social post. Put the subject in `topic` and the platforms (linkedin, instagram, facebook, x) in `platforms`; default to linkedin and instagram.",
+  write_post: "write_post: write a social post. Put the subject in `topic` and the platforms (linkedin, instagram, facebook, x, threads) in `platforms`; default to linkedin and instagram.",
+  schedule_posts: "schedule_posts: the person wants upcoming posts put on the calendar for an account (for example \"schedule the next 12 posts on Facebook\"). Put the one account in `platforms` (facebook, instagram, linkedin, x or threads) and how many posts in `count` (default 8). You suggest the days and time; they confirm with a button.",
   write_article: "write_article: write a blog article. Put the title in `title` and points to cover in `notes`.",
   plan_page: "plan_page: plan a website page. Put the page name in `page` and its goal in `goal`.",
   draft_reply: "draft_reply: the person pasted a message they received. Put the sender in `from`, the subject in `subject` (make one up from the content if missing) and the full pasted message in `message`.",
@@ -66,13 +69,14 @@ function decisionSchema(kind: string): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["reply", "action", "focus", "topic", "platforms", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees"],
+    required: ["reply", "action", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees"],
     properties: {
       reply: { type: "string", description: "What you say back. If you are about to do a job, one short sentence saying what you are doing." },
       action: { type: "string", enum: ACTIONS[kind] ?? ["none"] },
       focus: str,
       topic: str,
-      platforms: { type: "array", items: { type: "string", enum: ["linkedin", "instagram", "facebook", "x"] } },
+      platforms: { type: "array", items: { type: "string", enum: ["linkedin", "instagram", "facebook", "x", "threads"] } },
+      count: { type: "integer", description: "How many posts, for schedule_posts. 0 otherwise." },
       title: str,
       notes: str,
       page: str,
@@ -96,7 +100,8 @@ type Decision = {
   action: string;
   focus: string;
   topic: string;
-  platforms: ("linkedin" | "instagram" | "facebook" | "x")[];
+  platforms: ("linkedin" | "instagram" | "facebook" | "x" | "threads")[];
+  count?: number;
   title: string;
   notes: string;
   page: string;
@@ -230,6 +235,20 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
         cards: [{ type: "post", id: p.id, title: p.title, body: (p.body ?? "").slice(0, 280), imageUrl: p.imageUrl }],
         queries: [],
       };
+    }
+    case "schedule_posts": {
+      const channel = d.platforms?.[0] ?? "facebook";
+      const count = Math.max(1, Math.min(30, Number(d.count) || 8));
+      const plan = await planSchedule(org, channel, count);
+      const name = channelName(channel);
+      if (plan.rows.length === 0) return { text: `I couldn't find open days for ${name} posts. Check the calendar on my Work tab.`, cards: [], queries: [] };
+      const waiting = plan.rows.filter((r) => r.needsApproval).length;
+      const parts = [
+        `I suggest ${plan.label.replace(/^Every weekday/, "every weekday")}. ${plan.reason}`,
+        plan.written ? `I wrote ${plural(plan.written, "new draft")} to fill the plan; ${plan.written === 1 ? "its image is" : "their images are"} on the way.` : "",
+        waiting ? `${waiting} of these ${plan.rows.length} still need your approval; they post only after you approve them.` : `All ${plan.rows.length} are approved and post on their own once scheduled.`,
+      ];
+      return { text: parts.filter(Boolean).join(" "), cards: [{ type: "schedule_plan", id: Date.now(), title: `${plural(plan.rows.length, `${name} post`)}${plan.account ? ` · ${plan.account}` : ""}`, plan }], queries: [] };
     }
     case "write_article": {
       const a = await tasks.writeBlogArticle(org, { title: d.title || d.topic || "Untitled article", category: "Practice insights", outlineNotes: d.notes || undefined, generateBannerFlag: true });

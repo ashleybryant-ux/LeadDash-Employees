@@ -6,7 +6,7 @@ Seven AI employees, one job each, working from a shared Brain. Everything an emp
 |---|---|---|---|
 | Revenue | Morgan | Grants, pitch competitions and accelerators: finds them, reads the host's package, writes the application | yes |
 | Revenue | Taylor | Speaking: finds calls for proposals, reads them, writes the speaker application | yes |
-| Marketing | Sienna | Social media: posts per platform plus the image | no |
+| Marketing | Sienna | Social media: posts, Reels and videos per platform, a content calendar, scheduling | no |
 | Marketing | Theo | Blog: long-form articles and banners for WordPress | no |
 | Marketing | Jordan | Website: page plans with the copy for each section | no |
 | Marketing | Elena | Video: current formats turned into a shot list and script | yes |
@@ -43,6 +43,12 @@ Every employee has an Onboarding tab: fixed-choice questions about what the owne
 ## One-click integrations
 
 `server/integrations.ts`. LeadDash registers one app with Google, LinkedIn, Meta and X and puts the keys in `.env` (`GOOGLE_CLIENT_ID`, `LINKEDIN_CLIENT_ID`, `META_APP_ID`, `X_CLIENT_ID` and their secrets). Each workspace then presses Connect on Integrations; the sign-in comes back to `/api/oauth/<app>/callback` and the tokens are saved encrypted. Approve in Approvals then posts (LinkedIn profile, Facebook Page, Instagram, X, Google Business Profile), sends (Gmail, from `gmail.send` only, so no yearly Google security audit) or adds the hold to Google Calendar. Items whose channel is not connected wait, and Try again resends only what failed. Instagram and Facebook fetch images from a signed link (`/media/...`) that expires after a day.
+
+## Sienna's planner
+
+`server/social.ts`, `shared/post-model.ts`, `client/src/ld/work/Posts.tsx`, `client/src/ld/social/`. Sienna's Posts tab has Calendar (month and week, drag a draft onto a day), Drafts, Scheduled and Posted. One editor (also used in Approvals) sets Post or Reel, the same post everywhere or a different one per account, the accounts, the image or video and its cover, the TikTok settings TikTok requires, and the time. The preview shows each platform at its real shape: Instagram feed images are cut to 4:5 through 1.91:1 (the server cuts them the same way), Reels and TikTok are 9:16, the others show the image's own shape. Approving a post with a later time schedules it; the runner posts it when the time comes. Videos post in the background. Suggest time uses the Facebook Page's own reactions, comments and shares once it has 10 posts, otherwise common defaults. In chat, "schedule the next 12 posts on Facebook" gives a plan card (Schedule all, Other times, Open calendar); Sienna writes more drafts when there are too few.
+
+Threads and TikTok connect like the others: `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, with redirect URIs `/api/oauth/threads/callback` and `/api/oauth/tiktok/callback`. Until TikTok audits the app, TikTok only allows "Only me" videos.
 
 ## App review access
 

@@ -34,7 +34,7 @@ export const AVATAR_FILES: Partial<Record<Kind, string>> = {
 export const SUGGESTIONS: Record<Kind, string[]> = {
   grants: ["Find grants for this quarter", "Find pitch competitions", "Apply to the best fit", "Check application status"],
   speaking: ["Find speaking events for the spring", "Find paid speaking events", "Apply to the best fit", "Check application status"],
-  social: ["Write a LinkedIn post about our first year", "Write a post for this week", "Ideas for next week's posts"],
+  social: ["Write a post for this week", "Schedule my drafts", "Plan next month"],
   blog: ["Write an article about intake mistakes", "Suggest five article topics", "Write a how-to article"],
   website: ["Plan a couples counseling page", "Plan a new home page", "Plan a careers page"],
   video: ["Find video ideas for this week", "Find trends for practice owners", "Plan a 30-second video"],

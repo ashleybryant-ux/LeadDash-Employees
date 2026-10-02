@@ -6,9 +6,9 @@ import type { Repeat } from "../../drizzle/schema";
  * into the next real moment it should run, handling daylight saving changes.
  */
 
-type Parts = { y: number; m: number; d: number; h: number; mi: number; wd: number };
+export type Parts = { y: number; m: number; d: number; h: number; mi: number; wd: number };
 
-function partsIn(date: Date, tz: string): Parts {
+export function partsIn(date: Date, tz: string): Parts {
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
     year: "numeric",

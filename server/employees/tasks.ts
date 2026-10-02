@@ -349,26 +349,31 @@ const TONES = {
   event_invitation: "event invitation",
 } as const;
 
+export type WritePlatform = "linkedin" | "instagram" | "facebook" | "x" | "threads";
+
 export async function writeSocialPost(
   organizationId: number,
   input: {
     topic: string;
-    targetPlatforms: ("linkedin" | "instagram" | "facebook" | "x")[];
+    targetPlatforms: WritePlatform[];
     tone: keyof typeof TONES;
     generateImageFlag: boolean;
   }
 ) {
   const emp = await employeeFor(organizationId, "social");
   return working(emp, async () => {
+    const wantsX = input.targetPlatforms.includes("x");
+    const wantsThreads = input.targetPlatforms.includes("threads");
     const { system } = await systemPromptFor(
       emp,
       `Your job: write one social post and describe the image for it.
 - Opening line that earns the next line. Short paragraphs. A clear call to action. 3 to 5 relevant hashtags at the end.
-- Keep it under 1,300 characters so it fits LinkedIn, Instagram and Facebook; if X is a target, also give an X version under 280 characters.
+- Keep it under 1,300 characters so it fits LinkedIn, Instagram and Facebook.
+- If X is a target, also give an X version under 280 characters. If Threads is a target, also give a Threads version under 500 characters with at most one hashtag.
 - The headline is 3 to 8 words, lowercase unless the Brain's voice says otherwise.
-- The image prompt describes a scene only (no words or letters in the image).`
+- The image prompt describes a scene only (no words or letters in the image), with the subject in the center.`
     );
-    const out = await generateJson<{ headline: string; caption: string; xVersion: string; imagePrompt: string }>({
+    const out = await generateJson<{ headline: string; caption: string; xVersion: string; threadsVersion: string; imagePrompt: string }>({
       system,
       prompt: `Topic: ${input.topic}\nPlatforms: ${input.targetPlatforms.join(", ")}\nTone: ${TONES[input.tone]}`,
       schemaName: "social_post",
@@ -376,21 +381,32 @@ export async function writeSocialPost(
         headline: str,
         caption: str,
         xVersion: { type: "string", description: "Empty string if X is not a target" },
+        threadsVersion: { type: "string", description: "Empty string if Threads is not a target" },
         imagePrompt: str,
       }),
     });
 
     let imageUrl: string | null = null;
     let imageError: string | null = null;
+    let imageMeta: { w: number; h: number } | null = null;
     if (input.generateImageFlag) {
       try {
         const size: ImageSize = input.targetPlatforms.includes("instagram") ? "1024x1536" : "1024x1024";
         imageUrl = (await generateImage({ prompt: `${out.imagePrompt}. No text, letters or logos in the image.`, size, folder: `org-${organizationId}/social` })).url;
+        const [w, h] = size.split("x").map(Number);
+        imageMeta = { w, h };
       } catch (err) {
         imageError = (err as Error).message;
         console.warn("[social] image failed:", imageError);
       }
     }
+
+    // X and Threads get their own shorter text, so the post is "different for each account".
+    // No imageUrl on a variant means it uses the main image.
+    const variants: Record<string, { text: string }> = {};
+    if (wantsX && out.xVersion?.trim()) variants.x = { text: out.xVersion.trim() };
+    if (wantsThreads && out.threadsVersion?.trim()) variants.threads = { text: out.threadsVersion.trim() };
+    const different = Object.keys(variants).length > 0;
 
     const created = await db.createOutboundItem({
       organizationId,
@@ -407,8 +423,8 @@ export async function writeSocialPost(
         tone: input.tone,
         topic: input.topic,
         headline: out.headline,
-        xVersion: out.xVersion || null,
         imageError,
+        post: { type: "post", mode: different ? "different" : "same", variants, imageMeta },
       }),
     });
     await db.logAction({
@@ -420,6 +436,77 @@ export async function writeSocialPost(
     });
     return created;
   });
+}
+
+const CHANNEL_NAMES: Record<string, string> = { facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", x: "X", threads: "Threads", tiktok: "TikTok", google_business: "Google Business Profile" };
+const CHANNEL_CHARS: Record<string, number> = { x: 270, threads: 480, instagram: 1_300, facebook: 1_300, linkedin: 1_300, google_business: 1_400 };
+
+/**
+ * Several drafts at once for one account (when the person asks Sienna to fill
+ * the calendar). The text comes back right away; images follow in the
+ * background, one at a time, so the chat is not held up.
+ */
+export async function writeSocialBatch(organizationId: number, channel: string, count: number, avoid: string[]) {
+  const emp = await employeeFor(organizationId, "social");
+  const name = CHANNEL_NAMES[channel] ?? channel;
+  const limit = CHANNEL_CHARS[channel] ?? 1_300;
+  const n = Math.max(1, Math.min(20, count));
+  const created = await working(emp, async () => {
+    const { system } = await systemPromptFor(
+      emp,
+      `Your job: write ${n} different ${name} posts for the coming weeks, each on its own topic that fits the practice.
+- Opening line that earns the next line. Short paragraphs. A clear call to action. Up to 3 relevant hashtags at the end.
+- Each caption is under ${limit} characters.
+- The headline is 3 to 8 words, lowercase unless the Brain's voice says otherwise.
+- The image prompt describes a scene only (no words or letters in the image), with the subject in the center.
+- Do not repeat these topics already planned: ${avoid.slice(0, 40).join("; ") || "none"}.`
+    );
+    const out = await generateJson<{ posts: { headline: string; caption: string; imagePrompt: string }[] }>({
+      system,
+      prompt: `Write ${n} ${name} posts.`,
+      schemaName: "social_batch",
+      schema: obj({ posts: arr(obj({ headline: str, caption: str, imagePrompt: str })) }),
+      maxTokens: 6000,
+    });
+    const list = [];
+    for (const p of (out.posts ?? []).slice(0, n)) {
+      if (!p.caption?.trim()) continue;
+      list.push(
+        await db.createOutboundItem({
+          organizationId,
+          employeeId: emp.id,
+          kind: "social_post",
+          status: "pending_approval",
+          title: p.headline || p.caption.slice(0, 60),
+          body: p.caption.slice(0, limit + 200),
+          targetChannels: JSON.stringify([channel]),
+          imagePrompt: p.imagePrompt,
+          metadata: JSON.stringify({ platforms: [channel], tone: "thought_leadership", headline: p.headline, imagePending: true, post: { type: "post", mode: "same", variants: {} } }),
+        })
+      );
+    }
+    return list;
+  });
+  if (created.length) {
+    await db.logAction({ organizationId, actorType: "employee", actorName: actor(emp), action: "Wrote social posts", details: `${created.length} ${name} drafts are waiting for approval.` });
+    void (async () => {
+      for (const item of created) {
+        try {
+          const size: ImageSize = channel === "instagram" ? "1024x1536" : "1024x1024";
+          const img = await generateImage({ prompt: `${item.imagePrompt}. No text, letters or logos in the image.`, size, folder: `org-${organizationId}/social` });
+          const fresh = await db.getOutboundItemForOrg(item.id, organizationId);
+          if (!fresh || fresh.imageUrl || fresh.status === "published" || fresh.status === "cancelled") continue;
+          const meta = JSON.parse(fresh.metadata || "{}");
+          const [w, h] = size.split("x").map(Number);
+          await db.updateOutboundItem(item.id, organizationId, { imageUrl: img.url, metadata: JSON.stringify({ ...meta, imagePending: false, post: { ...(meta.post ?? {}), imageMeta: { w, h } } }) });
+        } catch (err) {
+          const fresh = await db.getOutboundItemForOrg(item.id, organizationId);
+          if (fresh) await db.updateOutboundItem(item.id, organizationId, { metadata: JSON.stringify({ ...JSON.parse(fresh.metadata || "{}"), imagePending: false, imageError: (err as Error).message }) });
+        }
+      }
+    })();
+  }
+  return created;
 }
 
 // ==========================================

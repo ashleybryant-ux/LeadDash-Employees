@@ -185,4 +185,9 @@ html.ld-review .ld-emphead { top: 34px !important; }
   .ld-main .ld-oneclick > :last-child > * { flex: 1; width: auto !important; }
   .ld-switcher-pop { left: 12px !important; top: 60px !important; }
   input, select, textarea { font-size: 16px !important; } /* stops iPhone zooming into fields */
+
+  /* Sienna's calendar: seven narrow days, each post shown by its account icons. */
+  .ld-cal .ld-calday { min-height: 64px !important; padding: 3px !important; }
+  .ld-cal .ld-ev { padding: 3px !important; }
+  .ld-cal .ld-ev-title, .ld-cal .ld-ev-time { display: none !important; }
 }

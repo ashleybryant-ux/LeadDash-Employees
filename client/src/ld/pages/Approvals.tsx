@@ -5,6 +5,9 @@ import { useTenant } from "@/contexts/TenantContext";
 import { Avatar, ErrorLine, FolderTabs, Page, useEmployees } from "../ui";
 import { CHANNEL_LABEL, fmtDate, openDownload, parseJson } from "../meta";
 import type { AppRow, Attachment, Question } from "../types";
+import PostPanel from "../social/PostPanel";
+import { PlatIcon } from "../social/PostPreview";
+import { postChannels, postState, whenShort } from "../social/model";
 
 const COLS = "150px minmax(0,2.4fr) minmax(0,1.2fr) 120px 128px 128px";
 
@@ -50,15 +53,17 @@ function joinAnd(list: string[]) {
 }
 
 type Dispatch = { channel: string; ok: boolean; url?: string | null; error?: string };
-const CH_NAME: Record<string, string> = { linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", x: "X", google_business: "Google Business Profile", gmail: "Gmail", calendar: "Google Calendar" };
+const CH_NAME: Record<string, string> = { linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", x: "X", threads: "Threads", tiktok: "TikTok", google_business: "Google Business Profile", gmail: "Gmail", calendar: "Google Calendar" };
 
 /** Which channels an item goes out on, by the names the server uses. */
 function itemChannels(kind: string, targetChannels: string | null): string[] {
-  if (kind === "social_post") return channelList(targetChannels).length ? parseJson<string[]>(targetChannels, []).filter((c) => c in CH_NAME) : [];
+  if (kind === "social_post") return postChannels({ targetChannels });
   if (kind === "calendar_hold") return ["calendar"];
   if (kind === "email_draft" || kind === "hiring_email" || kind === "speaking_pitch") return ["gmail"];
   return [];
 }
+
+const isSocialItem = (kind: string) => kind === "social_post";
 
 function doneLabel(kind: string, status: string, dispatch: Dispatch[]) {
   if (status === "published") return { label: kind === "calendar_hold" ? "On calendar" : kind === "social_post" || kind === "blog_post" ? "Posted" : "Sent", cls: "green" };
@@ -67,12 +72,13 @@ function doneLabel(kind: string, status: string, dispatch: Dispatch[]) {
 }
 
 export default function Approvals() {
-  const { currentOrgId } = useTenant();
+  const { currentOrgId, currentOrg } = useTenant();
+  const tz = currentOrg?.timezone || "America/Chicago";
   const info = trpc.publishing.connectInfo.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const live = info.data?.channels ?? {};
   const utils = trpc.useUtils();
   const { list: employees } = useEmployees();
-  const q = trpc.publishing.listApprovalQueue.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const q = trpc.publishing.listApprovalQueue.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: (qq) => ((qq.state.data ?? []).some((i) => i.kind === "social_post" && postState(i).key === "posting") ? 8_000 : false) });
   const appsQ = trpc.applications.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const apps = appsQ.data ?? [];
   const waitingApps = apps.filter((a) => a.status === "ready");
@@ -82,7 +88,7 @@ export default function Approvals() {
   const [editing, setEditing] = React.useState<number | null>(null);
   const [draft, setDraft] = React.useState("");
 
-  const refresh = () => utils.publishing.listApprovalQueue.invalidate();
+  const refresh = () => Promise.all([utils.publishing.listApprovalQueue.invalidate(), utils.social.listPosts.invalidate()]);
   const act = trpc.publishing.approveAndDispatch.useMutation({ onSuccess: refresh });
   const save = trpc.publishing.updateItem.useMutation({
     onSuccess: async () => {
@@ -127,7 +133,7 @@ export default function Approvals() {
           <span>From</span>
           <span>Item</span>
           <span>Goes to</span>
-          <span>Created</span>
+          <span>{tab === "social" ? "Scheduled" : "Created"}</span>
           <span />
           <span />
         </div>
@@ -142,10 +148,13 @@ export default function Approvals() {
           const isPending = item.status === "pending_approval";
           const meta = parseJson<{ headline?: string; to?: string; email?: string; dispatch?: Dispatch[] }>(item.metadata, {});
           const dispatch = meta.dispatch ?? [];
-          const st = doneLabel(item.kind, item.status, dispatch);
+          const st = isSocialItem(item.kind) ? { label: postState(item).label === "Approved" ? "Approved" : postState(item).label, cls: postState(item).cls } : doneLabel(item.kind, item.status, dispatch);
           const chans = itemChannels(item.kind, item.targetChannels);
           const liveChans = chans.filter((c) => live[c]);
-          const goLabel = liveChans.length === 0 ? "Approve" : item.kind === "social_post" ? "Post" : item.kind === "calendar_hold" ? "Add" : "Send";
+          const isSocial = item.kind === "social_post";
+          const later = isSocial && item.scheduledFor && new Date(item.scheduledFor).getTime() > Date.now() + 30_000;
+          const goLabel = later ? "Schedule" : liveChans.length === 0 ? "Approve" : isSocial ? "Post" : item.kind === "calendar_hold" ? "Add" : "Send";
+          const social = isSocial ? postState(item) : null;
           const canRetry = (item.status === "approved" && dispatch.some((d) => !d.ok)) || item.status === "blocked_connection";
           const viewUrl = dispatch.find((d) => d.ok && d.url)?.url ?? null;
           const isEditing = editing === item.id;
@@ -166,8 +175,14 @@ export default function Approvals() {
                   <span className="ld-clip" style={{ whiteSpace: "nowrap" }}>{emp?.name ?? "Employee"}</span>
                 </span>
                 <span className="ld-strong">{item.title}</span>
-                <span>{channels.join(", ") || "Not set"}</span>
-                <span>{fmtDate(item.createdAt)}</span>
+                {isSocial ? (
+                  <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {chans.length ? chans.map((c) => <PlatIcon key={c} c={c as never} />) : "Not set"}
+                  </span>
+                ) : (
+                  <span>{channels.join(", ") || "Not set"}</span>
+                )}
+                <span>{isSocial ? (item.scheduledFor ? whenShort(item.scheduledFor, tz) : "Not set") : fmtDate(item.createdAt)}</span>
                 {isPending ? (
                   <>
                     <button
@@ -202,35 +217,45 @@ export default function Approvals() {
                   </>
                 )}
               </div>
-              {isOpen && (
+              {isOpen && isSocial && (
+                <div className="ld-expand" style={{ padding: "6px 18px 20px 18px" }}>
+                  <PostPanel
+                    item={item}
+                    extra={
+                      <>
+                        {social?.key === "posting" && <span className="ld-body">Posting now. Videos can take a few minutes.</span>}
+                        {dispatch.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <span className="ld-lbl">Result</span>
+                            {dispatch.map((d) => (
+                              <span key={d.channel} className="ld-body" style={{ color: d.ok ? "#155c3e" : "#b42318" }}>
+                                {CH_NAME[d.channel] ?? d.channel}: {d.ok ? "posted" : d.error}
+                                {d.ok && d.url ? (
+                                  <>
+                                    {" "}
+                                    <a href={d.url} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 600 }}>Open</a>
+                                  </>
+                                ) : null}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {item.approvedBy && (
+                          <span className="ld-small ld-muted">
+                            Approved by {item.approvedBy}
+                            {item.approvedAt ? ` on ${fmtDate(item.approvedAt)}` : ""}
+                          </span>
+                        )}
+                      </>
+                    }
+                  />
+                </div>
+              )}
+              {isOpen && !isSocial && (
                 <div
                   className="ld-expand"
-                  style={{ display: "grid", gridTemplateColumns: item.kind === "social_post" ? "220px minmax(0,1fr) 128px" : "minmax(0,1fr) 128px", gap: 20 }}
+                  style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20 }}
                 >
-                  {item.kind === "social_post" &&
-                    (item.imageUrl ? (
-                      <img src={item.imageUrl} alt={item.title} style={{ width: 220, height: 275, borderRadius: 10, objectFit: "cover", display: "block" }} />
-                    ) : (
-                      <div
-                        style={{
-                          width: 220,
-                          height: 275,
-                          borderRadius: 10,
-                          background: "#0d3b2e",
-                          color: "#fff",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "flex-end",
-                          padding: 16,
-                          boxSizing: "border-box",
-                          fontWeight: 800,
-                          fontSize: 17,
-                          lineHeight: 1.25,
-                        }}
-                      >
-                        {meta.headline || item.title}
-                      </div>
-                    ))}
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
                     <label className="ld-lbl" htmlFor={`body-${item.id}`}>{item.kind === "social_post" ? "Caption" : "Text"}</label>
                     {isEditing ? (

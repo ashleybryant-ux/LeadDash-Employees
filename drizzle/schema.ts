@@ -371,7 +371,7 @@ export type InsertAuditLog = typeof auditLogs.$inferInsert;
 // Connections and the approval queue
 // ==========================================
 
-export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize"] as const;
+export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize", "threads", "tiktok"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const externalConnections = sqliteTable(

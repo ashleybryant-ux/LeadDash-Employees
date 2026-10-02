@@ -32,6 +32,8 @@ import * as hiring from "./employees/hiring";
 import { QUESTIONS, TEMPLATES, parseAnswers, progress as onboardingProgress, saveAnswers, writeDayToDay } from "./employees/onboarding";
 import * as integrations from "./integrations";
 import * as review from "./review";
+import * as social from "./social";
+import { postProblems, SOCIAL_CHANNELS, TIKTOK_PRIVACY, type SocialChannel } from "@shared/post-model";
 import { isStaffEmail } from "./_core/auth";
 import { EVENT_LABELS, NOTIFY_EVENTS, pushReady, pushTo, readPrefs, type Prefs } from "./notify";
 
@@ -77,6 +79,7 @@ function personName(user: User) {
 }
 
 const orgInput = z.object({ organizationId: z.number().int().positive() });
+const mediaMeta = z.object({ name: z.string().max(200).optional(), w: z.number().optional(), h: z.number().optional(), seconds: z.number().optional(), size: z.number().optional() });
 
 const SECRET_KEYS = ["clientSecret", "appSecret", "appPassword", "accessToken", "refreshToken", "apiKey"];
 
@@ -845,7 +848,7 @@ export const appRouter = router({
       .input(
         orgInput.extend({
           topic: z.string().trim().min(3).max(1000),
-          targetPlatforms: z.array(z.enum(["linkedin", "instagram", "facebook", "x"])).min(1),
+          targetPlatforms: z.array(z.enum(["linkedin", "instagram", "facebook", "x", "threads"])).min(1),
           tone: z.enum(["thought_leadership", "community_announcement", "clinical_advocacy", "event_invitation"]),
           generateImageFlag: z.boolean().default(true),
         })
@@ -854,6 +857,87 @@ export const appRouter = router({
         await requireMember(ctx, input.organizationId, "member");
         const { organizationId, ...rest } = input;
         return tasks.writeSocialPost(organizationId, rest);
+      }),
+
+    /** The post editor: a new post, or changes to one (text, images, video, accounts, time). */
+    savePost: protectedProcedure
+      .input(
+        orgInput.extend({
+          itemId: z.number().int().positive().optional(),
+          type: z.enum(["post", "reel"]),
+          mode: z.enum(["same", "different"]),
+          channels: z.array(z.string().max(30)).max(10),
+          text: z.string().max(70_000),
+          imageUrl: z.string().max(500).nullable(),
+          imageMeta: mediaMeta.nullable(),
+          variants: z.record(z.string(), z.object({ text: z.string().max(70_000), imageUrl: z.string().max(500).nullable(), imageMeta: mediaMeta.nullable().optional() })),
+          videoUrl: z.string().max(500).nullable(),
+          videoMeta: mediaMeta.nullable(),
+          coverUrl: z.string().max(500).nullable(),
+          coverMs: z.number().min(0).max(36_000_000),
+          tiktok: z.object({
+            privacy: z.union([z.enum(TIKTOK_PRIVACY), z.literal("")]),
+            allowComment: z.boolean(),
+            allowDuet: z.boolean(),
+            allowStitch: z.boolean(),
+            disclose: z.boolean(),
+            yourBrand: z.boolean(),
+            brandedContent: z.boolean(),
+          }),
+          date: z.string().max(20),
+          time: z.string().max(20),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, ...rest } = input;
+        return social.savePost(organizationId, rest, personName(ctx.user));
+      }),
+
+    /** Dragged onto a day, or moved to another day. */
+    schedule: protectedProcedure
+      .input(orgInput.extend({ itemId: z.number().int().positive(), date: z.string().max(20), time: z.string().max(20).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return social.schedulePost(input.organizationId, input.itemId, input.date, input.time || null, personName(ctx.user));
+      }),
+
+    unschedule: protectedProcedure.input(orgInput.extend({ itemId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return social.unschedulePost(input.organizationId, input.itemId);
+    }),
+
+    suggestTime: protectedProcedure
+      .input(orgInput.extend({ channels: z.array(z.string().max(30)).max(10), type: z.enum(["post", "reel"]), itemId: z.number().int().positive().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const chans = input.channels.filter((c): c is SocialChannel => (SOCIAL_CHANNELS as readonly string[]).includes(c));
+        return social.suggestTime(input.organizationId, chans.length ? chans : ["facebook"], input.type, input.itemId);
+      }),
+
+    /** What TikTok lets this account post right now (asked each time the editor opens, as TikTok requires). */
+    tiktokCreator: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      try {
+        return { ok: true as const, creator: await integrations.tiktokCreator(input.organizationId) };
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message.slice(0, 200) : "TikTok did not answer" };
+      }
+    }),
+
+    /** Other times: lays the same drafts on a different pattern. */
+    schedulePlan: protectedProcedure
+      .input(orgInput.extend({ channel: z.enum(SOCIAL_CHANNELS), itemIds: z.array(z.number().int().positive()).min(1).max(30), patternKey: z.string().max(40) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return social.planSchedule(input.organizationId, input.channel, input.itemIds.length, { patternKey: input.patternKey, itemIds: input.itemIds, writeMore: false });
+      }),
+
+    applyPlan: protectedProcedure
+      .input(orgInput.extend({ rows: z.array(z.object({ itemId: z.number().int().positive(), at: z.string().max(40) })).min(1).max(30) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return social.applyPlan(input.organizationId, input.rows, personName(ctx.user));
       }),
   }),
 
@@ -979,7 +1063,8 @@ export const appRouter = router({
       .input(
         orgInput.extend({
           itemId: z.number(),
-          action: z.enum(["approve_for_dispatch", "request_revisions", "cancel", "retry"]),
+          // approve_only: approved, waiting for a time (Sienna's drafts). approve_for_dispatch posts now, or schedules when a later time is set.
+          action: z.enum(["approve_for_dispatch", "approve_only", "request_revisions", "cancel", "retry"]),
           reviewerName: z.string().optional(), // ignored: the signed-in person is the reviewer
           notes: z.string().max(5000).optional(),
         })
@@ -993,38 +1078,32 @@ export const appRouter = router({
 
         if (input.action === "request_revisions" || input.action === "cancel") {
           const status = input.action === "request_revisions" ? "changes_requested" : "cancelled";
-          const updated = await db.updateOutboundItem(input.itemId, input.organizationId, { status, reviewerNotes: input.notes ?? null });
+          const updated = await db.updateOutboundItem(input.itemId, input.organizationId, { status, reviewerNotes: input.notes ?? null, scheduledFor: status === "cancelled" ? null : item.scheduledFor });
           await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: reviewer, action: status === "changes_requested" ? "Sent back" : "Cancelled", details: `"${item.title}".${input.notes ? ` Note: ${input.notes}` : ""}` });
           return updated;
         }
 
-        // Approve (or try again): post or send to every connected channel it is meant for.
         if (input.action === "retry" && item.status === "pending_approval") throw new TRPCError({ code: "BAD_REQUEST", message: "Approve it first." });
-        const { status, results } = await integrations.dispatch(item);
-        const meta = (() => {
-          try {
-            return JSON.parse(item.metadata || "{}");
-          } catch {
-            return {};
-          }
-        })();
-        const updated = await db.updateOutboundItem(input.itemId, input.organizationId, {
-          status,
-          reviewerNotes: input.notes ?? item.reviewerNotes ?? null,
-          metadata: JSON.stringify({ ...meta, dispatch: results }),
-          ...(item.approvedBy ? {} : { approvedBy: reviewer, approvedAt: new Date() }),
-          ...(status === "published" ? { publishedAt: new Date(), externalReference: results.find((r) => r.url)?.url ?? null } : {}),
-        });
-        const ok = results.filter((r) => r.ok).map((r) => integrations.channelLabel(r.channel));
-        const failed = results.filter((r) => !r.ok).map((r) => `${integrations.channelLabel(r.channel)} (${r.error})`);
-        await db.logAction({
-          organizationId: input.organizationId,
-          actorType: "human_user",
-          actorName: reviewer,
-          action: input.action === "retry" ? "Tried again" : "Approved",
-          details: `"${item.title}". ${ok.length ? `Went out on ${ok.join(", ")}.` : ""}${failed.length ? ` Not sent: ${failed.join("; ")}.` : ""}${results.length === 0 ? "Held: nothing connected can send this yet." : ""}`.trim(),
-        });
-        return updated;
+        if (item.kind === "social_post" && input.action !== "retry") {
+          const problems = postProblems(item);
+          if (problems.length) throw new TRPCError({ code: "BAD_REQUEST", message: `${problems.join(". ")}.` });
+        }
+        const approval = item.approvedBy ? {} : { approvedBy: reviewer, approvedAt: new Date() };
+        const later = item.kind === "social_post" && item.scheduledFor && new Date(item.scheduledFor).getTime() > Date.now() + 30_000;
+
+        // Approved, waiting for a time; or approved for a time already set.
+        if (input.action === "approve_only" || (input.action === "approve_for_dispatch" && later)) {
+          if (item.kind !== "social_post" && input.action === "approve_only") throw new TRPCError({ code: "BAD_REQUEST", message: "Only posts can wait for a time." });
+          const status = later ? "scheduled" : "approved";
+          const updated = await db.updateOutboundItem(input.itemId, input.organizationId, { status, reviewerNotes: input.notes ?? item.reviewerNotes ?? null, ...approval });
+          const tz = (await db.getOrganizationById(input.organizationId))?.timezone || "America/Chicago";
+          const when = later ? social.localParts(new Date(item.scheduledFor!), tz) : null;
+          await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: reviewer, action: "Approved", details: `"${item.title}". ${when ? `Scheduled for ${when.date} at ${when.time}.` : "Waiting for a time on the calendar."}` });
+          return updated;
+        }
+
+        // Approve (or try again): post or send to every connected channel it is meant for.
+        return social.postNow(item, reviewer, "human_user", input.action === "retry" ? "Tried again" : "Approved", { ...approval, ...(item.kind === "social_post" ? { scheduledFor: item.scheduledFor ?? new Date() } : {}) }, input.notes);
       }),
 
     /** Which Connect buttons work, and what each workspace has connected. */

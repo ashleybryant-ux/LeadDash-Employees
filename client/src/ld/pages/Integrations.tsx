@@ -4,8 +4,8 @@ import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, FolderTabs, Page } from "../ui";
 import { parseJson } from "../meta";
 
-type Provider = "google_workspace" | "linkedin" | "facebook" | "instagram" | "wordpress" | "x" | "google_business" | "submittable" | "sessionize";
-type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x";
+type Provider = "google_workspace" | "linkedin" | "facebook" | "instagram" | "wordpress" | "x" | "google_business" | "submittable" | "sessionize" | "threads" | "tiktok";
+type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x" | "threads" | "tiktok";
 
 type CatalogItem = { key: string; name: string; provider: Provider; logo: string; color: string; desc: string; app?: AppKey };
 
@@ -13,14 +13,16 @@ type CatalogItem = { key: string; name: string; provider: Provider; logo: string
 const CATALOG: CatalogItem[] = [
   { key: "google", name: "Google", provider: "google_workspace", app: "google", logo: "G", color: "#db4437", desc: "Gmail and Calendar. Avery sends replies and places holds you approve." },
   { key: "linkedin", name: "LinkedIn", provider: "linkedin", app: "linkedin", logo: "in", color: "#0a66c2", desc: "Sienna posts to your profile after you approve." },
-  { key: "meta", name: "Facebook and Instagram", provider: "facebook", app: "meta", logo: "f", color: "#1877f2", desc: "Sienna posts to your page and Instagram after you approve." },
+  { key: "meta", name: "Facebook and Instagram", provider: "facebook", app: "meta", logo: "f", color: "#1877f2", desc: "Sienna posts and Reels to your page and Instagram after you approve." },
+  { key: "tiktok", name: "TikTok", provider: "tiktok", app: "tiktok", logo: "tt", color: "#010101", desc: "Sienna posts videos to TikTok after you approve." },
+  { key: "threads", name: "Threads", provider: "threads", app: "threads", logo: "@", color: "#000000", desc: "Sienna posts to Threads after you approve." },
   { key: "x", name: "X", provider: "x", app: "x", logo: "X", color: "#111111", desc: "Sienna posts the short version after you approve." },
   { key: "gbp", name: "Google Business Profile", provider: "google_business", app: "google_business", logo: "GB", color: "#34a853", desc: "Sienna posts updates to your listing after you approve." },
   { key: "wordpress", name: "WordPress", provider: "wordpress", logo: "W", color: "#21759b", desc: "Theo saves approved articles as drafts on your site." },
   { key: "submittable", name: "Submittable", provider: "submittable", logo: "S", color: "#c2410c", desc: "Morgan fills and submits foundation forms." },
   { key: "sessionize", name: "Sessionize", provider: "sessionize", logo: "Se", color: "#9a4d14", desc: "Taylor submits speaker applications." },
 ];
-const MAIN = ["google", "linkedin", "meta", "x", "gbp", "wordpress"];
+const MAIN = ["google", "linkedin", "meta", "tiktok", "threads", "x", "gbp", "wordpress"];
 
 type FieldDef = { key: string; label: string; secret?: boolean };
 

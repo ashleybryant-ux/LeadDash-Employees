@@ -8,10 +8,11 @@ import { authenticateRequest } from "./_core/context";
 import { decryptJson, encryptJson, hasSecretsKey } from "./_core/crypto";
 import { uploadsRoot } from "./storage";
 import type { OutboundItem, Provider } from "../drizzle/schema";
+import { payloadFor, postChannels, type Payload, type SocialChannel } from "@shared/post-model";
 
 /**
  * One-click connections. LeadDash registers one app with each company
- * (Google, LinkedIn, Meta, X) and puts its keys in the server's .env once.
+ * (Google, LinkedIn, Meta, Threads, TikTok, X) and puts its keys in the server's .env once.
  * Every workspace then connects with a Connect button: the person signs in
  * with the company, approves, and lands back on Integrations. Tokens are
  * encrypted with SECRETS_KEY and never sent to the browser.
@@ -23,7 +24,7 @@ import type { OutboundItem, Provider } from "../drizzle/schema";
 // Apps (set once in .env by LeadDash)
 // ==========================================
 
-export type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x";
+export type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x" | "threads" | "tiktok";
 
 type AppDef = {
   provider: Provider;
@@ -35,7 +36,10 @@ type AppDef = {
   pkce?: boolean;
 };
 
-const GRAPH = "https://graph.facebook.com/v26.0";
+const GRAPH_VERSION = "v26.0";
+const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const THREADS = "https://graph.threads.net/v1.0";
+const TIKTOK = "https://open.tiktokapis.com/v2";
 const LINKEDIN_VERSION = process.env.LINKEDIN_VERSION || "202609";
 
 export const APPS: Record<AppKey, AppDef> = {
@@ -80,6 +84,22 @@ export const APPS: Record<AppKey, AppDef> = {
     tokenUrl: "https://api.x.com/2/oauth2/token",
     scopes: ["tweet.read", "tweet.write", "users.read", "media.write", "offline.access"],
     pkce: true,
+  },
+  threads: {
+    provider: "threads",
+    clientId: () => process.env.THREADS_APP_ID || "",
+    clientSecret: () => process.env.THREADS_APP_SECRET || "",
+    authUrl: "https://threads.net/oauth/authorize",
+    tokenUrl: "https://graph.threads.net/oauth/access_token",
+    scopes: ["threads_basic", "threads_content_publish"],
+  },
+  tiktok: {
+    provider: "tiktok",
+    clientId: () => process.env.TIKTOK_CLIENT_KEY || "",
+    clientSecret: () => process.env.TIKTOK_CLIENT_SECRET || "",
+    authUrl: "https://www.tiktok.com/v2/auth/authorize/",
+    tokenUrl: `${TIKTOK}/oauth/token/`,
+    scopes: ["user.info.basic", "video.publish"],
   },
 };
 
@@ -162,6 +182,25 @@ async function accessToken(orgId: number, provider: Provider) {
   if (!conn || conn.status !== "connected") throw new NotConnected(`${LABEL[provider]} is not connected`);
   const t = readTokens(conn.secretsEncrypted);
   if (!t?.accessToken) throw new NotConnected(`Reconnect ${LABEL[provider]}`);
+  // Threads tokens last 60 days and refresh themselves; renew a week early.
+  if (provider === "threads" && t.expiresAt && t.expiresAt < Date.now() + 7 * 86_400_000) {
+    if (t.expiresAt < Date.now()) {
+      await db.upsertExternalConnection({ ...conn, status: "error", lastCheckedAt: new Date() });
+      throw new NotConnected("Reconnect Threads, the sign-in expired");
+    }
+    try {
+      const r = await fetch(`https://graph.threads.net/refresh_access_token?${new URLSearchParams({ grant_type: "th_refresh_token", access_token: t.accessToken })}`, { signal: AbortSignal.timeout(20_000) });
+      const d = await r.json();
+      if (d.access_token) {
+        const next: Tokens = { ...t, accessToken: d.access_token, expiresAt: d.expires_in ? Date.now() + Number(d.expires_in) * 1000 : t.expiresAt };
+        await db.upsertExternalConnection({ ...conn, secretsEncrypted: encryptJson(next), lastCheckedAt: new Date() });
+        return { token: next.accessToken, conn, tokens: next };
+      }
+    } catch {
+      // Still valid for now; try again next time.
+    }
+    return { token: t.accessToken, conn, tokens: t };
+  }
   if (t.expiresAt && t.expiresAt < Date.now() + 90_000) {
     const key = (Object.keys(APPS) as AppKey[]).find((k) => APPS[k].provider === provider)!;
     if (!t.refreshToken) {
@@ -173,7 +212,9 @@ async function accessToken(orgId: number, provider: Provider) {
       const d =
         key === "x"
           ? await postForm(a.tokenUrl, { grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: a.clientId() }, { authorization: `Basic ${Buffer.from(`${a.clientId()}:${a.clientSecret()}`).toString("base64")}` })
-          : await postForm(a.tokenUrl, { grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: a.clientId(), client_secret: a.clientSecret() });
+          : key === "tiktok"
+            ? await postForm(a.tokenUrl, { grant_type: "refresh_token", refresh_token: t.refreshToken, client_key: a.clientId(), client_secret: a.clientSecret() })
+            : await postForm(a.tokenUrl, { grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: a.clientId(), client_secret: a.clientSecret() });
       const next: Tokens = { ...t, accessToken: d.access_token, refreshToken: d.refresh_token || t.refreshToken, expiresAt: d.expires_in ? Date.now() + Number(d.expires_in) * 1000 : null };
       await db.upsertExternalConnection({ ...conn, secretsEncrypted: encryptJson(next), lastCheckedAt: new Date() });
       return { token: next.accessToken, conn, tokens: next };
@@ -192,6 +233,8 @@ const LABEL: Record<string, string> = {
   facebook: "Facebook",
   instagram: "Instagram",
   x: "X",
+  threads: "Threads",
+  tiktok: "TikTok",
   wordpress: "WordPress",
   submittable: "Submittable",
   sessionize: "Sessionize",
@@ -223,8 +266,8 @@ function back(res: Response, params: Record<string, string>) {
 
 export function authorizeUrl(key: AppKey, state: string, verifier?: string) {
   const a = APPS[key];
-  const q = new URLSearchParams({ client_id: a.clientId(), redirect_uri: redirectUri(key), response_type: "code", state });
-  if (key === "meta") q.set("scope", a.scopes.join(","));
+  const q = new URLSearchParams({ [key === "tiktok" ? "client_key" : "client_id"]: a.clientId(), redirect_uri: redirectUri(key), response_type: "code", state });
+  if (key === "meta" || key === "threads" || key === "tiktok") q.set("scope", a.scopes.join(","));
   else q.set("scope", a.scopes.join(" "));
   if (key === "google" || key === "google_business") {
     q.set("access_type", "offline");
@@ -264,7 +307,7 @@ export function registerOAuth(app: Express) {
     const { user } = await authenticateRequest(req);
     if (!user || user.id !== p.userId) return back(res, { error: "Sign in to LeadDash Employees, then press Connect again." });
     if (req.query.error) return back(res, { error: `${LABEL[APPS[key].provider]} sign-in was cancelled.` });
-    const code = String(req.query.code || "");
+    const code = String(req.query.code || "").replace(/#_$/, "");
     if (!code) return back(res, { error: "No sign-in code came back. Press Connect again." });
     try {
       const label = await finishConnect(p.orgId, key, code, p.verifier);
@@ -275,6 +318,11 @@ export function registerOAuth(app: Express) {
       console.warn(`[oauth] ${key} failed:`, message);
       back(res, { error: `${LABEL[APPS[key].provider]} did not connect (${message.slice(0, 160)}).` });
     }
+  });
+
+  // Meta checks robots.txt before it fetches a Reel from this server.
+  app.get("/robots.txt", (_req, res) => {
+    res.type("text/plain").send("User-agent: *\nAllow: /\n");
   });
 
   // Images for Instagram and Facebook: Meta fetches them from a public link, so
@@ -311,6 +359,21 @@ async function exchange(key: AppKey, code: string, verifier?: string) {
   const a = APPS[key];
   if (key === "x") {
     return postForm(a.tokenUrl, { code, grant_type: "authorization_code", client_id: a.clientId(), redirect_uri: redirectUri(key), code_verifier: verifier ?? "" }, { authorization: `Basic ${Buffer.from(`${a.clientId()}:${a.clientSecret()}`).toString("base64")}` });
+  }
+  if (key === "tiktok") {
+    const d = await postForm(a.tokenUrl, { client_key: a.clientId(), client_secret: a.clientSecret(), code, grant_type: "authorization_code", redirect_uri: redirectUri(key) });
+    if (!d.access_token) throw new Error(providerError(d, 400));
+    return d;
+  }
+  if (key === "threads") {
+    const body = { client_id: a.clientId(), client_secret: a.clientSecret(), grant_type: "authorization_code", redirect_uri: redirectUri(key), code };
+    // Meta documents both hosts; try the .net one first.
+    const short = await postForm(a.tokenUrl, body).catch(() => postForm("https://graph.threads.com/oauth/access_token", body));
+    if (!short.access_token) throw new Error(providerError(short, 400));
+    const lq = new URLSearchParams({ grant_type: "th_exchange_token", client_secret: a.clientSecret(), access_token: short.access_token });
+    const long = await (await fetch(`https://graph.threads.net/access_token?${lq}`, { signal: AbortSignal.timeout(20_000) })).json();
+    if (!long.access_token) throw new Error(providerError(long, 400));
+    return { ...long, user_id: short.user_id };
   }
   if (key === "meta") {
     const q = new URLSearchParams({ client_id: a.clientId(), client_secret: a.clientSecret(), redirect_uri: redirectUri(key), code });
@@ -363,6 +426,16 @@ export async function finishConnect(orgId: number, key: AppKey, code: string, ve
     label = data.data?.name ? `${data.data.name} (@${data.data.username})` : "X account";
     handle = data.data?.username ? `@${data.data.username}` : null;
     settings = { userId: data.data?.id ?? null, username: data.data?.username ?? null };
+  } else if (key === "threads") {
+    const { data } = await api(`${THREADS}/me?fields=id,username`, { token: tokens.accessToken });
+    label = data.username ? `@${data.username}` : "Threads account";
+    handle = data.username ? `@${data.username}` : null;
+    settings = { userId: String(data.id ?? d.user_id ?? ""), username: data.username ?? null };
+  } else if (key === "tiktok") {
+    const info = await tiktokCreatorWith(tokens.accessToken);
+    label = info.username ? `@${info.username}` : info.nickname || "TikTok account";
+    handle = info.username ? `@${info.username}` : null;
+    settings = { openId: d.open_id ?? null, username: info.username, nickname: info.nickname };
   } else if (key === "meta") {
     const me = await api(`${GRAPH}/me?fields=id,name`, { token: tokens.accessToken });
     const pages = await api(`${GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50`, { token: tokens.accessToken });
@@ -435,6 +508,8 @@ export async function channelState(orgId: number) {
     facebook: !!(fb && fbSettings.pageId),
     instagram: !!(fb && fbSettings.igId),
     x: !!by("x"),
+    threads: !!by("threads"),
+    tiktok: !!by("tiktok"),
     google_business: !!by("google_business"),
     gmail: !!by("google_workspace"),
     calendar: !!by("google_workspace"),
@@ -447,6 +522,50 @@ function localFile(fileUrl: string | null | undefined) {
   return full.startsWith(uploadsRoot()) && fs.existsSync(full) ? full : null;
 }
 
+// ---------- Files and waiting ----------
+
+const VIDEO_MIME: Record<string, string> = { ".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm" };
+const videoMime = (file: string) => VIDEO_MIME[path.extname(file).toLowerCase()] ?? "video/mp4";
+
+/** Seconds between status checks while a platform processes a video. Tests set it to 0. */
+let pollMs = 10_000;
+export function setPollMs(ms: number) {
+  pollMs = ms;
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Asks until check() returns a value, or gives up after maxMs. */
+async function waitUntil<T>(check: () => Promise<T | null>, maxMs: number, what: string): Promise<T> {
+  const tries = Math.max(1, Math.ceil(maxMs / Math.max(pollMs, 1)));
+  for (let i = 0; i < tries; i++) {
+    const v = await check();
+    if (v !== null) return v;
+    await sleep(pollMs);
+  }
+  throw new Error(`${what} was still processing after ${Math.round(maxMs / 60_000)} minutes. Press Try again later`);
+}
+
+async function readRange(file: string, start: number, length: number) {
+  const fh = await fs.promises.open(file, "r");
+  try {
+    const buf = Buffer.alloc(length);
+    const { bytesRead } = await fh.read(buf, 0, length, start);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
+}
+
+function needVideo(p: Payload) {
+  const file = localFile(p.videoUrl);
+  if (!file) throw new Error("The video file is missing. Upload it again");
+  return file;
+}
+
+function relUrl(full: string) {
+  return `/files/${path.relative(uploadsRoot(), full).split(path.sep).join("/")}`;
+}
+
 /** Instagram takes JPEG only; converts once and keeps the copy next to the original. */
 async function jpegUrl(fileUrl: string) {
   if (/\.jpe?g$/i.test(fileUrl)) return fileUrl;
@@ -457,31 +576,107 @@ async function jpegUrl(fileUrl: string) {
     const sharp = (await import("sharp")).default;
     await sharp(src).flatten({ background: "#ffffff" }).jpeg({ quality: 90 }).toFile(out);
   }
-  return `/files/${path.relative(uploadsRoot(), out).split(path.sep).join("/")}`;
+  return relUrl(out);
 }
 
-async function postLinkedIn(orgId: number, text: string, imageUrl: string | null) {
+/**
+ * Instagram feed images must be between 4:5 (tall) and 1.91:1 (wide). Taller
+ * or wider images are cut evenly from both sides, exactly as the preview shows.
+ */
+export function igCropBox(w: number, h: number) {
+  const r = w / h;
+  if (r < 0.8) {
+    const nh = Math.round(w / 0.8);
+    return { left: 0, top: Math.floor((h - nh) / 2), width: w, height: nh };
+  }
+  if (r > 1.91) {
+    const nw = Math.round(h * 1.91);
+    return { left: Math.floor((w - nw) / 2), top: 0, width: nw, height: h };
+  }
+  return null;
+}
+
+async function instagramImageUrl(fileUrl: string) {
+  const src = localFile(fileUrl);
+  if (!src) return fileUrl;
+  const out = src.replace(/\.[a-z0-9]+$/i, "") + ".ig4.jpg";
+  if (!fs.existsSync(out)) {
+    const sharp = (await import("sharp")).default;
+    const m = await sharp(src).metadata();
+    let img = sharp(src);
+    const box = m.width && m.height ? igCropBox(m.width, m.height) : null;
+    if (box) img = img.extract(box);
+    await img.resize({ width: 1440, withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 88 }).toFile(out);
+  }
+  return relUrl(out);
+}
+
+/** Threads takes JPEG or PNG up to 8 MB. */
+async function threadsImageUrl(fileUrl: string) {
+  const src = localFile(fileUrl);
+  if (!src) return fileUrl;
+  if (/\.(jpe?g|png)$/i.test(src) && fs.statSync(src).size <= 8_000_000) return fileUrl;
+  const out = src.replace(/\.[a-z0-9]+$/i, "") + ".th.jpg";
+  if (!fs.existsSync(out)) {
+    const sharp = (await import("sharp")).default;
+    await sharp(src).resize({ width: 1440, withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 88 }).toFile(out);
+  }
+  return relUrl(out);
+}
+
+const form = (body: Record<string, string>) => ({ headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body).toString() });
+
+// ---------- LinkedIn ----------
+
+async function postLinkedIn(orgId: number, p: Payload) {
   const { token, conn } = await accessToken(orgId, "linkedin");
   const author = JSON.parse(conn.settings || "{}").personUrn;
   if (!author) throw new Error("Reconnect LinkedIn");
   const headers = { "LinkedIn-Version": LINKEDIN_VERSION, "X-Restli-Protocol-Version": "2.0.0", "content-type": "application/json" };
   let content: Record<string, unknown> | undefined;
-  const file = localFile(imageUrl);
-  if (file) {
-    const init = await api("https://api.linkedin.com/rest/images?action=initializeUpload", { method: "POST", token, headers, body: JSON.stringify({ initializeUploadRequest: { owner: author } }) });
-    const up = await fetch(init.data.value.uploadUrl, { method: "PUT", headers: { authorization: `Bearer ${token}` }, body: fs.readFileSync(file) });
-    if (!up.ok) throw new Error(`image upload ${up.status}`);
-    content = { media: { id: init.data.value.image, altText: text.slice(0, 120) } };
+  if (p.type === "reel") {
+    const file = needVideo(p);
+    const size = fs.statSync(file).size;
+    const init = await api("https://api.linkedin.com/rest/videos?action=initializeUpload", { method: "POST", token, headers, body: JSON.stringify({ initializeUploadRequest: { owner: author, fileSizeBytes: size, uploadCaptions: false, uploadThumbnail: false } }) });
+    const v = init.data.value;
+    const etags: string[] = [];
+    for (const part of v.uploadInstructions ?? []) {
+      const chunk = await readRange(file, Number(part.firstByte), Number(part.lastByte) - Number(part.firstByte) + 1);
+      const up = await fetch(part.uploadUrl, { method: "PUT", headers: { authorization: `Bearer ${token}`, "content-type": "application/octet-stream" }, body: chunk, signal: AbortSignal.timeout(300_000) });
+      if (!up.ok) throw new Error(`LinkedIn video upload ${up.status}`);
+      etags.push(String(up.headers.get("etag") ?? "").replace(/"/g, ""));
+    }
+    await api("https://api.linkedin.com/rest/videos?action=finalizeUpload", { method: "POST", token, headers, body: JSON.stringify({ finalizeUploadRequest: { video: v.video, uploadToken: v.uploadToken ?? "", uploadedPartIds: etags } }) });
+    await waitUntil(
+      async () => {
+        const st = await api(`https://api.linkedin.com/rest/videos/${encodeURIComponent(v.video)}`, { token, headers });
+        if (st.data.status === "PROCESSING_FAILED") throw new Error("LinkedIn could not process the video");
+        return st.data.status === "AVAILABLE" ? true : null;
+      },
+      10 * 60_000,
+      "LinkedIn"
+    );
+    content = { media: { id: v.video, title: p.text.split("\n")[0].slice(0, 100) } };
+  } else {
+    const file = localFile(p.imageUrl);
+    if (file) {
+      const init = await api("https://api.linkedin.com/rest/images?action=initializeUpload", { method: "POST", token, headers, body: JSON.stringify({ initializeUploadRequest: { owner: author } }) });
+      const up = await fetch(init.data.value.uploadUrl, { method: "PUT", headers: { authorization: `Bearer ${token}` }, body: fs.readFileSync(file) });
+      if (!up.ok) throw new Error(`image upload ${up.status}`);
+      content = { media: { id: init.data.value.image, altText: p.text.slice(0, 120) } };
+    }
   }
   const { res } = await api("https://api.linkedin.com/rest/posts", {
     method: "POST",
     token,
     headers,
-    body: JSON.stringify({ author, commentary: text, visibility: "PUBLIC", distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] }, lifecycleState: "PUBLISHED", isReshareDisabledByAuthor: false, ...(content ? { content } : {}) }),
+    body: JSON.stringify({ author, commentary: p.text, visibility: "PUBLIC", distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] }, lifecycleState: "PUBLISHED", isReshareDisabledByAuthor: false, ...(content ? { content } : {}) }),
   });
   const urn = res.headers.get("x-restli-id");
   return urn ? `https://www.linkedin.com/feed/update/${urn}/` : null;
 }
+
+// ---------- Facebook and Instagram ----------
 
 async function metaPage(orgId: number) {
   const conn = await db.getConnectionByProvider(orgId, "facebook");
@@ -492,60 +687,271 @@ async function metaPage(orgId: number) {
   return { pageId: String(s.pageId), igId: s.igId ? String(s.igId) : null, token: t.pageToken };
 }
 
-async function postFacebook(orgId: number, text: string, imageUrl: string | null) {
+async function postFacebook(orgId: number, p: Payload) {
   const { pageId, token } = await metaPage(orgId);
-  if (imageUrl && localFile(imageUrl)) {
-    const { data } = await api(`${GRAPH}/${pageId}/photos`, { method: "POST", token, headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ url: publicMediaUrl(imageUrl), caption: text }).toString() });
+  if (p.type === "reel") {
+    needVideo(p);
+    const start = await api(`${GRAPH}/${pageId}/video_reels`, { method: "POST", token, ...form({ upload_phase: "start" }) });
+    const videoId = String(start.data.video_id);
+    const up = await fetch(`https://rupload.facebook.com/video-upload/${GRAPH_VERSION}/${videoId}`, { method: "POST", headers: { authorization: `OAuth ${token}`, file_url: publicMediaUrl(p.videoUrl!) }, signal: AbortSignal.timeout(120_000) });
+    if (!up.ok) throw new Error(`Facebook could not fetch the video (${up.status})`);
+    await api(`${GRAPH}/${pageId}/video_reels`, { method: "POST", token, ...form({ upload_phase: "finish", video_id: videoId, video_state: "PUBLISHED", description: p.text }) });
+    await waitUntil(
+      async () => {
+        const st = await api(`${GRAPH}/${videoId}?fields=status`, { token });
+        const s = st.data.status ?? {};
+        if (s.video_status === "error" || s.processing_phase?.status === "error") throw new Error(s.processing_phase?.error?.message || "Facebook could not process the Reel");
+        return s.video_status === "ready" || s.publishing_phase?.status === "complete" ? true : null;
+      },
+      10 * 60_000,
+      "Facebook"
+    );
+    return `https://www.facebook.com/reel/${videoId}`;
+  }
+  if (p.imageUrl && localFile(p.imageUrl)) {
+    const { data } = await api(`${GRAPH}/${pageId}/photos`, { method: "POST", token, ...form({ url: publicMediaUrl(p.imageUrl), caption: p.text }) });
     return data.post_id ? `https://www.facebook.com/${data.post_id}` : null;
   }
-  const { data } = await api(`${GRAPH}/${pageId}/feed`, { method: "POST", token, headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ message: text }).toString() });
+  const { data } = await api(`${GRAPH}/${pageId}/feed`, { method: "POST", token, ...form({ message: p.text }) });
   return data.id ? `https://www.facebook.com/${data.id}` : null;
 }
 
-async function postInstagram(orgId: number, text: string, imageUrl: string | null) {
+async function postInstagram(orgId: number, p: Payload) {
   const { igId, token } = await metaPage(orgId);
   if (!igId) throw new NotConnected("No Instagram business account is linked to the chosen Page");
-  if (!imageUrl || !localFile(imageUrl)) throw new Error("Instagram posts need an image");
-  const jpg = await jpegUrl(imageUrl);
-  const c = await api(`${GRAPH}/${igId}/media`, { method: "POST", token, headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ image_url: publicMediaUrl(jpg), caption: text.slice(0, 2200) }).toString() });
-  // Meta needs a moment to fetch the image before the container can be published.
-  for (let i = 0; i < 10; i++) {
-    const st = await api(`${GRAPH}/${c.data.id}?fields=status_code`, { token }).catch(() => null);
-    if (!st || st.data.status_code === "FINISHED") break;
-    if (st.data.status_code === "ERROR") throw new Error("Instagram could not read the image");
-    await new Promise((r) => setTimeout(r, 2000));
+  let body: Record<string, string>;
+  if (p.type === "reel") {
+    needVideo(p);
+    body = { media_type: "REELS", video_url: publicMediaUrl(p.videoUrl!), caption: p.text, share_to_feed: "true" };
+    if (p.coverUrl && localFile(p.coverUrl)) body.cover_url = publicMediaUrl(await jpegUrl(p.coverUrl));
+    else body.thumb_offset = String(p.coverMs || 0);
+  } else {
+    if (!p.imageUrl || !localFile(p.imageUrl)) throw new Error("Instagram posts need an image");
+    body = { image_url: publicMediaUrl(await instagramImageUrl(p.imageUrl)), caption: p.text };
   }
-  const { data } = await api(`${GRAPH}/${igId}/media_publish`, { method: "POST", token, headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ creation_id: c.data.id }).toString() });
+  const c = await api(`${GRAPH}/${igId}/media`, { method: "POST", token, ...form(body) });
+  // Meta fetches the file before the container can be published.
+  await waitUntil(
+    async () => {
+      const st = await api(`${GRAPH}/${c.data.id}?fields=status_code,status`, { token }).catch(() => null);
+      if (!st) return null;
+      if (st.data.status_code === "ERROR" || st.data.status_code === "EXPIRED") throw new Error(`Instagram could not read the ${p.type === "reel" ? "video" : "image"}${st.data.status ? ` (${st.data.status})` : ""}`);
+      return st.data.status_code === "FINISHED" ? true : null;
+    },
+    p.type === "reel" ? 5 * 60_000 : 60_000,
+    "Instagram"
+  );
+  const { data } = await api(`${GRAPH}/${igId}/media_publish`, { method: "POST", token, ...form({ creation_id: c.data.id }) });
   const link = await api(`${GRAPH}/${data.id}?fields=permalink`, { token }).catch(() => null);
   return link?.data?.permalink ?? null;
 }
 
-async function postX(orgId: number, text: string, imageUrl: string | null) {
+// ---------- Threads ----------
+
+async function postThreads(orgId: number, p: Payload) {
+  const { token, conn } = await accessToken(orgId, "threads");
+  const uid = JSON.parse(conn.settings || "{}").userId || "me";
+  const body: Record<string, string> = { text: p.text };
+  if (p.type === "reel") {
+    needVideo(p);
+    body.media_type = "VIDEO";
+    body.video_url = publicMediaUrl(p.videoUrl!);
+  } else if (p.imageUrl && localFile(p.imageUrl)) {
+    body.media_type = "IMAGE";
+    body.image_url = publicMediaUrl(await threadsImageUrl(p.imageUrl));
+  } else body.media_type = "TEXT";
+  const c = await api(`${THREADS}/${uid}/threads`, { method: "POST", token, ...form(body) });
+  const id = String(c.data.id);
+  await waitUntil(
+    async () => {
+      const st = await api(`${THREADS}/${id}?fields=status,error_message`, { token }).catch(() => null);
+      if (!st) return null;
+      if (st.data.status === "ERROR" || st.data.status === "EXPIRED") throw new Error(`Threads could not use the post${st.data.error_message ? ` (${st.data.error_message})` : ""}`);
+      return st.data.status === "FINISHED" || st.data.status === "PUBLISHED" ? true : null;
+    },
+    p.type === "reel" ? 5 * 60_000 : 60_000,
+    "Threads"
+  );
+  const { data } = await api(`${THREADS}/${uid}/threads_publish`, { method: "POST", token, ...form({ creation_id: id }) });
+  const link = await api(`${THREADS}/${data.id}?fields=permalink`, { token }).catch(() => null);
+  return link?.data?.permalink ?? null;
+}
+
+// ---------- TikTok ----------
+
+export type TikTokCreator = {
+  nickname: string;
+  username: string | null;
+  avatarUrl: string | null;
+  privacyOptions: string[];
+  commentDisabled: boolean;
+  duetDisabled: boolean;
+  stitchDisabled: boolean;
+  maxSeconds: number;
+};
+
+async function tiktokCreatorWith(token: string): Promise<TikTokCreator> {
+  const { data } = await api(`${TIKTOK}/post/publish/creator_info/query/`, { method: "POST", token, headers: { "content-type": "application/json; charset=UTF-8" }, body: "{}" });
+  if (data.error?.code && data.error.code !== "ok") throw new Error(data.error.message || data.error.code);
+  const d = data.data ?? {};
+  return {
+    nickname: String(d.creator_nickname ?? ""),
+    username: d.creator_username ? String(d.creator_username) : null,
+    avatarUrl: d.creator_avatar_url ?? null,
+    privacyOptions: Array.isArray(d.privacy_level_options) ? d.privacy_level_options.map(String) : [],
+    commentDisabled: !!d.comment_disabled,
+    duetDisabled: !!d.duet_disabled,
+    stitchDisabled: !!d.stitch_disabled,
+    maxSeconds: Number(d.max_video_post_duration_sec) || 600,
+  };
+}
+
+/** What TikTok says this account can post right now (asked fresh each time, as TikTok requires). */
+export async function tiktokCreator(orgId: number) {
+  const { token } = await accessToken(orgId, "tiktok");
+  return tiktokCreatorWith(token);
+}
+
+const MB = 1024 * 1024;
+
+/** TikTok chunks: 5 to 64 MB each; the last one takes the remainder. */
+export function tiktokChunks(size: number) {
+  if (size <= 5 * MB) return { chunkSize: size, count: 1 };
+  const chunkSize = 10 * MB;
+  return { chunkSize, count: Math.max(1, Math.floor(size / chunkSize)) };
+}
+
+async function postTikTok(orgId: number, p: Payload) {
+  if (p.type !== "reel") throw new Error("TikTok takes videos only");
+  const file = needVideo(p);
+  const { token, conn } = await accessToken(orgId, "tiktok");
+  const creator = await tiktokCreatorWith(token);
+  const t = p.tiktok;
+  if (!t.privacy) throw new Error("Choose who can view the TikTok video");
+  if (creator.privacyOptions.length && !creator.privacyOptions.includes(t.privacy)) throw new Error("That TikTok viewing choice is not open to this account. Choose another");
+  if (p.videoMeta?.seconds && p.videoMeta.seconds > creator.maxSeconds) throw new Error(`This TikTok account can post videos up to ${Math.floor(creator.maxSeconds / 60)} minutes`);
+  const size = fs.statSync(file).size;
+  const { chunkSize, count } = tiktokChunks(size);
+  const json = { "content-type": "application/json; charset=UTF-8" };
+  const init = await api(`${TIKTOK}/post/publish/video/init/`, {
+    method: "POST",
+    token,
+    headers: json,
+    body: JSON.stringify({
+      post_info: {
+        title: p.text,
+        privacy_level: t.privacy,
+        disable_comment: !t.allowComment || creator.commentDisabled,
+        disable_duet: !t.allowDuet || creator.duetDisabled,
+        disable_stitch: !t.allowStitch || creator.stitchDisabled,
+        video_cover_timestamp_ms: p.coverMs || 0,
+        brand_content_toggle: t.disclose && t.brandedContent,
+        brand_organic_toggle: t.disclose && t.yourBrand,
+      },
+      source_info: { source: "FILE_UPLOAD", video_size: size, chunk_size: chunkSize, total_chunk_count: count },
+    }),
+  });
+  if (init.data.error?.code && init.data.error.code !== "ok") throw new Error(init.data.error.message || init.data.error.code);
+  const publishId = String(init.data.data.publish_id);
+  const uploadUrl = String(init.data.data.upload_url);
+  for (let i = 0; i < count; i++) {
+    const start = i * chunkSize;
+    const end = i === count - 1 ? size - 1 : start + chunkSize - 1;
+    const chunk = await readRange(file, start, end - start + 1);
+    const up = await fetch(uploadUrl, { method: "PUT", headers: { "content-type": videoMime(file), "content-length": String(chunk.length), "content-range": `bytes ${start}-${end}/${size}` }, body: chunk, signal: AbortSignal.timeout(300_000) });
+    if (!up.ok) throw new Error(`TikTok video upload ${up.status}`);
+  }
+  const done = await waitUntil(
+    async () => {
+      const st = await api(`${TIKTOK}/post/publish/status/fetch/`, { method: "POST", token, headers: json, body: JSON.stringify({ publish_id: publishId }) });
+      const d = st.data.data ?? {};
+      if (d.status === "FAILED") throw new Error(`TikTok could not post the video${d.fail_reason ? ` (${d.fail_reason})` : ""}`);
+      return d.status === "PUBLISH_COMPLETE" || d.status === "SEND_TO_USER_INBOX" ? d : null;
+    },
+    10 * 60_000,
+    "TikTok"
+  );
+  // TikTok spells this field "publicaly".
+  const postId = (done.publicaly_available_post_id ?? [])[0];
+  const user = JSON.parse(conn.settings || "{}").username || creator.username;
+  return postId && user ? `https://www.tiktok.com/@${user}/video/${postId}` : null;
+}
+
+// ---------- X ----------
+
+async function postX(orgId: number, p: Payload) {
   const { token, conn } = await accessToken(orgId, "x");
   let media: { media_ids: string[] } | undefined;
-  const file = localFile(imageUrl);
-  if (file) {
-    const form = new FormData();
-    form.append("media", new Blob([fs.readFileSync(file)]), path.basename(file));
-    form.append("media_category", "tweet_image");
-    const up = await api("https://api.x.com/2/media/upload", { method: "POST", token, body: form });
-    if (up.data?.data?.id) media = { media_ids: [String(up.data.data.id)] };
+  if (p.type === "reel") {
+    const file = needVideo(p);
+    const size = fs.statSync(file).size;
+    const init = await api("https://api.x.com/2/media/upload/initialize", { method: "POST", token, headers: { "content-type": "application/json" }, body: JSON.stringify({ media_category: "tweet_video", media_type: videoMime(file), total_bytes: size }) });
+    const id = String(init.data.data.id);
+    const SEG = 4 * MB;
+    for (let i = 0, off = 0; off < size; i++, off += SEG) {
+      const chunk = await readRange(file, off, Math.min(SEG, size - off));
+      const f = new FormData();
+      f.append("media", new Blob([chunk]), path.basename(file));
+      f.append("segment_index", String(i));
+      await api(`https://api.x.com/2/media/upload/${id}/append`, { method: "POST", token, body: f });
+    }
+    const fin = await api(`https://api.x.com/2/media/upload/${id}/finalize`, { method: "POST", token });
+    if (fin.data.data?.processing_info) {
+      await waitUntil(
+        async () => {
+          const st = await api(`https://api.x.com/2/media/upload?media_id=${id}&command=STATUS`, { token });
+          const info = st.data.data?.processing_info ?? {};
+          if (info.state === "failed") throw new Error(`X could not process the video${info.error?.message ? ` (${info.error.message})` : ""}`);
+          return !info.state || info.state === "succeeded" ? true : null;
+        },
+        10 * 60_000,
+        "X"
+      );
+    }
+    media = { media_ids: [id] };
+  } else {
+    const file = localFile(p.imageUrl);
+    if (file) {
+      const f = new FormData();
+      f.append("media", new Blob([fs.readFileSync(file)]), path.basename(file));
+      f.append("media_category", "tweet_image");
+      const up = await api("https://api.x.com/2/media/upload", { method: "POST", token, body: f });
+      if (up.data?.data?.id) media = { media_ids: [String(up.data.data.id)] };
+    }
   }
-  const short = text.length > 280 ? `${text.slice(0, 276).replace(/\s+\S*$/, "")}...` : text;
-  const { data } = await api("https://api.x.com/2/tweets", { method: "POST", token, headers: { "content-type": "application/json" }, body: JSON.stringify({ text: short, ...(media ? { media } : {}) }) });
+  const { data } = await api("https://api.x.com/2/tweets", { method: "POST", token, headers: { "content-type": "application/json" }, body: JSON.stringify({ text: p.text, ...(media ? { media } : {}) }) });
   const user = JSON.parse(conn.settings || "{}").username;
   return data.data?.id ? `https://x.com/${user || "i"}/status/${data.data.id}` : null;
 }
 
-async function postBusiness(orgId: number, text: string, imageUrl: string | null) {
+// ---------- Google Business Profile ----------
+
+async function postBusiness(orgId: number, p: Payload) {
+  if (p.type === "reel") throw new Error("Google Business Profile takes photos, not videos");
   const { token, conn } = await accessToken(orgId, "google_business");
   const s = JSON.parse(conn.settings || "{}");
   if (!s.account || !s.location) throw new Error(s.setupNote ? `Business Profile access is not ready: ${s.setupNote}` : "No Business Profile location was found");
   const locId = String(s.location).split("/").pop();
-  const body: Record<string, unknown> = { languageCode: "en-US", summary: text.slice(0, 1500), topicType: "STANDARD" };
-  if (imageUrl && localFile(imageUrl)) body.media = [{ mediaFormat: "PHOTO", sourceUrl: publicMediaUrl(imageUrl) }];
+  const body: Record<string, unknown> = { languageCode: "en-US", summary: p.text, topicType: "STANDARD" };
+  if (p.imageUrl && localFile(p.imageUrl)) body.media = [{ mediaFormat: "PHOTO", sourceUrl: publicMediaUrl(p.imageUrl) }];
   const { data } = await api(`https://mybusiness.googleapis.com/v4/${s.account}/locations/${locId}/localPosts`, { method: "POST", token, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return data.searchUrl ?? null;
+}
+
+// ---------- Facebook Page history (for Suggest time) ----------
+
+/** The Page's recent posts with their time and engagement. Empty when Facebook is not connected. */
+export async function facebookHistory(orgId: number): Promise<{ at: Date; score: number }[]> {
+  try {
+    const { pageId, token } = await metaPage(orgId);
+    const { data } = await api(`${GRAPH}/${pageId}/published_posts?fields=created_time,reactions.summary(true).limit(0),comments.summary(true).limit(0),shares&limit=100`, { token });
+    return (data.data ?? []).map((x: any) => ({
+      at: new Date(x.created_time),
+      score: Number(x.reactions?.summary?.total_count ?? 0) + 2 * Number(x.comments?.summary?.total_count ?? 0) + 3 * Number(x.shares?.count ?? 0),
+    })).filter((x: { at: Date }) => !Number.isNaN(x.at.getTime()));
+  } catch {
+    return [];
+  }
 }
 
 function encodeHeader(v: string) {
@@ -614,24 +1020,19 @@ async function hiringSubject(item: OutboundItem, purpose: string | undefined) {
   return `${role}${org ? ` at ${org}` : ""}`;
 }
 
-const SOCIAL: Record<string, (orgId: number, text: string, image: string | null) => Promise<string | null>> = {
+const SOCIAL: Record<SocialChannel, (orgId: number, p: Payload) => Promise<string | null>> = {
   linkedin: postLinkedIn,
   facebook: postFacebook,
   instagram: postInstagram,
+  threads: postThreads,
+  tiktok: postTikTok,
   x: postX,
   google_business: postBusiness,
 };
 
 /** Channels an item goes to, by name (linkedin, facebook, gmail, calendar...). */
 export function channelsFor(item: OutboundItem): string[] {
-  if (item.kind === "social_post") {
-    try {
-      const list = JSON.parse(item.targetChannels || "[]");
-      return (Array.isArray(list) ? list : []).filter((c: unknown): c is string => typeof c === "string" && c in SOCIAL);
-    } catch {
-      return [];
-    }
-  }
+  if (item.kind === "social_post") return postChannels(item);
   if (item.kind === "calendar_hold") return ["calendar"];
   if (item.kind === "email_draft" || item.kind === "hiring_email" || item.kind === "speaking_pitch") return ["gmail"];
   return [];
@@ -666,7 +1067,7 @@ export async function dispatch(item: OutboundItem): Promise<{ status: OutboundIt
         const subject = item.kind === "hiring_email" ? await hiringSubject(item, meta.purpose) : item.title;
         url = await sendGmail(item.organizationId, to, subject, item.body ?? "");
       } else if (ch === "calendar") url = await addToCalendar(item.organizationId, item);
-      else url = await SOCIAL[ch](item.organizationId, item.body ?? item.title, item.imageUrl);
+      else url = await SOCIAL[ch as SocialChannel](item.organizationId, payloadFor(item, ch as SocialChannel));
       results.push({ channel: ch, ok: true, url, at: new Date().toISOString() });
     } catch (err) {
       results.push({ channel: ch, ok: false, error: err instanceof Error ? err.message.slice(0, 300) : String(err), at: new Date().toISOString() });
