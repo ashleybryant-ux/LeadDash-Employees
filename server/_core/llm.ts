@@ -158,6 +158,19 @@ export type SearchResult<T> = {
  * is converted to the schema through the gateway if the model's own JSON is
  * malformed.
  */
+/**
+ * Headers for a direct Anthropic call. Works with a classic key (sk-ant-api03-)
+ * and a personal or service account key (sk-ant-usr-). A personal key that is
+ * not scoped to one workspace also needs ANTHROPIC_WORKSPACE_ID.
+ */
+export function anthropicHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "anthropic-version": "2023-06-01", "content-type": "application/json" };
+  if (ENV.anthropicKey.startsWith("sk-ant-api")) h["x-api-key"] = ENV.anthropicKey;
+  else h.authorization = `Bearer ${ENV.anthropicKey}`;
+  if (ENV.anthropicWorkspaceId) h["anthropic-workspace-id"] = ENV.anthropicWorkspaceId;
+  return h;
+}
+
 export async function searchJson<T>(opts: {
   system: string;
   prompt: string;
@@ -188,11 +201,7 @@ export async function searchJson<T>(opts: {
   for (let round = 0; round < 4; round++) {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "x-api-key": ENV.anthropicKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
+      headers: anthropicHeaders(),
       body: JSON.stringify({
         model: ENV.anthropicModel,
         max_tokens: opts.maxTokens ?? 8000,

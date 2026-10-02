@@ -35,6 +35,8 @@ export const ENV = {
   llmModel: process.env.LLM_MODEL || "claude-sonnet-4-6",
   /** Anthropic key, used only for employees that search the web (grants, speaking, video trends). */
   anthropicKey: process.env.ANTHROPIC_API_KEY || "",
+  /** Needed only for a personal key (sk-ant-usr-) that is not scoped to one workspace. Looks like wrkspc_... */
+  anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || "",
   anthropicModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
   searchMaxUses: parseInt(process.env.SEARCH_MAX_USES || "6", 10),
   /** OpenAI key, used only for social and blog images. */

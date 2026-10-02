@@ -1,4 +1,5 @@
 import { ENV } from "../_core/env";
+import { anthropicHeaders } from "../_core/llm";
 
 /**
  * Reads the text out of the files people upload and the files hosts post
@@ -81,7 +82,7 @@ async function readPdf(buf: Buffer): Promise<ReadResult> {
 async function readPdfImages(buf: Buffer) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "x-api-key": ENV.anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    headers: anthropicHeaders(),
     body: JSON.stringify({
       model: ENV.anthropicModel,
       max_tokens: 16000,
