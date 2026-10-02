@@ -1,14 +1,16 @@
 import React from "react";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { Avatar, ErrorLine, FolderTabs, Page, useEmployees } from "../ui";
-import { fmtDate, parseJson } from "../meta";
+import { CHANNEL_LABEL, fmtDate, openDownload, parseJson } from "../meta";
+import type { AppRow, Attachment, Question } from "../types";
 
 const COLS = "150px minmax(0,2.4fr) minmax(0,1.2fr) 120px 128px 128px";
 
-type TabKey = "all" | "email" | "social" | "blog" | "pitches" | "done";
+type TabKey = "all" | "applications" | "email" | "social" | "blog" | "pitches" | "submitted" | "done";
 
-const KIND_TAB: Record<string, Exclude<TabKey, "all" | "done">> = {
+const KIND_TAB: Record<string, Exclude<TabKey, "all" | "done" | "applications" | "submitted">> = {
   email_draft: "email",
   calendar_hold: "email",
   social_post: "social",
@@ -51,6 +53,10 @@ export default function Approvals() {
   const utils = trpc.useUtils();
   const { list: employees } = useEmployees();
   const q = trpc.publishing.listApprovalQueue.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const appsQ = trpc.applications.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const apps = appsQ.data ?? [];
+  const waitingApps = apps.filter((a) => a.status === "ready");
+  const sentApps = apps.filter((a) => ["approved", "submitted", "awarded", "declined"].includes(a.status));
   const [tab, setTab] = React.useState<TabKey>("all");
   const [open, setOpen] = React.useState<number | null>(null);
   const [editing, setEditing] = React.useState<number | null>(null);
@@ -68,9 +74,10 @@ export default function Approvals() {
   const items = q.data ?? [];
   const pending = items.filter((i) => i.status === "pending_approval");
   const done = items.filter((i) => i.status !== "pending_approval" && i.status !== "drafting");
-  const count = (k: Exclude<TabKey, "all" | "done">) => pending.filter((i) => KIND_TAB[i.kind] === k).length;
+  const count = (k: Exclude<TabKey, "all" | "done" | "applications" | "submitted">) => pending.filter((i) => KIND_TAB[i.kind] === k).length;
 
-  const shown = tab === "done" ? done : tab === "all" ? pending : pending.filter((i) => KIND_TAB[i.kind] === tab);
+  const shown = tab === "done" ? done : tab === "all" ? pending : tab === "applications" || tab === "submitted" ? [] : pending.filter((i) => KIND_TAB[i.kind] === tab);
+  const shownApps = tab === "all" || tab === "applications" ? waitingApps : tab === "submitted" ? sentApps : [];
 
   return (
     <Page rail="approvals">
@@ -84,15 +91,18 @@ export default function Approvals() {
           setEditing(null);
         }}
         tabs={[
-          { key: "all", label: `All (${pending.length})` },
+          { key: "all", label: `All (${pending.length + waitingApps.length})` },
+          { key: "applications", label: `Applications (${waitingApps.length})` },
           { key: "email", label: `Email (${count("email")})` },
           { key: "social", label: `Social (${count("social")})` },
           { key: "blog", label: `Blog (${count("blog")})` },
           { key: "pitches", label: `Pitches (${count("pitches")})` },
+          { key: "submitted", label: `Submitted (${sentApps.length})` },
           { key: "done", label: `Done (${done.length})` },
         ]}
       >
-        <div className="ld-hd" style={{ gridTemplateColumns: COLS }}>
+        {shownApps.length > 0 && <AppRows list={shownApps} employees={employees} />}
+        <div className="ld-hd" style={{ gridTemplateColumns: COLS, display: shown.length === 0 && shownApps.length > 0 ? "none" : undefined }}>
           <span>From</span>
           <span>Item</span>
           <span>Goes to</span>
@@ -100,9 +110,10 @@ export default function Approvals() {
           <span />
           <span />
         </div>
-        {shown.length === 0 && (
-          <div className="ld-empty">{q.isLoading ? "Loading..." : tab === "done" ? "Nothing approved or sent back yet." : "Nothing is waiting for approval."}</div>
+        {shown.length === 0 && shownApps.length === 0 && (
+          <div className="ld-empty">{q.isLoading ? "Loading..." : tab === "done" ? "Nothing approved or sent back yet." : tab === "submitted" ? "Nothing submitted yet." : "Nothing is waiting for approval."}</div>
         )}
+        {shown.length > 0 && shownApps.length > 0 && <div style={{ height: 1, background: "#e3e9e6" }} />}
         {shown.map((item) => {
           const emp = employees.find((e) => e.id === item.employeeId);
           const isOpen = open === item.id;
@@ -248,5 +259,109 @@ export default function Approvals() {
         )}
       </FolderTabs>
     </Page>
+  );
+}
+
+// ==========================================
+// Applications waiting for the Submit tap, and sent ones
+// ==========================================
+
+const APP_COLS = "150px minmax(0,2.4fr) minmax(0,1.2fr) 120px 128px 128px";
+const SENT: Record<string, { label: string; cls: string }> = {
+  approved: { label: "Approved to send", cls: "green" },
+  submitted: { label: "Submitted", cls: "green" },
+  awarded: { label: "Awarded", cls: "green" },
+  declined: { label: "Declined", cls: "gray" },
+};
+
+function AppRows({ list, employees }: { list: AppRow[]; employees: ReturnType<typeof useEmployees>["list"] }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const [open, setOpen] = React.useState<number | null>(list[0]?.status === "ready" ? list[0].id : null);
+  const submit = trpc.applications.submit.useMutation({ onSuccess: () => utils.applications.invalidate() });
+  const back = trpc.applications.sendBack.useMutation({ onSuccess: () => utils.applications.invalidate() });
+  const dl = trpc.applications.download.useMutation({ onSuccess: openDownload });
+  const org = trpc.organizations.get.useQuery({ id: currentOrgId }, { enabled: currentOrgId > 0 });
+  const signer = org.data?.signerName ? `${org.data.signerName}${org.data.signerTitle ? `, ${org.data.signerTitle}` : ""}` : "Not set (Integrations, Applying)";
+  return (
+    <>
+      <div className="ld-hd" style={{ gridTemplateColumns: APP_COLS }}>
+        <span>From</span>
+        <span>Application</span>
+        <span>Goes in through</span>
+        <span>Due</span>
+        <span />
+        <span />
+      </div>
+      {list.map((a) => {
+        const emp = employees.find((e) => e.id === a.employeeId);
+        const isOpen = open === a.id;
+        const waiting = a.status === "ready";
+        const qs = parseJson<Question[]>(a.questions, []);
+        const atts = parseJson<Attachment[]>(a.attachments, []);
+        const base = `/chats/${emp?.kind ?? "grants"}`;
+        return (
+          <React.Fragment key={`app-${a.id}`}>
+            <div
+              className={`ld-rw ${isOpen ? "open" : ""}`}
+              style={{ gridTemplateColumns: APP_COLS, cursor: "pointer" }}
+              aria-expanded={isOpen}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("button,a")) return;
+                setOpen(isOpen ? null : a.id);
+              }}
+            >
+              <span className="ld-row ld-strong" style={{ minWidth: 0 }}>
+                {emp ? <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={26} /> : null}
+                <span className="ld-clip" style={{ whiteSpace: "nowrap" }}>{emp?.name ?? "Employee"}</span>
+              </span>
+              <span className="ld-strong">{a.title}</span>
+              <span>{a.channel === "portal" || a.channel === "email" ? a.channelDetail || CHANNEL_LABEL[a.channel] : CHANNEL_LABEL[a.channel] ?? a.channel}</span>
+              <span>{a.opp?.deadline || "Not listed"}</span>
+              {waiting ? (
+                <>
+                  <button type="button" className="ld-btn p" disabled={submit.isPending || a.blockers.length > 0} title={a.blockers.join(". ") || undefined} onClick={() => submit.mutate({ organizationId: currentOrgId, id: a.id })}>Submit</button>
+                  <button type="button" className="ld-btn" disabled={back.isPending} onClick={() => back.mutate({ organizationId: currentOrgId, id: a.id })}>Send back</button>
+                </>
+              ) : (
+                <>
+                  <span className={`ld-pill ${SENT[a.status]?.cls ?? "gray"}`}>{SENT[a.status]?.label ?? a.status}</span>
+                  <span />
+                </>
+              )}
+            </div>
+            {isOpen && (
+              <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 128px 128px", gap: "14px 24px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="ld-lbl">Host</span><span className="ld-body">{[a.opp?.host, a.opp?.amount].filter(Boolean).join(" · ")}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="ld-lbl">Questions</span><span className="ld-body">{qs.filter((x) => x.answer.trim()).length} of {qs.length} answered</span></div>
+                  {a.confirmation && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="ld-lbl">Confirmation</span><span className="ld-body">{a.confirmation}</span></div>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="ld-lbl">Attachments</span><span className="ld-body">{atts.length ? atts.map((x) => x.name).join(", ") : "None asked for"}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="ld-lbl">Signed by</span><span className="ld-body">{a.certifiedBy ? `${a.certifiedBy}, ${fmtDate(a.certifiedAt)}` : signer}</span></div>
+                  {waiting && (
+                    a.blockers.length ? (
+                      <span className="ld-small" style={{ color: "#8a4510", fontWeight: 600 }}>Before Submit: {a.blockers.join(". ")}.</span>
+                    ) : (
+                      <span className="ld-small ld-muted" style={{ lineHeight: 1.5 }}>Submitting certifies the application is true and complete and that you are authorized to submit it for {org.data?.name ?? "this workspace"}.</span>
+                    )
+                  )}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}><Link href={`${base}/app/${a.id}`} className="ld-btn">Open</Link></div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <button type="button" className="ld-btn" disabled={dl.isPending} onClick={() => dl.mutate({ organizationId: currentOrgId, id: a.id, what: "zip" })}>Download</button>
+                </div>
+              </div>
+            )}
+          </React.Fragment>
+        );
+      })}
+      {(submit.error || back.error || dl.error) && (
+        <div style={{ padding: "8px 18px" }}>
+          <ErrorLine error={submit.error || back.error || dl.error} />
+        </div>
+      )}
+    </>
   );
 }

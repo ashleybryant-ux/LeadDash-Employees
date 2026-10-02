@@ -4,8 +4,8 @@ Seven AI employees, one job each, working from a shared Brain. Everything an emp
 
 | Group | Employee | Job | Searches the web |
 |---|---|---|---|
-| Revenue | Morgan | Grants: finds open grants with sources, drafts the proposal | yes |
-| Revenue | Taylor | Speaking: finds events taking proposals, writes the pitch | yes |
+| Revenue | Morgan | Grants, pitch competitions and accelerators: finds them, reads the host's package, writes the application | yes |
+| Revenue | Taylor | Speaking: finds calls for proposals, reads them, writes the speaker application | yes |
 | Marketing | Sienna | Social media: posts per platform plus the image | no |
 | Marketing | Theo | Blog: long-form articles and banners for WordPress | no |
 | Marketing | Jordan | Website: page plans with the copy for each section | no |
@@ -24,13 +24,22 @@ Names can be changed per workspace. The `kind` column decides what an employee d
 - **Connection secrets** (client secrets, app passwords) are encrypted with `SECRETS_KEY` (AES-256-GCM) and never sent back to the browser.
 - **Database:** SQLite, one file at `data/employees.db`. Migrations run on start.
 
+## Applying (Morgan and Taylor share one engine)
+
+`server/employees/apply.ts`. Find, score Apply / Partner / Skip, download the host's package (the page plus every PDF, Word, Excel and PowerPoint file it links to) and read it in full, pull out the questions, limits, scoring, attachments and any AI rule, write the application to the host's own questions from the Brain and Knowledge, run a separate reviewer check, then wait for the person's Submit tap (which records who certified it). Hosts that restrict AI-written applications (NIH, NOT-OD-25-132) get an outline with facts and sources instead of a draft.
+
+- **Knowledge:** each employee has its own Knowledge tab on top of the shared Brain. Every document is split into passages and indexed (SQLite full-text search, `knowledge_fts`), so long documents are read in full. Scanned PDFs are read by Claude through the Anthropic key.
+- **Uploads:** large files go to `POST /api/upload/:slot` as the raw body (Knowledge files, RFPs, signed forms, pitch videos, award letters). nginx must allow them: `client_max_body_size 300m;`.
+- **Sending:** Submit marks the application approved and certified. Automatic sending through Grants.gov, Submittable, Sessionize, other portals and Gmail is not switched on yet; the person downloads the package, submits it, and presses Mark sent.
+
 ## Screens
 
 Chat-first, from the approved mockup: a rail (Chats, Approvals, Tasks, Brain, Workspace, Integrations, Team), the employee list, and each employee's Chat, Work and Guidelines tabs. Chatting with an employee runs its job (find grants, write a post, draft a reply...) and the reply carries result cards. Tasks run on a schedule in the workspace time zone and post their results into the employee's chat.
 
 ## What is not built yet
 
-- Sending. Approving an item marks it approved; nothing goes to Gmail, Google Calendar, LinkedIn, Meta, X or WordPress yet. That is round 2 and needs each provider's developer app.
+- Sending. Approving an item marks it approved; nothing goes to Gmail, Google Calendar, LinkedIn, Meta, X, WordPress, Grants.gov, Submittable or Sessionize yet. That is round 2 and needs each provider's connection.
+- Funding facts from LeadDash EHR (monthly totals, no client data) need an endpoint on the LeadDash EHR side.
 - Employee portraits. Put them in `client/public/avatars/<kind>.png` and list them in `client/src/ld/meta.ts` (`AVATAR_FILES`).
 
 ## First-time setup on the EC2 box

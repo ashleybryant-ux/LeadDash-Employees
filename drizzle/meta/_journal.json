@@ -15,6 +15,13 @@
       "when": 1790913586399,
       "tag": "0001_screens",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790918393488,
+      "tag": "0002_applying",
+      "breakpoints": true
     }
   ]
 }

@@ -4,7 +4,7 @@ export type Kind = "grants" | "speaking" | "social" | "blog" | "website" | "vide
 
 export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Revenue" | "Marketing" | "Operations" | "Other" }> = {
   grants: { color: "#1b6b4a", work: "Opportunities", group: "Revenue" },
-  speaking: { color: "#9a4d14", work: "Pitches", group: "Revenue" },
+  speaking: { color: "#9a4d14", work: "Opportunities", group: "Revenue" },
   social: { color: "#7a3b6e", work: "Posts", group: "Marketing" },
   blog: { color: "#2f5d8a", work: "Articles", group: "Marketing" },
   website: { color: "#4a5a1e", work: "Pages", group: "Marketing" },
@@ -20,8 +20,8 @@ export const GROUP_ORDER = ["Revenue", "Marketing", "Operations", "Other"] as co
 export const AVATAR_FILES: Partial<Record<Kind, string>> = {};
 
 export const SUGGESTIONS: Record<Kind, string[]> = {
-  grants: ["Find grants for this quarter", "What deadlines are coming up?", "Find grants for clinician hiring"],
-  speaking: ["Find speaking events for the spring", "Find paid speaking events", "Which pitches are still open?"],
+  grants: ["Find grants for this quarter", "Find pitch competitions", "Apply to the best fit", "Check application status"],
+  speaking: ["Find speaking events for the spring", "Find paid speaking events", "Apply to the best fit", "Check application status"],
   social: ["Write a LinkedIn post about our first year", "Write a post for this week", "Ideas for next week's posts"],
   blog: ["Write an article about intake mistakes", "Suggest five article topics", "Write a how-to article"],
   website: ["Plan a couples counseling page", "Plan a new home page", "Plan a careers page"],
@@ -43,14 +43,15 @@ export const GUIDELINE_LABELS: Record<Kind, { focus: string; avoid: string; sign
 
 export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
   grants: [
-    "Every grant comes with the funder's page.",
-    "Nothing is submitted or sent without your approval.",
-    "No invented numbers, awards or credentials. Missing facts become placeholders.",
+    "Every opportunity comes with the host's page.",
+    "Nothing is submitted without your Submit tap, which certifies the application.",
+    "No invented numbers, awards or credentials. Missing facts become placeholders or a question to you.",
+    "When a host restricts AI-written applications, you get an outline and sources to write from.",
     "No client names or health information.",
   ],
   speaking: [
     "Every event comes with its call-for-proposals page.",
-    "Pitches wait for your approval before anyone sends them.",
+    "Nothing is submitted without your Submit tap.",
     "No invented credentials or talk history.",
   ],
   social: [
@@ -111,3 +112,61 @@ export function initials(name: string) {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 }
+
+/** What each employee's opportunity tabs are called. */
+export const OPP_TABS: Record<"grants" | "speaking", { key: "grant" | "pitch" | "accelerator" | "speaking"; label: string }[]> = {
+  grants: [
+    { key: "grant", label: "Grants" },
+    { key: "pitch", label: "Pitch competitions" },
+    { key: "accelerator", label: "Accelerators" },
+  ],
+  speaking: [{ key: "speaking", label: "Speaking" }],
+};
+
+export const APP_STATUS: Record<string, { label: string; cls: "green" | "amber" | "gray" | "red" }> = {
+  writing: { label: "Writing", cls: "gray" },
+  needs_answer: { label: "Needs an answer", cls: "amber" },
+  ready: { label: "Waiting for you", cls: "amber" },
+  approved: { label: "Approved to send", cls: "green" },
+  submitted: { label: "Submitted", cls: "green" },
+  awarded: { label: "Awarded", cls: "green" },
+  declined: { label: "Declined", cls: "gray" },
+  needs_setup: { label: "Needs Grants.gov", cls: "amber" },
+  error: { label: "Needs attention", cls: "red" },
+};
+
+export const CHANNEL_LABEL: Record<string, string> = {
+  form: "Host's online form",
+  email: "Email",
+  grants_gov: "Grants.gov",
+  submittable: "Submittable",
+  sessionize: "Sessionize",
+  portal: "Host's portal",
+};
+
+/** Upload a file as the raw request body. Returns the JSON reply or throws its error. */
+export async function uploadFile(slot: string, file: File, params: Record<string, string | number>) {
+  const q = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
+  q.set("name", file.name);
+  const res = await fetch(`/api/upload/${slot}?${q.toString()}`, {
+    method: "POST",
+    body: file,
+    credentials: "include",
+    headers: { "content-type": file.type || "application/octet-stream" },
+  });
+  const data = await res.json().catch(() => ({ error: res.status === 413 ? "That file is too large for the server." : "Upload failed." }));
+  if (!res.ok) throw new Error(data.error || "Upload failed.");
+  return data;
+}
+
+/** Opens a generated download in a new tab. */
+export function openDownload(r: { url: string; name: string }) {
+  const a = document.createElement("a");
+  a.href = r.url;
+  a.download = r.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+export const wordCount = (s: string) => (s.trim() ? s.trim().split(/\s+/).length : 0);

@@ -17,7 +17,6 @@ vi.mock("./_core/llm", async (orig) => {
     }),
     generateJson: vi.fn(async (opts: any) => {
       calls.push({ fn: "generateJson", system: opts.system, prompt: opts.prompt });
-      if (opts.schemaName === "speaker_pitch") return { subject: "Session proposal", body: "Hello committee." };
       if (opts.schemaName === "email_reply") return { whatTheyWant: "A date", urgency: "today", reply: "Hi, Tuesday works." };
       if (opts.schemaName === "social_post") return { headline: "a headline", caption: "Caption.", xVersion: "", imagePrompt: "a desk" };
       if (opts.schemaName === "page_plan")
@@ -35,64 +34,49 @@ describe("employees do real work", () => {
     calls.length = 0;
   });
 
-  it("Morgan saves only grants with a source from the search, skips duplicates, and records the searches", async () => {
+  it("Morgan saves only results with a source from the search, scores them, skips duplicates, and records the searches", async () => {
     const { orgId, owner } = await makeWorkspace("grants");
     await db.createKnowledgeItem({ organizationId: orgId, title: "Entity", category: "mission_profile", content: "For-profit LLC in Oklahoma." });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => ({}) })));
 
+    const item = (o: any) => ({ equity: "", stage: "", eligibility: "", location: "", eventDate: "", audience: "", angle: "", summary: "", fitReason: "", fitCall: "apply", fitScore: 50, deadline: "", amount: "", ...o });
     searchResponse = {
       queries: ["oklahoma behavioral health grant 2027"],
       sources: [{ url: "https://funder.org/grants/a", title: "A" }],
       data: {
-        opportunities: [
-          { title: "Grant A", funder: "Funder", deadline: "Jan 15, 2027", amount: "$50,000", eligibility: "OK providers", fitReason: "Fits", sourceUrl: "https://funder.org/grants/a", matchScore: 91 },
-          { title: "Grant B", funder: "Nowhere", deadline: "", amount: "", eligibility: "", fitReason: "", sourceUrl: "", matchScore: 50 },
-          { title: "Grant C", funder: "Memory", deadline: "", amount: "", eligibility: "", fitReason: "", sourceUrl: "https://never-searched.org/x", matchScore: 50 },
+        items: [
+          item({ title: "Grant A", host: "Funder", deadline: "Jan 15, 2027", amount: "$50,000", eligibility: "OK providers", fitReason: "Fits", sourceUrl: "https://funder.org/grants/a", fitScore: 91 }),
+          item({ title: "Grant B", host: "Nowhere", sourceUrl: "" }),
+          item({ title: "Grant C", host: "Memory", sourceUrl: "https://never-searched.org/x" }),
         ],
       },
     };
-    const first = await caller(owner).grants.scoutOpportunities({ organizationId: orgId });
+    const first = await caller(owner).opps.find({ organizationId: orgId, employee: "grants" });
     expect(first.added).toBe(1);
-    const second = await caller(owner).grants.scoutOpportunities({ organizationId: orgId });
+    const second = await caller(owner).opps.find({ organizationId: orgId, employee: "grants" });
     expect(second.added).toBe(0);
 
-    const opps = await caller(owner).grants.listOpportunities({ organizationId: orgId });
+    const opps = await caller(owner).opps.list({ organizationId: orgId, employee: "grants" });
     expect(opps).toHaveLength(1);
-    expect(opps[0].sourceUrl).toBe("https://funder.org/grants/a");
+    expect(opps[0]).toMatchObject({ kind: "grant", host: "Funder", fitScore: 91, fitCall: "apply", sourceUrl: "https://funder.org/grants/a" });
     expect(JSON.parse(opps[0].searchQueries!)).toEqual(["oklahoma behavioral health grant 2027"]);
 
-    // The Brain is in the instructions.
+    // The Brain is in the instructions, and so is the entity rule.
     expect(calls[0].system).toContain("For-profit LLC in Oklahoma.");
     expect(calls[0].system).toContain("Never use em dashes");
+    expect(calls[0].system).toContain("501(c)(3)");
 
-    // Start a proposal and draft a section.
-    const proposal = await caller(owner).grants.startProposal({ organizationId: orgId, opportunityId: opps[0].id });
-    expect(proposal.status).toBe("drafting");
-    const again = await caller(owner).grants.startProposal({ organizationId: orgId, opportunityId: opps[0].id });
-    expect(again.id).toBe(proposal.id);
-    const drafted = await caller(owner).grants.generateSection({ organizationId: orgId, proposalId: proposal.id, sectionKey: "executiveSummary" });
-    expect(drafted.content).toBe("Drafted section text.");
-    expect(calls.at(-1)!.prompt).toContain("Grant A");
-
-    const morgan = await db.getEmployeeByKind(orgId, "grants");
-    expect(morgan?.tasksCompleted).toBe(3);
-    expect(morgan?.status).toBe("active");
-  });
-
-  it("Des finds events, writes a pitch, and sends it to approval", async () => {
-    const { orgId, owner } = await makeWorkspace("speaking");
+    // Taylor's searches are speaking calls and stay on Taylor's list.
     searchResponse = {
       queries: ["counseling conference call for proposals 2027"],
       sources: [{ url: "https://conf.org/cfp", title: "CFP" }],
-      data: { events: [{ event: "State Conference", organizer: "Assoc", audience: "Counselors", deadline: "Nov 14, 2026", pays: "Honorarium", location: "OKC", angle: "Practice ops", sourceUrl: "https://conf.org/cfp" }] },
+      data: { items: [item({ title: "State Conference", host: "Assoc", audience: "Counselors", amount: "Honorarium", angle: "Practice ops", sourceUrl: "https://conf.org/cfp", fitScore: 80 })] },
     };
-    const found = await caller(owner).speaking.find({ organizationId: orgId });
-    expect(found.added).toBe(1);
-    const [event] = await caller(owner).speaking.list({ organizationId: orgId });
-    const pitched = await caller(owner).speaking.writePitch({ organizationId: orgId, id: event.id });
-    expect(JSON.parse(pitched!.data).pitch.subject).toBe("Session proposal");
-    const queued = await caller(owner).speaking.sendToApproval({ organizationId: orgId, id: event.id });
-    expect(queued.kind).toBe("speaking_pitch");
-    expect(queued.status).toBe("pending_approval");
+    await caller(owner).opps.find({ organizationId: orgId, employee: "speaking" });
+    const talks = await caller(owner).opps.list({ organizationId: orgId, employee: "speaking" });
+    expect(talks.map((t) => t.kind)).toEqual(["speaking"]);
+    expect((await caller(owner).opps.list({ organizationId: orgId, employee: "grants" })).map((o) => o.title)).toEqual(["Grant A"]);
+    vi.unstubAllGlobals();
   });
 
   it("Avery drafts a reply with urgency, Wren plans a page, Sienna writes a post without an image key", async () => {

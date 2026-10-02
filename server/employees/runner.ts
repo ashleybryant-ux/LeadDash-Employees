@@ -2,6 +2,7 @@ import * as db from "../db";
 import type { ScheduledTask } from "../../drizzle/schema";
 import { sendChatMessage } from "./chat";
 import { nextRun } from "./schedule";
+import { remindRegistrations } from "./apply";
 
 /**
  * Runs scheduled tasks. Every minute it picks up tasks whose time has come,
@@ -86,6 +87,7 @@ export function startScheduler() {
     busy = true;
     try {
       await tick();
+      await remindRegistrations();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

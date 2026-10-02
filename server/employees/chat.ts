@@ -3,6 +3,8 @@ import * as db from "../db";
 import type { AIEmployee, ChatMessage } from "../../drizzle/schema";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import * as tasks from "./tasks";
+import * as apply from "./apply";
+import type { Opportunity, OppKind } from "../../drizzle/schema";
 
 /**
  * Chat with an employee. Each message is answered in two steps:
@@ -13,18 +15,22 @@ import * as tasks from "./tasks";
  */
 
 export type ChatCard = {
-  type: "grant" | "event" | "video" | "page" | "post" | "article" | "reply";
+  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply";
   id: number;
   title: string;
   subtitle?: string;
   body?: string;
   url?: string | null;
   imageUrl?: string | null;
+  call?: string;
+  score?: number;
+  status?: string;
+  options?: string[];
 };
 
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "find_grants"],
-  speaking: ["none", "find_events"],
+  grants: ["none", "find_grants", "add_link", "apply", "find_and_apply", "check_status"],
+  speaking: ["none", "find_events", "add_link", "apply", "find_and_apply", "check_status"],
   video: ["none", "find_videos"],
   social: ["none", "write_post"],
   blog: ["none", "write_article"],
@@ -34,8 +40,12 @@ const ACTIONS: Record<string, string[]> = {
 };
 
 const ACTION_HELP: Record<string, string> = {
-  find_grants: "find_grants: search the web for open grants now. Put any focus the person gave in `focus`.",
-  find_events: "find_events: search the web for speaking events taking proposals now. Put any focus in `focus`.",
+  find_grants: "find_grants: search the web now. Set `oppKind` to grant, pitch (pitch competitions) or accelerator (accelerator or incubator programs); default grant. Put any focus the person gave in `focus`.",
+  find_events: "find_events: search the web for speaking events taking proposals now. Set `oppKind` to speaking. Put any focus in `focus`.",
+  add_link: "add_link: the person gave a link to an opportunity they found. Put the link in `url`.",
+  apply: "apply: start the application for an opportunity already found. Put its name (or 'best' for the best fit not yet started) in `target`.",
+  find_and_apply: "find_and_apply: search now, then start applications for the best fits (used by scheduled tasks like a morning search). Set `oppKind` and `focus` as for a search.",
+  check_status: "check_status: report what is open, what is waiting for the person, what is submitted, and what is due soon.",
   find_videos: "find_videos: search for current short-form video trends and plan videos. Put any focus in `focus`.",
   write_post: "write_post: write a social post. Put the subject in `topic` and the platforms (linkedin, instagram, facebook, x) in `platforms`; default to linkedin and instagram.",
   write_article: "write_article: write a blog article. Put the title in `title` and points to cover in `notes`.",
@@ -48,7 +58,7 @@ function decisionSchema(kind: string): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["reply", "action", "focus", "topic", "platforms", "title", "notes", "page", "goal", "from", "subject", "message"],
+    required: ["reply", "action", "focus", "topic", "platforms", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target"],
     properties: {
       reply: { type: "string", description: "What you say back. If you are about to do a job, one short sentence saying what you are doing." },
       action: { type: "string", enum: ACTIONS[kind] ?? ["none"] },
@@ -62,6 +72,9 @@ function decisionSchema(kind: string): JsonSchema {
       from: str,
       subject: str,
       message: str,
+      url: str,
+      oppKind: { type: "string", enum: ["", "grant", "pitch", "accelerator", "speaking"] },
+      target: str,
     },
   };
 }
@@ -79,6 +92,9 @@ type Decision = {
   from: string;
   subject: string;
   message: string;
+  url: string;
+  oppKind: "" | OppKind;
+  target: string;
 };
 
 function transcript(history: ChatMessage[]) {
@@ -93,38 +109,52 @@ const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? o
 async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; cards: ChatCard[]; queries: string[] }> {
   const org = emp.organizationId;
   switch (d.action) {
-    case "find_grants": {
-      const r = await tasks.findGrants(org, d.focus || undefined);
-      const cards: ChatCard[] = r.created.map((g) => ({
-        type: "grant",
-        id: g.id,
-        title: g.title,
-        subtitle: [g.funder, g.fundingAmount, g.deadline && `Due ${g.deadline}`].filter(Boolean).join(" · "),
-        body: g.fitReason ?? g.summary ?? "",
-        url: g.sourceUrl,
-      }));
-      const text = r.created.length
-        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, "new open grant")}. They're also on the Opportunities tab.`
-        : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find new grants that fit beyond what's already on Opportunities.`;
+    case "find_grants":
+    case "find_events":
+    case "find_and_apply": {
+      const empKind = emp.kind === "speaking" ? "speaking" : "grants";
+      const r = await apply.findOpportunities(org, empKind, { kind: d.oppKind || undefined, focus: d.focus || undefined });
+      const cards: ChatCard[] = r.created.map(oppCard);
+      const thing = { grant: "open grant", pitch: "pitch competition", accelerator: "accelerator program", speaking: "event taking proposals" }[r.kind];
+      let text = r.created.length
+        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, `new ${thing}`)}. ${r.created.filter((o) => o.fitCall === "apply").length} are worth applying to.`
+        : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find new ones beyond what's already on Opportunities.`;
+      if (d.action === "find_and_apply") {
+        const best = r.created.filter((o) => o.fitCall === "apply" && o.fitScore >= 75).sort((a, b) => b.fitScore - a.fitScore).slice(0, 2);
+        for (const o of best) await apply.startApplication(org, o.id, null);
+        if (best.length) text += ` I started ${best.length === 1 ? "the application for the best fit" : `applications for the ${best.length} best fits`} and will post ${best.length === 1 ? "it" : "each one"} here when it's ready for you.`;
+      }
       return { text, cards, queries: r.queries };
     }
-    case "find_events": {
-      const r = await tasks.findSpeakingEvents(org, d.focus || undefined);
-      const cards: ChatCard[] = r.created.map((e) => {
-        const data = JSON.parse(e.data || "{}");
-        return {
-          type: "event",
-          id: e.id,
-          title: e.title,
-          subtitle: [data.organizer, data.audience, data.deadline && `Proposals due ${data.deadline}`].filter(Boolean).join(" · "),
-          body: data.angle ?? "",
-          url: e.sourceUrl,
-        };
-      });
-      const text = r.created.length
-        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, "event")} taking proposals. Say the word and I'll write the pitches.`
-        : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find new events that fit beyond what's already on Pitches.`;
-      return { text, cards, queries: r.queries };
+    case "add_link": {
+      if (!/\S+\.\S+/.test(d.url)) return { text: "Send me the link to the opportunity's page and I'll add it.", cards: [], queries: [] };
+      const o = await apply.addOpportunity(org, emp.kind === "speaking" ? "speaking" : "grants", { url: d.url }, "Chat");
+      return { text: `I added ${o.title} and I'm downloading the host's package now.`, cards: [oppCard(o)], queries: [] };
+    }
+    case "apply": {
+      const kinds = apply.KINDS_FOR[emp.kind === "speaking" ? "speaking" : "grants"];
+      const open = (await db.listOpps(org, kinds)).filter((o) => o.status === "new");
+      const t = d.target.trim().toLowerCase();
+      const pick =
+        t && t !== "best"
+          ? open.find((o) => o.title.toLowerCase().includes(t) || t.includes(o.title.toLowerCase())) ?? open.find((o) => t.split(/\s+/).filter((w) => w.length > 3).every((w) => o.title.toLowerCase().includes(w)))
+          : open.filter((o) => o.fitCall !== "skip").sort((a, b) => b.fitScore - a.fitScore)[0];
+      if (!pick) return { text: "I couldn't find that one on Opportunities. Tell me its name, or ask me to search first.", cards: [], queries: [] };
+      const app = await apply.startApplication(org, pick.id, null);
+      return { text: `I'm writing the ${pick.title} application now. I'll post it here when it's ready for you.`, cards: [apply.applicationCard(app, pick) as ChatCard], queries: [] };
+    }
+    case "check_status": {
+      const apps = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id);
+      const by = (st: string[]) => apps.filter((a) => st.includes(a.status));
+      const waiting = by(["ready", "needs_answer", "needs_setup"]);
+      const lines = [
+        `${plural(by(["writing"]).length, "application")} being written`,
+        `${waiting.length} waiting for you`,
+        `${by(["approved"]).length} approved to send`,
+        `${by(["submitted"]).length} submitted`,
+        `${by(["awarded"]).length} won`,
+      ];
+      return { text: `Here's where things stand: ${lines.join(", ")}.`, cards: waiting.slice(0, 4).map((a) => apply.applicationCard(a, null) as ChatCard), queries: [] };
     }
     case "find_videos": {
       const r = await tasks.findVideoIdeas(org, d.focus || undefined);
@@ -184,6 +214,19 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
     default:
       return { text: "", cards: [], queries: [] };
   }
+}
+
+function oppCard(o: Opportunity): ChatCard {
+  return {
+    type: "opportunity",
+    id: o.id,
+    title: o.title,
+    subtitle: [o.host, o.amount, o.deadline && `Due ${o.deadline}`].filter(Boolean).join(" · "),
+    body: o.fitReason ?? o.summary ?? "",
+    url: o.sourceUrl,
+    call: o.fitCall,
+    score: o.fitScore,
+  };
 }
 
 export async function sendChatMessage(opts: {

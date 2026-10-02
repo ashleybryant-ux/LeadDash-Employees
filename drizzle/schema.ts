@@ -93,6 +93,9 @@ export const organizations = sqliteTable("organizations", {
   fonts: text("fonts"),
   /** IANA time zone for scheduled tasks, e.g. America/Chicago. */
   timezone: text("timezone").notNull().default("America/Chicago"),
+  /** Who signs applications, e.g. "Ashley R. Bryant" and "CEO". */
+  signerName: text("signerName"),
+  signerTitle: text("signerTitle"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -291,11 +294,46 @@ export const organizationKnowledge = sqliteTable(
     content: text("content").notNull(),
     sourceUrl: text("sourceUrl"),
     fileUrl: text("fileUrl"),
+    /** Set for an employee's own Knowledge; null for the shared Brain. */
+    employeeId: integer("employeeId"),
+    /** Knowledge folder, e.g. "Past applications". */
+    folder: text("folder"),
+    /** How much was read: pages for PDF and Word, sheets for Excel, slides for PowerPoint. */
+    pages: integer("pages"),
+    /** "pages" | "sheets" | "slides" | "words" */
+    pagesUnit: text("pagesUnit"),
+    /** Characters of text read in full (the chunks hold all of it). */
+    chars: integer("chars"),
+    /** How the text was read, e.g. "from the image" for scanned PDFs. */
+    readNote: text("readNote"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [index("organization_knowledge_org_idx").on(t.organizationId)]
 );
+
+/**
+ * Every document an employee can read, split into passages. A full-text index
+ * (knowledge_fts, created in migration 0002) finds the passages that answer
+ * each application question, so long documents are read in full.
+ */
+export const knowledgeChunks = sqliteTable(
+  "knowledge_chunks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    /** "knowledge" = a Brain or Knowledge entry; "opp_file" = a file from a funder's package. */
+    sourceType: text("sourceType", { enum: ["knowledge", "opp_file"] }).notNull(),
+    sourceId: integer("sourceId").notNull(),
+    employeeId: integer("employeeId"),
+    seq: integer("seq").notNull(),
+    heading: text("heading"),
+    text: text("text").notNull(),
+  },
+  (t) => [index("knowledge_chunks_src_idx").on(t.organizationId, t.sourceType, t.sourceId)]
+);
+
+export type KnowledgeChunk = typeof knowledgeChunks.$inferSelect;
 
 export type OrganizationKnowledge = typeof organizationKnowledge.$inferSelect;
 export type InsertOrganizationKnowledge = typeof organizationKnowledge.$inferInsert;
@@ -325,7 +363,7 @@ export type InsertAuditLog = typeof auditLogs.$inferInsert;
 // Connections and the approval queue
 // ==========================================
 
-export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business"] as const;
+export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const externalConnections = sqliteTable(
@@ -496,3 +534,196 @@ export const taskRuns = sqliteTable(
 );
 
 export type TaskRun = typeof taskRuns.$inferSelect;
+
+// ==========================================
+// Applying: opportunities, applications, registrations
+// (one engine for Morgan's grants, pitch competitions and accelerators and
+// Taylor's speaking calls)
+// ==========================================
+
+export const OPP_KINDS = ["grant", "pitch", "accelerator", "speaking"] as const;
+export type OppKind = (typeof OPP_KINDS)[number];
+
+export const opportunities = sqliteTable(
+  "opportunities",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId"),
+    kind: text("kind", { enum: OPP_KINDS }).notNull(),
+    title: text("title").notNull(),
+    /** Funder, competition host or event organizer. */
+    host: text("host").notNull(),
+    sourceUrl: text("sourceUrl"),
+    source: text("source"),
+    deadline: text("deadline"),
+    /** Award range, prize, or what a speaking slot pays. */
+    amount: text("amount"),
+    equity: text("equity"),
+    stage: text("stage"),
+    eligibility: text("eligibility"),
+    location: text("location"),
+    eventDate: text("eventDate"),
+    audience: text("audience"),
+    /** Speaking: the session to pitch. */
+    angle: text("angle"),
+    summary: text("summary"),
+    fitScore: integer("fitScore").notNull().default(0),
+    fitCall: text("fitCall", { enum: ["apply", "partner", "skip"] }).notNull().default("apply"),
+    fitReason: text("fitReason"),
+    funderHistory: text("funderHistory"),
+    funderHistoryUrl: text("funderHistoryUrl"),
+    status: text("status", { enum: ["new", "applying", "dismissed"] }).notNull().default("new"),
+    searchQueries: text("searchQueries"),
+    /** JSON: what the host requires (questions, limits, scoring, attachments, AI rule). */
+    requirements: text("requirements"),
+    packageStatus: text("packageStatus", { enum: ["none", "fetching", "ready", "failed"] }).notNull().default("none"),
+    packageNote: text("packageNote"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("opportunities_org_idx").on(t.organizationId, t.kind)]
+);
+
+export type Opportunity = typeof opportunities.$inferSelect;
+export type InsertOpportunity = typeof opportunities.$inferInsert;
+
+/** Files downloaded from a host's page: the RFP, question sheets, templates, forms. */
+export const opportunityFiles = sqliteTable(
+  "opportunity_files",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    opportunityId: integer("opportunityId").notNull(),
+    name: text("name").notNull(),
+    sourceUrl: text("sourceUrl"),
+    fileUrl: text("fileUrl"),
+    pages: integer("pages"),
+    pagesUnit: text("pagesUnit"),
+    chars: integer("chars"),
+    status: text("status", { enum: ["read", "failed", "needs_signature"] }).notNull().default("read"),
+    note: text("note"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("opportunity_files_opp_idx").on(t.organizationId, t.opportunityId)]
+);
+
+export type OpportunityFile = typeof opportunityFiles.$inferSelect;
+
+export const APPLICATION_STATUSES = [
+  "writing",
+  "needs_answer",
+  "ready",
+  "approved",
+  "submitted",
+  "awarded",
+  "declined",
+  "needs_setup",
+  "error",
+] as const;
+export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
+
+export const applications = sqliteTable(
+  "applications",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    opportunityId: integer("opportunityId").notNull(),
+    employeeId: integer("employeeId"),
+    title: text("title").notNull(),
+    status: text("status", { enum: APPLICATION_STATUSES }).notNull().default("writing"),
+    /** draft = the employee writes it; outline = the host restricts AI, so the person writes from an outline. */
+    mode: text("mode", { enum: ["draft", "outline"] }).notNull().default("draft"),
+    /** How it goes in: form, email, grants_gov, submittable, sessionize, portal. */
+    channel: text("channel").notNull().default("form"),
+    channelDetail: text("channelDetail"),
+    /** JSON array of questions with answers. */
+    questions: text("questions").notNull().default("[]"),
+    /** JSON array of attachments. */
+    attachments: text("attachments").notNull().default("[]"),
+    /** JSON: pitch deck slides, video script, uploaded video. */
+    extras: text("extras"),
+    /** JSON: the reviewer check. */
+    review: text("review"),
+    progress: text("progress"),
+    errorNote: text("errorNote"),
+    certifiedBy: text("certifiedBy"),
+    certifiedAt: integer("certifiedAt", { mode: "timestamp" }),
+    submittedAt: integer("submittedAt", { mode: "timestamp" }),
+    confirmation: text("confirmation"),
+    receiptUrl: text("receiptUrl"),
+    decisionExpected: text("decisionExpected"),
+    /** JSON: award amount, period, restrictions, reports, spending. */
+    award: text("award"),
+    reviewerComments: text("reviewerComments"),
+    reapplyDate: text("reapplyDate"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("applications_org_idx").on(t.organizationId)]
+);
+
+export type Application = typeof applications.$inferSelect;
+export type InsertApplication = typeof applications.$inferInsert;
+
+/** A fact the employee needs that the Brain does not have, asked with fixed choices. */
+export const employeeQuestions = sqliteTable(
+  "employee_questions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    applicationId: integer("applicationId"),
+    label: text("label").notNull(),
+    question: text("question").notNull(),
+    /** JSON array of choices. */
+    options: text("options").notNull(),
+    answer: text("answer"),
+    answeredBy: text("answeredBy"),
+    answeredAt: integer("answeredAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("employee_questions_org_idx").on(t.organizationId)]
+);
+
+export type EmployeeQuestion = typeof employeeQuestions.$inferSelect;
+
+export const REGISTRATION_KINDS = ["sam", "grants_gov", "login_gov", "sbir", "state_supplier", "candid"] as const;
+export type RegistrationKind = (typeof REGISTRATION_KINDS)[number];
+
+export const registrations = sqliteTable(
+  "registrations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    kind: text("kind", { enum: REGISTRATION_KINDS }).notNull(),
+    status: text("status", { enum: ["active", "set_up", "not_verified", "not_started", "expired"] }).notNull().default("not_started"),
+    /** JSON: uei, email, role, number, note. */
+    details: text("details").notNull().default("{}"),
+    /** MM/DD/YYYY. */
+    expires: text("expires"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("registrations_org_kind_unique").on(t.organizationId, t.kind)]
+);
+
+export type Registration = typeof registrations.$inferSelect;
+
+/** Saved sign-ins for funders' own portals. Passwords are encrypted with SECRETS_KEY. */
+export const portalLogins = sqliteTable(
+  "portal_logins",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    url: text("url"),
+    username: text("username").notNull(),
+    secretEncrypted: text("secretEncrypted"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("portal_logins_org_idx").on(t.organizationId)]
+);
+
+export type PortalLogin = typeof portalLogins.$inferSelect;

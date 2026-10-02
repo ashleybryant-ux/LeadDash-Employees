@@ -5,8 +5,9 @@ import { useTenant } from "@/contexts/TenantContext";
 import { Avatar, ChatList, EmpHeader, ErrorLine, PersonAvatar, Rail, useEmployees, useGo } from "./ui";
 import { SUGGESTIONS, fmtDate, fmtTime, isSameDay, parseJson, type Kind } from "./meta";
 import Guidelines from "./work/Guidelines";
-import Opportunities from "./work/Opportunities";
-import Pitches from "./work/Pitches";
+import ApplyWork from "./apply/ApplyWork";
+import ApplicationPage from "./apply/ApplicationPage";
+import Knowledge from "./apply/Knowledge";
 import Drafts from "./work/Drafts";
 import Posts from "./work/Posts";
 import Articles from "./work/Articles";
@@ -16,8 +17,8 @@ import Videos from "./work/Videos";
 export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
 
 const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
-  grants: Opportunities,
-  speaking: Pitches,
+  grants: ApplyWork,
+  speaking: ApplyWork,
   inbox: Drafts,
   social: Posts,
   blog: Articles,
@@ -26,10 +27,10 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
 };
 
 /** /chats, /chats/:kind, /chats/:kind/work, /chats/:kind/guidelines, /chats/e/:id[...] */
-export default function ChatPage({ params }: { params: { kind?: string; id?: string; tab?: string } }) {
+export default function ChatPage({ params }: { params: { kind?: string; id?: string; tab?: string; appId?: string; view?: string } }) {
   const { list, isLoading } = useEmployees();
   const emp = params.id ? list.find((e) => e.id === Number(params.id)) : params.kind ? list.find((e) => e.kind === params.kind) : null;
-  const tab = (params.tab === "work" || params.tab === "guidelines" ? params.tab : "chat") as "chat" | "work" | "guidelines";
+  const tab = (params.appId ? "work" : params.tab === "work" || params.tab === "guidelines" || params.tab === "knowledge" ? params.tab : "chat") as "chat" | "work" | "knowledge" | "guidelines";
 
   if (!params.kind && !params.id && list.length > 0) {
     const first = list.find((e) => e.kind === "grants") ?? list[0];
@@ -51,7 +52,9 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
           <>
             <EmpHeader emp={emp} active={tab} base={base} />
             {tab === "chat" && <ChatPane emp={emp} />}
-            {tab === "work" && Work && <Work emp={emp} />}
+            {tab === "work" && params.appId && <ApplicationPage emp={emp} appId={Number(params.appId)} view={params.view === "review" ? "review" : "main"} />}
+            {tab === "work" && !params.appId && Work && <Work emp={emp} />}
+            {tab === "knowledge" && <Knowledge emp={emp} />}
             {tab === "guidelines" && <Guidelines emp={emp} />}
           </>
         )}
@@ -65,13 +68,17 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "grant" | "event" | "video" | "page" | "post" | "article" | "reply";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply";
   id: number;
   title: string;
   subtitle?: string;
   body?: string;
   url?: string | null;
   imageUrl?: string | null;
+  call?: string;
+  score?: number;
+  status?: string;
+  options?: string[];
 };
 
 function ChatPane({ emp }: { emp: EmployeeRow }) {
@@ -235,57 +242,88 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   const go = useGo();
   const base = `/chats/${emp.kind}`;
   const [done, setDone] = React.useState<string | null>(null);
-  const start = trpc.grants.startProposal.useMutation({
-    onSuccess: async () => {
-      await utils.grants.invalidate();
-      go(`${base}/work?tab=proposals`);
+  const start = trpc.applications.start.useMutation({
+    onSuccess: async (app) => {
+      await Promise.all([utils.applications.invalidate(), utils.opps.invalidate()]);
+      go(`${base}/app/${app.id}`);
     },
   });
-  const dismissGrant = trpc.grants.dismissOpportunity.useMutation({ onSuccess: () => { setDone("Dismissed"); utils.grants.invalidate(); } });
-  const pitch = trpc.speaking.writePitch.useMutation({ onSuccess: async () => { await utils.speaking.invalidate(); go(`${base}/work`); } });
-  const dismissEvent = trpc.speaking.dismiss.useMutation({ onSuccess: () => { setDone("Dismissed"); utils.speaking.invalidate(); } });
+  const skip = trpc.opps.skip.useMutation({ onSuccess: () => { setDone("Skipped"); utils.opps.invalidate(); } });
+  const submit = trpc.applications.submit.useMutation({ onSuccess: () => { setDone("Approved"); utils.applications.invalidate(); } });
+  const answer = trpc.applications.answer.useMutation({ onSuccess: (_r, v) => { setDone(v.answer); utils.applications.invalidate(); } });
+  const err = start.error || skip.error || submit.error || answer.error;
 
+  if (card.type === "question") {
+    return (
+      <div className="ld-card" style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+        <span className="ld-lbl">{card.title}</span>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>{card.body}</span>
+        {done ? (
+          <span className="ld-pill green">{done}</span>
+        ) : (
+          <div className="ld-row" style={{ flexWrap: "wrap" }}>
+            {(card.options ?? []).map((o) => (
+              <button key={o} type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "#14221c" }} disabled={answer.isPending} onClick={() => answer.mutate({ organizationId: currentOrgId, questionId: card.id, answer: o })}>
+                {o}
+              </button>
+            ))}
+          </div>
+        )}
+        <ErrorLine error={err} />
+      </div>
+    );
+  }
+
+  let pill: React.ReactNode = null;
   let actions: React.ReactNode = null;
   if (done) actions = <span className="ld-pill gray">{done}</span>;
-  else if (card.type === "grant")
+  else if (card.type === "opportunity") {
+    pill = card.call ? <span className={`ld-pill ${card.call === "skip" ? "gray" : card.call === "partner" ? "amber" : "green"}`}>{`${card.call === "skip" ? "Skip" : card.call === "partner" ? "Partner" : "Apply"} · ${card.score ?? 0}`}</span> : null;
     actions = (
       <>
-        <button type="button" className="ld-btn p" disabled={start.isPending} onClick={() => start.mutate({ organizationId: currentOrgId, opportunityId: card.id })}>
-          {start.isPending ? "Starting..." : "Start proposal"}
+        <button type="button" className={`ld-btn ${card.call === "skip" ? "" : "p"}`} disabled={start.isPending} onClick={() => start.mutate({ organizationId: currentOrgId, opportunityId: card.id })}>
+          {start.isPending ? "Starting..." : "Apply"}
         </button>
-        <button type="button" className="ld-btn" onClick={() => dismissGrant.mutate({ organizationId: currentOrgId, id: card.id })}>Dismiss</button>
+        <button type="button" className="ld-btn" onClick={() => skip.mutate({ organizationId: currentOrgId, id: card.id })}>Skip</button>
       </>
     );
-  else if (card.type === "event")
+  } else if (card.type === "application") {
+    const ready = card.status === "ready";
+    pill = card.status ? <span className={`ld-pill ${ready || card.status === "needs_answer" ? "amber" : card.status === "error" ? "red" : "gray"}`}>{ready ? "Waiting for you" : card.status === "needs_answer" ? "Needs an answer" : card.status === "writing" ? "Writing" : card.status === "needs_setup" ? "Needs Grants.gov" : card.status === "approved" ? "Approved" : card.status === "error" ? "Needs attention" : card.status}</span> : null;
     actions = (
       <>
-        <button type="button" className="ld-btn p" disabled={pitch.isPending} onClick={() => pitch.mutate({ organizationId: currentOrgId, id: card.id })}>
-          {pitch.isPending ? "Writing..." : "Write pitch"}
-        </button>
-        <button type="button" className="ld-btn" onClick={() => dismissEvent.mutate({ organizationId: currentOrgId, id: card.id })}>Dismiss</button>
+        {ready && (
+          <button type="button" className="ld-btn p" disabled={submit.isPending} onClick={() => submit.mutate({ organizationId: currentOrgId, id: card.id })}>Submit</button>
+        )}
+        <Link href={`${base}/app/${card.id}`} className="ld-btn">Open</Link>
       </>
     );
-  else if (card.type === "post" || card.type === "article" || card.type === "reply")
-    actions = (
-      <Link href="/approvals" className="ld-btn p">Review</Link>
-    );
-  else
-    actions = (
-      <Link href={`${base}/work`} className="ld-btn">Open plan</Link>
-    );
+  } else if (card.type === "submitted") {
+    pill = <span className="ld-pill green">Submitted</span>;
+    actions = <Link href={`${base}/app/${card.id}`} className="ld-btn">Open</Link>;
+  } else if (card.type === "post" || card.type === "article" || card.type === "reply") actions = <Link href="/approvals" className="ld-btn p">Review</Link>;
+  else if (card.type === "page" || card.type === "video") actions = <Link href={`${base}/work`} className="ld-btn">Open plan</Link>;
+  else actions = <Link href={`${base}/work`} className="ld-btn">Open</Link>;
 
   return (
     <div className="ld-card" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: card.imageUrl ? "96px minmax(0, 1fr) 128px" : "minmax(0, 1fr) 128px", gap: 16, alignItems: "start" }}>
       {card.imageUrl && <img src={card.imageUrl} alt="" style={{ width: 96, height: 120, objectFit: "cover", borderRadius: 8 }} />}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-        <span style={{ fontWeight: 800, fontSize: 15 }}>{card.title}</span>
+        <div className="ld-row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 800, fontSize: 15 }}>{card.title}</span>
+          {pill}
+        </div>
         {card.subtitle && <span style={{ fontSize: 14, color: "#3d4c45" }}>{card.subtitle}</span>}
         {card.body && <span style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>{card.body}</span>}
+        {card.type === "application" && card.status === "ready" && (
+          <span style={{ fontSize: 12, color: "#5b6b64", lineHeight: 1.5, marginTop: 4 }}>Submitting certifies the application is true and complete and that you are authorized to submit it.</span>
+        )}
         {card.url && (
           <a href={card.url} target="_blank" rel="noreferrer noopener" style={{ fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>
             {card.url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
           </a>
         )}
+        <ErrorLine error={err} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{actions}</div>
     </div>

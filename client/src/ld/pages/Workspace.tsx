@@ -2,7 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, Page } from "../ui";
-import { initials } from "../meta";
+import { initials, parseJson } from "../meta";
 
 const TIMEZONES = [
   { value: "America/New_York", label: "Eastern" },
@@ -277,6 +277,101 @@ export default function Workspace() {
         </p>
       )}
       <ErrorLine error={update.error ?? uploadLogo.error} />
+      <Registrations />
     </Page>
+  );
+}
+
+// ==========================================
+// Registrations (federal and state)
+// ==========================================
+
+const REG_INFO: Record<string, { name: string; detail: string; fields: { key: string; label: string }[] }> = {
+  sam: { name: "SAM.gov", detail: "Needed for every federal grant", fields: [{ key: "uei", label: "UEI" }] },
+  grants_gov: { name: "Grants.gov", detail: "Your account and role", fields: [{ key: "email", label: "Account email" }, { key: "role", label: "Role" }] },
+  login_gov: { name: "Login.gov", detail: "Used to sign in to SAM.gov and Grants.gov", fields: [{ key: "email", label: "Account email" }] },
+  sbir: { name: "SBIR.gov company registry", detail: "Needed for SBIR and STTR", fields: [{ key: "number", label: "SBC control ID" }] },
+  state_supplier: { name: "State supplier portal", detail: "Needed for state contracts", fields: [{ key: "number", label: "Supplier number" }] },
+  candid: { name: "Candid profile", detail: "Nonprofits: funders look you up here", fields: [{ key: "url", label: "Profile link" }] },
+};
+const REG_STATUS: Record<string, { label: string; cls: string }> = {
+  active: { label: "Active", cls: "green" },
+  set_up: { label: "Set up", cls: "green" },
+  not_verified: { label: "Not verified", cls: "amber" },
+  not_started: { label: "Not started", cls: "gray" },
+  expired: { label: "Expired", cls: "red" },
+};
+const RG_COLS = "minmax(0,1.3fr) minmax(0,1.6fr) 140px 96px";
+
+function Registrations() {
+  const { currentOrgId } = useTenant();
+  const q = trpc.registrations.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [open, setOpen] = React.useState<string | null>(null);
+  return (
+    <section className="ld-card" style={{ overflow: "hidden" }}>
+      <div className="ld-sh"><span className="ld-st">Registrations</span></div>
+      <div className="ld-hd" style={{ gridTemplateColumns: RG_COLS }}><span>Registration</span><span>Details</span><span>Status</span><span /></div>
+      {(q.data ?? []).map((r) => {
+        const info = REG_INFO[r.kind];
+        const d = parseJson<Record<string, string>>(r.details, {});
+        const st = REG_STATUS[r.status] ?? REG_STATUS.not_started;
+        const summary = [info.fields.map((f) => d[f.key]).filter(Boolean).join(", "), r.expires && `expires ${r.expires}`].filter(Boolean).join(" · ") || info.detail;
+        return open === r.kind ? (
+          <RegEditor key={r.kind} kind={r.kind} details={d} status={r.status} expires={r.expires ?? ""} onDone={() => setOpen(null)} />
+        ) : (
+          <div key={r.kind} className="ld-rw" style={{ gridTemplateColumns: RG_COLS }}>
+            <span className="ld-strong">{info.name}</span>
+            <span className="ld-muted ld-clip">{summary}</span>
+            <span className={`ld-pill ${st.cls}`}>{st.label}</span>
+            <button type="button" className="ld-btn sm" onClick={() => setOpen(r.kind)}>Edit</button>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function RegEditor({ kind, details, status, expires, onDone }: { kind: string; details: Record<string, string>; status: string; expires: string; onDone: () => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const info = REG_INFO[kind];
+  const [d, setD] = React.useState<Record<string, string>>(details);
+  const [st, setSt] = React.useState(status);
+  const [exp, setExp] = React.useState(expires);
+  const save = trpc.registrations.save.useMutation({ onSuccess: async () => { await utils.registrations.list.invalidate(); onDone(); } });
+  return (
+    <>
+      <div className="ld-rw open" style={{ gridTemplateColumns: RG_COLS }}>
+        <span className="ld-strong">{info.name}</span>
+        <span className="ld-muted">{info.detail}</span>
+        <span />
+        <span />
+      </div>
+      <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px", gap: 14, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
+          {info.fields.map((f) => (
+            <div key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label className="ld-lbl" htmlFor={`rg-${kind}-${f.key}`}>{f.label}</label>
+              <input id={`rg-${kind}-${f.key}`} className="ld-in" value={d[f.key] ?? ""} onChange={(e) => setD({ ...d, [f.key]: e.target.value })} />
+            </div>
+          ))}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label className="ld-lbl" htmlFor={`rg-${kind}-exp`}>Expires (MM/DD/YYYY)</label>
+            <input id={`rg-${kind}-exp`} className="ld-in" inputMode="numeric" value={exp} onChange={(e) => setExp(e.target.value)} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label className="ld-lbl" htmlFor={`rg-${kind}-st`}>Status</label>
+            <select id={`rg-${kind}-st`} className="ld-in" value={st} onChange={(e) => setSt(e.target.value)}>
+              {Object.entries(REG_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}><ErrorLine error={save.error} /></div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button type="button" className="ld-btn p sm" disabled={save.isPending} onClick={() => save.mutate({ organizationId: currentOrgId, kind: kind as never, status: st as never, details: d, expires: exp.trim() })}>Save</button>
+          <button type="button" className="ld-btn sm" onClick={onDone}>Cancel</button>
+        </div>
+      </div>
+    </>
   );
 }

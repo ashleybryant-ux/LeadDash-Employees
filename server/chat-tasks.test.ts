@@ -21,7 +21,7 @@ import { nextRun, zonedToUtc, describeRule } from "./employees/schedule";
 import { tick } from "./employees/runner";
 import { fetchWebpage, htmlToText } from "./employees/files";
 
-const blank = { reply: "", action: "none", focus: "", topic: "", platforms: [], title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "" };
+const blank = { reply: "", action: "none", focus: "", topic: "", platforms: [], title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "" };
 
 describe("chat", () => {
   beforeEach(() => {
@@ -42,12 +42,12 @@ describe("chat", () => {
     searchResponse = {
       queries: ["oklahoma workforce grant", "counseling supervision grant"],
       sources: [{ url: "https://funder.org/g", title: "G" }],
-      data: { opportunities: [{ title: "Workforce Grant", funder: "Funder", deadline: "Jan 15, 2027", amount: "$50,000", eligibility: "OK", fitReason: "Fits", sourceUrl: "https://funder.org/g", matchScore: 90 }] },
+      data: { items: [{ title: "Workforce Grant", host: "Funder", deadline: "Jan 15, 2027", amount: "$50,000", equity: "", stage: "", eligibility: "OK", location: "", eventDate: "", audience: "", angle: "", summary: "", fitReason: "Fits", fitCall: "apply", fitScore: 90, sourceUrl: "https://funder.org/g" }] },
     };
     const work = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "Find workforce grants" });
     expect(work.reply.content).toMatch(/2 searches and found 1 new open grant/);
     const cards = JSON.parse(work.reply.cards!);
-    expect(cards[0]).toMatchObject({ type: "grant", title: "Workforce Grant", url: "https://funder.org/g" });
+    expect(cards[0]).toMatchObject({ type: "opportunity", title: "Workforce Grant", url: "https://funder.org/g", call: "apply", score: 90 });
     expect(JSON.parse(work.reply.searchQueries!)).toHaveLength(2);
 
     const list = await caller(owner).chat.list({ organizationId: orgId, employeeId: morgan.id });

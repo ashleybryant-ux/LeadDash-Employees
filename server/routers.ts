@@ -9,13 +9,18 @@ import { decryptJson, encryptJson, hasSecretsKey } from "./_core/crypto";
 import * as db from "./db";
 import {
   KNOWLEDGE_CATEGORIES,
+  OPP_KINDS,
   OUTBOUND_KINDS,
   PROVIDERS,
+  REGISTRATION_KINDS,
   type User,
 } from "../drizzle/schema";
 import { ROSTER } from "./employees/roster";
 import * as tasks from "./employees/tasks";
 import { sendChatMessage } from "./employees/chat";
+import * as apply from "./employees/apply";
+import * as exportsFor from "./employees/exports";
+import { indexKnowledge } from "./employees/kb";
 import { describeRule, isValidTimeZone, nextRun } from "./employees/schedule";
 import { runTaskNow } from "./employees/runner";
 import { fetchWebpage, saveDocument, saveImage } from "./employees/files";
@@ -71,7 +76,7 @@ function publicConnection<T extends { secretsEncrypted: string | null }>(conn: T
 }
 
 /** Loads a work item and checks it is the expected kind in this workspace. */
-async function workItemOf(organizationId: number, id: number, kind: "speaking_opportunity" | "website_plan" | "video_plan") {
+async function workItemOf(organizationId: number, id: number, kind: "website_plan" | "video_plan") {
   const item = await db.getWorkItemForOrg(id, organizationId);
   if (!item || item.kind !== kind) throw new TRPCError({ code: "NOT_FOUND", message: "That item is not in this workspace." });
   return item;
@@ -216,6 +221,8 @@ export const appRouter = router({
           brandColors: z.string().max(500).optional(),
           fonts: z.string().max(255).optional(),
           timezone: z.string().max(64).optional(),
+          signerName: z.string().max(120).optional(),
+          signerTitle: z.string().max(120).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -423,187 +430,287 @@ export const appRouter = router({
   }),
 
   // ==========================================
-  // Morgan: grants
+  // Applying: Morgan (grants, pitch competitions, accelerators) and
+  // Taylor (speaking), one engine
   // ==========================================
-  grants: router({
-    listOpportunities: protectedProcedure
-      .input(orgInput.extend({ status: z.string().optional() }))
+  opps: router({
+    list: protectedProcedure
+      .input(orgInput.extend({ employee: z.enum(["grants", "speaking"]) }))
       .query(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId);
-        const all = await db.listOpportunitiesByOrg(input.organizationId);
-        if (input.status && input.status !== "all") return all.filter((o) => o.status === input.status);
-        return all.filter((o) => o.status !== "archived");
+        const list = await db.listOpps(input.organizationId, apply.KINDS_FOR[input.employee]);
+        const files = await db.listOppFilesForOrg(input.organizationId);
+        return list
+          .filter((o) => o.status !== "dismissed")
+          .map((o) => ({
+            ...o,
+            files: files.filter((f) => f.opportunityId === o.id).map((f) => ({ id: f.id, name: f.name, pages: f.pages, pagesUnit: f.pagesUnit, status: f.status, note: f.note, fileUrl: f.fileUrl })),
+          }));
       }),
 
-    getOpportunity: protectedProcedure
-      .input(z.object({ id: z.number(), organizationId: z.number() }))
-      .query(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId);
-        return db.getOpportunityForOrg(input.id, input.organizationId);
-      }),
-
-    /** Real web search for open grants (replaces the old simulated scout). */
-    scoutOpportunities: protectedProcedure
-      .input(orgInput.extend({ focus: z.string().max(500).optional() }))
+    find: protectedProcedure
+      .input(orgInput.extend({ employee: z.enum(["grants", "speaking"]), kind: z.enum(OPP_KINDS).optional(), focus: z.string().max(500).optional() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
-        const result = await tasks.findGrants(input.organizationId, input.focus);
-        return { success: true, added: result.created.length, queries: result.queries };
+        const r = await apply.findOpportunities(input.organizationId, input.employee, { kind: input.kind, focus: input.focus });
+        return { added: r.created.length, queries: r.queries };
       }),
 
-    dismissOpportunity: protectedProcedure
+    addLink: protectedProcedure
+      .input(orgInput.extend({ employee: z.enum(["grants", "speaking"]), url: z.string().trim().min(4).max(2000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return apply.addOpportunity(input.organizationId, input.employee, { url: input.url }, personName(ctx.user));
+      }),
+
+    refreshPackage: protectedProcedure
       .input(orgInput.extend({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
-        const opp = await db.updateOpportunity(input.id, input.organizationId, { status: "archived" });
+        const opp = await db.getOpp(input.id, input.organizationId);
+        if (!opp) throw new TRPCError({ code: "NOT_FOUND", message: "That opportunity is not in this workspace." });
+        await db.updateOpp(opp.id, input.organizationId, { packageStatus: "fetching" });
+        apply.enqueue(`package-${opp.id}`, () => apply.fetchPackage(input.organizationId, opp.id));
+        return { success: true };
+      }),
+
+    skip: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const opp = await db.updateOpp(input.id, input.organizationId, { status: "dismissed" });
         if (!opp) throw new TRPCError({ code: "NOT_FOUND", message: "That opportunity is not in this workspace." });
         return opp;
       }),
 
-    startProposal: protectedProcedure
+    downloadPackage: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        return exportsFor.packageZip(input.organizationId, input.id);
+      }),
+  }),
+
+  applications: router({
+    list: protectedProcedure
+      .input(orgInput.extend({ employee: z.enum(["grants", "speaking"]).optional() }))
+      .query(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const [apps, opps, questions] = await Promise.all([
+          db.listApplications(input.organizationId),
+          db.listOpps(input.organizationId),
+          db.listOpenQuestions(input.organizationId),
+        ]);
+        const kinds = input.employee ? apply.KINDS_FOR[input.employee] : null;
+        const out = [];
+        for (const a of apps) {
+          const opp = opps.find((o) => o.id === a.opportunityId) ?? null;
+          if (kinds && (!opp || !kinds.includes(opp.kind))) continue;
+          out.push({
+            ...a,
+            opp: opp && { id: opp.id, kind: opp.kind, host: opp.host, amount: opp.amount, deadline: opp.deadline, sourceUrl: opp.sourceUrl, eventDate: opp.eventDate },
+            openQuestions: questions.filter((q) => q.applicationId === a.id).length,
+            blockers: await apply.blockers(input.organizationId, a),
+          });
+        }
+        return out;
+      }),
+
+    get: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const app = await db.getApplication(input.id, input.organizationId);
+        if (!app) throw new TRPCError({ code: "NOT_FOUND", message: "That application is not in this workspace." });
+        const opp = await db.getOpp(app.opportunityId, input.organizationId);
+        const files = opp ? await db.listOppFiles(input.organizationId, opp.id) : [];
+        const org = await db.getOrganizationById(input.organizationId);
+        return {
+          app,
+          opp,
+          files,
+          questions: await db.listOpenQuestions(input.organizationId, app.id),
+          blockers: await apply.blockers(input.organizationId, app),
+          signer: { name: org?.signerName ?? null, title: org?.signerTitle ?? null, org: org?.name ?? "" },
+        };
+      }),
+
+    start: protectedProcedure
       .input(orgInput.extend({ opportunityId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
-        return tasks.startProposal(input.organizationId, input.opportunityId, personName(ctx.user));
+        return apply.startApplication(input.organizationId, input.opportunityId, personName(ctx.user));
       }),
 
-    listProposals: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
-      return db.listProposalsByOrg(input.organizationId);
-    }),
-
-    getProposal: protectedProcedure
-      .input(orgInput.extend({ proposalId: z.number().optional(), opportunityId: z.number().optional() }))
-      .query(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId);
-        if (input.proposalId) return db.getProposalByIdForOrganization(input.proposalId, input.organizationId);
-        if (input.opportunityId) return db.getProposalByOpportunityForOrganization(input.opportunityId, input.organizationId);
-        return null;
-      }),
-
-    updateProposal: protectedProcedure
-      .input(
-        z.object({
-          id: z.number(),
-          organizationId: z.number(),
-          title: z.string().max(255).optional(),
-          executiveSummary: z.string().max(50_000).optional(),
-          statementOfNeed: z.string().max(50_000).optional(),
-          programDesign: z.string().max(50_000).optional(),
-          budgetNarrative: z.string().max(50_000).optional(),
-          evaluationPlan: z.string().max(50_000).optional(),
-          complianceChecklist: z.string().max(20_000).optional(),
-          reviewerNotes: z.string().max(10_000).optional(),
-        })
-      )
+    rewrite: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
-        const { id, organizationId, ...data } = input;
-        const updated = await db.updateProposal(id, organizationId, data);
-        if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "That proposal is not in this workspace." });
-        await db.logAction({
-          organizationId,
-          actorType: "human_user",
-          actorName: personName(ctx.user),
-          action: "Edited proposal",
-          details: `Edited "${updated.title}".`,
-        });
-        return updated;
+        return apply.rewriteApplication(input.organizationId, input.id);
       }),
 
-    generateSection: protectedProcedure
-      .input(
-        orgInput.extend({
-          proposalId: z.number(),
-          sectionKey: z.enum(["executiveSummary", "statementOfNeed", "programDesign", "budgetNarrative", "evaluationPlan"]),
-          guidancePrompt: z.string().max(2000).optional(),
-        })
-      )
+    saveAnswer: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), questionId: z.string().max(20), answer: z.string().max(60_000) }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
-        const result = await tasks.draftProposalSection(input.organizationId, input.proposalId, input.sectionKey, input.guidancePrompt);
-        return { success: true, content: result.content };
+        return apply.saveAnswer(input.organizationId, input.id, input.questionId, input.answer);
       }),
 
-    reviewProposal: protectedProcedure
-      .input(
-        orgInput.extend({
-          proposalId: z.number(),
-          action: z.enum(["approve", "request_edits", "mark_ready_for_portal"]),
-          notes: z.string().max(5000).optional(),
-          reviewerName: z.string().optional(), // ignored: the signed-in person is the reviewer
-        })
-      )
+    rewriteQuestion: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), questionId: z.string().max(20), style: z.enum(["detailed", "concise"]).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return apply.rewriteQuestion(input.organizationId, input.id, input.questionId, undefined, input.style);
+      }),
+
+    review: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return apply.reviewApplication(input.organizationId, input.id);
+      }),
+
+    fix: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), fixId: z.string().max(20) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return apply.applyFix(input.organizationId, input.id, input.fixId);
+      }),
+
+    answer: protectedProcedure
+      .input(orgInput.extend({ questionId: z.number(), answer: z.string().max(200) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return apply.answerQuestion(input.organizationId, input.questionId, input.answer, personName(ctx.user));
+      }),
+
+    /** The person's Submit tap: they certify the application, then it goes in. */
+    submit: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return apply.submitApplication(input.organizationId, input.id, personName(ctx.user));
+      }),
+
+    sendBack: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "reviewer");
-        const reviewer = personName(ctx.user);
-        const status =
-          input.action === "request_edits" ? "changes_requested" : input.action === "mark_ready_for_portal" ? "ready_for_portal" : "approved";
-        const updated = await db.updateProposal(input.proposalId, input.organizationId, {
-          status,
-          reviewerNotes: input.notes ?? null,
-          ...(input.action === "approve" ? { approvedBy: reviewer, approvedAt: new Date() } : {}),
-        });
-        if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "That proposal is not in this workspace." });
-        if (status === "approved" || status === "ready_for_portal") {
-          await db.updateOpportunity(updated.opportunityId, input.organizationId, { status: "approved_ready" });
-        }
-        await db.logAction({
-          organizationId: input.organizationId,
-          actorType: "human_user",
-          actorName: reviewer,
-          action: status === "changes_requested" ? "Sent proposal back" : status === "approved" ? "Approved proposal" : "Marked proposal ready to submit",
-          details: `"${updated.title}".${input.notes ? ` Note: ${input.notes}` : ""}`,
-        });
-        return updated;
+        const app = await db.getApplication(input.id, input.organizationId);
+        if (!app) throw new TRPCError({ code: "NOT_FOUND", message: "That application is not in this workspace." });
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Sent application back", details: app.title });
+        return apply.rewriteApplication(input.organizationId, input.id);
+      }),
+
+    markSubmitted: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), confirmation: z.string().max(120).default("") }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return apply.markSubmitted(input.organizationId, input.id, input.confirmation, personName(ctx.user));
+      }),
+
+    decide: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number(),
+          result: z.enum(["awarded", "declined"]),
+          amount: z.string().max(60).optional(),
+          period: z.string().max(120).optional(),
+          restrictions: z.string().max(500).optional(),
+          reports: z.array(z.object({ name: z.string().max(120), due: z.string().max(40) })).max(20).optional(),
+          reapplyDate: z.string().max(40).optional(),
+          comments: z.string().max(40_000).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, id, ...rest } = input;
+        return apply.recordDecision(organizationId, id, rest, personName(ctx.user));
+      }),
+
+    updateAward: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), spent: z.number().min(0).max(1e10).optional(), total: z.number().min(0).max(1e10).optional(), restrictions: z.string().max(500).optional(), period: z.string().max(120).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, id, ...patch } = input;
+        return apply.updateAward(organizationId, id, patch);
+      }),
+
+    draftReport: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), index: z.number().int().min(0) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return apply.draftReport(input.organizationId, input.id, input.index);
+      }),
+
+    download: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), what: z.enum(["docx", "zip", "deck", "report"]), index: z.number().int().min(0).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        if (input.what === "docx") return exportsFor.applicationDocx(input.organizationId, input.id);
+        if (input.what === "deck") return exportsFor.deckPptx(input.organizationId, input.id);
+        if (input.what === "report") return exportsFor.reportDocx(input.organizationId, input.id, input.index ?? 0);
+        return exportsFor.applicationZip(input.organizationId, input.id);
       }),
   }),
 
   // ==========================================
-  // Des: speaking
+  // Registrations (SAM.gov, Grants.gov...) and saved portal sign-ins
   // ==========================================
-  speaking: router({
+  registrations: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      const items = await db.listWorkItems(input.organizationId, "speaking_opportunity");
-      return items.filter((i) => i.status !== "dismissed");
+      const rows = await db.listRegistrations(input.organizationId);
+      return REGISTRATION_KINDS.map((kind) => rows.find((r) => r.kind === kind) ?? { id: 0, organizationId: input.organizationId, kind, status: "not_started" as const, details: "{}", expires: null, createdAt: null, updatedAt: null });
     }),
-    find: protectedProcedure
-      .input(orgInput.extend({ focus: z.string().max(500).optional() }))
+
+    save: protectedProcedure
+      .input(
+        orgInput.extend({
+          kind: z.enum(REGISTRATION_KINDS),
+          status: z.enum(["active", "set_up", "not_verified", "not_started", "expired"]),
+          details: z.record(z.string(), z.string().max(300)),
+          expires: z.string().regex(/^(\d{2}\/\d{2}\/\d{4})?$/, "Type the date as MM/DD/YYYY").optional(),
+        })
+      )
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
-        const r = await tasks.findSpeakingEvents(input.organizationId, input.focus);
-        return { added: r.created.length, queries: r.queries };
+        await requireMember(ctx, input.organizationId, "admin");
+        const saved = await db.upsertRegistration(input.organizationId, input.kind, { status: input.status, details: JSON.stringify(input.details), expires: input.expires || null });
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Updated registration", details: input.kind });
+        return saved;
       }),
-    writePitch: protectedProcedure
-      .input(orgInput.extend({ id: z.number(), guidance: z.string().max(1000).optional() }))
+  }),
+
+  portals: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await db.listPortalLogins(input.organizationId)).map(({ secretEncrypted, ...p }) => ({ ...p, hasPassword: Boolean(secretEncrypted) }));
+    }),
+
+    save: protectedProcedure
+      .input(orgInput.extend({ id: z.number().optional(), name: z.string().trim().min(2).max(120), url: z.string().max(500).optional(), username: z.string().trim().min(1).max(200), password: z.string().max(500).optional() }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
-        return tasks.writePitch(input.organizationId, input.id, input.guidance);
-      }),
-    updatePitch: protectedProcedure
-      .input(orgInput.extend({ id: z.number(), subject: z.string().max(300), body: z.string().max(10_000) }))
-      .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
-        const item = await workItemOf(input.organizationId, input.id, "speaking_opportunity");
-        const data = JSON.parse(item.data || "{}");
-        return db.updateWorkItem(input.id, input.organizationId, {
-          status: "drafted",
-          data: JSON.stringify({ ...data, pitch: { subject: input.subject, body: input.body } }),
+        await requireMember(ctx, input.organizationId, "admin");
+        const existing = input.id ? (await db.listPortalLogins(input.organizationId)).find((p) => p.id === input.id) : null;
+        if (input.id && !existing) throw new TRPCError({ code: "NOT_FOUND", message: "That sign-in is not in this workspace." });
+        await db.savePortalLogin({
+          id: input.id,
+          organizationId: input.organizationId,
+          name: input.name,
+          url: input.url || null,
+          username: input.username,
+          secretEncrypted: input.password ? encryptJson({ password: input.password }) : existing?.secretEncrypted ?? null,
         });
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved portal sign-in", details: input.name });
+        return { success: true };
       }),
-    sendToApproval: protectedProcedure
+
+    remove: protectedProcedure
       .input(orgInput.extend({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
-        return tasks.sendPitchToApproval(input.organizationId, input.id, personName(ctx.user));
-      }),
-    dismiss: protectedProcedure
-      .input(orgInput.extend({ id: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
-        await workItemOf(input.organizationId, input.id, "speaking_opportunity");
-        return db.updateWorkItem(input.id, input.organizationId, { status: "dismissed" });
+        await requireMember(ctx, input.organizationId, "admin");
+        await db.deletePortalLogin(input.id, input.organizationId);
+        return { success: true };
       }),
   }),
 
@@ -1044,7 +1151,7 @@ export const appRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
-        await db.createKnowledgeItem(input);
+        indexKnowledge(await db.createKnowledgeItem(input));
         await db.logAction({
           organizationId: input.organizationId,
           actorType: "human_user",
@@ -1069,6 +1176,7 @@ export const appRouter = router({
         const { id, organizationId, ...data } = input;
         const item = await db.updateKnowledgeItem(id, organizationId, data);
         if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "That Brain entry is not in this workspace." });
+        indexKnowledge(item);
         await db.logAction({
           organizationId,
           actorType: "human_user",
@@ -1107,7 +1215,9 @@ export const appRouter = router({
           category: input.category,
           content: page.text,
           sourceUrl: page.url,
+          chars: page.text.length,
         });
+        indexKnowledge(item);
         await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Added webpage to Brain", details: page.url });
         return item;
       }),
@@ -1125,6 +1235,7 @@ export const appRouter = router({
           content: input.note,
           fileUrl: saved.url,
         });
+        indexKnowledge(item);
         await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Added image to Brain", details: input.title });
         return item;
       }),
@@ -1149,9 +1260,79 @@ export const appRouter = router({
           category: input.category,
           content: saved.text || "(No readable text was found in this file.)",
           fileUrl: saved.url,
+          pages: saved.pages,
+          pagesUnit: saved.unit,
+          chars: saved.text.length,
+          readNote: saved.note,
         });
+        indexKnowledge(item);
         await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Added document to Brain", details: input.title });
         return item;
+      }),
+  }),
+
+  // ==========================================
+  // Each employee's own Knowledge (files go through /api/upload/knowledge)
+  // ==========================================
+  employeeKnowledge: router({
+    list: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const items = await db.listEmployeeKnowledge(input.organizationId, input.employeeId);
+        const apps = await db.listApplications(input.organizationId);
+        return items.map((k) => ({
+          ...k,
+          content: k.content.slice(0, 4000),
+          sections: Array.from(new Set(db.chunksOf(input.organizationId, "knowledge", k.id).map((c) => c.heading).filter((h): h is string => Boolean(h) && h !== k.title && !/^\[(Page|Slide) \d+\]$/.test(h!)))).slice(0, 12),
+          usedIn: apps.filter((a) => (a.questions || "").includes(`"${k.title}"`)).map((a) => a.title).slice(0, 5),
+        }));
+      }),
+
+    addText: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), title: z.string().trim().min(2).max(255), folder: z.string().max(60), content: z.string().trim().min(5).max(200_000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+        const item = await db.createKnowledgeItem({ organizationId: input.organizationId, employeeId: emp.id, folder: input.folder, kind: "fact", category: "mission_profile", title: input.title, content: input.content, chars: input.content.length, pages: input.content.split(/\s+/).length, pagesUnit: "words" });
+        indexKnowledge(item);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: `Added to ${emp.name}'s Knowledge`, details: input.title });
+        return item;
+      }),
+
+    addLink: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), url: z.string().trim().min(4).max(2000), title: z.string().trim().max(255).optional(), folder: z.string().max(60) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+        const page = await fetchWebpage(/^https?:\/\//i.test(input.url) ? input.url : `https://${input.url}`);
+        if (page.text.length < 20) throw new TRPCError({ code: "BAD_REQUEST", message: "That page had no readable text." });
+        const item = await db.createKnowledgeItem({ organizationId: input.organizationId, employeeId: emp.id, folder: input.folder, kind: "webpage", category: "mission_profile", title: (input.title || page.title).slice(0, 255), content: page.text, sourceUrl: page.url, chars: page.text.length });
+        indexKnowledge(item);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: `Added to ${emp.name}'s Knowledge`, details: page.url });
+        return item;
+      }),
+
+    update: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), title: z.string().trim().min(2).max(255), folder: z.string().max(60) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const item = await db.getKnowledgeItem(input.id, input.organizationId);
+        if (!item || !item.employeeId) throw new TRPCError({ code: "NOT_FOUND", message: "That entry is not in this workspace." });
+        return db.updateKnowledgeItem(input.id, input.organizationId, { title: input.title, folder: input.folder });
+      }),
+
+    remove: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const item = await db.getKnowledgeItem(input.id, input.organizationId);
+        if (!item || !item.employeeId) throw new TRPCError({ code: "NOT_FOUND", message: "That entry is not in this workspace." });
+        await db.deleteKnowledgeItem(input.id, input.organizationId);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Removed from Knowledge", details: item.title });
+        return { success: true };
       }),
   }),
 

@@ -20,7 +20,8 @@ export function useEmployees() {
 export function useApprovalCount() {
   const { currentOrgId } = useTenant();
   const q = trpc.publishing.listApprovalQueue.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
-  return (q.data ?? []).filter((i) => i.status === "pending_approval").length;
+  const apps = trpc.applications.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 60_000 });
+  return (q.data ?? []).filter((i) => i.status === "pending_approval").length + (apps.data ?? []).filter((a) => a.status === "ready").length;
 }
 
 // ==========================================
@@ -354,7 +355,7 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
 
 type Emp = { id: number; name: string; roleTitle: string; kind: string; status: string; avatar: string | null };
 
-export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "guidelines"; base: string }) {
+export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "guidelines"; base: string }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const toggle = trpc.employees.toggleStatus.useMutation({ onSuccess: () => utils.employees.list.invalidate() });
@@ -386,6 +387,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
       <nav aria-label="Employee views" style={{ display: "flex", gap: 6, background: "#f1f5f3", padding: 4, borderRadius: 12 }}>
         <Link href={base} style={tab(active === "chat")} className="ld-tablink">Chat</Link>
         {work && <Link href={`${base}/work`} style={tab(active === "work")}>{work}</Link>}
+        <Link href={`${base}/knowledge`} style={tab(active === "knowledge")}>Knowledge</Link>
         <Link href={`${base}/guidelines`} style={tab(active === "guidelines")}>Guidelines</Link>
       </nav>
       <div className="ld-row">

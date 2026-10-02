@@ -11,10 +11,15 @@ import { uploadsRoot } from "../storage";
 import { aiStatus } from "./llm";
 import { hasSecretsKey } from "./crypto";
 import { startScheduler } from "../employees/runner";
+import { registerUploads } from "../uploads";
+import { ensureIndexed } from "../employees/kb";
+import { markStuckApplications } from "../db";
 
 async function startServer() {
   // Open the database and run any pending migrations before taking traffic.
   getDb();
+  await markStuckApplications();
+  ensureIndexed().catch((err) => console.error("[knowledge] indexing failed:", err));
 
   const app = express();
   const server = createServer(app);
@@ -28,6 +33,9 @@ async function startServer() {
     res.setHeader("X-Frame-Options", "DENY");
     next();
   });
+
+  // Large files (videos, RFPs, signed forms) arrive as raw bodies, before JSON parsing.
+  registerUploads(app);
 
   app.use(express.json({ limit: "16mb" })); // Brain uploads arrive as base64
   app.use(express.urlencoded({ limit: "2mb", extended: true }));

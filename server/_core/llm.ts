@@ -52,16 +52,20 @@ export async function generateText(opts: {
   prompt: string;
   maxTokens?: number;
   temperature?: number;
+  timeoutMs?: number;
 }): Promise<string> {
   const messages: GatewayMessage[] = [
     { role: "system", content: opts.system },
     { role: "user", content: opts.prompt },
   ];
-  const out = await callGateway({
-    messages,
-    max_tokens: opts.maxTokens ?? 3000,
-    temperature: opts.temperature ?? 0.5,
-  });
+  const out = await callGateway(
+    {
+      messages,
+      max_tokens: opts.maxTokens ?? 3000,
+      temperature: opts.temperature ?? 0.5,
+    },
+    opts.timeoutMs
+  );
   return out.trim();
 }
 
@@ -73,20 +77,24 @@ export async function generateJson<T>(opts: {
   schema: JsonSchema;
   maxTokens?: number;
   temperature?: number;
+  timeoutMs?: number;
 }): Promise<T> {
   const messages: GatewayMessage[] = [
     { role: "system", content: opts.system },
     { role: "user", content: opts.prompt },
   ];
-  const out = await callGateway({
-    messages,
-    max_tokens: opts.maxTokens ?? 4000,
-    temperature: opts.temperature ?? 0.4,
-    response_format: {
-      type: "json_schema",
-      json_schema: { name: opts.schemaName, schema: opts.schema, strict: true },
+  const out = await callGateway(
+    {
+      messages,
+      max_tokens: opts.maxTokens ?? 4000,
+      temperature: opts.temperature ?? 0.4,
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: opts.schemaName, schema: opts.schema, strict: true },
+      },
     },
-  });
+    opts.timeoutMs
+  );
   const parsed = extractJson(out);
   if (parsed === undefined) throw new Error("AI returned something that was not valid JSON");
   return parsed as T;

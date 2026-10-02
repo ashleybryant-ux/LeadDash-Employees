@@ -17,7 +17,8 @@ describe("access control", () => {
     const b = await makeWorkspace("tenant-b");
     const outsider = caller(a.owner);
     await expect(outsider.employees.list({ organizationId: b.orgId })).rejects.toThrow(/Access denied/);
-    await expect(outsider.grants.listOpportunities({ organizationId: b.orgId })).rejects.toThrow(/Access denied/);
+    await expect(outsider.opps.list({ organizationId: b.orgId, employee: "grants" })).rejects.toThrow(/Access denied/);
+    await expect(outsider.applications.list({ organizationId: b.orgId })).rejects.toThrow(/Access denied/);
     const orgs = await outsider.organizations.list();
     expect(orgs.map((o) => o.id)).toEqual([a.orgId]);
   });
@@ -78,7 +79,19 @@ describe("team role rules", () => {
   it("dismiss only touches the right kind of item", async () => {
     const { orgId, owner } = await makeWorkspace("kinds");
     const plan = await db.createWorkItem({ organizationId: orgId, kind: "website_plan", title: "Home", data: "{}" });
-    await expect(caller(owner).speaking.dismiss({ organizationId: orgId, id: plan.id })).rejects.toThrow(/not in this workspace/);
+    await expect(caller(owner).video.dismiss({ organizationId: orgId, id: plan.id })).rejects.toThrow(/not in this workspace/);
     expect((await db.getWorkItemForOrg(plan.id, orgId))?.status).toBe("new");
+  });
+
+  it("will not skip, start or submit another workspace's opportunity or application", async () => {
+    const a = await makeWorkspace("opp-a");
+    const b = await makeWorkspace("opp-b");
+    const opp = await db.createOpp({ organizationId: b.orgId, kind: "grant", title: "B grant", host: "Funder" });
+    const app = await db.createApplication({ organizationId: b.orgId, opportunityId: opp.id, title: "B grant", status: "ready" });
+    await expect(caller(a.owner).opps.skip({ organizationId: a.orgId, id: opp.id })).rejects.toThrow(/not in this workspace/);
+    await expect(caller(a.owner).applications.start({ organizationId: a.orgId, opportunityId: opp.id })).rejects.toThrow(/not in this workspace/);
+    await expect(caller(a.owner).applications.submit({ organizationId: a.orgId, id: app.id })).rejects.toThrow(/not in this workspace/);
+    await expect(caller(a.owner).applications.get({ organizationId: a.orgId, id: app.id })).rejects.toThrow(/not in this workspace/);
+    expect((await db.getApplication(app.id, b.orgId))?.status).toBe("ready");
   });
 });

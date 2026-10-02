@@ -42,6 +42,7 @@ function Router() {
       <Route path="/">{() => <Redirect to="/chats" />}</Route>
       <Route path="/chats" component={ChatPage} />
       <Route path="/chats/e/:id/:tab?" component={ChatPage} />
+      <Route path="/chats/:kind/app/:appId/:view?" component={ChatPage} />
       <Route path="/chats/:kind/:tab?" component={ChatPage} />
       <Route path="/approvals" component={Approvals} />
       <Route path="/tasks" component={Tasks} />

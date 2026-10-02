@@ -23,6 +23,16 @@ import {
   chatReads,
   scheduledTasks,
   taskRuns,
+  knowledgeChunks,
+  opportunities,
+  opportunityFiles,
+  applications,
+  employeeQuestions,
+  registrations,
+  portalLogins,
+  type InsertOpportunity,
+  type InsertApplication,
+  type RegistrationKind,
   type InsertChatMessage,
   type InsertScheduledTask,
   type InsertOrganization,
@@ -551,13 +561,40 @@ export async function updateOutboundItem(id: number, orgId: number, data: Partia
 // Brain
 // ==========================================
 
+/** The shared Brain: entries that belong to no single employee. */
 export async function listKnowledgeByOrg(orgId: number) {
   return getDb()
     .select()
     .from(organizationKnowledge)
-    .where(eq(organizationKnowledge.organizationId, orgId))
+    .where(and(eq(organizationKnowledge.organizationId, orgId), isNull(organizationKnowledge.employeeId)))
     .orderBy(organizationKnowledge.category, organizationKnowledge.id)
     .all();
+}
+
+/** One employee's own Knowledge. */
+export async function listEmployeeKnowledge(orgId: number, employeeId: number) {
+  return getDb()
+    .select()
+    .from(organizationKnowledge)
+    .where(and(eq(organizationKnowledge.organizationId, orgId), eq(organizationKnowledge.employeeId, employeeId)))
+    .orderBy(desc(organizationKnowledge.createdAt), desc(organizationKnowledge.id))
+    .all();
+}
+
+export async function getKnowledgeItem(id: number, orgId: number) {
+  const rows = getDb()
+    .select()
+    .from(organizationKnowledge)
+    .where(and(eq(organizationKnowledge.id, id), eq(organizationKnowledge.organizationId, orgId)))
+    .limit(1)
+    .all();
+  return rows[0] || null;
+}
+
+/** Every Brain and Knowledge entry in a workspace (for indexing). */
+export async function listAllKnowledge(orgId?: number) {
+  const q = getDb().select().from(organizationKnowledge);
+  return orgId ? q.where(eq(organizationKnowledge.organizationId, orgId)).all() : q.all();
 }
 
 export async function createKnowledgeItem(item: InsertOrganizationKnowledge) {
@@ -583,6 +620,305 @@ export async function deleteKnowledgeItem(id: number, orgId: number) {
   getDb()
     .delete(organizationKnowledge)
     .where(and(eq(organizationKnowledge.id, id), eq(organizationKnowledge.organizationId, orgId)))
+    .run();
+  deleteChunks(orgId, "knowledge", id);
+}
+
+// ==========================================
+// Passages and full-text search
+// ==========================================
+
+export function deleteChunks(orgId: number, sourceType: "knowledge" | "opp_file", sourceId: number) {
+  getDb()
+    .delete(knowledgeChunks)
+    .where(and(eq(knowledgeChunks.organizationId, orgId), eq(knowledgeChunks.sourceType, sourceType), eq(knowledgeChunks.sourceId, sourceId)))
+    .run();
+}
+
+export function replaceChunks(
+  orgId: number,
+  sourceType: "knowledge" | "opp_file",
+  sourceId: number,
+  employeeId: number | null,
+  chunks: { heading: string | null; text: string }[]
+) {
+  const sqlite = (getDb(), _sqlite!);
+  sqlite.transaction(() => {
+    deleteChunks(orgId, sourceType, sourceId);
+    const ins = sqlite.prepare(
+      "INSERT INTO knowledge_chunks (organizationId, sourceType, sourceId, employeeId, seq, heading, text) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    );
+    chunks.forEach((c, i) => ins.run(orgId, sourceType, sourceId, employeeId, i, c.heading, c.text));
+  })();
+}
+
+export function countChunks(orgId: number, sourceType: "knowledge" | "opp_file", sourceId: number) {
+  const sqlite = (getDb(), _sqlite!);
+  const row = sqlite
+    .prepare("SELECT COUNT(*) AS n FROM knowledge_chunks WHERE organizationId = ? AND sourceType = ? AND sourceId = ?")
+    .get(orgId, sourceType, sourceId) as { n: number };
+  return row.n;
+}
+
+export type ChunkHit = { id: number; sourceType: "knowledge" | "opp_file"; sourceId: number; heading: string | null; text: string; score: number };
+
+/**
+ * Finds the passages that best match a query, from the shared Brain, one
+ * employee's Knowledge, and (optionally) one opportunity's package files.
+ */
+export function searchChunks(orgId: number, ftsQuery: string, opts: { employeeId?: number | null; opportunityFileIds?: number[]; limit?: number }) {
+  if (!ftsQuery.trim()) return [] as ChunkHit[];
+  const sqlite = (getDb(), _sqlite!);
+  const fileIds = opts.opportunityFileIds ?? [];
+  const scope = [
+    "(c.sourceType = 'knowledge' AND (c.employeeId IS NULL" + (opts.employeeId ? " OR c.employeeId = ?" : "") + "))",
+    fileIds.length ? `(c.sourceType = 'opp_file' AND c.sourceId IN (${fileIds.map(() => "?").join(",")}))` : null,
+  ]
+    .filter(Boolean)
+    .join(" OR ");
+  const params: unknown[] = [ftsQuery, orgId];
+  if (opts.employeeId) params.push(opts.employeeId);
+  params.push(...fileIds, opts.limit ?? 8);
+  try {
+    return sqlite
+      .prepare(
+        `SELECT c.id, c.sourceType, c.sourceId, c.heading, c.text, bm25(knowledge_fts) AS score
+         FROM knowledge_fts JOIN knowledge_chunks c ON c.id = knowledge_fts.rowid
+         WHERE knowledge_fts MATCH ? AND c.organizationId = ? AND (${scope})
+         ORDER BY score LIMIT ?`
+      )
+      .all(...params) as ChunkHit[];
+  } catch (err) {
+    console.warn("[search] query failed:", (err as Error).message);
+    return [];
+  }
+}
+
+/** All passages of one source, in order (to read a whole package file). */
+export function chunksOf(orgId: number, sourceType: "knowledge" | "opp_file", sourceId: number) {
+  return getDb()
+    .select()
+    .from(knowledgeChunks)
+    .where(and(eq(knowledgeChunks.organizationId, orgId), eq(knowledgeChunks.sourceType, sourceType), eq(knowledgeChunks.sourceId, sourceId)))
+    .orderBy(knowledgeChunks.seq)
+    .all();
+}
+
+// ==========================================
+// Opportunities (grants, pitch competitions, accelerators, speaking calls)
+// ==========================================
+
+export async function listOpps(orgId: number, kinds?: string[]) {
+  const all = getDb()
+    .select()
+    .from(opportunities)
+    .where(eq(opportunities.organizationId, orgId))
+    .orderBy(desc(opportunities.createdAt), desc(opportunities.id))
+    .all();
+  return kinds ? all.filter((o) => kinds.includes(o.kind)) : all;
+}
+
+export async function getOpp(id: number, orgId: number) {
+  const rows = getDb()
+    .select()
+    .from(opportunities)
+    .where(and(eq(opportunities.id, id), eq(opportunities.organizationId, orgId)))
+    .limit(1)
+    .all();
+  return rows[0] || null;
+}
+
+export async function createOpp(item: InsertOpportunity) {
+  return getDb().insert(opportunities).values(item).returning().all()[0];
+}
+
+export async function updateOpp(id: number, orgId: number, data: Partial<InsertOpportunity>) {
+  getDb()
+    .update(opportunities)
+    .set(data)
+    .where(and(eq(opportunities.id, id), eq(opportunities.organizationId, orgId)))
+    .run();
+  return getOpp(id, orgId);
+}
+
+export async function listOppFiles(orgId: number, opportunityId: number) {
+  return getDb()
+    .select()
+    .from(opportunityFiles)
+    .where(and(eq(opportunityFiles.organizationId, orgId), eq(opportunityFiles.opportunityId, opportunityId)))
+    .orderBy(opportunityFiles.id)
+    .all();
+}
+
+export async function listOppFilesForOrg(orgId: number) {
+  return getDb().select().from(opportunityFiles).where(eq(opportunityFiles.organizationId, orgId)).all();
+}
+
+export async function createOppFile(item: typeof opportunityFiles.$inferInsert) {
+  return getDb().insert(opportunityFiles).values(item).returning().all()[0];
+}
+
+export async function setOppFileStatus(orgId: number, id: number, status: "read" | "failed" | "needs_signature") {
+  getDb()
+    .update(opportunityFiles)
+    .set({ status })
+    .where(and(eq(opportunityFiles.id, id), eq(opportunityFiles.organizationId, orgId)))
+    .run();
+}
+
+export async function deleteOppFiles(orgId: number, opportunityId: number) {
+  for (const f of await listOppFiles(orgId, opportunityId)) deleteChunks(orgId, "opp_file", f.id);
+  getDb()
+    .delete(opportunityFiles)
+    .where(and(eq(opportunityFiles.organizationId, orgId), eq(opportunityFiles.opportunityId, opportunityId)))
+    .run();
+}
+
+// ==========================================
+// Applications
+// ==========================================
+
+export async function listApplications(orgId: number) {
+  return getDb()
+    .select()
+    .from(applications)
+    .where(eq(applications.organizationId, orgId))
+    .orderBy(desc(applications.updatedAt), desc(applications.id))
+    .all();
+}
+
+export async function getApplication(id: number, orgId: number) {
+  const rows = getDb()
+    .select()
+    .from(applications)
+    .where(and(eq(applications.id, id), eq(applications.organizationId, orgId)))
+    .limit(1)
+    .all();
+  return rows[0] || null;
+}
+
+export async function getApplicationByOpp(opportunityId: number, orgId: number) {
+  const rows = getDb()
+    .select()
+    .from(applications)
+    .where(and(eq(applications.opportunityId, opportunityId), eq(applications.organizationId, orgId)))
+    .limit(1)
+    .all();
+  return rows[0] || null;
+}
+
+export async function createApplication(item: InsertApplication) {
+  return getDb().insert(applications).values(item).returning().all()[0];
+}
+
+export async function updateApplication(id: number, orgId: number, data: Partial<InsertApplication>) {
+  getDb()
+    .update(applications)
+    .set(data)
+    .where(and(eq(applications.id, id), eq(applications.organizationId, orgId)))
+    .run();
+  return getApplication(id, orgId);
+}
+
+/** Applications left "writing" by a restart are marked so they can be resumed. */
+export async function markStuckApplications() {
+  getDb()
+    .update(applications)
+    .set({ status: "error", errorNote: "The server restarted while this was being written. Press Write again." })
+    .where(eq(applications.status, "writing"))
+    .run();
+}
+
+// ==========================================
+// Questions an employee asks with fixed choices
+// ==========================================
+
+export async function createEmployeeQuestion(item: typeof employeeQuestions.$inferInsert) {
+  return getDb().insert(employeeQuestions).values(item).returning().all()[0];
+}
+
+export async function getEmployeeQuestion(id: number, orgId: number) {
+  const rows = getDb()
+    .select()
+    .from(employeeQuestions)
+    .where(and(eq(employeeQuestions.id, id), eq(employeeQuestions.organizationId, orgId)))
+    .limit(1)
+    .all();
+  return rows[0] || null;
+}
+
+export async function listOpenQuestions(orgId: number, applicationId?: number) {
+  const rows = getDb()
+    .select()
+    .from(employeeQuestions)
+    .where(and(eq(employeeQuestions.organizationId, orgId), isNull(employeeQuestions.answeredAt)))
+    .all();
+  return applicationId ? rows.filter((r) => r.applicationId === applicationId) : rows;
+}
+
+export async function answerEmployeeQuestion(id: number, orgId: number, answer: string, by: string) {
+  getDb()
+    .update(employeeQuestions)
+    .set({ answer, answeredBy: by, answeredAt: new Date() })
+    .where(and(eq(employeeQuestions.id, id), eq(employeeQuestions.organizationId, orgId)))
+    .run();
+  return getEmployeeQuestion(id, orgId);
+}
+
+// ==========================================
+// Registrations and saved portal sign-ins
+// ==========================================
+
+export async function listRegistrations(orgId: number) {
+  return getDb().select().from(registrations).where(eq(registrations.organizationId, orgId)).orderBy(registrations.id).all();
+}
+
+export async function upsertRegistration(orgId: number, kind: RegistrationKind, data: { status?: string; details?: string; expires?: string | null }) {
+  const existing = getDb()
+    .select()
+    .from(registrations)
+    .where(and(eq(registrations.organizationId, orgId), eq(registrations.kind, kind)))
+    .limit(1)
+    .all()[0];
+  if (existing) {
+    getDb().update(registrations).set(data as never).where(eq(registrations.id, existing.id)).run();
+  } else {
+    getDb().insert(registrations).values({ organizationId: orgId, kind, ...(data as object) }).run();
+  }
+  return getDb()
+    .select()
+    .from(registrations)
+    .where(and(eq(registrations.organizationId, orgId), eq(registrations.kind, kind)))
+    .limit(1)
+    .all()[0];
+}
+
+/** Every registration across workspaces (for expiry reminders). */
+export async function listAllRegistrations() {
+  return getDb().select().from(registrations).all();
+}
+
+export async function listPortalLogins(orgId: number) {
+  return getDb().select().from(portalLogins).where(eq(portalLogins.organizationId, orgId)).orderBy(portalLogins.name).all();
+}
+
+export async function savePortalLogin(item: typeof portalLogins.$inferInsert & { id?: number }) {
+  if (item.id) {
+    const { id, ...data } = item;
+    getDb()
+      .update(portalLogins)
+      .set(data)
+      .where(and(eq(portalLogins.id, id), eq(portalLogins.organizationId, item.organizationId)))
+      .run();
+    return getDb().select().from(portalLogins).where(eq(portalLogins.id, id)).all()[0] || null;
+  }
+  return getDb().insert(portalLogins).values(item).returning().all()[0];
+}
+
+export async function deletePortalLogin(id: number, orgId: number) {
+  getDb()
+    .delete(portalLogins)
+    .where(and(eq(portalLogins.id, id), eq(portalLogins.organizationId, orgId)))
     .run();
 }
 
