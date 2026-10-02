@@ -137,6 +137,31 @@ export async function countRecentLoginCodes(email: string, since: Date) {
   return rows.length;
 }
 
+/**
+ * Checks a code in one synchronous transaction, so parallel requests cannot
+ * all read the same attempt count. Every call counts as an attempt; the code
+ * is spent on success or on the last allowed failure.
+ */
+export function consumeLoginCode(email: string, codeHash: string, maxAttempts: number, matches: (a: string, b: string) => boolean) {
+  const sqlite = (getDb(), _sqlite!);
+  const run = sqlite.transaction(() => {
+    const row = sqlite
+      .prepare(
+        "SELECT id, codeHash, attempts FROM login_codes WHERE email = ? AND usedAt IS NULL AND expiresAt > ? ORDER BY id DESC LIMIT 1"
+      )
+      .get(email, Math.floor(Date.now() / 1000)) as { id: number; codeHash: string; attempts: number } | undefined;
+    if (!row || row.attempts >= maxAttempts) return false;
+    const attempts = row.attempts + 1;
+    const ok = matches(row.codeHash, codeHash);
+    const spent = ok || attempts >= maxAttempts;
+    sqlite
+      .prepare("UPDATE login_codes SET attempts = ?, usedAt = ? WHERE id = ?")
+      .run(attempts, spent ? Math.floor(Date.now() / 1000) : null, row.id);
+    return ok;
+  });
+  return run.immediate();
+}
+
 export async function recordLoginCodeAttempt(id: number, attempts: number, used: boolean) {
   getDb()
     .update(loginCodes)

@@ -63,6 +63,13 @@ function publicConnection<T extends { secretsEncrypted: string | null }>(conn: T
   return { ...rest, savedSecrets: secretFields };
 }
 
+/** Loads a work item and checks it is the expected kind in this workspace. */
+async function workItemOf(organizationId: number, id: number, kind: "speaking_opportunity" | "website_plan" | "video_plan") {
+  const item = await db.getWorkItemForOrg(id, organizationId);
+  if (!item || item.kind !== kind) throw new TRPCError({ code: "NOT_FOUND", message: "That item is not in this workspace." });
+  return item;
+}
+
 /** Creates the seven starting employees for a new workspace. */
 async function deployRoster(organizationId: number) {
   for (const r of ROSTER) {
@@ -234,11 +241,8 @@ export const appRouter = router({
         await requireMember(ctx, input.organizationId, "admin");
         let user = await db.getUserByEmail(input.email);
         if (!user) user = await db.createUser({ email: input.email, name: input.name || null });
-        if (user.role === "admin") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "LeadDash staff already have support access and are not added to teams." });
-        }
-        if (await db.getOrganizationMembership(input.organizationId, user.id)) {
-          throw new TRPCError({ code: "CONFLICT", message: "That person is already on this workspace." });
+        if (user.role === "admin" || (await db.getOrganizationMembership(input.organizationId, user.id))) {
+          throw new TRPCError({ code: "CONFLICT", message: "That person cannot be added to this workspace." });
         }
         await db.addOrganizationMember({ organizationId: input.organizationId, userId: user.id, role: input.role });
         await db.logAction({
@@ -254,8 +258,22 @@ export const appRouter = router({
     updateRole: protectedProcedure
       .input(orgInput.extend({ userId: z.number(), role: z.enum(["owner", "admin", "member", "reviewer"]) }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, input.role === "owner" ? "owner" : "admin");
+        const members = await db.listMembers(input.organizationId).catch(() => []);
+        const target = members.find((m) => m.userId === input.userId);
+        // Making or unmaking an owner takes an owner.
+        await requireMember(ctx, input.organizationId, input.role === "owner" || target?.role === "owner" ? "owner" : "admin");
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "That person is not on this workspace." });
+        if (target.role === "owner" && input.role !== "owner" && members.filter((m) => m.role === "owner").length === 1) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "A workspace needs at least one owner." });
+        }
         await db.updateMemberRole(input.organizationId, input.userId, input.role);
+        await db.logAction({
+          organizationId: input.organizationId,
+          actorType: "human_user",
+          actorName: personName(ctx.user),
+          action: "Team role changed",
+          details: `${target.name || target.email} is now ${input.role}.`,
+        });
         return { success: true };
       }),
 
@@ -266,6 +284,7 @@ export const appRouter = router({
         const members = await db.listMembers(input.organizationId);
         const target = members.find((m) => m.userId === input.userId);
         if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "That person is not on this workspace." });
+        if (target.role === "owner") await requireMember(ctx, input.organizationId, "owner");
         if (target.role === "owner" && members.filter((m) => m.role === "owner").length === 1) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "A workspace needs at least one owner." });
         }
@@ -532,8 +551,7 @@ export const appRouter = router({
       .input(orgInput.extend({ id: z.number(), subject: z.string().max(300), body: z.string().max(10_000) }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
-        const item = await db.getWorkItemForOrg(input.id, input.organizationId);
-        if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "That event is not in this workspace." });
+        const item = await workItemOf(input.organizationId, input.id, "speaking_opportunity");
         const data = JSON.parse(item.data || "{}");
         return db.updateWorkItem(input.id, input.organizationId, {
           status: "drafted",
@@ -550,6 +568,7 @@ export const appRouter = router({
       .input(orgInput.extend({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
+        await workItemOf(input.organizationId, input.id, "speaking_opportunity");
         return db.updateWorkItem(input.id, input.organizationId, { status: "dismissed" });
       }),
   }),
@@ -592,6 +611,7 @@ export const appRouter = router({
       .input(orgInput.extend({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
+        await workItemOf(input.organizationId, input.id, "website_plan");
         return db.updateWorkItem(input.id, input.organizationId, { status: "dismissed" });
       }),
   }),
@@ -615,6 +635,7 @@ export const appRouter = router({
       .input(orgInput.extend({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
+        await workItemOf(input.organizationId, input.id, "video_plan");
         return db.updateWorkItem(input.id, input.organizationId, { status: "dismissed" });
       }),
   }),
@@ -754,7 +775,14 @@ export const appRouter = router({
         }
         let secretsEncrypted = existing?.secretsEncrypted ?? null;
         if (Object.keys(newSecrets).length > 0) {
-          const merged = { ...(decryptJson<Record<string, string>>(secretsEncrypted) ?? {}), ...newSecrets };
+          let previous: Record<string, string> = {};
+          try {
+            previous = decryptJson<Record<string, string>>(secretsEncrypted) ?? {};
+          } catch {
+            // SECRETS_KEY changed since these were saved; they cannot be read, so they are replaced.
+            previous = {};
+          }
+          const merged = { ...previous, ...newSecrets };
           secretsEncrypted = encryptJson(merged);
         }
 

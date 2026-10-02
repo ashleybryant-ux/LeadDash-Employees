@@ -55,11 +55,30 @@ describe("access control", () => {
     expect(employees.length).toBe(7);
     const team = await caller(staff).members.list({ organizationId: orgId });
     expect(team.some((m) => m.email === staff.email)).toBe(false);
-    await expect(caller(staff).members.add({ organizationId: orgId, email: staff.email })).rejects.toThrow(/support access/);
+    await expect(caller(staff).members.add({ organizationId: orgId, email: staff.email })).rejects.toThrow(/cannot be added/);
   });
 
   it("only LeadDash staff create workspaces", async () => {
     const someone = await makeUser("someone@example.com");
     await expect(caller(someone).organizations.create({ name: "Mine", slug: "mine", plan: "growth" })).rejects.toThrow(/permission/);
+  });
+});
+
+describe("team role rules", () => {
+  it("an admin cannot demote or remove an owner, and the last owner stays an owner", async () => {
+    const { orgId, owner } = await makeWorkspace("owners");
+    const admin = await makeUser("admin@owners.test", "user", "Admin Person");
+    await db.addOrganizationMember({ organizationId: orgId, userId: admin.id, role: "admin" });
+    await expect(caller(admin).members.updateRole({ organizationId: orgId, userId: owner.id, role: "reviewer" })).rejects.toThrow(/role/);
+    await expect(caller(admin).members.remove({ organizationId: orgId, userId: owner.id })).rejects.toThrow(/role/);
+    await expect(caller(owner).members.updateRole({ organizationId: orgId, userId: owner.id, role: "member" })).rejects.toThrow(/at least one owner/);
+    await expect(caller(owner).members.updateRole({ organizationId: orgId, userId: 99999, role: "member" })).rejects.toThrow(/not on this workspace/);
+  });
+
+  it("dismiss only touches the right kind of item", async () => {
+    const { orgId, owner } = await makeWorkspace("kinds");
+    const plan = await db.createWorkItem({ organizationId: orgId, kind: "website_plan", title: "Home", data: "{}" });
+    await expect(caller(owner).speaking.dismiss({ organizationId: orgId, id: plan.id })).rejects.toThrow(/not in this workspace/);
+    expect((await db.getWorkItemForOrg(plan.id, orgId))?.status).toBe("new");
   });
 });

@@ -71,4 +71,24 @@ describe("email code sign-in", () => {
     for (let i = 0; i < 5; i++) await caller.auth.requestCode({ email: "flood@example.com" });
     await expect(caller.auth.requestCode({ email: "flood@example.com" })).rejects.toThrow(/Too many/);
   });
+
+  it("parallel guesses cannot get around the 5-try limit", async () => {
+    const { owner } = await makeWorkspace("race");
+    await appRouter.createCaller(makeCtx(null)).auth.requestCode({ email: owner.email });
+    const code = codeFrom(sent[0].text);
+    const wrong = Array.from({ length: 50 }, (_, i) => String((Number(code) + i + 1) % 1_000_000).padStart(6, "0"));
+    const results = await Promise.allSettled(
+      [...wrong, code].map((c) => appRouter.createCaller(makeCtx(null)).auth.verifyCode({ email: owner.email, code: c }))
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(0);
+  });
+
+  it("taking someone off ADMIN_EMAILS ends their staff access", async () => {
+    const { owner } = await makeWorkspace("demote");
+    const db = await import("./db");
+    await db.updateUser(owner.id, { role: "admin" }); // as if they had been staff before
+    await appRouter.createCaller(makeCtx(null)).auth.requestCode({ email: owner.email });
+    const user = await appRouter.createCaller(makeCtx(null)).auth.verifyCode({ email: owner.email, code: codeFrom(sent[0].text) });
+    expect(user.role).toBe("user");
+  });
 });

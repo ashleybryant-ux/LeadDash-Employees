@@ -14,12 +14,16 @@ const WINDOW_MINUTES = 15;
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
-/** Who may receive a code: LeadDash staff, or anyone already on a workspace. */
+/** ADMIN_EMAILS is the only source of LeadDash staff access. */
+export function isStaffEmail(email: string) {
+  return ENV.adminEmails.includes(email.toLowerCase());
+}
+
+/** Who may sign in: LeadDash staff, or anyone currently on a workspace. */
 async function canSignIn(email: string) {
-  if (ENV.adminEmails.includes(email)) return true;
+  if (isStaffEmail(email)) return true;
   const user = await db.getUserByEmail(email);
   if (!user) return false;
-  if (user.role === "admin") return true;
   return (await db.countMembershipsForUser(user.id)) > 0;
 }
 
@@ -41,36 +45,33 @@ export async function requestCode(rawEmail: string) {
 
   const code = randomCode();
   await db.createLoginCode(email, sha256(code), new Date(Date.now() + CODE_MINUTES * 60_000));
-  await sendEmail(
+  // Not awaited, so a real account answers as fast as an unknown email.
+  void sendEmail(
     email,
     `Your LeadDash Employees code: ${code}`,
     `Your sign-in code is ${code}\n\nIt works for ${CODE_MINUTES} minutes. If you did not ask for it, you can ignore this email.\n\n${ENV.appUrl}`,
     `<div style="font-family:Arial,sans-serif;font-size:15px;color:#14221c"><p>Your sign-in code is</p><p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p><p>It works for ${CODE_MINUTES} minutes. If you did not ask for it, you can ignore this email.</p></div>`
-  );
+  ).catch((err) => console.error("[auth] sign-in email failed:", err));
   return { sent: true };
 }
 
 export async function verifyCode(rawEmail: string, rawCode: string, req: Request, res: Response) {
   const email = normalizeEmail(rawEmail);
   const code = rawCode.replace(/\D/g, "");
-  const record = await db.getActiveLoginCode(email);
   const fail = () => new TRPCError({ code: "UNAUTHORIZED", message: "That code is not right or has expired." });
-  if (!record || code.length !== 6) throw fail();
+  if (code.length !== 6) throw fail();
+  if (!db.consumeLoginCode(email, sha256(code), MAX_ATTEMPTS, safeEqual)) throw fail();
 
-  const attempts = record.attempts + 1;
-  if (!safeEqual(record.codeHash, sha256(code))) {
-    await db.recordLoginCodeAttempt(record.id, attempts, attempts >= MAX_ATTEMPTS);
-    throw fail();
-  }
-  await db.recordLoginCodeAttempt(record.id, attempts, true);
+  // Re-check: someone removed from every workspace after the code was sent cannot finish.
+  if (!(await canSignIn(email))) throw fail();
 
   let user = await db.getUserByEmail(email);
-  const isStaff = ENV.adminEmails.includes(email);
+  const isStaff = isStaffEmail(email);
   if (!user) {
     if (!isStaff) throw fail();
     user = await db.createUser({ email, role: "admin" });
-  } else if (isStaff && user.role !== "admin") {
-    user = await db.updateUser(user.id, { role: "admin" });
+  } else if (isStaff !== (user.role === "admin")) {
+    user = await db.updateUser(user.id, { role: isStaff ? "admin" : "user" });
   }
   if (!user) throw fail();
   await db.updateUser(user.id, { lastSignedIn: new Date() });

@@ -31,6 +31,23 @@ async function startServer() {
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
 
+  // Sign-in protection: at most 30 sign-in calls per 15 minutes per address, and
+  // no batching of sign-in calls (one request cannot carry many code guesses).
+  const hits = new Map<string, { n: number; reset: number }>();
+  app.use("/api/trpc", (req, res, next) => {
+    const procs = decodeURIComponent(req.path.replace(/^\//, "")).split(",");
+    if (procs.length > 20) return res.status(400).json({ error: "Too many calls in one request" });
+    if (!procs.some((p) => p.startsWith("auth.requestCode") || p.startsWith("auth.verifyCode"))) return next();
+    if (procs.length > 1) return res.status(400).json({ error: "Sign-in calls cannot be batched" });
+    const key = req.ip || "unknown";
+    const now = Date.now();
+    const entry = hits.get(key);
+    if (!entry || entry.reset < now) hits.set(key, { n: 1, reset: now + 15 * 60_000 });
+    else if (++entry.n > 30) return res.status(429).json({ error: "Too many sign-in attempts. Try again in 15 minutes." });
+    if (hits.size > 10_000) hits.forEach((v, k) => v.reset < now && hits.delete(k));
+    next();
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey() });
   });
