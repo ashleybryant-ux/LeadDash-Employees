@@ -7,7 +7,7 @@ import type { Express } from "express";
 
 const COMPANY = "LeadDash Marketing LLC";
 const ADDRESS = "11901 N. MacArthur Blvd, Suite C6, Oklahoma City, OK 73162";
-const SUPPORT = "support@leaddash.io";
+const SUPPORT = "ashleyb@leaddash.io";
 const EFFECTIVE = "October 2, 2026";
 
 const CSS = `
