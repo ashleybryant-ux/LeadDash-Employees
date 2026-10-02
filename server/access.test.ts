@@ -36,7 +36,7 @@ describe("access control", () => {
   it("starts every new workspace with every employee on the roster", async () => {
     const { orgId, owner } = await makeWorkspace("roster");
     const employees = await caller(owner).employees.list({ organizationId: orgId });
-    expect(employees.map((e) => e.kind).sort()).toEqual(["blog", "grants", "hiring", "inbox", "social", "speaking", "video", "website"]);
+    expect(employees.map((e) => e.kind).sort()).toEqual(["blog", "grants", "hiring", "inbox", "leads", "outreach", "prospecting", "social", "speaking", "video", "website"]);
     expect(employees.find((e) => e.kind === "video")?.name).toBe("Elena");
   });
 
@@ -53,7 +53,7 @@ describe("access control", () => {
   it("gives LeadDash staff support access without putting them on the team", async () => {
     const { orgId, staff } = await makeWorkspace("support");
     const employees = await caller(staff).employees.list({ organizationId: orgId });
-    expect(employees.length).toBe(8);
+    expect(employees.length).toBe(11);
     const team = await caller(staff).members.list({ organizationId: orgId });
     expect(team.some((m) => m.email === staff.email)).toBe(false);
     await expect(caller(staff).members.add({ organizationId: orgId, email: staff.email })).rejects.toThrow(/cannot be added/);

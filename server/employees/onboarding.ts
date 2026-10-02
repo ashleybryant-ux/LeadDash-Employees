@@ -73,6 +73,20 @@ export const QUESTIONS: Record<EmployeeKind, Question[]> = {
     { key: "panel", label: "Who else interviews", type: "text", placeholder: "Name and title" },
     { key: "greatFit", label: "What makes someone a great fit at your practice?", type: "text", placeholder: "Warm with families, organized with notes, open to feedback" },
   ],
+  prospecting: [
+    { key: "often", label: "How often should Riley look?", type: "choice", options: OFTEN },
+    { key: "size", label: "Smallest fit", type: "choice", options: ["Solo practices", "2 or more clinicians", "5 or more clinicians", "10 or more clinicians"] },
+    { key: "ideal", label: "What makes a great fit?", type: "text", placeholder: "Group practices that take insurance and book by phone" },
+  ],
+  outreach: [
+    { key: "tone", label: "Tone", type: "choice", options: ["Warm and personal", "Brief and direct", "Formal"] },
+    { key: "offer", label: "What to offer", type: "choice", options: ["A 20-minute demo", "A free consultation", "A short call"] },
+    { key: "proof", label: "Something true to mention", type: "text", placeholder: "Practices book intakes online and paperwork is done before the first session" },
+  ],
+  leads: [
+    { key: "tone", label: "Reply tone", type: "choice", options: ["Warm", "Brief and direct", "Formal"] },
+    { key: "never", label: "Never promise", type: "text", placeholder: "Prices not on the website, dates I have not confirmed" },
+  ],
   custom: [
     { key: "goal", label: "What should this employee do for you?", type: "text", placeholder: "One or two sentences" },
     { key: "often", label: "How often?", type: "choice", options: ["Every day", "Weekly", "Only when I ask"] },
@@ -110,6 +124,12 @@ export const TEMPLATES: Record<EmployeeKind, Template[]> = {
     { label: "Find people", title: "Find people and draft outreach", instructions: "Find licensed clinicians for my open roles and draft outreach for the best 5.", repeat: "weekly", time: "08:00", weekday: 2 },
     { label: "Check expirations", title: "Check team licenses and hours", instructions: "Send me a report: team licenses, certifications and supervision hours due in the next 90 days.", repeat: "weekly", time: "07:30", weekday: 1 },
   ],
+  prospecting: [
+    REPORT("new prospects, how many scored 70 or higher, and who moved to outreach."),
+    { label: "Find prospects", title: "Find new prospects", instructions: "Find new prospects that fit and pass the good ones to Jada.", repeat: "weekly", time: "08:00", weekday: 1 },
+  ],
+  outreach: [REPORT("sequences sending, replies, and demos booked from outreach this week.")],
+  leads: [REPORT("new leads, who I replied to, and meetings booked this week.")],
   custom: [REPORT("what you did and what is waiting on me.")],
 };
 
@@ -191,7 +211,7 @@ export async function writeDayToDay(emp: AIEmployee) {
 // Reports ("Every day at 9:00, send me a report")
 // ==========================================
 
-async function factsFor(emp: AIEmployee) {
+export async function factsFor(emp: AIEmployee) {
   const org = emp.organizationId;
   const since = new Date(Date.now() - 7 * 86400_000);
   const logs = (await db.listAuditLogsByOrg(org, 200)).filter((l) => l.actorName.startsWith(emp.name) && l.createdAt > since);
@@ -209,6 +229,33 @@ async function factsFor(emp: AIEmployee) {
       `Applications: ${by(["writing"]).length} being written, ${by(["ready", "needs_answer", "needs_setup"]).length} waiting on the owner, ${by(["approved"]).length} approved to send, ${by(["submitted"]).length} submitted, ${by(["awarded"]).length} won`,
       `Open opportunities not started: ${opps.filter((o) => o.status === "new" && o.employeeId === emp.id && o.fitCall !== "skip").length}`,
       `Deadlines: ${opps.filter((o) => o.employeeId === emp.id && o.deadline && o.status !== "dismissed").slice(0, 8).map((o) => `${o.title} (${o.deadline})`).join("; ") || "none listed"}`
+    );
+  }
+  const fmt = (d: Date | number | string | null | undefined) => (d ? new Date(d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : "");
+  if (emp.kind === "social" || emp.kind === "blog") {
+    const items = (await db.listOutboundItemsByOrg(org, emp.kind === "social" ? "social_post" : "blog_post")).filter((i) => i.status !== "cancelled");
+    lines.push(
+      `Published: ${items.filter((i) => i.status === "published").slice(0, 10).map((i) => `${i.title} (${fmt(i.publishedAt)})`).join("; ") || "none"}`,
+      `Scheduled: ${items.filter((i) => i.status === "scheduled").slice(0, 10).map((i) => `${i.title} (${fmt(i.scheduledFor)})`).join("; ") || "none"}`,
+      `Drafts: ${items.filter((i) => ["pending_approval", "approved", "changes_requested"].includes(i.status) && !i.publishedAt).slice(0, 10).map((i) => i.title).join("; ") || "none"}`
+    );
+  }
+  if (emp.kind === "prospecting" || emp.kind === "outreach") {
+    const ps = await db.listProspects(org);
+    const count = (st: string) => ps.filter((p) => p.stage === st).length;
+    lines.push(`Prospects: ${count("new")} new, ${count("outreach")} in outreach, ${count("replied")} replied, ${count("booked")} booked, ${count("not_fit")} not a fit`);
+    if (emp.kind === "outreach") {
+      const mails = (await db.listOutboundItemsByOrg(org, "outreach_email")).filter((i) => i.status !== "cancelled");
+      lines.push(`Outreach emails: ${mails.filter((m) => m.status === "published").length} sent, ${mails.filter((m) => m.status === "scheduled").length} scheduled, ${mails.filter((m) => m.status === "pending_approval").length} waiting for approval`);
+    }
+  }
+  if (emp.kind === "leads") {
+    const leads = await db.listLeads(org);
+    const weekEnd = new Date(Date.now() + 7 * 86400_000);
+    const booked = leads.filter((l) => l.bookedFor && new Date(l.bookedFor) > new Date() && new Date(l.bookedFor) < weekEnd);
+    lines.push(
+      `Leads: ${leads.filter((l) => l.status === "new").length} new, ${leads.filter((l) => l.status === "replied").length} replied, ${leads.filter((l) => l.status === "booked").length} booked, ${leads.filter((l) => l.status === "closed").length} closed`,
+      `Meetings booked in the next 7 days: ${booked.map((l) => `${l.company || l.name} (${fmt(l.bookedFor)}, came from ${l.source})`).join("; ") || "none"}`
     );
   }
   if (emp.kind === "hiring") {

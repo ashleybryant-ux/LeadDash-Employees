@@ -98,6 +98,8 @@ export const organizations = sqliteTable("organizations", {
   /** Who signs applications, e.g. "Ashley R. Bryant" and "CEO". */
   signerName: text("signerName"),
   signerTitle: text("signerTitle"),
+  /** JSON sales settings: what the workspace sells, who Riley looks for, lead form token, meeting hours. */
+  sales: text("sales"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -134,6 +136,9 @@ export const EMPLOYEE_KINDS = [
   "website",
   "video",
   "hiring",
+  "prospecting",
+  "outreach",
+  "leads",
   "custom",
 ] as const;
 export type EmployeeKind = (typeof EMPLOYEE_KINDS)[number];
@@ -163,6 +168,8 @@ export const aiEmployees = sqliteTable(
     onboarding: text("onboarding"),
     /** JSON [{when, what}]: "A day with" this employee, written from the answers. */
     dayToDay: text("dayToDay"),
+    /** JSON {rules: {ruleKey: "ask"|"first5"|"auto"}, approved: {ruleKey: count}}: what it does on its own. */
+    autonomy: text("autonomy"),
     onboardedAt: integer("onboardedAt", { mode: "timestamp" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -401,7 +408,7 @@ export const externalConnections = sqliteTable(
 export type ExternalConnection = typeof externalConnections.$inferSelect;
 export type InsertExternalConnection = typeof externalConnections.$inferInsert;
 
-export const OUTBOUND_KINDS = ["email_draft", "calendar_hold", "social_post", "blog_post", "speaking_pitch", "hiring_email"] as const;
+export const OUTBOUND_KINDS = ["email_draft", "calendar_hold", "social_post", "blog_post", "speaking_pitch", "hiring_email", "outreach_email", "lead_reply"] as const;
 export type OutboundKind = (typeof OUTBOUND_KINDS)[number];
 
 export const outboundItems = sqliteTable(
@@ -456,7 +463,8 @@ export const chatMessages = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
     employeeId: integer("employeeId").notNull(),
-    role: text("role", { enum: ["user", "employee"] }).notNull(),
+    /** "handoff" lines show another employee passing work to this one. */
+    role: text("role", { enum: ["user", "employee", "handoff"] }).notNull(),
     /** The person's real name, the employee's name, or "Scheduled task". */
     authorName: text("authorName").notNull(),
     userId: integer("userId"),
@@ -886,3 +894,91 @@ export const reviewAccess = sqliteTable("review_access", {
 });
 
 export type ReviewAccess = typeof reviewAccess.$inferSelect;
+
+// ==========================================
+// Sales: Riley (prospects), Jada (outreach), Malik (new leads)
+// ==========================================
+
+export const PROSPECT_STAGES = ["new", "outreach", "replied", "booked", "not_fit"] as const;
+
+export const salesProspects = sqliteTable(
+  "sales_prospects",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    /** "practice" when the workspace sells to practices, "referral" for a practice's referral partners. */
+    kind: text("kind", { enum: ["practice", "referral"] }).notNull().default("practice"),
+    stage: text("stage", { enum: PROSPECT_STAGES }).notNull().default("new"),
+    name: text("name").notNull(),
+    city: text("city"),
+    contactName: text("contactName"),
+    contactTitle: text("contactTitle"),
+    email: text("email"),
+    phone: text("phone"),
+    website: text("website"),
+    /** Where it was found, e.g. "hillcountrycounseling.com/team · Texas LPC lookup". */
+    foundOn: text("foundOn"),
+    sourceUrl: text("sourceUrl"),
+    fitScore: integer("fitScore").notNull().default(0),
+    fitReason: text("fitReason"),
+    /** JSON extra facts: {size, partnerType}. */
+    details: text("details"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("sales_prospects_org_idx").on(t.organizationId)]
+);
+
+export type SalesProspect = typeof salesProspects.$inferSelect;
+export type InsertSalesProspect = typeof salesProspects.$inferInsert;
+
+export const LEAD_STATUSES = ["new", "replied", "booked", "closed"] as const;
+
+export const salesLeads = sqliteTable(
+  "sales_leads",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    status: text("status", { enum: LEAD_STATUSES }).notNull().default("new"),
+    name: text("name").notNull(),
+    email: text("email"),
+    phone: text("phone"),
+    company: text("company"),
+    message: text("message"),
+    /** "Website form", "LeadDash platform form", "Booking page", "Reply to outreach". */
+    source: text("source").notNull(),
+    prospectId: integer("prospectId"),
+    repliedAt: integer("repliedAt", { mode: "timestamp" }),
+    bookedFor: integer("bookedFor", { mode: "timestamp" }),
+    /** JSON {replyItemId, eventUrl, offered: [iso]}. */
+    meta: text("meta"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("sales_leads_org_idx").on(t.organizationId)]
+);
+
+export type SalesLead = typeof salesLeads.$inferSelect;
+export type InsertSalesLead = typeof salesLeads.$inferInsert;
+
+// ==========================================
+// Activity: handoffs and finished work across employees
+// ==========================================
+
+export const teamActivity = sqliteTable(
+  "team_activity",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId"),
+    kind: text("kind", { enum: ["handoff", "sent", "done"] }).notNull(),
+    text: text("text").notNull(),
+    toEmployeeId: integer("toEmployeeId"),
+    /** Where Open goes, e.g. "/chats/outreach/work". */
+    link: text("link"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("team_activity_org_idx").on(t.organizationId)]
+);
+
+export type TeamActivity = typeof teamActivity.$inferSelect;

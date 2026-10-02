@@ -5,6 +5,7 @@ import type { EmployeeRow } from "./ChatPage";
 import { ErrorLine } from "./ui";
 import { fmtDate } from "./meta";
 import type { Outputs } from "./types";
+import { LeadSetupCard, SellsCard, WorksOnOwnCard } from "./sales/OnboardingCards";
 
 type Data = Outputs["onboarding"]["get"];
 type Question = Data["questions"][number];
@@ -75,6 +76,9 @@ export default function Onboarding({ emp }: { emp: EmployeeRow }) {
           <div style={{ width: `${pct}%`, height: "100%", background: "#1b6b4a" }} />
         </div>
       </div>
+      {emp.kind === "prospecting" && <SellsCard />}
+      {emp.kind === "leads" && <LeadSetupCard emp={emp} rule={d.rules.find((r) => r.key === "reply")} />}
+      <WorksOnOwnCard emp={emp} rules={emp.kind === "leads" ? d.rules.filter((r) => r.key !== "reply") : d.rules} alwaysAsks={d.alwaysAsks} firstN={d.firstN} />
       <AnswersCard emp={emp} questions={d.questions} answers={d.answers as Answers} startOpen={d.progress.answered === 0} />
       <DayCard emp={emp} items={d.dayToDay} />
       <AssignmentsCard emp={emp} list={d.assignments} templates={d.templates} />

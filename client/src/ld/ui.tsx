@@ -21,7 +21,15 @@ export function useApprovalCount() {
   const { currentOrgId } = useTenant();
   const q = trpc.publishing.listApprovalQueue.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const apps = trpc.applications.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 60_000 });
-  return (q.data ?? []).filter((i) => i.status === "pending_approval").length + (apps.data ?? []).filter((a) => a.status === "ready").length;
+  const followStep = (i: { kind: string; metadata: string | null }) => {
+    if (i.kind !== "outreach_email") return false;
+    try {
+      return ((JSON.parse(i.metadata || "{}") as { step?: number }).step ?? 1) > 1;
+    } catch {
+      return false;
+    }
+  };
+  return (q.data ?? []).filter((i) => i.status === "pending_approval" && !followStep(i)).length + (apps.data ?? []).filter((a) => a.status === "ready").length;
 }
 
 // ==========================================
@@ -95,6 +103,7 @@ const I = (d: React.ReactNode) => (
 );
 export const Icons = {
   chats: I(<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />),
+  activity: I(<path d="M3 12h4l3-8 4 16 3-8h4" />),
   approvals: I(<><path d="M9 11l3 3 8-8" /><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" /></>),
   tasks: I(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>),
   brain: I(<><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1z" /><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" /></>),
@@ -118,7 +127,7 @@ export const Icons = {
 // Rail
 // ==========================================
 
-type RailKey = "chats" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
+type RailKey = "chats" | "activity" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
 
 export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
@@ -172,6 +181,7 @@ export function Rail({ active }: { active: RailKey }) {
         LD
       </button>
       {item("chats", "Chats", "/chats", Icons.chats)}
+      {item("activity", "Activity", "/activity", Icons.activity)}
       {item("approvals", "Approvals", "/approvals", Icons.approvals, count)}
       {item("tasks", "Tasks", "/tasks", Icons.tasks)}
       {item("brain", "Brain", "/brain", Icons.brain)}
@@ -472,7 +482,7 @@ const MoreIcon = I(<><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r=
 
 export function BottomNav({ active }: { active: RailKey }) {
   const count = useApprovalCount();
-  const on = (k: RailKey) => (k === "more" ? ["brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
+  const on = (k: RailKey) => (k === "more" ? ["activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
   const item = (key: RailKey, label: string, href: string, icon: React.ReactNode, badge?: number) => (
     <Link key={key} href={href} className={`ld-bn-item ${on(key) ? "on" : ""}`} aria-current={on(key) ? "page" : undefined}>
       <span style={{ position: "relative", display: "flex" }}>

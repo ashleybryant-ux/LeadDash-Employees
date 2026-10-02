@@ -1,10 +1,13 @@
 /** Display facts about each employee job, shared by every screen. */
 
-export type Kind = "grants" | "speaking" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "custom";
+export type Kind = "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "custom";
 
-export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Revenue" | "Marketing" | "Operations" | "Other" }> = {
+export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Revenue" | "Sales" | "Marketing" | "Operations" | "Other" }> = {
   grants: { color: "#1b6b4a", work: "Opportunities", group: "Revenue" },
   speaking: { color: "#9a4d14", work: "Opportunities", group: "Revenue" },
+  prospecting: { color: "#4b3f8f", work: "Prospects", group: "Sales" },
+  outreach: { color: "#a1432a", work: "Outreach", group: "Sales" },
+  leads: { color: "#1f6f5c", work: "Leads", group: "Sales" },
   social: { color: "#7a3b6e", work: "Posts", group: "Marketing" },
   blog: { color: "#2f5d8a", work: "Articles", group: "Marketing" },
   website: { color: "#4a5a1e", work: "Pages", group: "Marketing" },
@@ -14,8 +17,8 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
   custom: { color: "#3d4c45", work: null, group: "Other" },
 };
 
-export const KIND_ORDER: Kind[] = ["grants", "speaking", "social", "blog", "website", "video", "inbox", "hiring", "custom"];
-export const GROUP_ORDER = ["Revenue", "Marketing", "Operations", "Other"] as const;
+export const KIND_ORDER: Kind[] = ["grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring", "custom"];
+export const GROUP_ORDER = ["Revenue", "Sales", "Marketing", "Operations", "Other"] as const;
 
 /** Portraits live in client/public/avatars/<kind>.webp (256 px, from the Manus originals). */
 export const AVATAR_FILES: Partial<Record<Kind, string>> = {
@@ -34,6 +37,9 @@ export const AVATAR_FILES: Partial<Record<Kind, string>> = {
 export const SUGGESTIONS: Record<Kind, string[]> = {
   grants: ["Find grants for this quarter", "Find pitch competitions", "Apply to the best fit", "Check application status"],
   speaking: ["Find speaking events for the spring", "Find paid speaking events", "Apply to the best fit", "Check application status"],
+  prospecting: ["Find practices in a state", "Find practices hiring", "Find referral partners", "What did you find this week?"],
+  outreach: ["Start outreach for new prospects", "Who replied this week?", "Ask Malik about demos"],
+  leads: ["How many meetings this week?", "Any new leads?", "Ask Jada who replied"],
   social: ["Write a post for this week", "Schedule my drafts", "Plan next month"],
   blog: ["Write an article about intake mistakes", "Suggest five article topics", "Write a how-to article"],
   website: ["Plan a couples counseling page", "Plan a new home page", "Plan a careers page"],
@@ -52,6 +58,9 @@ export const GUIDELINE_LABELS: Record<Kind, { focus: string; avoid: string; sign
   video: { focus: "Formats", avoid: "Avoid", signAs: "On-camera name" },
   inbox: { focus: "How to reply", avoid: "Never", signAs: "Sign replies as" },
   hiring: { focus: "Roles to fill", avoid: "Never", signAs: "Sign messages as" },
+  prospecting: { focus: "Look for", avoid: "Skip", signAs: "Ideal fit" },
+  outreach: { focus: "What to lead with", avoid: "Never say", signAs: "Sign emails as" },
+  leads: { focus: "How to reply", avoid: "Never promise", signAs: "Sign replies as" },
   custom: { focus: "Focus on", avoid: "Avoid", signAs: "Sign as" },
 };
 
@@ -91,6 +100,21 @@ export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
     "Quinn never logs into LinkedIn. You send LinkedIn messages from your own account.",
     "Every message to a candidate waits for your approval.",
     "Prospects nobody acted on are deleted after 90 days.",
+  ],
+  prospecting: [
+    "Every prospect comes with the page it was found on.",
+    "Contact details only when the business printed them on its own site.",
+    "No home addresses, personal phones or personal accounts.",
+  ],
+  outreach: [
+    "Emails send from your Gmail, never from a shared address.",
+    "A sequence stops the moment they book or reply.",
+    "Three emails at most, then it stops for good.",
+  ],
+  leads: [
+    "Replies only offer times that are open on your calendar.",
+    "For a practice, client inquiries always wait for your approval and never ask about symptoms.",
+    "No prices or promises the Brain does not state.",
   ],
   custom: ["Nothing is sent without your approval."],
 };

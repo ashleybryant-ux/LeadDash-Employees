@@ -9,7 +9,7 @@ export type RosterEntry = {
   kind: Exclude<EmployeeKind, "custom">;
   name: string;
   roleTitle: string;
-  department: "Revenue" | "Marketing" | "Operations";
+  department: "Revenue" | "Sales" | "Marketing" | "Operations";
   description: string;
   capabilities: string[];
   /** Searches the web for this job. */
@@ -38,6 +38,36 @@ export const ROSTER: RosterEntry[] = [
     capabilities: ["Event search with sources", "Proposal deadlines", "Pitch emails"],
     searches: true,
     minutesPerTask: 45,
+  },
+  {
+    kind: "prospecting",
+    name: "Riley",
+    roleTitle: "Prospecting",
+    department: "Sales",
+    description: "Finds businesses that fit what the workspace sells (or referral partners for a practice), researches each one and scores the fit.",
+    capabilities: ["Prospect search with sources", "Fit scores with reasons", "Contact found on their own site", "Passes good fits to Jada"],
+    searches: true,
+    minutesPerTask: 40,
+  },
+  {
+    kind: "outreach",
+    name: "Jada",
+    roleTitle: "Outreach",
+    department: "Sales",
+    description: "Writes a short email sequence for each prospect and sends it from your Gmail, stopping when they book or reply.",
+    capabilities: ["3-email sequences", "Personal first lines from Riley's research", "Stops on reply or booking", "Passes replies to Malik"],
+    searches: false,
+    minutesPerTask: 20,
+  },
+  {
+    kind: "leads",
+    name: "Malik",
+    roleTitle: "New leads",
+    department: "Sales",
+    description: "Answers new leads within minutes and books the meeting on your calendar.",
+    capabilities: ["Lead form and LeadDash platform intake", "Replies with open times", "Booking page", "Books on Google Calendar"],
+    searches: false,
+    minutesPerTask: 15,
   },
   {
     kind: "social",
@@ -128,6 +158,9 @@ export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: 
   video: { focus: "Formats", avoid: "Avoid", signAs: "On-camera name" },
   inbox: { focus: "How to reply", avoid: "Never", signAs: "Sign replies as" },
   hiring: { focus: "Roles to fill", avoid: "Never", signAs: "Sign messages as" },
+  prospecting: { focus: "Look for", avoid: "Skip", signAs: "Ideal fit" },
+  outreach: { focus: "What to lead with", avoid: "Never say", signAs: "Sign emails as" },
+  leads: { focus: "How to reply", avoid: "Never promise", signAs: "Sign replies as" },
 };
 
 export type Guidelines = { focus: string; avoid: string; signAs: string };

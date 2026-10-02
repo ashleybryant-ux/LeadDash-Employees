@@ -408,11 +408,17 @@ export async function writeSocialPost(
     if (wantsThreads && out.threadsVersion?.trim()) variants.threads = { text: out.threadsVersion.trim() };
     const different = Object.keys(variants).length > 0;
 
+    // When Sienna posts on her own, the post goes on the calendar at the next good time.
+    const { gate } = await import("./team");
+    const auto = gate(emp, "posts") === "auto" && (!input.targetPlatforms.includes("instagram") || !!imageUrl);
+    const at = auto ? (await (await import("../social")).planTimes(organizationId, input.targetPlatforms[0] as never, 1))[0] ?? null : null;
     const created = await db.createOutboundItem({
       organizationId,
       employeeId: emp.id,
       kind: "social_post",
-      status: "pending_approval",
+      status: auto && at ? "scheduled" : "pending_approval",
+      scheduledFor: auto ? at : null,
+      ...(auto && at ? { approvedBy: `${emp.name} (on her own)`, approvedAt: new Date() } : {}),
       title: out.headline || input.topic,
       body: out.caption,
       targetChannels: JSON.stringify(input.targetPlatforms),
@@ -424,6 +430,7 @@ export async function writeSocialPost(
         topic: input.topic,
         headline: out.headline,
         imageError,
+        rule: "posts",
         post: { type: "post", mode: different ? "different" : "same", variants, imageMeta },
       }),
     });
@@ -436,6 +443,77 @@ export async function writeSocialPost(
     });
     return created;
   });
+}
+
+/**
+ * Theo passed Sienna an approved article: she writes 3 posts from it and puts
+ * them on the calendar (as drafts, or scheduled when she posts on her own).
+ */
+export async function postsFromArticle(organizationId: number, articleId: number) {
+  const article = await db.getOutboundItemForOrg(articleId, organizationId);
+  if (!article || article.kind !== "blog_post") return [];
+  const sienna = await employeeFor(organizationId, "social");
+  const { handoff, gate, logActivity } = await import("./team");
+  const theo = article.employeeId ? await db.getEmployeeForOrg(article.employeeId, organizationId) : null;
+  await handoff(organizationId, "blog", "social", `${theo?.name ?? "Theo"} passed you his new article, ${article.title}.`);
+  const answers = (() => {
+    try {
+      return JSON.parse(sienna.onboarding || "{}");
+    } catch {
+      return {};
+    }
+  })();
+  const fromAnswers = (Array.isArray(answers.platforms) ? answers.platforms : []).map((x: string) => x.toLowerCase()).filter((x: string) => ["facebook", "instagram", "linkedin", "x", "threads"].includes(x));
+  let channels: string[] = fromAnswers.length ? fromAnswers : ["facebook", "instagram", "linkedin"];
+  if (!article.imageUrl) channels = channels.filter((c) => c !== "instagram");
+  if (!channels.length) channels = ["facebook"];
+  const posts = await working(sienna, async () => {
+    const { system } = await systemPromptFor(
+      sienna,
+      `Your job: turn one article into 3 different social posts for the coming weeks.
+- Each post takes a different angle from the article (a tip, a question readers ask, a myth it corrects).
+- Opening line that earns the next line. Short paragraphs. A clear call to action. Up to 3 hashtags.
+- Under 1,300 characters each. The headline is 3 to 8 words.`
+    );
+    const out = await generateJson<{ posts: { headline: string; caption: string }[] }>({
+      system,
+      prompt: `Article title: ${article.title}\n\nArticle:\n${(article.body ?? "").slice(0, 12_000)}`,
+      schemaName: "posts_from_article",
+      schema: obj({ posts: arr(obj({ headline: str, caption: str })) }),
+      maxTokens: 3000,
+    });
+    return (out.posts ?? []).filter((p) => p.caption?.trim()).slice(0, 3);
+  });
+  const social = await import("../social");
+  const times = await social.planTimes(organizationId, channels[0] as never, posts.length);
+  const auto = gate(sienna, "posts") === "auto";
+  const created = [];
+  for (let i = 0; i < posts.length; i++) {
+    const p = posts[i];
+    created.push(
+      await db.createOutboundItem({
+        organizationId,
+        employeeId: sienna.id,
+        kind: "social_post",
+        status: auto ? "scheduled" : "pending_approval",
+        title: p.headline || article.title,
+        body: p.caption,
+        targetChannels: JSON.stringify(channels),
+        imageUrl: article.imageUrl,
+        scheduledFor: times[i] ?? null,
+        ...(auto ? { approvedBy: `${sienna.name} (on her own)`, approvedAt: new Date() } : {}),
+        metadata: JSON.stringify({ platforms: channels, headline: p.headline, fromArticle: article.id, rule: "posts", post: { type: "post", mode: "same", variants: {} } }),
+      })
+    );
+  }
+  if (created.length) {
+    const tz = (await db.getOrganizationById(organizationId))?.timezone || "America/Chicago";
+    const dates = times.slice(0, created.length).map((t) => t.toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric" }));
+    const text = `I wrote ${created.length} posts from ${theo?.name ?? "Theo"}'s article and put them on the calendar${dates.length ? ` for ${dates.join(", ")}` : ""}${auto ? "." : ". They post once you approve them."}`;
+    await db.createChatMessage({ organizationId, employeeId: sienna.id, role: "employee", authorName: sienna.name, content: text });
+    await logActivity(sienna, "done", `Wrote ${created.length} posts from ${theo?.name ?? "Theo"}'s article and put them on the calendar.`, "/chats/social/work");
+  }
+  return created;
 }
 
 const CHANNEL_NAMES: Record<string, string> = { facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", x: "X", threads: "Threads", tiktok: "TikTok", google_business: "Google Business Profile" };

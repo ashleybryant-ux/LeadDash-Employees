@@ -148,6 +148,13 @@ export function nextSlots(pattern: Pattern, tz: string, after: Date, count: numb
   return out;
 }
 
+/** The next `count` good times for an account, skipping days already planned. */
+export async function planTimes(orgId: number, channel: SocialChannel, count: number) {
+  const tz = await tzOf(orgId);
+  const best = await bestPattern(orgId, channel, "post");
+  return nextSlots(best.pattern, tz, new Date(), count, await takenDays(orgId, channel, tz));
+}
+
 /** Suggest time: the next good day and time for these accounts. */
 export async function suggestTime(orgId: number, channels: SocialChannel[], type: "post" | "reel", itemId?: number) {
   const tz = await tzOf(orgId);
@@ -380,6 +387,9 @@ export async function applyPlan(orgId: number, rows: { itemId: number; at: strin
 
 const posting = new Set<number>();
 
+/** Called after anything goes out (or fails), so other work can follow up (Malik marks a lead replied...). */
+export const afterSent: ((item: OutboundItem, status: OutboundItem["status"]) => Promise<void>)[] = [];
+
 async function dispatchAndRecord(item: OutboundItem, actorName: string, actorType: "human_user" | "system", action: string, notes?: string) {
   posting.add(item.id);
   try {
@@ -393,6 +403,7 @@ async function dispatchAndRecord(item: OutboundItem, actorName: string, actorTyp
       metadata: JSON.stringify({ ...meta, dispatch: results }),
       ...(status === "published" ? { publishedAt: new Date(), externalReference: results.find((r) => r.url)?.url ?? null } : {}),
     });
+    for (const fn of afterSent) await fn(updated ?? item, status).catch((err) => console.warn("[dispatch] follow-up failed:", err instanceof Error ? err.message : err));
     const ok = results.filter((r) => r.ok).map((r) => integrations.channelLabel(r.channel));
     const failed = results.filter((r) => !r.ok).map((r) => `${integrations.channelLabel(r.channel)} (${r.error})`);
     await db.logAction({
@@ -437,7 +448,7 @@ export async function postDue(now = new Date()) {
     const meta = itemMeta(item);
     const marked = await db.updateOutboundItem(item.id, item.organizationId, { status: "approved", metadata: JSON.stringify({ ...meta, postingSince: new Date().toISOString() }) });
     posting.add(item.id);
-    void dispatchAndRecord(marked!, "Scheduled post", "system", "Posted on schedule").catch((err) => {
+    void dispatchAndRecord(marked!, item.kind === "social_post" ? "Scheduled post" : "Scheduled email", "system", item.kind === "social_post" ? "Posted on schedule" : "Sent on schedule").catch((err) => {
       posting.delete(item.id);
       console.error("[social] scheduled post failed:", err);
     });

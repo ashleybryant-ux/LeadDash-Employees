@@ -14,6 +14,9 @@ import Articles from "./work/Articles";
 import Pages from "./work/Pages";
 import Videos from "./work/Videos";
 import HiringWork from "./hiring/HiringWork";
+import Prospects from "./work/Prospects";
+import Outreach from "./work/Outreach";
+import Leads from "./work/Leads";
 import Onboarding from "./Onboarding";
 import type { Outputs } from "./types";
 
@@ -28,6 +31,9 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   website: Pages,
   video: Videos,
   hiring: HiringWork,
+  prospecting: Prospects,
+  outreach: Outreach,
+  leads: Leads,
 };
 
 /** /chats, /chats/:kind, /chats/:kind/work, /chats/:kind/guidelines, /chats/e/:id[...] */
@@ -77,7 +83,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales";
   id: number;
   title: string;
   subtitle?: string;
@@ -143,6 +149,18 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
           lastDay = day;
           const cards = parseJson<Card[]>(m.cards, []);
           const queries = parseJson<string[]>(m.searchQueries, []);
+          if (m.role === "handoff") {
+            return (
+              <React.Fragment key={m.id}>
+                {sep && <DaySep date={day} />}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#3d4c45", background: "#eef3f0", borderRadius: 10, padding: "8px 12px" }}>
+                  <span style={{ fontWeight: 800, color: "#155c3e" }}>Handoff</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>{m.content}</span>
+                  <span style={{ fontSize: 12, color: "#5b6b64", whiteSpace: "nowrap" }}>{fmtTime(m.createdAt)}</span>
+                </div>
+              </React.Fragment>
+            );
+          }
           return (
             <React.Fragment key={m.id}>
               {sep && <DaySep date={day} />}
@@ -342,7 +360,9 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
       utils.publishing.listApprovalQueue.invalidate();
     },
   });
-  const err = start.error || skip.error || submit.error || answer.error || move.error;
+  const outreach = trpc.sales.startOutreach.useMutation({ onSuccess: () => { setDone("Passed to Jada"); utils.sales.invalidate(); } });
+  const notFit = trpc.sales.notFit.useMutation({ onSuccess: () => { setDone("Not a fit"); utils.sales.invalidate(); } });
+  const err = start.error || skip.error || submit.error || answer.error || move.error || outreach.error || notFit.error;
 
   if (card.type === "schedule_plan" && card.plan) return <PlanCard card={card} emp={emp} />;
 
@@ -412,6 +432,17 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
         </>
       ) : (
         <Link href={`${base}/work?tab=candidates`} className="ld-btn">Open</Link>
+      );
+  } else if (card.type === "prospect_sales") {
+    pill = <span className={`ld-pill ${(card.score ?? 0) >= 70 ? "green" : "gray"}`}>{`Fit · ${card.score ?? 0}`}</span>;
+    actions =
+      card.status === "new" ? (
+        <>
+          <button type="button" className="ld-btn p" disabled={outreach.isPending} onClick={() => outreach.mutate({ organizationId: currentOrgId, ids: [card.id] })}>Start outreach</button>
+          <button type="button" className="ld-btn" disabled={notFit.isPending} onClick={() => notFit.mutate({ organizationId: currentOrgId, id: card.id })}>Not a fit</button>
+        </>
+      ) : (
+        <Link href={`${base}/work`} className="ld-btn">Open</Link>
       );
   } else if (card.type === "post" || card.type === "article" || card.type === "reply") actions = <Link href="/approvals" className="ld-btn p">Review</Link>;
   else if (card.type === "page" || card.type === "video") actions = <Link href={`${base}/work`} className="ld-btn">Open plan</Link>;

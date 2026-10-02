@@ -35,6 +35,9 @@ import {
   hrPeople,
   hrTeamItems,
   reviewAccess,
+  salesProspects,
+  salesLeads,
+  teamActivity,
   type ReviewAccess,
   type HrStage,
   type InsertOpportunity,
@@ -1236,4 +1239,67 @@ export function saveReviewAccess(data: Partial<typeof reviewAccess.$inferInsert>
     getDb().insert(reviewAccess).values({ ...data, id: 1 }).run();
   }
   return getReviewAccess()!;
+}
+
+// ==========================================
+// Sales: prospects and leads
+// ==========================================
+
+export async function listProspects(orgId: number) {
+  return getDb().select().from(salesProspects).where(eq(salesProspects.organizationId, orgId)).orderBy(desc(salesProspects.fitScore), desc(salesProspects.id)).all();
+}
+
+export async function getProspect(id: number, orgId: number) {
+  return getDb().select().from(salesProspects).where(and(eq(salesProspects.id, id), eq(salesProspects.organizationId, orgId))).limit(1).all()[0] || null;
+}
+
+export async function createProspect(row: typeof salesProspects.$inferInsert) {
+  return getDb().insert(salesProspects).values(row).returning().all()[0];
+}
+
+export async function updateProspect(id: number, orgId: number, data: Partial<typeof salesProspects.$inferInsert>) {
+  getDb().update(salesProspects).set(data).where(and(eq(salesProspects.id, id), eq(salesProspects.organizationId, orgId))).run();
+  return getProspect(id, orgId);
+}
+
+export async function listLeads(orgId: number) {
+  return getDb().select().from(salesLeads).where(eq(salesLeads.organizationId, orgId)).orderBy(desc(salesLeads.createdAt), desc(salesLeads.id)).all();
+}
+
+export async function getLead(id: number, orgId: number) {
+  return getDb().select().from(salesLeads).where(and(eq(salesLeads.id, id), eq(salesLeads.organizationId, orgId))).limit(1).all()[0] || null;
+}
+
+export async function createLead(row: typeof salesLeads.$inferInsert) {
+  return getDb().insert(salesLeads).values(row).returning().all()[0];
+}
+
+export async function updateLead(id: number, orgId: number, data: Partial<typeof salesLeads.$inferInsert>) {
+  getDb().update(salesLeads).set(data).where(and(eq(salesLeads.id, id), eq(salesLeads.organizationId, orgId))).run();
+  return getLead(id, orgId);
+}
+
+/** Workspaces whose lead form or booking page uses this token. */
+export async function findOrgBySalesToken(token: string) {
+  if (!token || token.length < 12) return null;
+  const rows = getDb().select().from(organizations).all();
+  return rows.find((o) => {
+    try {
+      return JSON.parse(o.sales || "{}").token === token;
+    } catch {
+      return false;
+    }
+  }) ?? null;
+}
+
+// ==========================================
+// Activity
+// ==========================================
+
+export async function addActivity(row: typeof teamActivity.$inferInsert) {
+  return getDb().insert(teamActivity).values(row).returning().all()[0];
+}
+
+export async function listActivity(orgId: number, limit = 200) {
+  return getDb().select().from(teamActivity).where(eq(teamActivity.organizationId, orgId)).orderBy(desc(teamActivity.createdAt), desc(teamActivity.id)).limit(limit).all();
 }

@@ -7,7 +7,9 @@ import * as apply from "./apply";
 import * as hiring from "./hiring";
 import { writeReport } from "./onboarding";
 import type { Opportunity, OppKind } from "../../drizzle/schema";
-import { channelName, planSchedule, type Plan } from "../social";
+import { channelName, planSchedule, postNow, type Plan } from "../social";
+import * as sales from "./sales";
+import { askTeammate, gate } from "./team";
 
 /**
  * Chat with an employee. Each message is answered in two steps:
@@ -18,7 +20,7 @@ import { channelName, planSchedule, type Plan } from "../social";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan";
+  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales";
   id: number;
   title: string;
   subtitle?: string;
@@ -33,18 +35,24 @@ export type ChatCard = {
 };
 
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "report", "find_grants", "add_link", "apply", "find_and_apply", "check_status"],
-  speaking: ["none", "report", "find_events", "add_link", "apply", "find_and_apply", "check_status"],
-  video: ["none", "report", "find_videos"],
-  social: ["none", "report", "write_post", "schedule_posts"],
-  blog: ["none", "report", "write_article"],
-  website: ["none", "report", "plan_page"],
-  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold"],
-  hiring: ["none", "report", "find_people", "write_job_post", "check_status"],
-  custom: ["none", "report"],
+  grants: ["none", "report", "find_grants", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate"],
+  speaking: ["none", "report", "find_events", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate"],
+  video: ["none", "report", "find_videos", "ask_teammate"],
+  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate"],
+  blog: ["none", "report", "write_article", "ask_teammate"],
+  website: ["none", "report", "plan_page", "ask_teammate"],
+  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate"],
+  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate"],
+  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate"],
+  outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate"],
+  leads: ["none", "report", "check_status", "ask_teammate"],
+  custom: ["none", "report", "ask_teammate"],
 };
 
 const ACTION_HELP: Record<string, string> = {
+  ask_teammate: "ask_teammate: the person asks you to check with another employee (\"ask Theo what he published\", \"how many demos does Malik have\"). Put that employee's name or job in `teammate` and the question in `message`.",
+  find_prospects: "find_prospects: search the web now for businesses (or referral partners) that fit. Put any area, type or size the person gave in `focus`.",
+  start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
   write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
   calendar_hold: "calendar_hold: the person wants a meeting or hold on their calendar. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, and the agenda in `notes`. It waits for their approval, then goes on their connected Google Calendar.",
   report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
@@ -69,7 +77,7 @@ function decisionSchema(kind: string): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["reply", "action", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees"],
+    required: ["reply", "action", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate"],
     properties: {
       reply: { type: "string", description: "What you say back. If you are about to do a job, one short sentence saying what you are doing." },
       action: { type: "string", enum: ACTIONS[kind] ?? ["none"] },
@@ -91,6 +99,7 @@ function decisionSchema(kind: string): JsonSchema {
       date: str,
       time: str,
       attendees: str,
+      teammate: str,
     },
   };
 }
@@ -116,12 +125,13 @@ type Decision = {
   date: string;
   time: string;
   attendees: string;
+  teammate?: string;
 };
 
 function transcript(history: ChatMessage[]) {
   return history
     .slice(-12)
-    .map((m) => `${m.role === "user" ? m.authorName : "You"}: ${m.content}`)
+    .map((m) => `${m.role === "user" ? m.authorName : m.role === "handoff" ? `Handoff from ${m.authorName}` : "You"}: ${m.content}`)
     .join("\n\n");
 }
 
@@ -190,7 +200,29 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       await hiring.writeJobPost(org, role.id);
       return { text: `The ${role.title} post is written. It's on Hiring, then Roles, with the places to post it.`, cards: [], queries: [] };
     }
+    case "ask_teammate": {
+      const answer = await askTeammate(emp, d.teammate || d.target || "", d.message || d.reply);
+      return { text: answer ?? "That's me. What would you like to know?", cards: [], queries: [] };
+    }
+    case "find_prospects": {
+      const r = await sales.findProspects(org, { focus: d.focus || undefined });
+      const top = (await Promise.all(r.created.slice(0, 2).map((p) => db.getProspect(p.id, org)))).filter((p): p is NonNullable<typeof p> => !!p);
+      const text = r.created.length
+        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, "new prospect")}. ${r.good} scored 70 or higher${r.passed ? ` and I passed ${r.passed === 1 ? "it" : "them"} to Jada` : ""}. ${top.length ? "The best are below; all of them are on Prospects with what I found about each." : ""}`.trim()
+        : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find new ones beyond what's already on Prospects. Try another area or type.`;
+      return { text, cards: top.map((p) => sales.prospectCard(p) as ChatCard), queries: r.queries };
+    }
+    case "start_outreach": {
+      const ps = (await db.listProspects(org)).filter((p) => p.stage === "new");
+      const t = d.target.trim().toLowerCase();
+      const pick = t ? ps.filter((p) => p.name.toLowerCase().includes(t) || t.includes(p.name.toLowerCase())) : ps.filter((p) => p.fitScore >= 70);
+      const withEmail = pick.filter((p) => p.email);
+      if (!withEmail.length) return { text: pick.length ? "Riley didn't find an email for those. Add one on Prospects and I'll start." : "There are no new prospects to start. Ask Riley to find some.", cards: [], queries: [] };
+      await sales.passToOutreach(org, withEmail.map((p) => p.id));
+      return { text: `Starting email sequences for ${plural(withEmail.length, "prospect")}. They'll be on the Outreach tab in a minute.`, cards: [], queries: [] };
+    }
     case "check_status": {
+      if (emp.kind === "prospecting" || emp.kind === "outreach" || emp.kind === "leads") return { text: await sales.salesStatus(org, emp.kind), cards: [], queries: [] };
       if (emp.kind === "hiring") {
         const facts = await hiring.hiringFacts(org);
         const fresh = (await db.listHrPeople(org, "applicant")).filter((p) => p.stage === "new").slice(0, 3);
@@ -270,8 +302,13 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
     case "write_email": {
       const to = (d.to.match(/[^\s<>"',;]+@[^\s<>"',;]+\.[a-z]{2,}/i) ?? [])[0];
       if (!to) return { text: "Who should it go to? Send me their email address.", cards: [], queries: [] };
-      const o = await tasks.composeEmail(org, { to, toName: d.from || undefined, purpose: d.message || d.reply });
+      let o = await tasks.composeEmail(org, { to, toName: d.from || undefined, purpose: d.message || d.reply });
       const live = (await db.getConnectionByProvider(org, "google_workspace"))?.status === "connected";
+      await db.updateOutboundItem(o.id, org, { metadata: JSON.stringify({ ...JSON.parse(o.metadata || "{}"), rule: "new_email" }) });
+      if (live && gate(emp, "new_email") === "auto") {
+        o = (await postNow((await db.getOutboundItemForOrg(o.id, org))!, `${emp.name} (on its own)`, "system", "Sent an email", { approvedBy: `${emp.name} (on its own)`, approvedAt: new Date() }))!;
+        return { text: o.status === "published" ? `I sent the email to ${to} from your Gmail.` : `I tried to send it to ${to}, but it did not go out. It's in Approvals with the reason.`, cards: [{ type: "reply", id: o.id, title: o.title, subtitle: `To ${to}`, body: (o.body ?? "").slice(0, 280) }], queries: [] };
+      }
       return {
         text: live ? `The email to ${to} is ready. Press Send in Approvals and it goes out from your Gmail.` : `The email to ${to} is ready in Approvals. Connect Google on Integrations and Send will mail it from your Gmail.`,
         cards: [{ type: "reply", id: o.id, title: o.title, subtitle: `To ${to}`, body: (o.body ?? "").slice(0, 280) }],

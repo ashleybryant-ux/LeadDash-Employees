@@ -11,7 +11,7 @@ import { postChannels, postState, whenShort } from "../social/model";
 
 const COLS = "150px minmax(0,2.4fr) minmax(0,1.2fr) 120px 128px 128px";
 
-type TabKey = "all" | "applications" | "hiring" | "email" | "social" | "blog" | "pitches" | "submitted" | "done";
+type TabKey = "all" | "applications" | "hiring" | "email" | "sales" | "social" | "blog" | "pitches" | "submitted" | "done";
 
 const KIND_TAB: Record<string, Exclude<TabKey, "all" | "done" | "applications" | "submitted">> = {
   email_draft: "email",
@@ -20,6 +20,8 @@ const KIND_TAB: Record<string, Exclude<TabKey, "all" | "done" | "applications" |
   blog_post: "blog",
   speaking_pitch: "pitches",
   hiring_email: "hiring",
+  outreach_email: "sales",
+  lead_reply: "sales",
 };
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -29,6 +31,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   x: "X",
   google_business: "Google Business Profile",
   google_workspace: "Gmail",
+  gmail: "Gmail",
   wordpress: "WordPress",
 };
 
@@ -59,8 +62,15 @@ const CH_NAME: Record<string, string> = { linkedin: "LinkedIn", facebook: "Faceb
 function itemChannels(kind: string, targetChannels: string | null): string[] {
   if (kind === "social_post") return postChannels({ targetChannels });
   if (kind === "calendar_hold") return ["calendar"];
-  if (kind === "email_draft" || kind === "hiring_email" || kind === "speaking_pitch") return ["gmail"];
+  if (kind === "email_draft" || kind === "hiring_email" || kind === "speaking_pitch" || kind === "outreach_email" || kind === "lead_reply") return ["gmail"];
   return [];
+}
+
+/** Email 2 or 3 of Jada's outreach sequence. */
+export function isFollowStep(i: { kind: string; metadata: string | null }) {
+  if (i.kind !== "outreach_email") return false;
+  const m = parseJson<{ step?: number }>(i.metadata, {});
+  return (m.step ?? 1) > 1;
 }
 
 const isSocialItem = (kind: string) => kind === "social_post";
@@ -98,7 +108,8 @@ export default function Approvals() {
   });
 
   const items = q.data ?? [];
-  const pending = items.filter((i) => i.status === "pending_approval");
+  // Emails 2 and 3 of an outreach sequence are approved with email 1, so only email 1 is listed.
+  const pending = items.filter((i) => i.status === "pending_approval" && !isFollowStep(i));
   const done = items.filter((i) => i.status !== "pending_approval" && i.status !== "drafting");
   const count = (k: Exclude<TabKey, "all" | "done" | "applications" | "submitted">) => pending.filter((i) => KIND_TAB[i.kind] === k).length;
 
@@ -121,6 +132,7 @@ export default function Approvals() {
           { key: "applications", label: `Applications (${waitingApps.length})` },
           { key: "hiring", label: `Hiring (${count("hiring")})` },
           { key: "email", label: `Email (${count("email")})` },
+          { key: "sales", label: `Sales (${count("sales")})` },
           { key: "social", label: `Social (${count("social")})` },
           { key: "blog", label: `Blog (${count("blog")})` },
           { key: "pitches", label: `Pitches (${count("pitches")})` },
@@ -153,7 +165,7 @@ export default function Approvals() {
           const liveChans = chans.filter((c) => live[c]);
           const isSocial = item.kind === "social_post";
           const later = isSocial && item.scheduledFor && new Date(item.scheduledFor).getTime() > Date.now() + 30_000;
-          const goLabel = later ? "Schedule" : liveChans.length === 0 ? "Approve" : isSocial ? "Post" : item.kind === "calendar_hold" ? "Add" : "Send";
+          const goLabel = item.kind === "outreach_email" ? "Approve all 3" : later ? "Schedule" : liveChans.length === 0 ? "Approve" : isSocial ? "Post" : item.kind === "calendar_hold" ? "Add" : "Send";
           const social = isSocial ? postState(item) : null;
           const canRetry = (item.status === "approved" && dispatch.some((d) => !d.ok)) || item.status === "blocked_connection";
           const viewUrl = dispatch.find((d) => d.ok && d.url)?.url ?? null;

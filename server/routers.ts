@@ -33,6 +33,8 @@ import { QUESTIONS, TEMPLATES, parseAnswers, progress as onboardingProgress, sav
 import * as integrations from "./integrations";
 import * as review from "./review";
 import * as social from "./social";
+import * as sales from "./employees/sales";
+import * as team from "./employees/team";
 import { postProblems, SOCIAL_CHANNELS, TIKTOK_PRIVACY, type SocialChannel } from "@shared/post-model";
 import { isStaffEmail } from "./_core/auth";
 import { EVENT_LABELS, NOTIFY_EVENTS, pushReady, pushTo, readPrefs, type Prefs } from "./notify";
@@ -1091,6 +1093,22 @@ export const appRouter = router({
         const approval = item.approvedBy ? {} : { approvedBy: reviewer, approvedAt: new Date() };
         const later = item.kind === "social_post" && item.scheduledFor && new Date(item.scheduledFor).getTime() > Date.now() + 30_000;
 
+        // Jada's sequences are approved as a whole.
+        if (item.kind === "outreach_email" && input.action !== "retry") {
+          const seq = (() => {
+            try {
+              return JSON.parse(item.metadata || "{}").sequence as string | undefined;
+            } catch {
+              return undefined;
+            }
+          })();
+          if (seq) {
+            await sales.approveSequence(input.organizationId, seq, reviewer);
+            return db.getOutboundItemForOrg(item.id, input.organizationId);
+          }
+        }
+        if (input.action !== "retry") await team.noteApproval(item);
+
         // Approved, waiting for a time; or approved for a time already set.
         if (input.action === "approve_only" || (input.action === "approve_for_dispatch" && later)) {
           if (item.kind !== "social_post" && input.action === "approve_only") throw new TRPCError({ code: "BAD_REQUEST", message: "Only posts can wait for a time." });
@@ -1100,6 +1118,12 @@ export const appRouter = router({
           const when = later ? social.localParts(new Date(item.scheduledFor!), tz) : null;
           await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: reviewer, action: "Approved", details: `"${item.title}". ${when ? `Scheduled for ${when.date} at ${when.time}.` : "Waiting for a time on the calendar."}` });
           return updated;
+        }
+
+        // Theo's approved article goes to Sienna for posts, unless Theo is set to ask.
+        if (item.kind === "blog_post" && input.action === "approve_for_dispatch") {
+          const theo = item.employeeId ? await db.getEmployeeForOrg(item.employeeId, input.organizationId) : null;
+          if (theo && team.gate(theo, "pass_to_social") === "auto") void tasks.postsFromArticle(input.organizationId, item.id).catch((err) => console.warn("[team] posts from article failed:", err instanceof Error ? err.message : err));
         }
 
         // Approve (or try again): post or send to every connected channel it is meant for.
@@ -1557,6 +1581,128 @@ export const appRouter = router({
   // ==========================================
   // Onboarding (every employee)
   // ==========================================
+  // ==========================================
+  // Sales: Riley, Jada, Malik
+  // ==========================================
+  sales: router({
+    settings: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const { settings } = await sales.salesSettings(input.organizationId);
+      const google = (await db.getConnectionByProvider(input.organizationId, "google_workspace"))?.status === "connected";
+      const { token, ...rest } = settings;
+      return { ...rest, links: sales.salesLinks(token), google, partnerOptions: [...sales.PARTNER_TYPES] };
+    }),
+
+    saveSettings: protectedProcedure
+      .input(
+        orgInput.extend({
+          sells: z.enum(["software", "therapy"]).optional(),
+          partnerTypes: z.array(z.string().max(60)).max(10).optional(),
+          area: z.string().max(200).optional(),
+          meetingMinutes: z.number().int().optional(),
+          hoursFrom: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+          hoursTo: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+          days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const { organizationId, ...rest } = input;
+        const saved = await sales.saveSalesSettings(organizationId, rest);
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved sales settings", details: saved.sells === "therapy" ? "Sells therapy to clients" : "Sells to practices" });
+        return { ok: true };
+      }),
+
+    prospects: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.listProspects(input.organizationId);
+    }),
+
+    startOutreach: protectedProcedure.input(orgInput.extend({ ids: z.array(z.number().int().positive()).min(1).max(30) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const ps = (await Promise.all(input.ids.map((id) => db.getProspect(id, input.organizationId)))).filter(Boolean);
+      if (ps.some((p) => !p!.email)) throw new TRPCError({ code: "BAD_REQUEST", message: "Riley did not find an email for this one. Add it before starting outreach." });
+      const n = await sales.passToOutreach(input.organizationId, input.ids);
+      return { passed: n };
+    }),
+
+    updateProspect: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int().positive(), contactName: z.string().max(160).optional(), email: z.string().max(200).optional(), phone: z.string().max(40).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const p = await db.getProspect(input.id, input.organizationId);
+        if (!p) throw new TRPCError({ code: "NOT_FOUND", message: "That prospect is not in this workspace." });
+        if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) throw new TRPCError({ code: "BAD_REQUEST", message: "Enter a valid email." });
+        return db.updateProspect(p.id, input.organizationId, { contactName: input.contactName?.trim() || p.contactName, email: input.email?.trim() || p.email, phone: input.phone?.trim() || p.phone });
+      }),
+
+    notFit: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return sales.skipProspect(input.organizationId, input.id);
+    }),
+
+    sequences: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return sales.listSequences(input.organizationId);
+    }),
+
+    approveSequence: protectedProcedure.input(orgInput.extend({ sequence: z.string().max(40) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "reviewer");
+      const n = await sales.approveSequence(input.organizationId, input.sequence, personName(ctx.user));
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Approved an email sequence", details: `${n} emails scheduled.` });
+      return { approved: n };
+    }),
+
+    updateStep: protectedProcedure
+      .input(orgInput.extend({ itemId: z.number().int().positive(), title: z.string().min(1).max(255), body: z.string().min(1).max(20_000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return sales.updateStep(input.organizationId, input.itemId, input.title, input.body);
+      }),
+
+    stop: protectedProcedure.input(orgInput.extend({ prospectId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return sales.skipProspect(input.organizationId, input.prospectId);
+    }),
+
+    replied: protectedProcedure.input(orgInput.extend({ prospectId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return sales.markReplied(input.organizationId, input.prospectId);
+    }),
+
+    leads: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const leads = await db.listLeads(input.organizationId);
+      const replies = await db.listOutboundItemsByOrg(input.organizationId, "lead_reply");
+      return leads.map((l) => {
+        const meta = (() => {
+          try {
+            return JSON.parse(l.meta || "{}");
+          } catch {
+            return {};
+          }
+        })();
+        const reply = replies.find((r) => r.id === meta.replyItemId) ?? null;
+        return { ...l, reply: reply ? { id: reply.id, title: reply.title, body: reply.body, status: reply.status, publishedAt: reply.publishedAt, scheduledFor: reply.scheduledFor } : null, eventUrl: meta.eventUrl ?? null };
+      });
+    }),
+
+    closeLead: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return sales.closeLead(input.organizationId, input.id);
+    }),
+  }),
+
+  // ==========================================
+  // Team: Activity across employees
+  // ==========================================
+  team: router({
+    activity: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.listActivity(input.organizationId, 200);
+    }),
+  }),
+
   onboarding: router({
     get: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
@@ -1576,8 +1722,23 @@ export const appRouter = router({
         progress: onboardingProgress(emp),
         templates: TEMPLATES[emp.kind] ?? [],
         assignments: tasksFor.map((t) => ({ ...t, repeatLabel: describeRule(t) })),
+        rules: team.autonomyView(emp),
+        alwaysAsks: team.ALWAYS_ASKS,
+        firstN: team.FIRST_N,
       };
     }),
+
+    /** Works on its own: what this employee does without asking. */
+    saveRules: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), rules: z.record(z.string(), z.enum(["ask", "first5", "auto"])) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+        const saved = await team.saveAutonomy(emp, input.rules);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Changed what an employee does on its own", details: emp.name });
+        return saved ? team.autonomyView(saved) : [];
+      }),
 
     save: protectedProcedure
       .input(orgInput.extend({ employeeId: z.number(), answers: z.record(z.string(), z.union([z.string().max(500), z.array(z.string().max(100)).max(12)])) }))

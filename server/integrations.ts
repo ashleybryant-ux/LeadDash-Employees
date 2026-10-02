@@ -988,6 +988,33 @@ async function addToCalendar(orgId: number, item: OutboundItem) {
   return data.htmlLink ?? null;
 }
 
+/** Busy times on the connected Google Calendar (primary), for offering open times. All-day events block the whole day. */
+export async function calendarBusy(orgId: number, from: Date, to: Date) {
+  const { token } = await accessToken(orgId, "google_workspace");
+  const q = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "250" });
+  const { data } = await api(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${q}`, { token });
+  const out: { start: Date; end: Date }[] = [];
+  for (const e of data.items ?? []) {
+    if (e.status === "cancelled" || e.transparency === "transparent") continue;
+    const start = e.start?.dateTime ? new Date(e.start.dateTime) : e.start?.date ? new Date(`${e.start.date}T00:00:00Z`) : null;
+    const end = e.end?.dateTime ? new Date(e.end.dateTime) : e.end?.date ? new Date(`${e.end.date}T00:00:00Z`) : null;
+    if (start && end) out.push({ start: e.start?.date ? new Date(start.getTime() - 14 * 3600_000) : start, end: e.end?.date ? new Date(end.getTime() + 14 * 3600_000) : end });
+  }
+  return out;
+}
+
+/** Puts a booked meeting on the connected Google Calendar and sends the invite to the guest. */
+export async function bookCalendarEvent(orgId: number, ev: { summary: string; description: string; start: Date; end: Date; attendeeEmail: string; tz: string }) {
+  const { token } = await accessToken(orgId, "google_workspace");
+  const { data } = await api("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all", {
+    method: "POST",
+    token,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ summary: ev.summary, description: ev.description, start: { dateTime: ev.start.toISOString(), timeZone: ev.tz }, end: { dateTime: ev.end.toISOString(), timeZone: ev.tz }, attendees: [{ email: ev.attendeeEmail }] }),
+  });
+  return (data.htmlLink as string | undefined) ?? null;
+}
+
 /** "10/05/2026" or "2026-10-05" or "Oct 5, 2026" with "2:00 PM" or "14:00" becomes "2026-10-05T14:00:00". */
 export function toLocalDateTime(date: string | undefined, time: string | undefined) {
   if (!date) return null;
@@ -1034,7 +1061,7 @@ const SOCIAL: Record<SocialChannel, (orgId: number, p: Payload) => Promise<strin
 export function channelsFor(item: OutboundItem): string[] {
   if (item.kind === "social_post") return postChannels(item);
   if (item.kind === "calendar_hold") return ["calendar"];
-  if (item.kind === "email_draft" || item.kind === "hiring_email" || item.kind === "speaking_pitch") return ["gmail"];
+  if (item.kind === "email_draft" || item.kind === "hiring_email" || item.kind === "speaking_pitch" || item.kind === "outreach_email" || item.kind === "lead_reply") return ["gmail"];
   return [];
 }
 

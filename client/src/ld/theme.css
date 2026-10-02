@@ -172,7 +172,15 @@ html.ld-review .ld-emphead { top: 34px !important; }
   .ld-main .ld-rw > :not(.ld-btn) { grid-column: 1 / -1; }
   .ld-main .ld-rw .ld-btn { width: 100%; }
   .ld-main .ld-rw > span:empty { display: none; }
+  /* Activity: time and name share a line; pill and button share a line. */
+  .ld-main .ld-rw.ld-act > .ld-act-time, .ld-main .ld-rw.ld-act > .ld-act-who, .ld-main .ld-rw.ld-act > .ld-pill { grid-column: auto; align-self: center; }
+  .ld-main .ld-rw.ld-act > .ld-act-time { order: 2; justify-self: end; }
+  .ld-main .ld-rw.ld-act > .ld-act-who { order: 1; }
+  .ld-main .ld-rw.ld-act > .ld-act-text { order: 3; }
+  .ld-main .ld-rw.ld-act > .ld-pill { order: 4; }
+  .ld-main .ld-rw.ld-act > .ld-btn { order: 5; }
   .ld-main .ld-expand[style] { display: flex !important; flex-direction: column; gap: 16px !important; padding: 4px 14px 18px 14px; }
+  .ld-main .ld-expand[style] > div > .ld-btn { width: 100%; }
   .ld-main [style*="grid-template-columns"]:not(.ld-rw):not(.ld-keep) { grid-template-columns: minmax(0, 1fr) !important; }
   .ld-main .ld-keep.ld-keep-check { grid-template-columns: 84px minmax(0, 1fr) 96px !important; }
   .ld-kv { grid-template-columns: minmax(0, 1fr) !important; gap: 2px 0; }
