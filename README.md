@@ -5,11 +5,11 @@ Seven AI employees, one job each, working from a shared Brain. Everything an emp
 | Group | Employee | Job | Searches the web |
 |---|---|---|---|
 | Revenue | Morgan | Grants: finds open grants with sources, drafts the proposal | yes |
-| Revenue | Des | Speaking: finds events taking proposals, writes the pitch | yes |
+| Revenue | Taylor | Speaking: finds events taking proposals, writes the pitch | yes |
 | Marketing | Sienna | Social media: posts per platform plus the image | no |
 | Marketing | Theo | Blog: long-form articles and banners for WordPress | no |
-| Marketing | Wren | Website: page plans with the copy for each section | no |
-| Marketing | Nico | Video: current formats turned into a shot list and script | yes |
+| Marketing | Jordan | Website: page plans with the copy for each section | no |
+| Marketing | Elena | Video: current formats turned into a shot list and script | yes |
 | Operations | Avery | Inbox and calendar: what the sender wants, urgency, reply draft, calendar holds | no |
 
 Names can be changed per workspace. The `kind` column decides what an employee does (`server/employees/roster.ts`).
@@ -24,10 +24,14 @@ Names can be changed per workspace. The `kind` column decides what an employee d
 - **Connection secrets** (client secrets, app passwords) are encrypted with `SECRETS_KEY` (AES-256-GCM) and never sent back to the browser.
 - **Database:** SQLite, one file at `data/employees.db`. Migrations run on start.
 
+## Screens
+
+Chat-first, from the approved mockup: a rail (Chats, Approvals, Tasks, Brain, Workspace, Integrations, Team), the employee list, and each employee's Chat, Work and Guidelines tabs. Chatting with an employee runs its job (find grants, write a post, draft a reply...) and the reply carries result cards. Tasks run on a schedule in the workspace time zone and post their results into the employee's chat.
+
 ## What is not built yet
 
 - Sending. Approving an item marks it approved; nothing goes to Gmail, Google Calendar, LinkedIn, Meta, X or WordPress yet. That is round 2 and needs each provider's developer app.
-- The restyled screens from the approved mockup (sidebar, Speaking, Website, Video, Brain, the new Approval queue). The backend for all of them is in place.
+- Employee portraits. Put them in `client/public/avatars/<kind>.png` and list them in `client/src/ld/meta.ts` (`AVATAR_FILES`).
 
 ## First-time setup on the EC2 box
 

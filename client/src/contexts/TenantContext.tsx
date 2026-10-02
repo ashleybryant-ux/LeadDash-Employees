@@ -12,6 +12,12 @@ export interface Organization {
   website: string | null;
   state: string | null;
   logoUrl: string | null;
+  timezone?: string;
+  description?: string | null;
+  audience?: string | null;
+  entity?: string | null;
+  brandColors?: string | null;
+  fonts?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

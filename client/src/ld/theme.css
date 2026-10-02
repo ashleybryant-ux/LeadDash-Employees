@@ -1,0 +1,94 @@
+/*
+ * LeadDash Employees screen styles, taken from the approved mockup.
+ * Every screen uses these classes so they look identical everywhere.
+ */
+
+.ld {
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  color: #14221c;
+  background: #f8fafb;
+  min-height: 100vh;
+  display: flex;
+}
+.ld a { color: #1b6b4a; }
+.ld a:hover { color: #0d3b2e; }
+.ld *:focus-visible { outline: 2px solid #1b6b4a; outline-offset: 2px; }
+
+.ld-main { flex: 1; min-width: 0; padding: 32px 48px; display: flex; flex-direction: column; gap: 20px; }
+.ld-h1 { margin: 0; font-size: 24px; font-weight: 800; }
+.ld-row { display: flex; align-items: center; gap: 8px; }
+.ld-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+.ld-card { background: #fff; border: 1px solid #e3e9e6; border-radius: 12px; }
+.ld-card.editing { border-color: #1b6b4a; }
+
+.ld-btn {
+  height: 36px; width: 128px; padding: 0 12px; border-radius: 9px; border: 1px solid #cfd9d4;
+  background: #fff; font: inherit; font-size: 13px; font-weight: 700; color: #14221c; cursor: pointer;
+  white-space: nowrap; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px; text-decoration: none; flex-shrink: 0;
+}
+.ld a.ld-btn { color: #14221c; }
+.ld-btn:hover { background: #f4f8f6; }
+.ld-btn.p, .ld a.ld-btn.p { background: #1b6b4a; border-color: #1b6b4a; color: #fff; }
+.ld-btn.p:hover { background: #155c3e; }
+.ld-btn.sm { width: 96px; height: 34px; }
+.ld-btn.danger { color: #b42318; }
+.ld-btn:disabled { opacity: 0.6; cursor: default; }
+
+.ld-tabs { display: flex; gap: 24px; border-bottom: 1px solid #e3e9e6; }
+.ld-tab {
+  padding: 10px 2px; font: inherit; font-size: 14px; font-weight: 700; color: #5b6b64; border: 0; background: none;
+  border-bottom: 2px solid transparent; cursor: pointer; margin-bottom: -1px;
+}
+.ld-tab.on { color: #14221c; border-bottom-color: #1b6b4a; }
+
+/* File-folder tabs: category filters on a busy screen. */
+.ld-ftabs { display: flex; align-items: flex-end; flex-wrap: wrap; }
+.ld-ft {
+  padding: 9px 18px; font: inherit; font-size: 13px; font-weight: 700; color: #5b6b64; background: #e9efec;
+  border: 1px solid #dbe4df; border-bottom: 0; border-radius: 10px 10px 0 0; margin-right: -1px; cursor: pointer;
+}
+.ld-ft.on { background: #fff; color: #14221c; position: relative; top: 1px; }
+.ld-ftbody { background: #fff; border: 1px solid #dbe4df; border-radius: 0 12px 12px 12px; overflow: hidden; }
+
+.ld-hd { display: grid; gap: 16px; padding: 10px 18px; font-size: 12px; font-weight: 700; color: #5b6b64; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #e3e9e6; }
+.ld-rw { display: grid; gap: 16px; padding: 14px 18px; align-items: center; font-size: 14px; border-bottom: 1px solid #eef2f0; }
+.ld-rw:last-child { border-bottom: 0; }
+.ld-rw.open { background: #f4f8f6; border-bottom: 0; }
+.ld-expand { background: #f4f8f6; padding: 4px 18px 20px 18px; border-bottom: 1px solid #e3e9e6; }
+.ld-expand:last-child { border-bottom: 0; }
+.ld-strong { font-weight: 700; }
+.ld-clip { overflow: hidden; text-overflow: ellipsis; }
+
+.ld-lbl { font-size: 12px; font-weight: 700; color: #5b6b64; text-transform: uppercase; letter-spacing: 0.06em; }
+.ld-muted { color: #5b6b64; }
+.ld-small { font-size: 13px; }
+.ld-body { font-size: 14px; line-height: 1.55; }
+.ld-pre { white-space: pre-line; }
+
+.ld-in { height: 32px; border: 1px solid #cfd9d4; border-radius: 7px; padding: 0 9px; font: inherit; font-size: 13px; box-sizing: border-box; width: 100%; background: #fff; color: #14221c; }
+.ld-in.lg { height: 34px; }
+.ld-ta { border: 1px solid #cfd9d4; border-radius: 7px; padding: 6px 9px; font: inherit; font-size: 13px; box-sizing: border-box; width: 100%; resize: vertical; line-height: 1.45; background: #fff; color: #14221c; }
+
+.ld-pill { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 10px; justify-self: start; white-space: nowrap; display: inline-block; }
+.ld-pill.green { background: #e6f2ec; color: #155c3e; }
+.ld-pill.amber { background: #fdf0e3; color: #8a4510; }
+.ld-pill.gray { background: #eef2f0; color: #3d4c45; }
+.ld-pill.red { background: #fdecea; color: #b42318; }
+
+.ld-sh { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #eef2f0; gap: 12px; }
+.ld-st { font-weight: 800; font-size: 15px; }
+.ld-kv { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 16px; padding: 14px 18px; font-size: 14px; line-height: 1.55; align-items: center; }
+.ld-k { color: #5b6b64; font-weight: 600; }
+
+.ld-sug { height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid #d5ded9; background: #fff; font: inherit; font-size: 13px; font-weight: 600; color: #3d4c45; cursor: pointer; white-space: nowrap; }
+.ld-sug:hover { background: #f4f8f6; }
+
+.ld-empty { padding: 28px 18px; text-align: center; color: #5b6b64; font-size: 14px; }
+.ld-sr { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+@keyframes ld-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.ld-dots span { display: inline-block; width: 6px; height: 6px; border-radius: 999px; background: #5b6b64; margin-right: 4px; animation: ld-pulse 1.2s infinite; }
+.ld-dots span:nth-child(2) { animation-delay: 0.2s; }
+.ld-dots span:nth-child(3) { animation-delay: 0.4s; }
