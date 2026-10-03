@@ -18,17 +18,26 @@ git pull origin main
 echo "== npm ci"
 npm ci --no-audit --no-fund
 
-echo "== browser for BidPrime and agency portals"
-# Downloads Chromium once (about 170 MB, kept in ~/.cache/ms-playwright), then
-# installs the system libraries it needs if sudo works without a password.
-nice -n 19 npx playwright-core install chromium || echo "Chromium download failed; BidPrime checks will say so in Morgan's chat."
-if sudo -n true 2>/dev/null; then
-  sudo -n npx playwright-core install-deps chromium > /dev/null 2>&1 || echo "Could not install Chromium's system libraries."
+echo "== disk check"
+# A full disk breaks every app on this box, including LeadDash EHR on port 4000.
+FREE_MB=$(df -Pm / | awk 'NR==2 {print $4}')
+echo "free disk space: ${FREE_MB} MB"
+if [ "$FREE_MB" -lt 1000 ]; then
+  echo "NOT ENOUGH DISK SPACE (need 1000 MB free). Nothing was changed. See what is using it with:"
+  echo "sudo du -xh --max-depth=2 / 2>/dev/null | sort -h | tail -25"
+  exit 1
 fi
+
+echo "== browser for BidPrime and agency portals"
+# Only the headless browser (about 100 MB, kept in ~/.cache/ms-playwright).
+# The full Chromium is not needed, so remove it if an earlier deploy downloaded it.
+rm -rf "$HOME"/.cache/ms-playwright/chromium-[0-9]*
+nice -n 19 npx playwright-core install --only-shell chromium || echo "Chromium download failed; BidPrime checks will say so in Morgan's chat."
 if node -e "require('playwright-core').chromium.launch({args:['--no-sandbox']}).then(b=>b.close()).then(()=>process.exit(0),()=>process.exit(1))"; then
   echo "browser ready"
 else
-  echo "BROWSER NOT READY. Run: cd /home/ssm-user/employees && sudo npx playwright-core install-deps chromium"
+  echo "BROWSER NOT READY. Install its system libraries with:"
+  echo "sudo apt-get install -y --no-install-recommends libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libatspi2.0-0t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libasound2t64 && sudo apt-get clean"
 fi
 
 echo "== tests"
