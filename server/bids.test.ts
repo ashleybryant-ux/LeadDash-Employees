@@ -143,6 +143,18 @@ describe("Asking Morgan about BidPrime in chat", () => {
   });
 });
 
+describe("Showing that Morgan is still working", () => {
+  it("says what she's doing in the background, and nothing when she's done", async () => {
+    const { orgId, owner } = await makeWorkspace("bp-working");
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    expect(await caller(owner).chat.working({ organizationId: orgId, employeeId: morgan.id })).toEqual({ busy: false, what: "" });
+    const opp = await db.createOpp({ organizationId: orgId, kind: "bid", title: "County EHR", host: "County", packageStatus: "fetching" });
+    expect(await caller(owner).chat.working({ organizationId: orgId, employeeId: morgan.id })).toMatchObject({ busy: true, what: "Downloading and reading the documents for County EHR" });
+    await db.updateOpp(opp.id, orgId, { packageStatus: "ready" });
+    expect((await caller(owner).chat.working({ organizationId: orgId, employeeId: morgan.id })).busy).toBe(false);
+  });
+});
+
 describe("Submitting an approved response", () => {
   async function approvedBid(orgId: number, channel: string, channelDetail: string) {
     const opp = await db.createOpp({ organizationId: orgId, kind: "bid", title: "Behavioral Health EHR System", host: "Oklahoma County Purchasing", sourceUrl: "https://oklahomacounty.bonfirehub.com/opportunities/118", requirements: JSON.stringify({ channel, channelDetail, questionsTo: "buyer@oklahomacounty.org" }), packageStatus: "ready" });

@@ -112,7 +112,10 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   const team = trpc.members.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, staleTime: 60_000 });
   const photoOf = (userId: number | null | undefined) => (userId && userId === user?.id ? user?.avatarUrl : team.data?.find((t) => t.userId === userId)?.avatarUrl) ?? null;
   const utils = trpc.useUtils();
-  const messages = trpc.chat.list.useQuery({ organizationId: currentOrgId, employeeId: emp.id }, { refetchInterval: 20_000 });
+  // While the employee works in the background, the chat shows it and picks up their messages as they post.
+  const working = trpc.chat.working.useQuery({ organizationId: currentOrgId, employeeId: emp.id }, { refetchInterval: 3000 });
+  const busy = Boolean(working.data?.busy);
+  const messages = trpc.chat.list.useQuery({ organizationId: currentOrgId, employeeId: emp.id }, { refetchInterval: busy ? 4000 : 20_000 });
   const markRead = trpc.chat.markRead.useMutation({ onSuccess: () => utils.chat.summaries.invalidate() });
   const [text, setText] = React.useState("");
   const [pending, setPending] = React.useState<string | null>(null);
@@ -132,7 +135,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
 
   React.useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [messages.data?.length, pending]);
+  }, [messages.data?.length, pending, busy]);
 
   const submit = (value: string) => {
     const v = value.trim();
@@ -220,6 +223,20 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
               <span className="ld-small ld-muted">{["grants", "speaking", "video"].includes(emp.kind) ? "Searching the web can take a minute or two." : ""}</span>
             </div>
           </>
+        )}
+        {!pending && busy && (
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }} role="status" aria-live="polite">
+            <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={36} />
+            <span className="ld-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+            <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>{emp.name} is working</span>
+              {working.data?.what && <span className="ld-small ld-muted" style={{ overflowWrap: "anywhere" }}>{working.data.what}</span>}
+            </span>
+          </div>
         )}
         <ErrorLine error={send.error} />
         <div ref={bottom} />

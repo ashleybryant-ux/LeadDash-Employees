@@ -186,7 +186,11 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       const bids = await import("./bids");
       const v = await bids.bidprimeView(org);
       if (!v.connected) return { text: "BidPrime isn't connected for this workspace yet. Add your BidPrime email and password on Integrations, Applying, BidPrime, and I'll sign in and read your leads inbox and saved bids.", cards: [], queries: [] };
-      if (v.checking) return { text: `I'm signed in to BidPrime as ${v.email} and reading it now. I'll post what I find here in a few minutes.`, cards: [], queries: [] };
+      if (v.checking) {
+        const { liveView } = await import("./browser");
+        const l = liveView(org);
+        return { text: `I'm already in BidPrime as ${v.email} and still working. Watch here, or take over if I look stuck.`, cards: l.id ? [bids.liveCard(l.id, `${emp.name}'s browser`) as ChatCard] : [], queries: [] };
+      }
       // Asking again always starts a fresh sign-in, even if an earlier one stopped for a code.
       await bids.clearWaiting(org);
       const liveId = bids.newLiveId();
@@ -462,6 +466,29 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
 
 function oppCard(o: Opportunity): ChatCard {
   return apply.oppCardFor(o);
+}
+
+/** What an employee is doing right now in the background, for the "working" line in chat. */
+export async function workingOn(orgId: number, emp: AIEmployee): Promise<{ busy: boolean; what: string }> {
+  if (emp.kind === "grants") {
+    const bids = await import("./bids");
+    const { liveView } = await import("./browser");
+    const v = await bids.bidprimeView(orgId);
+    const l = liveView(orgId);
+    if (l.state === "waiting") return { busy: true, what: "Waiting for you to take over the browser" };
+    if (l.state === "control") return { busy: true, what: "Paused while you have the browser" };
+    if (l.state === "starting" || l.state === "running") return { busy: true, what: l.step || "Opening the browser" };
+    if (v.connected && v.checking) return { busy: true, what: "Reading BidPrime" };
+  }
+  const kinds = apply.KINDS_FOR[emp.kind === "speaking" ? "speaking" : "grants"];
+  if (emp.kind === "grants" || emp.kind === "speaking") {
+    const writing = (await db.listApplications(orgId)).find((a) => a.employeeId === emp.id && a.status === "writing");
+    if (writing) return { busy: true, what: `${writing.progress || "Writing"}: ${writing.title}` };
+    const fetching = (await db.listOpps(orgId, kinds)).find((o) => o.packageStatus === "fetching");
+    if (fetching) return { busy: true, what: `Downloading and reading the documents for ${fetching.title}` };
+  }
+  if (emp.status === "working") return { busy: true, what: "Working on your request" };
+  return { busy: false, what: "" };
 }
 
 /** What Morgan knows about the BidPrime connection, so she answers from it instead of guessing. */

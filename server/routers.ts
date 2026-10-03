@@ -18,7 +18,7 @@ import {
 import { ROSTER } from "./employees/roster";
 import { ensureRoster } from "./employees/roster-sync";
 import * as tasks from "./employees/tasks";
-import { sendChatMessage } from "./employees/chat";
+import { sendChatMessage, workingOn } from "./employees/chat";
 import * as apply from "./employees/apply";
 import * as exportsFor from "./employees/exports";
 import { indexKnowledge } from "./employees/kb";
@@ -1300,6 +1300,15 @@ export const appRouter = router({
   // Chats
   // ==========================================
   chat: router({
+    working: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+        return workingOn(input.organizationId, emp);
+      }),
+
     summaries: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       return db.chatSummaries(input.organizationId, ctx.user.id);
