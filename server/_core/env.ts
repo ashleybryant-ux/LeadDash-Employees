@@ -39,6 +39,8 @@ export const ENV = {
   anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || "",
   anthropicModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
   searchMaxUses: parseInt(process.env.SEARCH_MAX_USES || "6", 10),
+  /** Serper.dev key: Google results for opportunity searches, alongside Anthropic's web search. */
+  serperKey: process.env.SERPER_API_KEY || "",
   /** OpenAI key, used only for social and blog images. */
   openAiKey: process.env.OPENAI_API_KEY || "",
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",

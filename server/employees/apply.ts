@@ -8,6 +8,7 @@ import { download, fetchWebpage, htmlToText, packageLinks } from "./files";
 import { readFile, unsupportedNote, chunkText } from "./docs";
 import { findPassages, formatPassages, indexKnowledge } from "./kb";
 import { employeeFor, systemPromptFor, working, actor, withRealSource } from "./tasks";
+import { googleSearch } from "../_core/google";
 import { notify } from "../notify";
 
 /**
@@ -247,6 +248,7 @@ export function idle() {
 // ==========================================
 
 type Found = {
+  foundOn?: string;
   title: string;
   host: string;
   deadline: string;
@@ -291,6 +293,7 @@ const FOUND_SCHEMA = obj({
       angle: { type: "string", description: "Speaking: the session to pitch, in one sentence. Otherwise ''" },
       summary: { type: "string", description: "One sentence on what it funds or offers" },
       sourceUrl: { type: "string", description: "The host's page for this opportunity" },
+      foundOn: { type: "string", description: "If you found it listed on another page (a roundup, directory or search result), that page's URL; otherwise ''" },
       fitScore: { type: "integer", description: "0 to 100" },
       fitCall: { type: "string", enum: ["apply", "partner", "skip"] },
       fitReason: { type: "string", description: "One or two sentences: why it fits or why skip. Never tell the person to call, visit, check or confirm anything" },
@@ -372,6 +375,23 @@ async function grantsGovListings(keyword: string) {
   }
 }
 
+/** The Google searches that widen each kind of opportunity search. */
+export function googleQueries(kind: OppKind, state: string, focus?: string) {
+  const y = new Date().getFullYear();
+  const st = state.trim();
+  const f = (focus ?? "").trim();
+  const base: Record<OppKind, string[]> = {
+    pitch: [`startup pitch competition ${y} ${y + 1} applications open`, `health tech pitch competition ${y + 1}`, `pitch competition for women founders ${y + 1}`, `pitch competition for Black founders ${y + 1}`, `virtual pitch competition startups apply ${y}`, st && `${st} startup pitch competition ${y}`, `SaaS startup pitch competition prize ${y + 1}`, `university business plan competition open to all founders ${y + 1}`],
+    grant: [`small business grant ${y} ${y + 1} apply`, `behavioral health grant RFP ${y}`, `mental health funding opportunity ${y}`, st && `${st} small business grant ${y}`, st && `${st} mental health grant RFP ${y}`, `grants for women owned business ${y + 1}`],
+    accelerator: [`startup accelerator applications open ${y + 1}`, `health tech accelerator ${y + 1} applications`, `accelerator for women founders ${y + 1}`, st && `${st} startup accelerator ${y}`, `remote accelerator program SaaS ${y + 1}`],
+    bid: [st && `${st} RFP behavioral health ${y}`, st && `${st} bid electronic health record ${y}`, `RFP practice management software behavioral health ${y}`, `county RFP mental health services ${y}`],
+    speaking: [`call for speakers ${y + 1} mental health conference`, `call for proposals ${y + 1} workplace wellbeing conference`, `HR conference call for speakers ${y + 1}`, `counseling conference call for proposals ${y + 1}`, st && `${st} conference call for speakers ${y + 1}`],
+    media: [`podcast guest mental health workplace`, `journalist request therapist expert`, `op-ed submission guidelines mental health`, `podcast seeking guests entrepreneurs ${y}`],
+  };
+  const list = (base[kind] ?? []).filter(Boolean) as string[];
+  return f ? [f + ` ${kind === "speaking" ? "call for speakers" : kind === "media" ? "media" : kind} ${y}`, ...list].slice(0, 9) : list;
+}
+
 export async function findOpportunities(orgId: number, empKind: "grants" | "speaking", opts: { kind?: OppKind; focus?: string } = {}) {
   const emp = await employeeFor(orgId, empKind);
   const kind: OppKind = opts.kind && KINDS_FOR[empKind].includes(opts.kind) ? opts.kind : KINDS_FOR[empKind][0];
@@ -381,7 +401,8 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
       `${FIND_JOB[kind]}
 - Score each one 0 to 100 for fit (eligibility first, then fit with the workspace's work, award size compared to effort, competition, time left). Mark it "apply" only when the score is 60 or higher. Below 60, mark it "skip", or "partner" when a partner could lead. Say why in one or two sentences.
 - A request for "this quarter" or "this month" means deadlines in that window; still include rolling ones.
-- Return up to 8, best fit first. Include lower scores too so the person sees what is out there. If you find fewer real ones, return fewer.
+- Return up to 20, best fit first. Include lower scores too so the person sees what is out there. If you find fewer real ones, return fewer.
+- Roundup and directory pages ("pitch competitions in 2026", "grants for women founders") are good leads: open them, then return each listed opportunity that is still open, with its own page as sourceUrl and the roundup as foundOn.
 - Only return ones taking responses now, rolling, or posted with a future open date. If you cannot find a current window, mark it "unclear"; it will be left out.
 - Record everything the person needs so they never have to open the site: the contact person, phone and email, how responses are submitted, the value or rates. Never tell the person to call, visit, check or confirm anything; if a fact is not posted, leave it "".`
     );
@@ -392,8 +413,13 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
         ? `\n\nOpen federal listings from Grants.gov to check (include any that fit, with this URL as the source):\n${federal.map((f) => `- ${f.title} (${f.agency}, ${f.number}, closes ${f.closeDate || "not listed"}): ${f.url}`).join("\n")}`
         : ""
     }`;
-    const result = await searchJson<{ items: Found[] }>({ system, prompt, schemaName: "opportunities", schema: FOUND_SCHEMA, maxUses: Math.max(ENV.searchMaxUses, 10) });
-    const sources = [...result.sources, ...federal.map((f) => ({ url: f.url, title: f.title }))];
+    // Google results widen the net; the employee checks each one.
+    const google = await googleSearch(googleQueries(kind, brain.org?.state ?? "", opts.focus));
+    const googleList = google.length
+      ? `\n\nGoogle results to check (open the promising ones, keep only real opportunities that are open now; use the result's URL as sourceUrl or foundOn):\n${google.slice(0, 60).map((g) => `- ${g.title}: ${g.url}${g.snippet ? ` (${g.snippet})` : ""}`).join("\n")}`
+      : "";
+    const result = await searchJson<{ items: Found[] }>({ system, prompt: prompt + googleList, schemaName: "opportunities", schema: FOUND_SCHEMA, maxUses: Math.max(ENV.searchMaxUses, 15), maxTokens: 16000 });
+    const sources = [...result.sources, ...federal.map((f) => ({ url: f.url, title: f.title })), ...google.map((g) => ({ url: g.url, title: g.title }))];
     const existing = await db.listOpps(orgId);
     const created: Opportunity[] = [];
     for (const f of withRealSource(result.data.items, sources)) {

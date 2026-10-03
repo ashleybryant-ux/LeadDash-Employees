@@ -102,7 +102,7 @@ function isHttpUrl(value: unknown): value is string {
  * Drops anything the model returned without a source link, and anything whose
  * link's site never appeared in the search results (a sign it came from memory).
  */
-export function withRealSource<T extends { sourceUrl: string }>(items: T[] | undefined, sources: { url: string }[]) {
+export function withRealSource<T extends { sourceUrl: string; foundOn?: string }>(items: T[] | undefined, sources: { url: string }[]) {
   const host = (u: string) => {
     try {
       return new URL(u).hostname.replace(/^www\./, "").toLowerCase();
@@ -114,7 +114,9 @@ export function withRealSource<T extends { sourceUrl: string }>(items: T[] | und
   return (items ?? [])
     .filter((item) => isHttpUrl(item.sourceUrl))
     .map((item) => ({ ...item, sourceUrl: item.sourceUrl.trim() }))
-    .filter((item) => searchedHosts.size === 0 || searchedHosts.has(host(item.sourceUrl)));
+    // Kept when its own page came up in the search, or when it was listed on a page that did
+    // (a "pitch competitions this year" list); its own page is then downloaded and read.
+    .filter((item) => searchedHosts.size === 0 || searchedHosts.has(host(item.sourceUrl)) || (item.foundOn ? searchedHosts.has(host(item.foundOn)) : false));
 }
 
 // ==========================================

@@ -269,6 +269,7 @@ export function aiStatus() {
   return {
     writing: Boolean(ENV.assemblyAiKey),
     webSearch: Boolean(ENV.anthropicKey),
+    google: Boolean(ENV.serperKey),
     images: Boolean(ENV.openAiKey),
   };
 }
