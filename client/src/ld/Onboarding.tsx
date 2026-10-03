@@ -7,10 +7,9 @@ import { fmtDate } from "./meta";
 import type { Outputs } from "./types";
 import { LeadSetupCard, SellsCard, WorksOnOwnCard, LinkedInStepCard } from "./sales/OnboardingCards";
 import { ClickUpCard, MeetingsCard, NotetakerCard } from "./lead/OnboardingCards";
+import { InterviewPanel } from "./onboarding/Interview";
 
 type Data = Outputs["onboarding"]["get"];
-type Question = Data["questions"][number];
-type Answers = Record<string, string | string[]>;
 type Assignment = Data["assignments"][number];
 type Template = Data["templates"][number];
 
@@ -48,35 +47,14 @@ export function to12(v: string) {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 }
 
-function answered(q: Question, a: Answers) {
-  const v = a[q.key];
-  return Array.isArray(v) ? v.length > 0 : !!String(v ?? "").trim();
-}
-
-function show(q: Question, a: Answers) {
-  const v = a[q.key];
-  return Array.isArray(v) ? v.join(", ") : String(v ?? "");
-}
-
 export default function Onboarding({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const q = trpc.onboarding.get.useQuery({ organizationId: currentOrgId, employeeId: emp.id }, { enabled: currentOrgId > 0 });
   if (!q.data) return <main className="ld-main" style={{ padding: "28px 36px" }}><div className="ld-empty">{q.isLoading ? "Loading..." : "Could not load onboarding."}</div><ErrorLine error={q.error} /></main>;
   const d = q.data;
-  const pct = d.progress.total ? Math.round((d.progress.answered / d.progress.total) * 100) : 100;
   return (
-    <main className="ld-main" style={{ padding: "28px 36px", maxWidth: 980 }}>
-      <div className="ld-card ld-between" style={{ padding: "16px 20px", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontWeight: 800, fontSize: 16 }}>Onboarding</span>
-          <span className="ld-body" style={{ color: "#3d4c45" }}>
-            {d.progress.answered} of {d.progress.total} answered · {d.assignments.length} assignment{d.assignments.length === 1 ? "" : "s"}
-          </span>
-        </div>
-        <div style={{ width: 220, maxWidth: "100%", height: 8, background: "#e9efec", borderRadius: 999, overflow: "hidden" }} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Onboarding progress">
-          <div style={{ width: `${pct}%`, height: "100%", background: "#1b6b4a" }} />
-        </div>
-      </div>
+    <main className="ld-main" style={{ padding: "28px 36px", maxWidth: 1180 }}>
+      <InterviewPanel emp={emp} view={d.interview} />
       {emp.kind === "prospecting" && <SellsCard />}
       {emp.kind === "outreach" && <LinkedInStepCard emp={emp} />}
       {emp.kind === "projects" && <ClickUpCard emp={emp} />}
@@ -84,91 +62,9 @@ export default function Onboarding({ emp }: { emp: EmployeeRow }) {
       {emp.kind === "coo" && <NotetakerCard emp={emp} />}
       {emp.kind === "leads" && <LeadSetupCard emp={emp} rule={d.rules.find((r) => r.key === "reply")} />}
       <WorksOnOwnCard emp={emp} rules={emp.kind === "leads" ? d.rules.filter((r) => r.key !== "reply") : d.rules} alwaysAsks={d.alwaysAsks} firstN={d.firstN} />
-      <AnswersCard emp={emp} questions={d.questions} answers={d.answers as Answers} startOpen={d.progress.answered === 0} />
       <DayCard emp={emp} items={d.dayToDay} />
       <AssignmentsCard emp={emp} list={d.assignments} templates={d.templates} />
     </main>
-  );
-}
-
-function AnswersCard({ emp, questions, answers, startOpen }: { emp: EmployeeRow; questions: Question[]; answers: Answers; startOpen: boolean }) {
-  const { currentOrgId } = useTenant();
-  const utils = trpc.useUtils();
-  const [editing, setEditing] = React.useState(startOpen);
-  const [draft, setDraft] = React.useState<Answers>(answers);
-  const save = trpc.onboarding.save.useMutation({
-    onSuccess: async () => {
-      setEditing(false);
-      await Promise.all([utils.onboarding.get.invalidate(), utils.employees.list.invalidate()]);
-    },
-  });
-  const set = (k: string, v: string | string[]) => setDraft((x) => ({ ...x, [k]: v }));
-  return (
-    <section className={`ld-card ${editing ? "editing" : ""}`}>
-      <div className="ld-sh">
-        <span className="ld-st">What you want from {emp.name}</span>
-        {editing ? (
-          <span className="ld-row">
-            <button type="button" className="ld-btn sm" onClick={() => { setEditing(false); setDraft(answers); }}>Cancel</button>
-            <button type="button" className="ld-btn p sm" disabled={save.isPending} onClick={() => save.mutate({ organizationId: currentOrgId, employeeId: emp.id, answers: draft })}>
-              {save.isPending ? "Saving..." : "Save"}
-            </button>
-          </span>
-        ) : (
-          <button type="button" className="ld-btn sm" onClick={() => { setDraft(answers); setEditing(true); }}>Edit</button>
-        )}
-      </div>
-      {editing ? (
-        <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 16 }}>
-          {questions.map((qq) => (
-            <div key={qq.key} className="ld-field">
-              {qq.type === "text" ? (
-                <>
-                  <label className="ld-lbl" htmlFor={`ob-${qq.key}`}>{qq.label}</label>
-                  <input id={`ob-${qq.key}`} className="ld-in" value={String(draft[qq.key] ?? "")} maxLength={500} placeholder={qq.placeholder} onChange={(e) => set(qq.key, e.target.value)} />
-                </>
-              ) : (
-                <>
-                  <span className="ld-lbl">{qq.label}</span>
-                  <div className="ld-row" style={{ flexWrap: "wrap" }}>
-                    {(qq.options ?? []).map((o) => {
-                      const cur = draft[qq.key];
-                      const on = qq.type === "multi" ? Array.isArray(cur) && cur.includes(o) : cur === o;
-                      return (
-                        <button
-                          key={o}
-                          type="button"
-                          className={`ld-chip ${on ? "on" : ""}`}
-                          aria-pressed={on}
-                          onClick={() => {
-                            if (qq.type === "multi") {
-                              const list = Array.isArray(cur) ? cur : [];
-                              set(qq.key, on ? list.filter((x) => x !== o) : [...list, o]);
-                            } else set(qq.key, o);
-                          }}
-                        >
-                          {o}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
-          <ErrorLine error={save.error} />
-        </div>
-      ) : (
-        <div className="ld-kv" style={{ gridTemplateColumns: "minmax(0, 260px) minmax(0, 1fr)" }}>
-          {questions.map((qq) => (
-            <React.Fragment key={qq.key}>
-              <span className="ld-k">{qq.label}</span>
-              <span style={{ color: answered(qq, answers) ? undefined : "#8a9a93" }}>{answered(qq, answers) ? show(qq, answers) : "Not answered"}</span>
-            </React.Fragment>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -185,7 +81,7 @@ function DayCard({ emp, items }: { emp: EmployeeRow; items: { when: string; what
         </button>
       </div>
       <div style={{ padding: "6px 18px 12px 18px" }}>
-        {items.length === 0 && <div className="ld-body ld-muted" style={{ padding: "8px 0" }}>Answer the questions above and {emp.name} will write this.</div>}
+        {items.length === 0 && <div className="ld-body ld-muted" style={{ padding: "8px 0" }}>Finish onboarding above and {emp.name} will write this.</div>}
         {items.map((it, i) => (
           <div key={i} className="ld-dayrow" style={{ display: "grid", gridTemplateColumns: "150px minmax(0,1fr)", gap: 12, padding: "9px 0", borderBottom: i === items.length - 1 ? 0 : "1px solid #eef2f0", fontSize: 14, lineHeight: 1.5 }}>
             <span className="ld-strong">{it.when}</span>

@@ -13,6 +13,7 @@ import { askTeammate, gate } from "./team";
 import * as projects from "./projects";
 import * as coo from "./coo";
 import * as notetaker from "./notetaker";
+import * as interview from "./interview";
 
 /**
  * Chat with an employee. Each message is answered in two steps:
@@ -23,7 +24,7 @@ import * as notetaker from "./notetaker";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes";
+  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q";
   id: number;
   title: string;
   subtitle?: string;
@@ -38,20 +39,20 @@ export type ChatCard = {
 };
 
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "report", "find_grants", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate"],
-  speaking: ["none", "report", "find_events", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate"],
-  video: ["none", "report", "find_videos", "ask_teammate"],
-  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate"],
-  blog: ["none", "report", "write_article", "ask_teammate"],
-  website: ["none", "report", "plan_page", "ask_teammate"],
-  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate"],
-  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate"],
-  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate"],
-  outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate"],
-  leads: ["none", "report", "check_status", "ask_teammate"],
-  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "ask_teammate"],
-  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate"],
-  custom: ["none", "report", "ask_teammate"],
+  grants: ["none", "report", "find_grants", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  speaking: ["none", "report", "find_events", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "start_onboarding"],
+  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "start_onboarding"],
+  blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "start_onboarding"],
+  website: ["none", "report", "plan_page", "ask_teammate", "add_guideline", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "start_onboarding"],
+  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "ask_teammate", "add_guideline", "start_onboarding"],
+  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "start_onboarding"],
+  custom: ["none", "report", "ask_teammate", "add_guideline", "start_onboarding"],
 };
 
 const ACTION_HELP: Record<string, string> = {
@@ -65,6 +66,8 @@ const ACTION_HELP: Record<string, string> = {
   join_or_skip: "join_or_skip: the person wants you to skip, or to sit in on, an upcoming meeting on their calendar. Put the meeting name or its start time (like 4:00 PM) in `target`, and \"join\" or \"skip\" in `to`.",
   send_notes: "send_notes: email the notes from a meeting you sat in on. Put the meeting name in `target` ('' for the most recent).",
   set_goal: "set_goal: set a weekly goal on the scorecard. Put one of practices_contacted, demos_booked, reply_minutes, posts_published, articles_published, grant_apps_sent, tasks_on_time, approvals_waiting in `target` and the goal number in `count`.",
+  add_guideline: "add_guideline: the person states a standing rule or preference for how you work (\"from now on...\", \"always...\", \"never...\", \"don't...\"). Put the rule as one plain sentence in `notes`, and the Guidelines heading it belongs under in `target` (one of the headings in your Guidelines).",
+  start_onboarding: "start_onboarding: the person wants to start, continue or redo your onboarding interview.",
   ask_teammate: "ask_teammate: the person asks you to check with another employee (\"ask Theo what he published\", \"how many demos does Malik have\"). Put that employee's name or job in `teammate` and the question in `message`.",
   find_prospects: "find_prospects: search the web now for businesses (or referral partners) that fit. Put any area, type or size the person gave in `focus`.",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
@@ -214,6 +217,14 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       if (!role) return { text: "Add the role first on Hiring, then Roles, and I'll write the post.", cards: [], queries: [] };
       await hiring.writeJobPost(org, role.id);
       return { text: `The ${role.title} post is written. It's on Hiring, then Roles, with the places to post it.`, cards: [], queries: [] };
+    }
+    case "add_guideline": {
+      const r = await interview.addGuideline(emp, d.target, d.notes || d.message);
+      return { text: `Got it. I added that to my Guidelines under "${r.section}".`, cards: [], queries: [] };
+    }
+    case "start_onboarding": {
+      if (interview.readState(emp).done) await interview.redo(emp);
+      return { text: "", cards: [interview.onboardingCard(emp) as ChatCard], queries: [] };
     }
     case "ask_teammate": {
       const answer = await askTeammate(emp, d.teammate || d.target || "", d.message || d.reply);

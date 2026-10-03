@@ -4,6 +4,8 @@ import type { AIEmployee, EmployeeKind } from "../../drizzle/schema";
 import { generateJson, generateText, type JsonSchema } from "../_core/llm";
 import { loadBrain } from "./brain";
 import { BASE_RULES } from "./roster";
+import { INTERVIEWS, allQuestions } from "./interview-defs";
+import { guidelinesText, readState } from "./interview";
 
 /**
  * Onboarding: each employee asks what the owner wants from it and how the
@@ -15,91 +17,16 @@ import { BASE_RULES } from "./roster";
 export type Question = { key: string; label: string; type: "choice" | "multi" | "text"; options?: string[]; placeholder?: string };
 export type Template = { label: string; title: string; instructions: string; repeat: "daily" | "weekdays" | "weekly" | "monthly"; time: string; weekday?: number };
 
-const OFTEN = ["Every day", "Twice a week", "Weekly", "Only when I ask"];
 
-export const QUESTIONS: Record<EmployeeKind, Question[]> = {
-  grants: [
-    { key: "fundFor", label: "What should Morgan apply for?", type: "multi", options: ["Grants", "Pitch competitions", "Accelerators", "Government contracts"] },
-    { key: "often", label: "How often should Morgan look?", type: "choice", options: OFTEN },
-    { key: "autoStart", label: "When something scores 75 or higher", type: "choice", options: ["Start the application", "Ask me first"] },
-    { key: "minAward", label: "Smallest award worth applying for", type: "choice", options: ["Any amount", "$5,000", "$10,000", "$25,000"] },
-    { key: "region", label: "Where should funders be?", type: "choice", options: ["My state first, then national", "National only", "My state only"] },
-    { key: "priorities", label: "What should funding pay for?", type: "text", placeholder: "Clinician hiring, intern supervision, rural access" },
-  ],
-  speaking: [
-    { key: "formats", label: "What kind of speaking?", type: "multi", options: ["Conferences", "Webinars", "Podcasts", "Panels", "Workshops"] },
-    { key: "paid", label: "Pay", type: "choice", options: ["Paid only", "Paid or visibility", "Anything that fits"] },
-    { key: "travel", label: "Travel", type: "choice", options: ["Virtual only", "In my state", "Anywhere in the US"] },
-    { key: "often", label: "How often should Taylor look?", type: "choice", options: OFTEN },
-    { key: "topics", label: "Talks you give best", type: "text", placeholder: "Building a practice that pays you back; P.U.L.S.E. Framework" },
-  ],
-  social: [
-    { key: "platforms", label: "Where do you post?", type: "multi", options: ["LinkedIn", "Instagram", "Facebook", "X"] },
-    { key: "often", label: "How many posts?", type: "choice", options: ["Every weekday", "3 a week", "Weekly"] },
-    { key: "goal", label: "What should posts do?", type: "choice", options: ["Bring in clients", "Build my name", "Recruit staff", "All of these"] },
-    { key: "voice", label: "Voice", type: "choice", options: ["Warm and personal", "Expert and direct", "Playful"] },
-    { key: "avoid", label: "Never post about", type: "text", placeholder: "Client stories, politics" },
-  ],
-  blog: [
-    { key: "often", label: "How many articles?", type: "choice", options: ["Weekly", "Twice a month", "Monthly"] },
-    { key: "reader", label: "Who reads the blog?", type: "choice", options: ["Clients and families", "Other clinicians", "Practice owners"] },
-    { key: "length", label: "Length", type: "choice", options: ["800 words", "1,200 words", "2,000 words"] },
-    { key: "topics", label: "Topics to cover", type: "text", placeholder: "Couples counseling, anxiety in teens, insurance questions" },
-  ],
-  website: [
-    { key: "goal", label: "What should the site do most?", type: "choice", options: ["Book consultations", "Sell a product", "Recruit staff", "Build trust"] },
-    { key: "pages", label: "Pages to work on first", type: "text", placeholder: "Home, couples counseling, careers" },
-    { key: "voice", label: "Voice", type: "choice", options: ["Warm and personal", "Expert and direct", "Simple and short"] },
-  ],
-  video: [
-    { key: "platforms", label: "Where do videos go?", type: "multi", options: ["TikTok", "Instagram Reels", "YouTube Shorts"] },
-    { key: "often", label: "How many plans a week?", type: "choice", options: ["1", "2", "3", "5"] },
-    { key: "onCamera", label: "Who is on camera?", type: "choice", options: ["Me", "My team", "No faces, text and b-roll"] },
-    { key: "style", label: "Style", type: "choice", options: ["Teaching", "Story", "Trend-based", "Mix"] },
-    { key: "avoid", label: "Never film", type: "text", placeholder: "Clients, the office lobby" },
-  ],
-  inbox: [
-    { key: "tone", label: "Reply tone", type: "choice", options: ["Warm", "Brief and direct", "Formal"] },
-    { key: "urgent", label: "What counts as urgent?", type: "text", placeholder: "Payers, current clients, my attorney" },
-    { key: "never", label: "Never promise", type: "text", placeholder: "Discounts, dates I have not confirmed" },
-  ],
-  hiring: [
-    { key: "hiringFor", label: "Who are you hiring most?", type: "multi", options: ["Licensed clinicians", "Interns and candidates", "Front desk and billing", "Developers", "Sales"] },
-    { key: "often", label: "How often should Quinn look for people?", type: "choice", options: OFTEN },
-    { key: "outreach", label: "Outreach", type: "choice", options: ["Find people and draft messages", "Applicants only, no outreach"] },
-    { key: "screening", label: "Who screens first?", type: "choice", options: ["Quinn scores, I decide", "Show me every applicant unscored"] },
-    { key: "interviewFormat", label: "Interviews", type: "choice", options: ["Video call", "In person", "Either"] },
-    { key: "interviewHours", label: "Interview hours", type: "text", placeholder: "Tue and Thu, 10:00 AM to 2:00 PM" },
-    { key: "panel", label: "Who else interviews", type: "text", placeholder: "Name and title" },
-    { key: "greatFit", label: "What makes someone a great fit at your practice?", type: "text", placeholder: "Warm with families, organized with notes, open to feedback" },
-  ],
-  prospecting: [
-    { key: "often", label: "How often should Riley look?", type: "choice", options: OFTEN },
-    { key: "size", label: "Smallest fit", type: "choice", options: ["Solo practices", "2 or more clinicians", "5 or more clinicians", "10 or more clinicians"] },
-    { key: "ideal", label: "What makes a great fit?", type: "text", placeholder: "Group practices that take insurance and book by phone" },
-  ],
-  outreach: [
-    { key: "tone", label: "Tone", type: "choice", options: ["Warm and personal", "Brief and direct", "Formal"] },
-    { key: "offer", label: "What to offer", type: "choice", options: ["A 20-minute demo", "A free consultation", "A short call"] },
-    { key: "proof", label: "Something true to mention", type: "text", placeholder: "Practices book intakes online and paperwork is done before the first session" },
-  ],
-  leads: [
-    { key: "tone", label: "Reply tone", type: "choice", options: ["Warm", "Brief and direct", "Formal"] },
-    { key: "never", label: "Never promise", type: "text", placeholder: "Prices not on the website, dates I have not confirmed" },
-  ],
-  coo: [
-    { key: "style", label: "Agenda style", type: "choice", options: ["Short: decisions first", "Full: every team reports"] },
-    { key: "always", label: "Always on the agenda", type: "text", placeholder: "Cash on hand, open hiring, anything late" },
-  ],
-  projects: [
-    { key: "buffer", label: "Finish tasks before their milestone by", type: "choice", options: ["1 day", "2 days", "1 week"] },
-    { key: "how", label: "How you like plans", type: "text", placeholder: "Small tasks, one owner each, nothing due on Mondays" },
-  ],
-  custom: [
-    { key: "goal", label: "What should this employee do for you?", type: "text", placeholder: "One or two sentences" },
-    { key: "often", label: "How often?", type: "choice", options: ["Every day", "Weekly", "Only when I ask"] },
-  ],
-};
+/** The interview's plain questions (no voice samples or examples), for code that reads one answer. */
+export const QUESTIONS: Record<EmployeeKind, Question[]> = Object.fromEntries(
+  (Object.keys(INTERVIEWS) as EmployeeKind[]).map((k) => [
+    k,
+    allQuestions(k)
+      .filter((q) => q.type === "choice" || q.type === "multi" || q.type === "text")
+      .map((q) => ({ key: q.key, label: q.label, type: q.type as Question["type"], options: q.options, placeholder: q.placeholder })),
+  ])
+) as Record<EmployeeKind, Question[]>;
 
 const REPORT = (what: string): Template => ({ label: "Send me a report", title: "Daily report", instructions: `Send me a report: ${what}`, repeat: "daily", time: "09:00" });
 
@@ -160,11 +87,10 @@ export async function onboardingAnswers(emp: AIEmployee): Promise<Record<string,
   return out;
 }
 
-/** The answers as lines for the employee's instructions. */
+/** The answers as lines (used where a short list is easier than the full Guidelines). */
 export function onboardingLines(emp: AIEmployee) {
   const a = parseAnswers(emp.onboarding);
-  const qs = QUESTIONS[emp.kind] ?? [];
-  return qs
+  return (QUESTIONS[emp.kind] ?? [])
     .map((q) => {
       const v = a[q.key];
       const val = Array.isArray(v) ? v.join(", ") : v;
@@ -173,41 +99,22 @@ export function onboardingLines(emp: AIEmployee) {
     .filter(Boolean);
 }
 
+/** Where the interview stands: parts done of all parts. */
 export function progress(emp: AIEmployee) {
-  const a = parseAnswers(emp.onboarding);
-  const qs = QUESTIONS[emp.kind] ?? [];
-  const answered = qs.filter((q) => {
-    const v = a[q.key];
-    return Array.isArray(v) ? v.length > 0 : !!String(v ?? "").trim();
-  }).length;
-  return { answered, total: qs.length };
+  const st = readState(emp);
+  const total = INTERVIEWS[emp.kind].sections.length;
+  return { answered: st.done ? total : Math.min(st.step, total), total, done: st.done };
 }
 
 export type DayItem = { when: string; what: string };
 
-export async function saveAnswers(emp: AIEmployee, answers: Record<string, string | string[]>) {
-  const qs = QUESTIONS[emp.kind] ?? [];
-  const clean: Record<string, string | string[]> = {};
-  for (const q of qs) {
-    const v = answers[q.key];
-    if (q.type === "multi") clean[q.key] = (Array.isArray(v) ? v : []).filter((x) => q.options?.includes(x));
-    else if (q.type === "choice") clean[q.key] = typeof v === "string" && q.options?.includes(v) ? v : "";
-    else clean[q.key] = typeof v === "string" ? v.trim().slice(0, 500) : "";
-  }
-  const p = progress({ ...emp, onboarding: JSON.stringify(clean) });
-  await db.updateEmployee(emp.id, emp.organizationId, { onboarding: JSON.stringify(clean), onboardedAt: p.answered === p.total ? new Date() : emp.onboardedAt });
-  const updated = (await db.getEmployeeForOrg(emp.id, emp.organizationId))!;
-  await writeDayToDay(updated).catch((err) => console.warn("[onboarding] day-to-day failed:", err instanceof Error ? err.message : err));
-  return db.getEmployeeForOrg(emp.id, emp.organizationId);
-}
-
 export async function writeDayToDay(emp: AIEmployee) {
   const brain = await loadBrain(emp.organizationId);
-  const lines = onboardingLines(emp);
+  const lines = [guidelinesText(emp)].filter(Boolean);
   const tasks = (await db.listScheduledTasks(emp.organizationId)).filter((t) => t.employeeId === emp.id && t.enabled);
   const out = await generateJson<{ items: DayItem[] }>({
     system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${brain.org?.name ?? "the workspace"}. Describe your day-to-day for the owner in 3 to 5 lines: when (Every morning, Tue and Fri, After a reply, Every Monday...) and what you do then, in one plain sentence each, first person is not needed. Base it on the owner's answers and assignments. Do not promise anything you cannot do: you cannot send email or post on your own yet; everything waits for approval.\n\n${BASE_RULES}`,
-    prompt: `Your job: ${emp.description ?? emp.roleTitle}\n\nOwner's answers:\n${lines.join("\n") || "(none yet)"}\n\nAssignments:\n${tasks.map((t) => `- ${t.title} (${t.repeat} at ${t.time})`).join("\n") || "(none)"}`,
+    prompt: `Your job: ${emp.description ?? emp.roleTitle}\n\nGuidelines from onboarding:\n${lines.join("\n") || "(none yet)"}\n\nAssignments:\n${tasks.map((t) => `- ${t.title} (${t.repeat} at ${t.time})`).join("\n") || "(none)"}`,
     schemaName: "day_to_day",
     schema: { type: "object", additionalProperties: false, required: ["items"], properties: { items: { type: "array", items: { type: "object", additionalProperties: false, required: ["when", "what"], properties: { when: { type: "string" }, what: { type: "string" } } } } } } as JsonSchema,
     maxTokens: 900,

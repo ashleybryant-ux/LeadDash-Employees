@@ -1,0 +1,1 @@
+ALTER TABLE `ai_employees` ADD `interview` text;

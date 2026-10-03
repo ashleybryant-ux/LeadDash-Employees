@@ -9,6 +9,7 @@ import { sweepExpired } from "../review";
 import { postDue } from "../social";
 import { morningChecks } from "./projects";
 import { cooTicks } from "./coo";
+import { interviewTicks } from "./interview";
 
 /**
  * Runs scheduled tasks. Every minute it picks up tasks whose time has come,
@@ -113,6 +114,8 @@ export function startScheduler() {
       await sweepExpired();
       await cooTicks();
       await morningChecks();
+      // New employees reach out first; "Later" reminders come due.
+      await interviewTicks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

@@ -29,7 +29,8 @@ import { sendEmail } from "./_core/email";
 import { ENV } from "./_core/env";
 import { REPEATS, HR_STAGES } from "../drizzle/schema";
 import * as hiring from "./employees/hiring";
-import { QUESTIONS, TEMPLATES, parseAnswers, progress as onboardingProgress, saveAnswers, writeDayToDay } from "./employees/onboarding";
+import { TEMPLATES, progress as onboardingProgress, writeDayToDay } from "./employees/onboarding";
+import * as interview from "./employees/interview";
 import * as integrations from "./integrations";
 import * as review from "./review";
 import * as social from "./social";
@@ -78,6 +79,14 @@ async function requireMember(ctx: TrpcContext & { user: User }, organizationId: 
 /** The app reviewer can look around the demo workspace but cannot change its team. */
 function blockReviewer(ctx: TrpcContext & { user: User }) {
   if (review.isReviewUser(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "The review account cannot change the team." });
+}
+
+/** The employee for a member of the workspace, or NOT_FOUND. */
+async function empFor(ctx: { user: User } & Parameters<typeof requireMember>[0], organizationId: number, employeeId: number) {
+  await requireMember(ctx, organizationId, "member");
+  const emp = await db.getEmployeeForOrg(employeeId, organizationId);
+  if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+  return emp;
 }
 
 /** The person's real name for the audit trail and approvals. */
@@ -1983,8 +1992,7 @@ export const appRouter = router({
       if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
       const tasksFor = (await db.listScheduledTasks(input.organizationId)).filter((t) => t.employeeId === emp.id);
       return {
-        questions: QUESTIONS[emp.kind] ?? [],
-        answers: parseAnswers(emp.onboarding),
+        interview: await interview.interviewView(emp),
         dayToDay: (() => {
           try {
             return emp.dayToDay ? (JSON.parse(emp.dayToDay) as { when: string; what: string }[]) : [];
@@ -2013,22 +2021,103 @@ export const appRouter = router({
         return saved ? team.autonomyView(saved) : [];
       }),
 
-    save: protectedProcedure
-      .input(orgInput.extend({ employeeId: z.number(), answers: z.record(z.string(), z.union([z.string().max(500), z.array(z.string().max(100)).max(12)])) }))
+    /** One part of the interview on the Onboarding tab. */
+    savePart: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), section: z.string().max(40), answers: z.record(z.string(), z.union([z.string().max(800), z.array(z.string().max(100)).max(12)])), advance: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
-        const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
-        if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
-        const saved = await saveAnswers(emp, input.answers);
-        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Onboarded employee", details: emp.name });
-        return saved;
+        const emp = await empFor(ctx, input.organizationId, input.employeeId);
+        const saved = await interview.savePart(emp, input.section, input.answers, input.advance);
+        if (interview.readState(saved).done && !interview.readState(emp).done) await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Onboarded employee", details: emp.name });
+        return interview.interviewView(saved);
       }),
+    /** The Brain part: facts saved to the workspace or the Brain for every employee. */
+    saveBrain: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), facts: z.record(z.string(), z.string().max(2000)), advance: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const emp = await empFor(ctx, input.organizationId, input.employeeId);
+        await interview.saveBrainFacts(input.organizationId, emp.kind, input.facts);
+        const next = input.advance ? await interview.goTo(emp, Math.max(interview.readState(emp).step, 1)) : emp;
+        return interview.interviewView(next);
+      }),
+    samples: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      return interview.makeSamples(emp);
+    }),
+    examples: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), examples: z.array(z.object({ liked: z.boolean(), text: z.string().max(4000) })).max(8) }))
+      .mutation(async ({ ctx, input }) => {
+        const emp = await empFor(ctx, input.organizationId, input.employeeId);
+        return interview.interviewView(await interview.setExamples(emp, input.examples));
+      }),
+    followup: protectedProcedure.input(orgInput.extend({ employeeId: z.number(), index: z.number().int().min(0).max(5), answer: z.string().max(100) })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      return interview.interviewView(await interview.answerFollowup(emp, input.index, input.answer));
+    }),
+    goTo: protectedProcedure.input(orgInput.extend({ employeeId: z.number(), step: z.number().int().min(0).max(12) })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      return interview.interviewView(await interview.goTo(emp, input.step));
+    }),
+    redo: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      return interview.interviewView(await interview.redo(emp));
+    }),
+    later: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      return interview.interviewView(await interview.later(emp));
+    }),
+    /** Start (or pick up) the interview in chat. */
+    startChat: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      await interview.startInChat(emp, { name: personName(ctx.user), userId: ctx.user.id });
+      return { ok: true };
+    }),
+    /** An answer from a question card in chat. */
+    chatAnswer: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), key: z.string().max(60), value: z.union([z.string().max(800), z.array(z.string().max(100)).max(12), z.array(z.object({ liked: z.boolean(), text: z.string().max(4000) })).max(8), z.record(z.string(), z.string().max(2000))]) }))
+      .mutation(async ({ ctx, input }) => {
+        const emp = await empFor(ctx, input.organizationId, input.employeeId);
+        await interview.answerInChat(emp, { name: personName(ctx.user), userId: ctx.user.id }, input.key, input.value);
+        return { ok: true };
+      }),
+    /** "Write a test post": asks the employee in chat. */
+    tryIt: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      const view = await interview.interviewView(emp);
+      return sendChatMessage({ organizationId: input.organizationId, employeeId: emp.id, text: view.tryIt.prompt, authorName: personName(ctx.user), userId: ctx.user.id });
+    }),
 
     rewriteDay: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
       if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
       return writeDayToDay(emp);
+    }),
+  }),
+
+  guidelines: router({
+    get: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+      if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+      return interview.guidelinesView(emp);
+    }),
+    saveSection: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), section: z.string().max(40), lines: z.array(z.object({ id: z.string().max(40).optional(), text: z.string().max(1500) })).max(40) }))
+      .mutation(async ({ ctx, input }) => {
+        const emp = await empFor(ctx, input.organizationId, input.employeeId);
+        return interview.guidelinesView(await interview.saveGuideSection(emp, input.section, input.lines));
+      }),
+    learn: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      return interview.guidelinesView(await interview.learnFromExamples(emp));
+    }),
+    check: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      return interview.guidelinesView(await interview.checkConflicts(emp));
+    }),
+    resolve: protectedProcedure.input(orgInput.extend({ employeeId: z.number(), conflictId: z.string().max(20), option: z.number().int().min(-1).max(3) })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      return interview.guidelinesView(await interview.resolveConflict(emp, input.conflictId, input.option));
     }),
   }),
 

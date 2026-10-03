@@ -20,6 +20,7 @@ import Leads from "./work/Leads";
 import Launches from "./work/Launches";
 import Meetings from "./work/Meetings";
 import { LaunchPlanCard, MeetingAgendaCard, MeetingNotesCard } from "./lead/Cards";
+import { OnboardingCard, OnboardingQuestionCard } from "./onboarding/ChatCards";
 import Onboarding from "./Onboarding";
 import type { Outputs } from "./types";
 
@@ -88,7 +89,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q";
   id: number;
   title: string;
   subtitle?: string;
@@ -177,7 +178,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <span style={{ fontWeight: 800, fontSize: 14 }}>{m.authorName}</span>
                       <span style={{ fontSize: 12, color: "#5b6b64", fontWeight: 500, marginLeft: 6 }}>{fmtTime(m.createdAt)}</span>
                     </div>
-                    <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.content}</div>
+                    {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.content}</div>}
                   </div>
                   {cards.map((c) => (
                     <ResultCard key={`${c.type}-${c.id}`} card={c} emp={emp} />
@@ -373,6 +374,8 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   if (card.type === "launch_plan") return <LaunchPlanCard id={card.id} />;
   if (card.type === "meeting_agenda") return <MeetingAgendaCard id={card.id} />;
   if (card.type === "meeting_notes") return <MeetingNotesCard id={card.id} />;
+  if (card.type === "onboarding") return <OnboardingCard emp={emp} />;
+  if (card.type === "onboarding_q") return <OnboardingQuestionCard emp={emp} qkey={card.title} />;
 
   if (card.type === "question") {
     return (

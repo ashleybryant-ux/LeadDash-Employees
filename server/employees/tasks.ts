@@ -4,8 +4,8 @@ import type { AIEmployee, EmployeeKind } from "../../drizzle/schema";
 import { generateJson, generateText, searchJson, type JsonSchema } from "../_core/llm";
 import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
-import { BASE_RULES, GUIDELINE_LABELS, parseGuidelines, rosterEntry } from "./roster";
-import { onboardingLines } from "./onboarding";
+import { BASE_RULES, rosterEntry } from "./roster";
+import { guidelinesText } from "./interview";
 
 // ==========================================
 // Shared helpers
@@ -28,18 +28,10 @@ export async function employeeFor(organizationId: number, kind: EmployeeKind): P
 export async function systemPromptFor(emp: AIEmployee, job: string) {
   const brain = await loadBrain(emp.organizationId);
   const orgName = brain.org?.name ?? "the workspace";
-  const g = parseGuidelines(emp.guidelines);
-  const labels = emp.kind !== "custom" ? GUIDELINE_LABELS[emp.kind] : { focus: "Focus on", avoid: "Avoid", signAs: "Sign as" };
-  const guideLines = [
-    g.focus && `${labels.focus}: ${g.focus}`,
-    g.avoid && `${labels.avoid}: ${g.avoid}`,
-    g.signAs && `${labels.signAs}: ${g.signAs}`,
-    emp.systemPrompt?.trim(),
-  ].filter(Boolean);
-  const onboard = onboardingLines(emp);
+  const guides = guidelinesText(emp);
   const extra =
-    (guideLines.length ? `\n\nGuidelines from the workspace for ${emp.name} (follow these):\n${guideLines.join("\n")}` : "") +
-    (onboard.length ? `\n\nWhat the owner told you during onboarding (follow these):\n${onboard.join("\n")}` : "");
+    (guides ? `\n\n# Guidelines from the owner for ${emp.name} (follow these; they come from onboarding, chat and the Guidelines tab)\n${guides}` : "") +
+    (emp.systemPrompt?.trim() ? `\n\nMore instructions from the workspace:\n${emp.systemPrompt.trim()}` : "");
   return {
     brain,
     system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${job}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}`,

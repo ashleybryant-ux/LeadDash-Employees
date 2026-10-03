@@ -68,15 +68,18 @@ describe("onboarding and assignments", () => {
     const c = caller(owner);
     const quinn = (await db.getEmployeeByKind(orgId, "hiring"))!;
     const before = await c.onboarding.get({ organizationId: orgId, employeeId: quinn.id });
-    expect(before.questions.find((q) => q.key === "interviewHours")?.type).toBe("text");
+    expect(before.interview.sections.find((s) => s.key === "interviews")?.questions.find((q) => q.key === "interviewHours")?.type).toBe("text");
     expect(before.templates[0].label).toBe("Send me a report");
 
-    await c.onboarding.save({ organizationId: orgId, employeeId: quinn.id, answers: { hiringFor: ["Licensed clinicians", "Not an option"], often: "Twice a week", interviewHours: "Tue and Thu, 10:00 AM to 2:00 PM", screening: "made up" } });
+    await c.onboarding.saveBrain({ organizationId: orgId, employeeId: quinn.id, facts: { state: "Oklahoma" }, advance: true });
+    await c.onboarding.savePart({ organizationId: orgId, employeeId: quinn.id, section: "job", answers: { goal: ["Licensed clinicians", "Not an option"], often: "Twice a week" }, advance: true });
+    await c.onboarding.savePart({ organizationId: orgId, employeeId: quinn.id, section: "interviews", answers: { interviewHours: "Tue and Thu, 10:00 AM to 2:00 PM", screening: "made up" }, advance: false });
     const after = await c.onboarding.get({ organizationId: orgId, employeeId: quinn.id });
-    expect(after.answers.hiringFor).toEqual(["Licensed clinicians"]); // only real options are kept
-    expect(after.answers.screening).toBe("");
-    expect(after.dayToDay[0].when).toBe("Every morning");
-    expect(after.progress.answered).toBe(3);
+    expect(after.interview.answers.goal).toEqual(["Licensed clinicians"]); // only real options are kept
+    expect(after.interview.answers.screening).toBe("");
+    expect(after.progress.answered).toBe(2);
+    await c.onboarding.rewriteDay({ organizationId: orgId, employeeId: quinn.id });
+    expect((await c.onboarding.get({ organizationId: orgId, employeeId: quinn.id })).dayToDay[0].when).toBe("Every morning");
 
     const task = await c.tasks.save({ organizationId: orgId, employeeId: quinn.id, title: "Daily report", instructions: "Send me a report: new applicants and replies.", repeat: "daily", time: "09:00", notify: "push" });
     expect(task.notify).toBe("push");
@@ -86,7 +89,7 @@ describe("onboarding and assignments", () => {
     const run = await runTaskNow(task, true);
     expect(run?.reply.content).toContain("Report:");
     // The chat decision saw the onboarding answers.
-    expect(calls.find((x) => x.schema === "chat_decision")?.system).toContain("Interview hours Tue and Thu");
+    expect(calls.find((x) => x.schema === "chat_decision")?.system).toContain("Hours: Tue and Thu, 10:00 AM to 2:00 PM");
   });
 });
 

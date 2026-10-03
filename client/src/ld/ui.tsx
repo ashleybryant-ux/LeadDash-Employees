@@ -341,7 +341,7 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
               const s = summaries.data?.find((x) => x.employeeId === e.id);
               const href = e.kind === "custom" ? `/chats/e/${e.id}` : `/chats/${e.kind}`;
               const on = activeKind === (e.kind === "custom" ? `e${e.id}` : e.kind);
-              const preview = s ? (s.role === "user" ? `${s.authorName.split(" ")[0]}: ${s.content}` : s.content) : e.description ?? "";
+              const preview = s ? (s.role === "user" ? `${s.authorName.split(" ")[0]}: ${s.content}` : s.content || "Asked you a question") : e.description ?? "";
               return (
                 <Link key={e.id} href={href} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 14px", margin: "2px 8px", borderRadius: 12, textDecoration: "none", color: "#14221c", background: on ? "#eef3f0" : "transparent" }}>
                   <Avatar name={e.name} kind={e.kind} src={e.avatar} size={46} />

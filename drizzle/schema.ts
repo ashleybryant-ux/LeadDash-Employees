@@ -166,10 +166,12 @@ export const aiEmployees = sqliteTable(
     capabilities: text("capabilities"),
     /** Extra instructions the workspace adds on top of the built-in ones for this job. */
     systemPrompt: text("systemPrompt"),
-    /** JSON {focus, avoid, signAs}: the three Guidelines fields. */
+    /** JSON {v: 2, sections: {key: [{id, text, source, at}]}, conflicts, dismissed}. Older rows hold {focus, avoid, signAs}. */
     guidelines: text("guidelines"),
     /** JSON {questionKey: answer}: the Onboarding answers. */
     onboarding: text("onboarding"),
+    /** JSON: where the onboarding interview stands (part, done, welcome and reminder times, voice samples, examples, follow-ups). */
+    interview: text("interview"),
     /** JSON [{when, what}]: "A day with" this employee, written from the answers. */
     dayToDay: text("dayToDay"),
     /** JSON {rules: {ruleKey: "ask"|"first5"|"auto"}, approved: {ruleKey: count}}: what it does on its own. */
