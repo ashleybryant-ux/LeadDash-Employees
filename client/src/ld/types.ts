@@ -24,6 +24,8 @@ export type Requirements = {
   videoLimit?: string;
   deckLimit?: string;
   pages?: Record<string, string>;
+  questionsDue?: string;
+  questionsTo?: string;
 };
 
 export type Question = {

@@ -38,6 +38,8 @@ export type Requirements = {
   submitWhat: string;
   eventDate: string;
   decisionDate: string;
+  questionsDue?: string;
+  questionsTo?: string;
   videoRequired: boolean;
   videoLimit: string;
   deckLimit: string;
@@ -110,7 +112,7 @@ const PLACEHOLDER = /\[[A-Z0-9][A-Z0-9 ,'&/()-]{2,60}\]/g;
 // ==========================================
 
 export const KINDS_FOR: Record<string, OppKind[]> = {
-  grants: ["grant", "pitch", "accelerator"],
+  grants: ["grant", "pitch", "accelerator", "bid"],
   speaking: ["speaking"],
 };
 
@@ -123,6 +125,7 @@ const KIND_WORDS: Record<OppKind, { thing: string; host: string; amount: string 
   pitch: { thing: "pitch competition", host: "host", amount: "prize" },
   accelerator: { thing: "accelerator program", host: "program", amount: "investment or stipend" },
   speaking: { thing: "speaking opportunity", host: "organizer", amount: "pay or honorarium" },
+  bid: { thing: "bid", host: "agency", amount: "contract value" },
 };
 
 const DEFAULT_QUESTIONS: Record<OppKind, string[]> = {
@@ -152,6 +155,15 @@ const DEFAULT_QUESTIONS: Record<OppKind, string[]> = {
     "What do you want to accomplish during the program?",
   ],
   speaking: ["Session title", "Session description", "Three learning objectives", "Speaker bio", "Audience level and format"],
+  bid: [
+    "Company overview and relevant experience",
+    "Understanding of the scope of work",
+    "Technical approach: how each requirement is met",
+    "Implementation plan and timeline",
+    "Staffing and key personnel",
+    "References from similar work",
+    "Pricing",
+  ],
 };
 
 // ==========================================
@@ -265,6 +277,10 @@ const FIND_JOB: Record<OppKind, string> = {
 - Rolling admissions count.
 - Note investment or stipend, equity taken, stage required, location, and program dates.
 - Leave out programs whose deadline has passed or that exclude the company's stage, sector or region.`,
+  bid: `Your job: find government and agency bids (RFPs, RFQs, invitations to bid) open now that the company in the Brain can respond to.
+- Search widely, one angle per search: the state's procurement portal, counties and cities where the company works, school districts, universities, tribal health systems, state health and behavioral health agencies, and federal notices that fit.
+- Keep only bids for what the company actually provides. Note the due date, how responses are submitted, and the deadline for questions.
+- Leave out bids whose due date has passed.`,
   speaking: `Your job: find conferences, summits and events taking speaker proposals now that fit the speaker in the Brain.
 - Only events with an open call for proposals, speaker application, or a booking contact. Leave out events whose proposal deadline has passed.
 - Note what the slot pays, the audience, location and event date, and the session this speaker should pitch.`,
@@ -438,6 +454,81 @@ Use only what the text says; use "" for anything it does not state.`
   return opp;
 }
 
+/**
+ * An opportunity found by signing in somewhere (BidPrime): the page text and
+ * any documents were read in the browser, so nothing is fetched here first.
+ * Scores the fit, saves the documents, then reads the package as usual.
+ */
+export async function addOpportunityFromText(
+  orgId: number,
+  empKind: "grants" | "speaking",
+  input: { text: string; sourceUrl: string | null; source: string; files: { name: string; buf: Buffer; mime: string; url: string }[]; kind?: OppKind },
+  personName: string
+) {
+  const emp = await employeeFor(orgId, empKind);
+  const docs: string[] = [];
+  for (const f of input.files.slice(0, 8)) {
+    try {
+      docs.push(`# ${f.name}\n${(await readFile(f.buf, f.name, f.mime)).text.slice(0, 20_000)}`);
+    } catch {
+      /* a file that cannot be read is still saved below */
+    }
+  }
+  const text = [input.text, ...docs].join("\n\n");
+  if (text.trim().length < 40) throw new TRPCError({ code: "BAD_REQUEST", message: "That bid had no readable text." });
+  const { system } = await systemPromptFor(
+    emp,
+    `Your job now: read the opportunity below and fill in its details. Then score the fit 0 to 100 and mark it "apply", "partner" or "skip", using what the company in the Brain actually provides and its legal entity for eligibility.
+Use only what the text says; use "" for anything it does not state.`
+  );
+  const kinds = KINDS_FOR[empKind];
+  const details = await generateJson<Found & { kind: OppKind }>({
+    system,
+    prompt: text.slice(0, 60_000),
+    schemaName: "opportunity_details",
+    schema: obj({ ...((FOUND_SCHEMA.properties as any).items.items.properties as object), kind: { type: "string", enum: kinds } }),
+    timeoutMs: 180_000,
+  });
+  const kind = input.kind && kinds.includes(input.kind) ? input.kind : kinds.includes(details.kind) ? details.kind : kinds[0];
+  const source = input.sourceUrl ?? (/^https?:\/\//.test(details.sourceUrl) ? details.sourceUrl : null);
+  const opp = await db.createOpp({
+    organizationId: orgId,
+    employeeId: emp.id,
+    kind,
+    title: (details.title || "Opportunity").slice(0, 255),
+    host: (details.host || hostOf(source) || "Host not listed").slice(0, 255),
+    sourceUrl: source,
+    source: input.source,
+    deadline: details.deadline || null,
+    amount: details.amount || null,
+    equity: details.equity || null,
+    stage: details.stage || null,
+    eligibility: details.eligibility || null,
+    location: details.location || null,
+    eventDate: details.eventDate || null,
+    audience: details.audience || null,
+    angle: details.angle || null,
+    summary: details.summary || null,
+    fitScore: Math.max(0, Math.min(100, Math.round(details.fitScore || 0))),
+    fitCall: callFor(details.fitCall, details.fitScore),
+    fitReason: details.fitReason || null,
+  });
+  for (const f of input.files.slice(0, 8)) {
+    try {
+      const read = await readFile(f.buf, f.name, f.mime);
+      const saved = await storagePut(`org-${orgId}/packages/${f.name}`, f.buf, f.mime);
+      const row = await db.createOppFile({ organizationId: orgId, opportunityId: opp.id, name: f.name, sourceUrl: f.url, fileUrl: saved.url, pages: read.pages, pagesUnit: read.unit, chars: read.text.length, status: "read", note: read.note });
+      db.replaceChunks(orgId, "opp_file", row.id, null, chunkText(read.text));
+    } catch {
+      const saved = await storagePut(`org-${orgId}/packages/${f.name}`, f.buf, f.mime);
+      await db.createOppFile({ organizationId: orgId, opportunityId: opp.id, name: f.name, sourceUrl: f.url, fileUrl: saved.url, status: "failed", note: "Could not read this file" });
+    }
+  }
+  await db.logAction({ organizationId: orgId, actorType: "employee", actorName: personName, action: `Added ${KIND_WORDS[opp.kind].thing}`, details: `${opp.title} (from ${input.source})` });
+  enqueue(`package-${opp.id}`, () => fetchPackage(orgId, opp.id));
+  return opp;
+}
+
 // ==========================================
 // The host's package
 // ==========================================
@@ -466,6 +557,8 @@ const REQ_SCHEMA = obj({
   submitWhat: { type: "string", description: "Everything to submit, as a short list in one line" },
   eventDate: { type: "string", description: "Pitch day, program start or event date, or ''" },
   decisionDate: { type: "string", description: "When decisions are announced, or ''" },
+  questionsDue: { type: "string", description: "Deadline for questions to the buyer or host, as written, or ''" },
+  questionsTo: { type: "string", description: "Where questions go: the buyer's email address or portal, or ''" },
   videoRequired: bool,
   videoLimit: { type: "string", description: "Video length limit, or ''" },
   deckLimit: { type: "string", description: "Pitch deck slide limit, or ''" },
@@ -704,6 +797,7 @@ const WRITE_JOB: Record<OppKind, string> = {
   pitch: "You are writing a pitch competition application for the company in the Brain.",
   accelerator: "You are writing an accelerator application for the company in the Brain.",
   speaking: "You are writing a speaker proposal for the speaker in the Brain.",
+  bid: "You are writing a response to a government or agency bid (RFP) for the company in the Brain. Answer each section directly and show how each requirement is met. Never claim a capability the Brain does not support: say \"partly met\" and give the roadmap answer instead. Never invent a price; leave [PRICE] for the person to fill.",
 };
 
 async function writeQuestion(orgId: number, ctx: Awaited<ReturnType<typeof contextFor>>, app: Application, q: Question, others: Question[], guidance?: string) {
@@ -1169,6 +1263,8 @@ export async function submitApplication(orgId: number, appId: number, personName
   const block = await blockers(orgId, app);
   if (block.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${block.join(". ")}.` });
   const updated = await db.updateApplication(appId, orgId, { status: "approved", certifiedBy: personName, certifiedAt: new Date() });
+  // Morgan sends it now if she can (email or a saved portal sign-in); otherwise she says what still needs a person.
+  enqueue(`submit-${appId}`, async () => (await import("./bids")).autoSubmit(orgId, appId));
   await db.logAction({
     organizationId: orgId,
     actorType: "human_user",

@@ -181,11 +181,12 @@ export function initials(name: string) {
 }
 
 /** What each employee's opportunity tabs are called. */
-export const OPP_TABS: Record<"grants" | "speaking", { key: "grant" | "pitch" | "accelerator" | "speaking"; label: string }[]> = {
+export const OPP_TABS: Record<"grants" | "speaking", { key: "grant" | "pitch" | "accelerator" | "speaking" | "bid"; label: string }[]> = {
   grants: [
     { key: "grant", label: "Grants" },
     { key: "pitch", label: "Pitch competitions" },
     { key: "accelerator", label: "Accelerators" },
+    { key: "bid", label: "Bids" },
   ],
   speaking: [{ key: "speaking", label: "Speaking" }],
 };

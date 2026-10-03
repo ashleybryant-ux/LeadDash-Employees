@@ -18,6 +18,19 @@ git pull origin main
 echo "== npm ci"
 npm ci --no-audit --no-fund
 
+echo "== browser for BidPrime and agency portals"
+# Downloads Chromium once (about 170 MB, kept in ~/.cache/ms-playwright), then
+# installs the system libraries it needs if sudo works without a password.
+nice -n 19 npx playwright-core install chromium || echo "Chromium download failed; BidPrime checks will say so in Morgan's chat."
+if sudo -n true 2>/dev/null; then
+  sudo -n npx playwright-core install-deps chromium > /dev/null 2>&1 || echo "Could not install Chromium's system libraries."
+fi
+if node -e "require('playwright-core').chromium.launch({args:['--no-sandbox']}).then(b=>b.close()).then(()=>process.exit(0),()=>process.exit(1))"; then
+  echo "browser ready"
+else
+  echo "BROWSER NOT READY. Run: cd /home/ssm-user/employees && sudo npx playwright-core install-deps chromium"
+fi
+
 echo "== tests"
 nice -n 19 npm test --silent
 
@@ -73,4 +86,4 @@ else
   echo "NOT ANSWERING on port $PORT_LIVE. Last log lines:"; pm2 logs leaddash-employees --lines 30 --nostream; exit 1
 fi
 echo "== checksums"
-md5sum server/routers.ts server/db.ts server/integrations.ts server/employees/sales.ts server/employees/projects.ts server/employees/coo.ts drizzle/schema.ts dist/index.js
+md5sum server/routers.ts server/db.ts server/integrations.ts server/employees/bids.ts server/employees/browser.ts server/employees/sales.ts server/employees/projects.ts server/employees/coo.ts drizzle/schema.ts dist/index.js

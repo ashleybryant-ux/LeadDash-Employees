@@ -26,6 +26,7 @@ import { describeRule, isValidTimeZone, nextRun } from "./employees/schedule";
 import { runTaskNow } from "./employees/runner";
 import { fetchWebpage, saveDocument, saveImage, savePhoto } from "./employees/files";
 import { usageSummary } from "./usage";
+import * as bids from "./employees/bids";
 import { sendEmail } from "./_core/email";
 import { ENV } from "./_core/env";
 import { REPEATS, HR_STAGES } from "../drizzle/schema";
@@ -538,6 +539,51 @@ export const appRouter = router({
         await requireMember(ctx, input.organizationId);
         return exportsFor.packageZip(input.organizationId, input.id);
       }),
+
+    /** A question for the buyer, drafted as an email to the address in the bid; it waits in Approvals. */
+    ask: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), question: z.string().trim().min(5).max(2000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return bids.askQuestion(input.organizationId, input.id, input.question);
+      }),
+  }),
+
+  /** BidPrime: Morgan signs in with the saved account and reads new bids every morning. */
+  bidprime: router({
+    get: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return bids.bidprimeView(input.organizationId);
+    }),
+    save: protectedProcedure
+      .input(orgInput.extend({ email: z.string().trim().email().max(320), password: z.string().max(500).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const v = await bids.saveBidPrime(input.organizationId, input.email, input.password);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved BidPrime sign-in", details: input.email });
+        bids.queueCheck(input.organizationId, true);
+        return v;
+      }),
+    disconnect: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return bids.disconnectBidPrime(input.organizationId);
+    }),
+    check: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return { queued: bids.queueCheck(input.organizationId, true) };
+    }),
+    code: protectedProcedure
+      .input(orgInput.extend({ code: z.string().trim().min(4).max(20) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return bids.submitBidPrimeCode(input.organizationId, input.code);
+      }),
+    portalCode: protectedProcedure
+      .input(orgInput.extend({ portalId: z.number(), applicationId: z.number(), code: z.string().trim().min(4).max(20) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return bids.submitPortalCode(input.organizationId, input.portalId, input.applicationId, input.code);
+      }),
   }),
 
   applications: router({
@@ -580,6 +626,7 @@ export const appRouter = router({
           files,
           questions: await db.listOpenQuestions(input.organizationId, app.id),
           blockers: await apply.blockers(input.organizationId, app),
+          sending: await bids.readiness(input.organizationId, app),
           signer: { name: org?.signerName ?? null, title: org?.signerTitle ?? null, org: org?.name ?? "" },
         };
       }),
@@ -649,6 +696,17 @@ export const appRouter = router({
         if (!app) throw new TRPCError({ code: "NOT_FOUND", message: "That application is not in this workspace." });
         await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Sent application back", details: app.title });
         return apply.rewriteApplication(input.organizationId, input.id);
+      }),
+
+    /** Try sending an approved response again (after adding a portal sign-in or fixing what stopped it). */
+    sendNow: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const app = await db.getApplication(input.id, input.organizationId);
+        if (!app || app.status !== "approved") throw new TRPCError({ code: "BAD_REQUEST", message: "Only an approved application can be sent." });
+        apply.enqueue(`submit-${app.id}`, () => bids.autoSubmit(input.organizationId, app.id));
+        return { queued: true };
       }),
 
     markSubmitted: protectedProcedure

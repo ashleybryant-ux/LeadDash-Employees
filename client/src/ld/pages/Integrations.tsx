@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, FolderTabs, Page } from "../ui";
-import { parseJson } from "../meta";
+import { fmtDate, fmtTime, parseJson } from "../meta";
 
 type Provider = "google_workspace" | "linkedin" | "facebook" | "instagram" | "wordpress" | "x" | "google_business" | "submittable" | "sessionize" | "threads" | "tiktok" | "clickup" | "zoom" | "recall";
 type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x" | "threads" | "tiktok" | "clickup" | "zoom";
@@ -122,7 +122,7 @@ export default function Integrations() {
         tabs={[
           { key: "all", label: `All (${main.length})` },
           { key: "connected", label: `Connected (${connectedCount})` },
-          { key: "applying", label: "Applying (5)" },
+          { key: "applying", label: "Applying (6)" },
         ]}
       >
         {tab === "applying" ? (
@@ -286,6 +286,7 @@ function Applying({ conns, open, setOpen, ready }: { conns: Conn[]; open: string
   return (
     <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
       <Signer />
+      <BidPrime isOpen={open === "bidprime"} toggle={() => toggle("bidprime")} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, alignItems: "start" }}>
         <GrantsGov isOpen={open === "grantsgov"} toggle={() => toggle("grantsgov")} />
         {[item("submittable"), { key: "portals" } as CatalogItem, gmail, item("sessionize")].map((c) =>
@@ -422,6 +423,87 @@ function GrantsGov({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) 
   );
 }
 
+/** BidPrime: Morgan signs in each morning, reads leads and saved bids, and adds them to Opportunities. */
+function BidPrime({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.bidprime.get.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: (x) => (x.state.data && "checking" in x.state.data && x.state.data.checking ? 5000 : false) });
+  const done = () => utils.bidprime.get.invalidate();
+  const save = trpc.bidprime.save.useMutation({ onSuccess: async () => { setEditing(false); setPw(""); await done(); } });
+  const check = trpc.bidprime.check.useMutation({ onSuccess: done });
+  const disconnect = trpc.bidprime.disconnect.useMutation({ onSuccess: done });
+  const v = q.data;
+  const on = Boolean(v?.connected);
+  const [editing, setEditing] = React.useState(false);
+  const [email, setEmail] = React.useState("");
+  const [pw, setPw] = React.useState("");
+  const startEdit = () => { setEmail(v?.connected ? v.email : ""); setPw(""); setEditing(true); if (!isOpen) toggle(); };
+
+  const right = !on ? (
+    <button type="button" className="ld-btn p" onClick={startEdit} aria-expanded={isOpen}>Connect</button>
+  ) : v?.connected && (v.status === "error" || v.waitingCode) ? (
+    <button type="button" style={warnTile} onClick={toggle} aria-expanded={isOpen}>{v.waitingCode ? "Needs a code" : "Needs attention"}</button>
+  ) : (
+    <button type="button" style={okTile} onClick={toggle} aria-expanded={isOpen}>Connected</button>
+  );
+
+  let line = "";
+  if (v?.connected) {
+    if (v.checking) line = "Checking now...";
+    else if (v.waitingCode) line = "Waiting for the sign-in code in Morgan's chat.";
+    else if (v.lastError) line = `Last check stopped: ${v.lastError}`;
+    else if (v.lastCheckedAt) line = `Last checked ${fmtDate(v.lastCheckedAt)}, ${fmtTime(v.lastCheckedAt)}. ${v.lastFound ? `${v.lastFound} new ${v.lastFound === 1 ? "bid" : "bids"}.` : "Nothing new."}`;
+    else line = "First check is queued.";
+  }
+
+  return (
+    <div style={tileBox(isOpen || editing)}>
+      <TileHead logo="BP" color="#1d4ed8" name="BidPrime" desc="Morgan signs in each morning, reads your leads inbox and saved bids, and adds them to Opportunities with a fit score." right={right} />
+      {(isOpen || editing) && (
+        <div style={{ borderTop: "1px solid #eef2f0", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          {editing ? (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <label className="ld-lbl" htmlFor="bp-email">Email</label>
+                  <input id="bp-email" className="ld-in" type="email" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <label className="ld-lbl" htmlFor="bp-pw">Password</label>
+                  <input id="bp-pw" className="ld-in" type="password" autoComplete="new-password" placeholder={on ? "Saved" : undefined} value={pw} onChange={(e) => setPw(e.target.value)} />
+                </div>
+              </div>
+              <span className="ld-small ld-muted">Saved encrypted. Morgan types it into BidPrime and never shows it to the AI. If BidPrime sends a code, Morgan asks for it in Chat.</span>
+              <div className="ld-row" style={{ justifyContent: "flex-end" }}>
+                <button type="button" className="ld-btn sm" onClick={() => setEditing(false)}>Cancel</button>
+                <button type="button" className="ld-btn p sm" disabled={save.isPending || !email.trim() || (!on && !pw)} onClick={() => save.mutate({ organizationId: currentOrgId, email: email.trim(), password: pw || undefined })}>
+                  {save.isPending ? "Saving..." : "Save"}
+                </button>
+              </div>
+              <ErrorLine error={save.error} />
+            </>
+          ) : v?.connected ? (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 12, alignItems: "center" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 14 }}>
+                  <span>Signed in as <strong>{v.email}</strong></span>
+                  <span className="ld-muted" style={{ fontSize: 13 }}>{line}</span>
+                </div>
+                <div className="ld-row">
+                  <button type="button" className="ld-btn sm" onClick={startEdit}>Edit</button>
+                  <button type="button" className="ld-btn sm" disabled={check.isPending || v.checking} onClick={() => check.mutate({ organizationId: currentOrgId })}>Check now</button>
+                  <button type="button" className="ld-btn sm danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate({ organizationId: currentOrgId })}>Disconnect</button>
+                </div>
+              </div>
+              <ErrorLine error={check.error || disconnect.error} />
+            </>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Portals({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
@@ -432,7 +514,7 @@ function Portals({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
   const n = list.data?.length ?? 0;
   return (
     <div style={tileBox(isOpen)}>
-      <TileHead logo="P" color="#3d4c45" name="Other grant portals" desc="Saved sign-ins for funders' own forms." right={<button type="button" className="ld-btn" onClick={toggle} aria-expanded={isOpen}>{n ? `${n} saved` : "Add"}</button>} />
+      <TileHead logo="P" color="#3d4c45" name="Agency and funder portals" desc="Saved sign-ins for Bonfire, BidNet, state portals and funders' own forms." right={<button type="button" className="ld-btn" onClick={toggle} aria-expanded={isOpen}>{n ? `${n} saved` : "Add"}</button>} />
       {isOpen && (
         <div style={{ borderTop: "1px solid #eef2f0", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
           {(list.data ?? []).map((p) => (

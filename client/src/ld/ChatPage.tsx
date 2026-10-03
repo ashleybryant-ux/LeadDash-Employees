@@ -90,7 +90,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code";
   id: number;
   title: string;
   subtitle?: string;
@@ -380,6 +380,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   if (card.type === "meeting_notes") return <MeetingNotesCard id={card.id} />;
   if (card.type === "onboarding") return <OnboardingCard emp={emp} />;
   if (card.type === "onboarding_q") return <OnboardingQuestionCard emp={emp} qkey={card.title} />;
+  if (card.type === "bidprime_code" || card.type === "portal_code") return <CodeCard card={card} />;
 
   if (card.type === "question") {
     return (
@@ -421,7 +422,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
     actions = (
       <>
         {ready && (
-          <button type="button" className="ld-btn p" disabled={submit.isPending} onClick={() => submit.mutate({ organizationId: currentOrgId, id: card.id })}>Submit</button>
+          <button type="button" className="ld-btn p" disabled={submit.isPending} onClick={() => submit.mutate({ organizationId: currentOrgId, id: card.id })}>Approve</button>
         )}
         <Link href={`${base}/app/${card.id}`} className="ld-btn">Open</Link>
       </>
@@ -474,7 +475,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
         {card.subtitle && <span style={{ fontSize: 14, color: "#3d4c45" }}>{card.subtitle}</span>}
         {card.body && <span style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>{card.body}</span>}
         {card.type === "application" && card.status === "ready" && (
-          <span style={{ fontSize: 12, color: "#5b6b64", lineHeight: 1.5, marginTop: 4 }}>Submitting certifies the application is true and complete and that you are authorized to submit it.</span>
+          <span style={{ fontSize: 12, color: "#5b6b64", lineHeight: 1.5, marginTop: 4 }}>Approving certifies the application is true and complete and that you are authorized to submit it.</span>
         )}
         {card.url && (
           <a href={card.url} target="_blank" rel="noreferrer noopener" style={{ fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>
@@ -484,6 +485,54 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
         <ErrorLine error={err} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{actions}</div>
+    </div>
+  );
+}
+
+/** A sign-in code a site sent: held in memory for 10 minutes, never saved. */
+function CodeCard({ card }: { card: Card }) {
+  const { currentOrgId } = useTenant();
+  const [code, setCode] = React.useState("");
+  const bp = trpc.bidprime.code.useMutation();
+  const portal = trpc.bidprime.portalCode.useMutation();
+  const m = card.type === "bidprime_code" ? bp : portal;
+  const send = () => {
+    if (card.type === "bidprime_code") bp.mutate({ organizationId: currentOrgId, code: code.trim() });
+    else portal.mutate({ organizationId: currentOrgId, portalId: card.id, applicationId: Number(card.url), code: code.trim() });
+  };
+  const inputId = `code-${card.type}-${card.id}-${card.url ?? ""}`;
+  return (
+    <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 128px", gap: 16, alignItems: "end" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+        <span style={{ fontWeight: 800, fontSize: 15 }}>{card.title}</span>
+        {card.subtitle && <span style={{ fontSize: 14, color: "#3d4c45" }}>{card.subtitle}</span>}
+        {m.isSuccess ? (
+          <span className="ld-pill green" style={{ alignSelf: "flex-start" }}>Got it. Signing in now</span>
+        ) : (
+          <>
+            <label htmlFor={inputId} className="ld-lbl" style={{ marginTop: 4 }}>Code</label>
+            <input
+              id={inputId}
+              className="ld-in"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              maxLength={12}
+              style={{ maxWidth: 200, letterSpacing: 2 }}
+              onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && code.trim().length >= 4) send(); }}
+            />
+          </>
+        )}
+        <ErrorLine error={m.error} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {!m.isSuccess && (
+          <button type="button" className="ld-btn p" disabled={m.isPending || code.trim().length < 4} onClick={send}>
+            {m.isPending ? "Sending..." : "Send code"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

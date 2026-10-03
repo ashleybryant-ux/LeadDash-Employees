@@ -386,7 +386,7 @@ export type InsertAuditLog = typeof auditLogs.$inferInsert;
 // Connections and the approval queue
 // ==========================================
 
-export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize", "threads", "tiktok", "clickup", "zoom", "recall"] as const;
+export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize", "threads", "tiktok", "clickup", "zoom", "recall", "bidprime"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const externalConnections = sqliteTable(
@@ -567,7 +567,7 @@ export type TaskRun = typeof taskRuns.$inferSelect;
 // Taylor's speaking calls)
 // ==========================================
 
-export const OPP_KINDS = ["grant", "pitch", "accelerator", "speaking"] as const;
+export const OPP_KINDS = ["grant", "pitch", "accelerator", "speaking", "bid"] as const;
 export type OppKind = (typeof OPP_KINDS)[number];
 
 export const opportunities = sqliteTable(

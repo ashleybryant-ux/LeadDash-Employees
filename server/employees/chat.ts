@@ -76,7 +76,7 @@ const ACTION_HELP: Record<string, string> = {
   report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
   find_people: "find_people: search the web for professionals to reach out to for an open role. Put the role or any focus (city, license, specialty) in `focus`.",
   write_job_post: "write_job_post: write or rewrite the job post for a role. Put the role title in `target` ('' for the newest open role).",
-  find_grants: "find_grants: search the web now. Set `oppKind` to grant, pitch (pitch competitions) or accelerator (accelerator or incubator programs); default grant. Put any focus the person gave in `focus`.",
+  find_grants: "find_grants: search the web now. Set `oppKind` to grant, pitch (pitch competitions), accelerator (accelerator or incubator programs) or bid (government or agency RFPs and bids); default grant. Put any focus the person gave in `focus`.",
   find_events: "find_events: search the web for speaking events taking proposals now. Set `oppKind` to speaking. Put any focus in `focus`.",
   add_link: "add_link: the person gave a link to an opportunity they found. Put the link in `url`.",
   apply: "apply: start the application for an opportunity already found. Put its name (or 'best' for the best fit not yet started) in `target`.",
@@ -111,7 +111,7 @@ function decisionSchema(kind: string): JsonSchema {
       subject: str,
       message: str,
       url: str,
-      oppKind: { type: "string", enum: ["", "grant", "pitch", "accelerator", "speaking"] },
+      oppKind: { type: "string", enum: ["", "grant", "pitch", "accelerator", "speaking", "bid"] },
       target: str,
       to: str,
       date: str,
@@ -170,7 +170,7 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       const empKind = emp.kind === "speaking" ? "speaking" : "grants";
       const r = await apply.findOpportunities(org, empKind, { kind: d.oppKind || undefined, focus: d.focus || undefined });
       const cards: ChatCard[] = r.created.map(oppCard);
-      const thing = { grant: "open grant", pitch: "pitch competition", accelerator: "accelerator program", speaking: "event taking proposals" }[r.kind];
+      const thing = { grant: "open grant", pitch: "pitch competition", accelerator: "accelerator program", speaking: "event taking proposals", bid: "open bid" }[r.kind];
       let text = r.created.length
         ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, `new ${thing}`)}. ${worth(r.created.filter((o) => o.fitCall === "apply").length, r.created.length)}`
         : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find new ones beyond what's already on Opportunities.`;

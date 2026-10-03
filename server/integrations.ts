@@ -1013,6 +1013,32 @@ export async function sendGmail(orgId: number, to: string, subject: string, body
   return data.id ? `https://mail.google.com/mail/u/0/#sent/${data.threadId ?? data.id}` : null;
 }
 
+/** Sends an email with files attached (a bid or application response) from the connected Gmail account. */
+export async function sendGmailWithFiles(orgId: number, to: string, subject: string, body: string, files: { name: string; buf: Buffer; mime: string }[]) {
+  const { token } = await accessToken(orgId, "google_workspace");
+  const boundary = `ld_${Date.now().toString(36)}`;
+  const parts = [
+    `To: ${to}`,
+    `Subject: ${encodeHeader(subject)}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    body,
+  ];
+  for (const f of files) {
+    const name = f.name.replace(/["\r\n]/g, "");
+    parts.push(`--${boundary}`, `Content-Type: ${f.mime}; name="${encodeHeader(name)}"`, `Content-Disposition: attachment; filename="${encodeHeader(name)}"`, "Content-Transfer-Encoding: base64", "", f.buf.toString("base64").replace(/.{76}/g, "$&\r\n"));
+  }
+  parts.push(`--${boundary}--`, "");
+  const raw = parts.join("\r\n");
+  const { data } = await api("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST", token, headers: { "content-type": "application/json" }, body: JSON.stringify({ raw: Buffer.from(raw, "utf8").toString("base64url") }) });
+  return data.id ? `https://mail.google.com/mail/u/0/#sent/${data.threadId ?? data.id}` : null;
+}
+
 function emailIn(s: string | undefined | null) {
   return (s ?? "").match(/[^\s<>"',;]+@[^\s<>"',;]+\.[a-z]{2,}/i)?.[0] ?? null;
 }

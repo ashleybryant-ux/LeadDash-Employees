@@ -8,11 +8,11 @@ import { APP_STATUS, CHANNEL_LABEL, OPP_TABS, fmtDate, openDownload, parseJson, 
 import type { AppRow, Award, OppRow, Question, Requirements, Attachment } from "../types";
 
 type EmpKind = "grants" | "speaking";
-type OppKind = "grant" | "pitch" | "accelerator" | "speaking";
+type OppKind = "grant" | "pitch" | "accelerator" | "speaking" | "bid";
 
-const HOST_LABEL: Record<OppKind, string> = { grant: "Funder", pitch: "Host", accelerator: "Program", speaking: "Organizer" };
-const AMOUNT_LABEL: Record<OppKind, string> = { grant: "Award", pitch: "Prize", accelerator: "Offer", speaking: "Pays" };
-const THING: Record<OppKind, string> = { grant: "Opportunity", pitch: "Competition", accelerator: "Program", speaking: "Event" };
+const HOST_LABEL: Record<OppKind, string> = { grant: "Funder", pitch: "Host", accelerator: "Program", speaking: "Organizer", bid: "Agency" };
+const AMOUNT_LABEL: Record<OppKind, string> = { grant: "Award", pitch: "Prize", accelerator: "Offer", speaking: "Pays", bid: "Goes in" };
+const THING: Record<OppKind, string> = { grant: "Opportunity", pitch: "Competition", accelerator: "Program", speaking: "Event", bid: "Bid" };
 
 const OPP_COLS = "minmax(0,2.2fr) minmax(0,1.3fr) 130px 140px 130px 128px";
 const APP_COLS = "minmax(0,2.4fr) minmax(0,1.4fr) 130px 160px 128px";
@@ -170,6 +170,7 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const [open, setOpen] = React.useState<number | null>(null);
+  const [asking, setAsking] = React.useState<number | null>(null);
   const start = trpc.applications.start.useMutation({ onSuccess: async () => { await utils.applications.list.invalidate(); await utils.opps.list.invalidate(); onOpenApps(); } });
   const skip = trpc.opps.skip.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
   const refresh = trpc.opps.refreshPackage.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
@@ -180,9 +181,9 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
       <div className="ld-hd" style={{ gridTemplateColumns: OPP_COLS }}>
         <span>{THING[kind]}</span>
         <span>{HOST_LABEL[kind]}</span>
-        <span>Deadline</span>
+        <span>{kind === "bid" ? "Due" : "Deadline"}</span>
         <span>{AMOUNT_LABEL[kind]}</span>
-        <span>{emp.name}'s call</span>
+        <span>{kind === "bid" ? "Fit" : `${emp.name}'s call`}</span>
         <span />
       </div>
       {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : `Nothing here yet. Press ${emp.kind === "speaking" ? "Find events" : "Find more"}, add one, or ask ${emp.name} in Chat.`}</div>}
@@ -201,10 +202,13 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
                 setOpen(isOpen ? null : o.id);
               }}
             >
-              <span className="ld-strong">{o.title}</span>
+              <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                <span className="ld-strong">{o.title}</span>
+                {o.source === "BidPrime" && <span className="ld-small ld-muted">From BidPrime</span>}
+              </span>
               <span>{o.host}</span>
-              <span>{o.deadline || "Not listed"}</span>
-              <span>{o.amount || "Not listed"}</span>
+              <span>{o.deadline || reqs.due || "Not listed"}</span>
+              <span>{o.kind === "bid" ? goesIn(reqs) : o.amount || "Not listed"}</span>
               {app ? <span className={`ld-pill ${APP_STATUS[app.status]?.cls ?? "gray"}`}>{APP_STATUS[app.status]?.label ?? app.status}</span> : o.fitScore > 0 || o.fitReason ? callPill(o) : <span className="ld-pill gray">Not scored</span>}
               {app ? (
                 <button type="button" className="ld-btn" onClick={onOpenApps}>Open</button>
@@ -223,6 +227,15 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
                       {o.angle && <KV label="Session to pitch">{o.angle}</KV>}
                       {(o.location || o.eventDate) && <KV label="Event">{[o.eventDate, o.location].filter(Boolean).join(", ")}</KV>}
                     </>
+                  ) : o.kind === "bid" ? (
+                    <>
+                      {o.summary && <KV label="What they want">{o.summary}</KV>}
+                      {o.fitReason && <KV label={o.fitCall === "skip" ? "Why skip" : "Why it fits"}>{o.fitReason}</KV>}
+                      {(reqs.attachments ?? []).some((a) => a.needsSignature) && (
+                        <KV label="Needs you">{(reqs.attachments ?? []).filter((a) => a.needsSignature).map((a) => a.name).join(", ")} (signature)</KV>
+                      )}
+                      {(reqs.questionsDue || reqs.questionsTo) && <KV label="Questions due">{[reqs.questionsDue, reqs.questionsTo].filter(Boolean).join(", to ")}</KV>}
+                    </>
                   ) : o.kind === "grant" ? (
                     <>
                       {(reqs.eligibility || o.eligibility) && <KV label="Who can apply">{reqs.eligibility || o.eligibility}</KV>}
@@ -236,7 +249,7 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
                       {(o.eventDate || reqs.eventDate) && <KV label={o.kind === "pitch" ? "Pitch day" : "Program dates"}>{[o.eventDate || reqs.eventDate, o.location].filter(Boolean).join(", ")}</KV>}
                     </>
                   )}
-                  {o.fitReason && <KV label={o.fitCall === "skip" ? "Why skip" : o.fitCall === "partner" ? "Apply with a partner" : "Why apply"}>{o.fitReason}</KV>}
+                  {o.fitReason && o.kind !== "bid" && <KV label={o.fitCall === "skip" ? "Why skip" : o.fitCall === "partner" ? "Apply with a partner" : "Why apply"}>{o.fitReason}</KV>}
                   {o.funderHistory && (
                     <KV label="Funder history">
                       {o.funderHistory}
@@ -265,8 +278,16 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
                   <button type="button" className="ld-btn" disabled={dl.isPending || o.files.length === 0} onClick={() => dl.mutate({ organizationId: currentOrgId, id: o.id })}>
                     Download
                   </button>
+                  {o.kind === "bid" && (
+                    <button type="button" className="ld-btn" onClick={() => setAsking(asking === o.id ? null : o.id)}>Ask a question</button>
+                  )}
                   <button type="button" className="ld-btn" onClick={() => skip.mutate({ organizationId: currentOrgId, id: o.id })}>Skip</button>
                 </div>
+                {asking === o.id && (
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <AskPanel oppId={o.id} to={reqs.questionsTo} due={reqs.questionsDue} onDone={() => setAsking(null)} />
+                  </div>
+                )}
                 {(dl.error || start.error) && (
                   <div style={{ gridColumn: "1 / -1" }}>
                     <ErrorLine error={dl.error || start.error} />
@@ -278,6 +299,50 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
         );
       })}
     </>
+  );
+}
+
+/** Where a bid's response goes in, read from the package. */
+function goesIn(reqs: Requirements) {
+  if (!reqs.channel) return "Not listed";
+  if (reqs.channel === "portal" && reqs.channelDetail) {
+    const host = reqs.channelDetail.replace(/^https?:\/\//, "");
+    if (/bonfire/i.test(host)) return "Bonfire";
+    if (/bidnet/i.test(host)) return "BidNet";
+    if (/periscope|bidsync/i.test(host)) return "Periscope";
+    if (/opengov/i.test(host)) return "OpenGov";
+    return host.split("/")[0];
+  }
+  return CHANNEL_LABEL[reqs.channel] ?? reqs.channel;
+}
+
+/** Ask the buyer a question: becomes an email draft in Approvals. */
+function AskPanel({ oppId, to, due, onDone }: { oppId: number; to?: string; due?: string; onDone: () => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const [q, setQ] = React.useState("");
+  const ask = trpc.opps.ask.useMutation({ onSuccess: () => utils.invalidate() });
+  if (ask.isSuccess)
+    return (
+      <div className="ld-between" style={{ background: "#f4f8f6", padding: "12px 16px", borderRadius: 8 }}>
+        <span className="ld-body">The question is in Approvals as an email draft{to ? ` to ${to}` : ""}.</span>
+        <button type="button" className="ld-btn sm" onClick={onDone}>Close</button>
+      </div>
+    );
+  return (
+    <div style={{ background: "#f4f8f6", padding: "14px 16px", borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+      <label htmlFor={`ask-${oppId}`} className="ld-lbl">
+        Question for the buyer{to ? ` (${to}` : ""}{to && due ? `, due ${due})` : to ? ")" : due ? ` (due ${due})` : ""}
+      </label>
+      <textarea id={`ask-${oppId}`} className="ld-in" rows={3} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Is a hosted (cloud) system acceptable?" />
+      <div className="ld-row" style={{ justifyContent: "flex-end" }}>
+        <button type="button" className="ld-btn" onClick={onDone}>Cancel</button>
+        <button type="button" className="ld-btn p" disabled={ask.isPending || q.trim().length < 5} onClick={() => ask.mutate({ organizationId: currentOrgId, id: oppId, question: q.trim() })}>
+          {ask.isPending ? "Drafting..." : "Draft it"}
+        </button>
+      </div>
+      <ErrorLine error={ask.error} />
+    </div>
   );
 }
 
@@ -298,7 +363,7 @@ function Package({ opp, reqs, onRetry }: { opp: OppRow; reqs: Requirements; onRe
       <div className="ld-card" style={{ padding: "14px 16px" }}>
         <div className="ld-between">
           <span className="ld-lbl">
-            {opp.packageStatus === "fetching" ? "Downloading the package..." : `Host's package (${opp.files.length} ${opp.files.length === 1 ? "file" : "files"})`}
+            {opp.packageStatus === "fetching" ? "Downloading the package..." : `${opp.kind === "bid" ? "Bid documents" : "Host's package"} (${opp.files.length} ${opp.files.length === 1 ? "file" : "files"})`}
           </span>
           {(opp.packageStatus === "none" || opp.packageStatus === "failed") && (
             <button type="button" className="ld-btn sm" onClick={onRetry}>{opp.packageStatus === "none" ? "Get it" : "Try again"}</button>

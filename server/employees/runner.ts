@@ -121,6 +121,8 @@ export function startScheduler() {
       await morningChecks();
       // New employees reach out first; "Later" reminders come due.
       await interviewTicks();
+      // BidPrime: once a day after 7:00 in each workspace's time zone.
+      await (await import("./bids")).bidsTick();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

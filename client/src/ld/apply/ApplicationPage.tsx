@@ -51,6 +51,19 @@ function Header({ d, base, back, backHref, right }: { d: AppDetail; base: string
   );
 }
 
+function CheckLine({ ok, text, note }: { ok: boolean; text: string; note?: string }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "18px minmax(0,1fr)", gap: 8, alignItems: "start" }}>
+      <span aria-hidden="true" style={{ fontWeight: 800, color: ok ? "#1f7a4d" : "#b4610e" }}>{ok ? "✓" : "!"}</span>
+      <span className="ld-body">
+        {text}
+        <span className="ld-sr">{ok ? " (done)" : " (needs you)"}</span>
+        {note && <span className="ld-small ld-muted" style={{ display: "block" }}>{note}</span>}
+      </span>
+    </div>
+  );
+}
+
 function MainView({ d, emp, base }: { d: AppDetail; emp: EmployeeRow; base: string }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
@@ -63,7 +76,9 @@ function MainView({ d, emp, base }: { d: AppDetail; emp: EmployeeRow; base: stri
   const refresh = () => Promise.all([utils.applications.get.invalidate(), utils.applications.list.invalidate()]);
   const submit = trpc.applications.submit.useMutation({ onSuccess: refresh });
   const rewrite = trpc.applications.rewrite.useMutation({ onSuccess: refresh });
+  const sendNow = trpc.applications.sendNow.useMutation({ onSuccess: refresh });
   const dl = trpc.applications.download.useMutation({ onSuccess: openDownload });
+  const sigs = atts.filter((a) => a.needsSignature);
   const done = ["approved", "submitted", "awarded", "declined"].includes(app.status);
   const signer = d.signer.name ? `${d.signer.name}${d.signer.title ? `, ${d.signer.title}` : ""}` : null;
 
@@ -80,7 +95,7 @@ function MainView({ d, emp, base }: { d: AppDetail; emp: EmployeeRow; base: stri
               <button type="button" className="ld-btn" disabled={dl.isPending} onClick={() => dl.mutate({ organizationId: currentOrgId, id: app.id, what: "zip" })}>Download</button>
               {!done && (
                 <button type="button" className="ld-btn p" disabled={submit.isPending || d.blockers.length > 0} onClick={() => submit.mutate({ organizationId: currentOrgId, id: app.id })}>
-                  Submit
+                  Approve
                 </button>
               )}
             </div>
@@ -88,25 +103,40 @@ function MainView({ d, emp, base }: { d: AppDetail; emp: EmployeeRow; base: stri
         }
       />
 
-      {!done && (
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 6 }}>
-          {d.blockers.length > 0 ? (
-            <span className="ld-small" style={{ color: "#8a4510", fontWeight: 600 }}>Before Submit: {d.blockers.join(". ")}.</span>
-          ) : (
-            <span className="ld-small ld-muted">
-              Submitting certifies the application is true and complete and that you are authorized to submit it for {d.signer.org}.{signer ? ` Signed by ${signer}.` : ""}
-            </span>
+      {!done && d.blockers.length === 0 && (
+        <span className="ld-small ld-muted">
+          Approving certifies the application is true and complete and that you are authorized to submit it for {d.signer.org}.{signer ? ` Signed by ${signer}.` : ""}
+        </span>
+      )}
+      {(!done || app.status === "approved") && app.status !== "writing" && (
+        <div className="ld-card" style={{ padding: "14px 16px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 16, alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <span className="ld-lbl">Before it goes in</span>
+            <CheckLine ok={d.sending.route.ready} text={d.sending.route.label} note={d.sending.route.detail} />
+            {d.blockers.filter((b) => !(sigs.length && /signature/i.test(b))).map((b) => (
+              <CheckLine key={b} ok={false} text={b} />
+            ))}
+            {sigs.map((a) => (
+              <CheckLine key={a.name} ok={Boolean(a.fileUrl)} text={a.fileUrl ? `${a.name} signed and uploaded` : `${a.name} needs your signature, then upload it`} />
+            ))}
+            {app.status === "approved" && (
+              <span className="ld-small ld-muted">
+                Approved by {app.certifiedBy}.{" "}
+                {d.sending.route.ready
+                  ? `${emp.name} is sending it and posts the confirmation in Chat. If it stopped, press Send now to try again.`
+                  : <>Download it, submit it on {opp?.sourceUrl ? <a href={opp.sourceUrl} target="_blank" rel="noreferrer noopener">the {opp?.kind === "bid" ? "agency's" : "host's"} page</a> : `the ${opp?.kind === "bid" ? "agency's" : "host's"} page`}, then press Mark sent on the Applications tab.</>}
+              </span>
+            )}
+            {!done && <span className="ld-small ld-muted">{d.sending.route.ready ? `After you approve, ${emp.name} sends it and posts the confirmation in Chat.` : `After you approve, it's ready for you to send.`}</span>}
+          </div>
+          {app.status === "approved" && d.sending.route.ready && (
+            <button type="button" className="ld-btn p" disabled={sendNow.isPending || sendNow.isSuccess} onClick={() => sendNow.mutate({ organizationId: currentOrgId, id: app.id })}>
+              {sendNow.isPending ? "Sending..." : sendNow.isSuccess ? "Sending" : "Send now"}
+            </button>
           )}
         </div>
       )}
-      {app.status === "approved" && (
-        <div className="ld-card" style={{ padding: "12px 16px" }}>
-          <span className="ld-body">
-            Approved by {app.certifiedBy}. Automatic sending through {CHANNEL_LABEL[app.channel] ?? app.channel} is not switched on yet: download it, submit it on {opp?.sourceUrl ? <a href={opp.sourceUrl} target="_blank" rel="noreferrer noopener">the host's page</a> : "the host's page"}, then press Mark sent on the Applications tab.
-          </span>
-        </div>
-      )}
-      <ErrorLine error={submit.error || dl.error || rewrite.error} />
+      <ErrorLine error={submit.error || dl.error || rewrite.error || sendNow.error} />
 
       {app.status === "writing" && (
         <div className="ld-card ld-row" style={{ padding: "12px 16px", gap: 12 }}>
