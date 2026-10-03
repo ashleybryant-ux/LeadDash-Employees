@@ -60,7 +60,7 @@ export async function bidprimeView(orgId: number) {
     lastCheckedAt: c.settings.lastCheckedAt ?? null,
     lastFound: c.settings.lastFound ?? 0,
     waitingCode: Boolean(c.settings.waitingCode),
-    checking: Boolean(c.settings.checking),
+    checking: isChecking(orgId),
     lastError: c.settings.lastError ?? null,
   };
 }
@@ -121,9 +121,19 @@ export async function clearWaiting(orgId: number) {
   await saveSettings(orgId, { waitingCode: false });
 }
 
+// Checks queued or running right now. Kept in memory, so a restart never leaves a check that looks stuck.
+const activeChecks = new Set<number>();
+export function isChecking(orgId: number) {
+  return activeChecks.has(orgId);
+}
+
 export function queueCheck(orgId: number, manual = false, now = new Date(), liveId = newLiveId()) {
+  if (activeChecks.has(orgId)) return false;
+  activeChecks.add(orgId);
   liveStart(orgId, liveId);
-  return enqueue(`bidprime-${orgId}`, () => withUsage({ orgId, kind: "grants" }, () => checkBidPrime(orgId, manual, now, liveId)));
+  const queued = enqueue(`bidprime-${orgId}`, () => withUsage({ orgId, kind: "grants" }, () => checkBidPrime(orgId, manual, now, liveId)).finally(() => activeChecks.delete(orgId)));
+  if (!queued) activeChecks.delete(orgId);
+  return queued;
 }
 
 export function newLiveId() {
@@ -259,7 +269,7 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","refnum":"","location"
 export async function bidsTick(now = new Date()) {
   for (const orgId of await db.listAllOrganizationIds()) {
     const c = await connection(orgId).catch(() => null);
-    if (!c || c.conn.status === "disconnected" || !c.secrets?.password || c.settings.checking) continue;
+    if (!c || c.conn.status === "disconnected" || !c.secrets?.password || isChecking(orgId)) continue;
     const org = await db.getOrganizationById(orgId);
     const tz = org?.timezone || "America/Chicago";
     const p = partsIn(now, tz);
