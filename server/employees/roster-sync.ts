@@ -5,12 +5,21 @@ import { ROSTER } from "./roster";
  * Every workspace has every employee on the roster. Runs when a workspace is
  * created and at every server start, so a job added to the roster later (like
  * Quinn) shows up in every existing workspace without anyone doing anything.
+ * Existing roster employees get the current job description and capabilities.
  */
 export async function ensureRoster(organizationId: number) {
   const have = await db.listEmployeesByOrg(organizationId);
   let added = 0;
   for (const r of ROSTER) {
-    if (have.some((e) => e.kind === r.kind)) continue;
+    const current = have.find((e) => e.kind === r.kind);
+    if (current) {
+      // Keep the job text current. Names stay as the workspace set them.
+      const caps = JSON.stringify(r.capabilities);
+      if (current.description !== r.description || current.capabilities !== caps) {
+        await db.updateEmployee(current.id, organizationId, { description: r.description, capabilities: caps });
+      }
+      continue;
+    }
     await db.createEmployee({
       organizationId,
       kind: r.kind,
