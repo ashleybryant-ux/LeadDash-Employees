@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import type { AIEmployee, ChatMessage } from "../../drizzle/schema";
-import { generateJson, type JsonSchema } from "../_core/llm";
+import { generateJson, generateText, type JsonSchema } from "../_core/llm";
 import * as tasks from "./tasks";
 import * as apply from "./apply";
 import * as hiring from "./hiring";
@@ -12,6 +12,7 @@ import * as sales from "./sales";
 import { askTeammate, gate } from "./team";
 import * as projects from "./projects";
 import * as coo from "./coo";
+import * as notetaker from "./notetaker";
 
 /**
  * Chat with an employee. Each message is answered in two steps:
@@ -22,7 +23,7 @@ import * as coo from "./coo";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda";
+  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes";
   id: number;
   title: string;
   subtitle?: string;
@@ -49,7 +50,7 @@ const ACTIONS: Record<string, string[]> = {
   outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate"],
   leads: ["none", "report", "check_status", "ask_teammate"],
   projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "ask_teammate"],
-  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "check_status", "set_goal", "ask_teammate"],
+  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate"],
   custom: ["none", "report", "ask_teammate"],
 };
 
@@ -60,6 +61,9 @@ const ACTION_HELP: Record<string, string> = {
   write_agenda: "write_agenda: write or rewrite the agenda for an upcoming meeting. Put the meeting name in `target` ('' for the next one) and anything to add or change in `notes`.",
   schedule_meeting: "schedule_meeting: set up a one-time meeting. Put its name in `title`, the date as YYYY-MM-DD in `date`, the start time like 10:00 AM in `time`, the length in minutes in `count` (15, 30, 45, 60 or 90), who attends (names or emails) in `attendees`, and employees whose updates belong on the agenda (names, comma-separated) in `notes`.",
   meeting_notes: "meeting_notes: the person pasted notes from a meeting. Put the meeting name in `target` ('' for the most recent) and the full notes in `message`.",
+  sat_in_notes: "sat_in_notes: the person asks about a meeting you sat in on and took notes for (what was decided, who agreed to what). Put the meeting name, company or person in `target` ('' for the most recent) and the question in `message`.",
+  join_or_skip: "join_or_skip: the person wants you to skip, or to sit in on, an upcoming meeting on their calendar. Put the meeting name or its start time (like 4:00 PM) in `target`, and \"join\" or \"skip\" in `to`.",
+  send_notes: "send_notes: email the notes from a meeting you sat in on. Put the meeting name in `target` ('' for the most recent).",
   set_goal: "set_goal: set a weekly goal on the scorecard. Put one of practices_contacted, demos_booked, reply_minutes, posts_published, articles_published, grant_apps_sent, tasks_on_time, approvals_waiting in `target` and the goal number in `count`.",
   ask_teammate: "ask_teammate: the person asks you to check with another employee (\"ask Theo what he published\", \"how many demos does Malik have\"). Put that employee's name or job in `teammate` and the question in `message`.",
   find_prospects: "find_prospects: search the web now for businesses (or referral partners) that fit. Put any area, type or size the person gave in `focus`.",
@@ -278,6 +282,29 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       const items = JSON.parse(r.actionItems || "[]") as coo.ActionItem[];
       const sent = items.some((i) => i.status === "in_clickup" || i.status === "task");
       return { text: `I found ${plural(items.length, "action item")} in your notes from ${m.title}${items.length ? `: ${items.map((i) => `${i.text} (${i.owner})`).join("; ")}` : ""}.${sent ? " Nora added them to the launch plan." : ""}`, cards: [], queries: [] };
+    }
+    case "sat_in_notes": {
+      const r = await notetaker.findMeeting(org, d.target, "notes");
+      if (!r) return { text: "I don't have notes from a meeting like that yet. I only have notes from meetings I sat in on.", cards: [], queries: [] };
+      const tz = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
+      const { system } = await tasks.systemPromptFor(emp, "Answer the question from these meeting notes only, in 1 to 3 plain sentences. If the notes don't say, say so.");
+      const answer = await generateText({ system, prompt: `Notes:\n${notetaker.notesText(r, tz)}\n\nQuestion: ${d.message || "What happened in this meeting?"}`, maxTokens: 400 });
+      return { text: answer.trim(), cards: [notetaker.notesCard(r) as ChatCard], queries: [] };
+    }
+    case "join_or_skip": {
+      const r = await notetaker.findMeeting(org, d.target, "upcoming");
+      if (!r) return { text: "I couldn't find that meeting among the ones with a Zoom or Google Meet link in the next two days.", cards: [], queries: [] };
+      const choice = d.to.trim().toLowerCase() === "join" ? "join" : "skip";
+      const next = await notetaker.setChoice(org, r.id, choice);
+      return { text: choice === "join" ? (next.status === "scheduled" ? `I'll sit in on ${r.title}.` : `I'll sit in on ${r.title} once it's close enough to book.`) : `I'll skip ${r.title}.`, cards: [], queries: [] };
+    }
+    case "send_notes": {
+      const r = await notetaker.findMeeting(org, d.target, "notes");
+      if (!r) return { text: "I don't have finished notes from a meeting like that yet.", cards: [], queries: [] };
+      const members = await db.listMembers(org);
+      const owner = members.find((m) => m.role === "owner") ?? members[0];
+      await notetaker.sendRecap(org, r.id, { name: owner?.name || owner?.email || "Owner", email: owner?.email ?? "" });
+      return { text: `I emailed the notes from ${r.title}.`, cards: [], queries: [] };
     }
     case "set_goal": {
       const row = await coo.setGoal(org, d.target, Number.isFinite(Number(d.count)) ? Number(d.count) : null);

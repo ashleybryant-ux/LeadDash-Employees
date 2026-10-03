@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine } from "../ui";
-import { AgendaList, meetingStatus } from "../work/Meetings";
+import { AgendaList, meetingStatus, notesState } from "../work/Meetings";
 
 const day = (d: Date | string | number, tz: string) => new Date(d).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" });
 const time = (d: Date | string | number, tz: string) => new Date(d).toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
@@ -86,6 +86,39 @@ export function MeetingAgendaCard({ id }: { id: number }) {
         ) : null}
         <Link href="/chats/coo/work" className="ld-btn">Edit</Link>
         {m.status !== "invited" && m.state === "upcoming" && !later && <button type="button" className="ld-btn" onClick={() => setLater(true)}>Not now</button>}
+      </div>
+    </div>
+  );
+}
+
+/** Simone's notes card in chat, after a meeting she sat in on. */
+export function MeetingNotesCard({ id }: { id: number }) {
+  const { currentOrgId, currentOrg } = useTenant();
+  const tz = currentOrg?.timezone || "America/Chicago";
+  const utils = trpc.useUtils();
+  const q = trpc.coo.notes.useQuery({ organizationId: currentOrgId, id }, { enabled: currentOrgId > 0 });
+  const recap = trpc.coo.sendNotesRecap.useMutation({ onSuccess: () => utils.coo.invalidate() });
+  const r = q.data;
+  if (!r) return <div className="ld-card" style={{ padding: "16px 18px" }}><span className="ld-muted">{q.error ? "These notes were removed." : "Loading the notes..."}</span></div>;
+  const st = notesState(r);
+  const who = r.attendees.map((a: { name: string }) => a.name).join(", ");
+  const owners = r.actionItems.reduce<Record<string, number>>((acc, i) => ({ ...acc, [i.owner]: (acc[i.owner] ?? 0) + 1 }), {});
+  const byOwner = Object.entries(owners).map(([o, n]) => `${n} for ${o}`).join(", ");
+  return (
+    <div className="ld-card ld-resultcard" style={card}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+        <div className="ld-row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 800, fontSize: 15 }}>{r.title}</span>
+          <span className={`ld-pill ${st.c}`}>{st.l}</span>
+        </div>
+        <span style={{ fontSize: 14, color: "#3d4c45" }}>{[`${day(r.startsAt, tz)}`, r.heldMinutes ? `${r.heldMinutes} minutes` : null, who || null].filter(Boolean).join(" · ")}</span>
+        {r.summary?.summary && <span style={{ fontSize: 14, color: "#3d4c45", lineHeight: 1.5 }}>{r.summary.summary}</span>}
+        {r.actionItems.length > 0 && <span style={{ fontSize: 14, color: "#3d4c45" }}>{`${r.actionItems.length} action item${r.actionItems.length === 1 ? "" : "s"}: ${byOwner}.`}</span>}
+        <ErrorLine error={recap.error} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {r.status === "ready" && <button type="button" className="ld-btn p" disabled={recap.isPending} onClick={() => recap.mutate({ organizationId: currentOrgId, id })}>{recap.isPending ? "Sending..." : r.recapSentAt ? "Send again" : "Send recap"}</button>}
+        <Link href="/chats/coo/work?tab=notes" className="ld-btn">Open</Link>
       </div>
     </div>
   );

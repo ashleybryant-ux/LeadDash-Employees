@@ -167,3 +167,65 @@ export function MeetingsCard({ emp }: { emp: EmployeeRow }) {
     </section>
   );
 }
+
+/** Simone sits in on meetings: which ones, the never-join words, her name, who gets the notes, the recording. */
+export function NotetakerCard({ emp }: { emp: EmployeeRow }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.coo.notetakerSettings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [editing, setEditing] = React.useState(false);
+  const [d, setD] = React.useState({ joins: "all" as "all" | "picked", skipWords: "", botName: "", notesTo: "me" as "me" | "everyone", keep: "delete" as "delete" | "7" | "30" });
+  const save = trpc.coo.saveNotetaker.useMutation({ onSuccess: async () => { setEditing(false); await utils.coo.invalidate(); } });
+  if (!q.data) return null;
+  const s = q.data;
+  const KEEP = [
+    { key: "delete" as const, label: "Delete once notes are done" },
+    { key: "7" as const, label: "Keep 7 days" },
+    { key: "30" as const, label: "Keep 30 days" },
+  ];
+  return (
+    <section className={`ld-card ${editing ? "editing" : ""}`}>
+      <div style={grid} className="ld-keep-check">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+          <span className="ld-lbl">Notetaker</span>
+          {(!s.recall || !s.google) && (
+            <span className="ld-body" style={{ padding: "6px 0" }}>
+              {!s.google ? "Connect Google so she can read your calendar. " : ""}
+              {!s.recall ? "Connect Recall.ai so she can join meetings. " : ""}
+              <Link href="/integrations">Open Integrations</Link>
+            </span>
+          )}
+          <Row label="Joins" note="From your Google Calendar: Zoom and Google Meet links only.">
+            {editing ? <Choice options={[{ key: "all", label: "Every meeting with a video link" }, { key: "picked", label: "Only meetings I turn on" }]} value={d.joins} onChange={(v) => setD({ ...d, joins: v })} /> : <span className="ld-body">{s.joins === "picked" ? "Only meetings you turn on" : "Every meeting with a Zoom or Google Meet link"}</span>}
+          </Row>
+          <Row label="Never joins" note={editing ? "Separate words with commas. Anything with a leaddash.io link is never joined either." : undefined}>
+            <span className="ld-body">
+              <b>Client sessions, always.</b> Any event whose title, description or place has one of these words:
+            </span>
+            {editing ? <input className="ld-in" aria-label="Never-join words" value={d.skipWords} maxLength={500} onChange={(e) => setD({ ...d, skipWords: e.target.value })} /> : <span className="ld-body">{s.skipWords || <span className="ld-muted">No words set</span>}</span>}
+          </Row>
+          <Row label="Name in the meeting">
+            {editing ? <input className="ld-in" style={{ maxWidth: 420 }} aria-label="Name in the meeting" placeholder={s.botNameShown} value={d.botName} maxLength={60} onChange={(e) => setD({ ...d, botName: e.target.value })} /> : <span className="ld-body">{s.botNameShown}</span>}
+          </Row>
+          <Row label="When she joins" note="Some states require everyone's consent to record.">
+            <span className="ld-body">{`Posts in the meeting chat: "${s.joinMessage}"`}</span>
+          </Row>
+          <Row label="Notes go to" note="Action items still go to Nora.">
+            {editing ? <Choice options={[{ key: "me", label: "Only me" }, { key: "everyone", label: "Everyone invited" }]} value={d.notesTo} onChange={(v) => setD({ ...d, notesTo: v })} /> : <span className="ld-body">{s.notesTo === "everyone" ? "Everyone invited" : "Only you"}</span>}
+          </Row>
+          <Row label="Recording" note={editing ? "The transcript and notes are kept either way." : undefined}>
+            {editing ? <Choice options={KEEP} value={d.keep} onChange={(v) => setD({ ...d, keep: v })} /> : <span className="ld-body">{KEEP.find((k) => k.key === s.keep)?.label}</span>}
+          </Row>
+          <ErrorLine error={save.error} />
+        </div>
+        <Buttons
+          editing={editing}
+          saving={save.isPending}
+          onEdit={() => { setD({ joins: s.joins, skipWords: s.skipWords, botName: s.botName, notesTo: s.notesTo, keep: s.keep }); setEditing(true); }}
+          onSave={() => save.mutate({ organizationId: currentOrgId, ...d })}
+          onCancel={() => setEditing(false)}
+        />
+      </div>
+    </section>
+  );
+}

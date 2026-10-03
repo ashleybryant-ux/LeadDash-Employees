@@ -5,7 +5,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, FolderTabs, Page } from "../ui";
 import { parseJson } from "../meta";
 
-type Provider = "google_workspace" | "linkedin" | "facebook" | "instagram" | "wordpress" | "x" | "google_business" | "submittable" | "sessionize" | "threads" | "tiktok" | "clickup" | "zoom";
+type Provider = "google_workspace" | "linkedin" | "facebook" | "instagram" | "wordpress" | "x" | "google_business" | "submittable" | "sessionize" | "threads" | "tiktok" | "clickup" | "zoom" | "recall";
 type AppKey = "google" | "google_business" | "linkedin" | "meta" | "x" | "threads" | "tiktok" | "clickup" | "zoom";
 
 type CatalogItem = { key: string; name: string; provider: Provider; logo: string; color: string; desc: string; app?: AppKey };
@@ -15,6 +15,7 @@ const CATALOG: CatalogItem[] = [
   { key: "google", name: "Google", provider: "google_workspace", app: "google", logo: "G", color: "#db4437", desc: "Gmail, Calendar and Google Meet. Avery sends replies you approve, and Simone adds a Meet link to each meeting she schedules." },
   { key: "clickup", name: "ClickUp", provider: "clickup", app: "clickup", logo: "CU", color: "#7b68ee", desc: "Nora creates a list for each launch and keeps tasks, owners and due dates in sync." },
   { key: "zoom", name: "Zoom", provider: "zoom", app: "zoom", logo: "Z", color: "#0b5cff", desc: "Simone adds a Zoom link instead of Google Meet, and can read the transcript when cloud recording is on." },
+  { key: "recall", name: "Recall.ai", provider: "recall", logo: "R", color: "#2f54eb", desc: "Simone joins your Zoom and Google Meet meetings and takes notes. About $0.65 an hour, paid to Recall.ai." },
   { key: "linkedin", name: "LinkedIn", provider: "linkedin", app: "linkedin", logo: "in", color: "#0a66c2", desc: "Sienna posts to your profile after you approve." },
   { key: "meta", name: "Facebook and Instagram", provider: "facebook", app: "meta", logo: "f", color: "#1877f2", desc: "Sienna posts and Reels to your page and Instagram after you approve." },
   { key: "tiktok", name: "TikTok", provider: "tiktok", app: "tiktok", logo: "tt", color: "#010101", desc: "Sienna posts videos to TikTok after you approve." },
@@ -25,7 +26,7 @@ const CATALOG: CatalogItem[] = [
   { key: "submittable", name: "Submittable", provider: "submittable", logo: "S", color: "#c2410c", desc: "Morgan fills and submits foundation forms." },
   { key: "sessionize", name: "Sessionize", provider: "sessionize", logo: "Se", color: "#9a4d14", desc: "Taylor submits speaker applications." },
 ];
-const MAIN = ["google", "clickup", "zoom", "linkedin", "meta", "tiktok", "threads", "x", "gbp", "wordpress"];
+const MAIN = ["google", "clickup", "zoom", "recall", "linkedin", "meta", "tiktok", "threads", "x", "gbp", "wordpress"];
 
 type FieldDef = { key: string; label: string; secret?: boolean };
 
@@ -136,6 +137,11 @@ export default function Integrations() {
             {shown.map((c) =>
               c.app ? (
                 <OneClick key={c.key} item={c} conn={connOf(c.provider)} ready={info.data?.apps?.[c.app] ?? false} loading={info.isLoading} />
+              ) : c.key === "recall" ? (
+                <div key={c.key} style={tileBox(open === c.key)}>
+                  <TileHead logo={c.logo} color={c.color} name={c.name} desc={c.desc} right={<StatusTile conn={connOf(c.provider)} isOpen={open === c.key} toggle={() => setOpen(open === c.key ? null : c.key)} />} />
+                  {open === c.key && <RecallForm conn={connOf(c.provider)} onDone={() => setOpen(null)} />}
+                </div>
               ) : (
                 <div key={c.key} style={tileBox(open === c.key)}>
                   <TileHead logo={c.logo} color={c.color} name={c.name} desc={c.desc} right={<StatusTile conn={connOf(c.provider)} isOpen={open === c.key} toggle={() => setOpen(open === c.key ? null : c.key)} />} />
@@ -549,6 +555,39 @@ function ConnectForm({ item, conn, onDone }: { item: CatalogItem; conn: Conn | u
         </button>
         {conn && conn.status !== "disconnected" && (
           <button type="button" className="ld-btn danger" disabled={save.isPending} onClick={() => submit("disconnected")}>
+            Disconnect
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// Recall.ai: one API key, checked with Recall.ai before it is saved
+// ==========================================
+
+function RecallForm({ conn, onDone }: { conn: Conn | undefined; onDone: () => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const [key, setKey] = React.useState("");
+  const refresh = () => Promise.all([utils.publishing.listConnections.invalidate(), utils.coo.invalidate()]);
+  const save = trpc.coo.saveRecallKey.useMutation({ onSuccess: async () => { setKey(""); await refresh(); onDone(); } });
+  const disconnect = trpc.publishing.disconnect.useMutation({ onSuccess: async () => { await refresh(); onDone(); } });
+  const connected = conn?.status === "connected";
+  return (
+    <div style={{ borderTop: "1px solid #eef2f0", paddingTop: 14, display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 14, alignItems: "start" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <label htmlFor="recall-key" className="ld-lbl">API key</label>
+        <input id="recall-key" className="ld-in" type="password" autoComplete="new-password" placeholder={connected ? "Saved" : undefined} value={key} onChange={(e) => setKey(e.target.value)} />
+        <span className="ld-small ld-muted">From Recall.ai, API Keys. Checked with Recall.ai, then saved encrypted; never shown again.</span>
+        <ErrorLine error={save.error || disconnect.error} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <button type="button" className="ld-btn p" disabled={save.isPending || !key.trim()} onClick={() => save.mutate({ organizationId: currentOrgId, apiKey: key.trim() })}>{save.isPending ? "Checking..." : "Save"}</button>
+        <button type="button" className="ld-btn" onClick={onDone}>Cancel</button>
+        {connected && (
+          <button type="button" className="ld-btn danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate({ organizationId: currentOrgId, provider: "recall" })}>
             Disconnect
           </button>
         )}

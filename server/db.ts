@@ -64,6 +64,7 @@ import {
   launchKpis,
   launchReports,
   meetings,
+  notetakerMeetings,
 } from "../drizzle/schema";
 import { EventEmitter } from "node:events";
 import { ENV } from "./_core/env";
@@ -1391,4 +1392,25 @@ export async function createMeeting(row: typeof meetings.$inferInsert) {
 export async function updateMeeting(id: number, orgId: number, data: Partial<typeof meetings.$inferInsert>) {
   getDb().update(meetings).set(data).where(and(eq(meetings.id, id), eq(meetings.organizationId, orgId))).run();
   return getMeeting(id, orgId);
+}
+
+// ==========================================
+// Notetaker meetings
+// ==========================================
+
+export async function listNotetaker(orgId: number) {
+  return getDb().select().from(notetakerMeetings).where(eq(notetakerMeetings.organizationId, orgId)).orderBy(notetakerMeetings.startsAt, notetakerMeetings.id).all();
+}
+export async function getNotetaker(id: number, orgId: number) {
+  return getDb().select().from(notetakerMeetings).where(and(eq(notetakerMeetings.id, id), eq(notetakerMeetings.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export async function getNotetakerByEvent(orgId: number, eventId: string) {
+  return getDb().select().from(notetakerMeetings).where(and(eq(notetakerMeetings.organizationId, orgId), eq(notetakerMeetings.eventId, eventId))).limit(1).all()[0] || null;
+}
+export async function createNotetaker(row: typeof notetakerMeetings.$inferInsert) {
+  return getDb().insert(notetakerMeetings).values(row).returning().all()[0];
+}
+export async function updateNotetaker(id: number, orgId: number, data: Partial<typeof notetakerMeetings.$inferInsert>) {
+  getDb().update(notetakerMeetings).set({ ...data, updatedAt: new Date() }).where(and(eq(notetakerMeetings.id, id), eq(notetakerMeetings.organizationId, orgId))).run();
+  return getNotetaker(id, orgId);
 }

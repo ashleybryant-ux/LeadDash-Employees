@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import type { EmployeeRow } from "../ChatPage";
@@ -6,7 +7,8 @@ import { ErrorLine, FolderTabs } from "../ui";
 import type { Outputs } from "../types";
 
 type M = Outputs["coo"]["meetings"]["upcoming"][number];
-type Tab = "upcoming" | "past" | "scorecard";
+type Tab = "upcoming" | "sitting" | "notes" | "past" | "scorecard";
+type NT = Outputs["coo"]["notetaker"]["upcoming"][number];
 
 const day = (d: Date | string | number, tz: string) => new Date(d).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" });
 const time = (d: Date | string | number, tz: string) => new Date(d).toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
@@ -58,7 +60,11 @@ export default function Meetings({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId, currentOrg } = useTenant();
   const tz = currentOrg?.timezone || "America/Chicago";
   const q = trpc.coo.meetings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 60_000 });
-  const [tab, setTab] = React.useState<Tab>("upcoming");
+  const nt = trpc.coo.notetaker.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 60_000 });
+  const [tab, setTab] = React.useState<Tab>(() => {
+    const t = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+    return t === "sitting" || t === "notes" || t === "past" || t === "scorecard" ? t : "upcoming";
+  });
   const data = q.data;
   return (
     <main className="ld-main" style={{ padding: "20px 32px" }}>
@@ -67,11 +73,15 @@ export default function Meetings({ emp }: { emp: EmployeeRow }) {
         onChange={setTab}
         tabs={[
           { key: "upcoming", label: `Upcoming (${data?.upcoming.length ?? 0})` },
+          { key: "sitting", label: `Sitting in (${nt.data?.upcoming.length ?? 0})` },
+          { key: "notes", label: `Notes (${nt.data?.notes.length ?? 0})` },
           { key: "past", label: `Past (${data?.past.length ?? 0})` },
           { key: "scorecard", label: "Scorecard" },
         ]}
       >
         {tab === "upcoming" && <List list={data?.upcoming ?? []} tz={tz} loading={q.isLoading} emp={emp} />}
+        {tab === "sitting" && <SittingIn list={nt.data?.upcoming ?? []} tz={tz} loading={nt.isLoading} emp={emp} />}
+        {tab === "notes" && <NotesList list={nt.data?.notes ?? []} tz={tz} loading={nt.isLoading} emp={emp} />}
         {tab === "past" && <List list={data?.past ?? []} tz={tz} loading={q.isLoading} emp={emp} past />}
         {tab === "scorecard" && <Scorecard />}
       </FolderTabs>
@@ -270,6 +280,265 @@ function PastMeeting({ m, tz, onClose }: { m: M; tz: string; onClose: () => void
           </>
         )}
         <button type="button" className="ld-btn" onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// Sitting in: meetings on the calendar Simone joins
+// ==========================================
+
+const PLATFORM: Record<string, string> = { zoom: "Zoom", meet: "Google Meet" };
+const SQ_SIT = "minmax(0,1.8fr) 240px 120px 150px 128px";
+
+export function sitState(r: Pick<NT, "status" | "lockReason" | "botId" | "choice">, joinsAll: boolean) {
+  if (r.lockReason) return { l: "Never joins", c: "gray" };
+  if (r.status === "in_call") return { l: "In the meeting", c: "green" };
+  if (r.status === "joining") return { l: "Joining", c: "green" };
+  if (r.status === "scheduled") return { l: "Simone joins", c: "green" };
+  if (r.choice === "join" || (r.choice === "auto" && joinsAll)) return { l: "Joins at the start", c: "green" };
+  return { l: "Skipped", c: "gray" };
+}
+
+function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading: boolean; emp: EmployeeRow }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const settings = trpc.coo.notetakerSettings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const setJoin = trpc.coo.setJoin.useMutation({ onSuccess: () => utils.coo.notetaker.invalidate() });
+  const refresh = trpc.coo.refreshCalendar.useMutation({ onSuccess: () => utils.coo.notetaker.invalidate() });
+  const [open, setOpen] = React.useState<number | null>(null);
+  const s = settings.data;
+  const joinsAll = s?.joins !== "picked";
+  if (s && (!s.recall || !s.google)) {
+    return (
+      <div className="ld-empty" style={{ textAlign: "left" }}>
+        {!s.google ? "Connect Google on Integrations so Simone can read your calendar. " : ""}
+        {!s.recall ? "Connect Recall.ai on Integrations so Simone can sit in on your Zoom and Google Meet meetings. " : ""}
+        <Link href="/integrations">Open Integrations</Link>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="ld-hd" style={{ gridTemplateColumns: SQ_SIT }}>
+        <span>Meeting</span>
+        <span>When</span>
+        <span>Link</span>
+        <span>Notes</span>
+        <span />
+      </div>
+      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : "No Zoom or Google Meet meetings on your calendar in the next 2 days."}</div>}
+      {list.map((r) => {
+        const isOpen = open === r.id;
+        const st = sitState(r, joinsAll);
+        const joining = st.c === "green";
+        const busy = setJoin.isPending && setJoin.variables?.id === r.id;
+        return (
+          <React.Fragment key={r.id}>
+            <div className={`ld-rw ${isOpen ? "open" : ""}`} style={{ gridTemplateColumns: SQ_SIT, cursor: "pointer" }} aria-expanded={isOpen} onClick={(e) => { if ((e.target as HTMLElement).closest("button,a")) return; setOpen(isOpen ? null : r.id); }}>
+              <span className="ld-strong">{r.title}</span>
+              <span>{`${day(r.startsAt, tz)} · ${time(r.startsAt, tz)}`}</span>
+              <span>{PLATFORM[r.platform] ?? r.platform}</span>
+              <span className={`ld-pill ${st.c}`}>{st.l}</span>
+              {r.lockReason ? (
+                <button type="button" className="ld-btn" disabled title={r.lockReason}>Locked</button>
+              ) : joining ? (
+                <button type="button" className="ld-btn" disabled={busy} onClick={() => setJoin.mutate({ organizationId: currentOrgId, id: r.id, choice: "skip" })}>{r.status === "in_call" || r.status === "joining" ? "Remove her" : "Skip"}</button>
+              ) : (
+                <button type="button" className="ld-btn p" disabled={busy} onClick={() => setJoin.mutate({ organizationId: currentOrgId, id: r.id, choice: "join" })}>Join</button>
+              )}
+            </div>
+            {isOpen && (
+              <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 128px", gap: 24 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+                  <KV label="Who">{r.attendees.map((a) => a.name).join(", ") || "Only you"}</KV>
+                  <KV label="Link">{r.meetingUrl.replace(/^https?:\/\//, "")}</KV>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+                  {r.lockReason ? (
+                    <KV label="Why she never joins">{`${r.lockReason}. Change the never-join words on ${emp.name}'s Onboarding tab if this is wrong.`}</KV>
+                  ) : (
+                    <KV label="She joins as">{s?.botNameShown ?? emp.name}</KV>
+                  )}
+                  {r.error && <KV label="Last problem">{r.error}</KV>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <button type="button" className="ld-btn" onClick={() => setOpen(null)}>Close</button>
+                </div>
+              </div>
+            )}
+          </React.Fragment>
+        );
+      })}
+      <div className="ld-row" style={{ padding: "10px 18px", gap: 12, alignItems: "center" }}>
+        <button type="button" className="ld-btn" style={{ width: 128 }} disabled={refresh.isPending} onClick={() => refresh.mutate({ organizationId: currentOrgId })}>{refresh.isPending ? "Reading..." : "Refresh"}</button>
+        <span className="ld-small ld-muted">Your Google Calendar, the next 2 days. Zoom and Google Meet only.</span>
+      </div>
+      <div style={{ padding: "0 18px 10px" }}>
+        <ErrorLine error={setJoin.error || refresh.error} />
+      </div>
+    </>
+  );
+}
+
+// ==========================================
+// Notes: meetings Simone sat in on
+// ==========================================
+
+const SQ_NOTES = "minmax(0,1.8fr) 240px 90px 160px 128px";
+
+export function notesState(r: Pick<NT, "status" | "recapSentAt">) {
+  if (r.status === "processing") return { l: "Writing notes", c: "amber" };
+  if (r.status === "failed") return { l: "No notes", c: "red" };
+  if (r.status === "removed") return { l: "Removed from meeting", c: "amber" };
+  if (r.recapSentAt) return { l: "Recap sent", c: "green" };
+  return { l: "Notes ready", c: "green" };
+}
+
+function NotesList({ list, tz, loading, emp }: { list: NT[]; tz: string; loading: boolean; emp: EmployeeRow }) {
+  const [open, setOpen] = React.useState<number | null>(null);
+  return (
+    <>
+      <div className="ld-hd" style={{ gridTemplateColumns: SQ_NOTES }}>
+        <span>Meeting</span>
+        <span>When</span>
+        <span>Length</span>
+        <span>Status</span>
+        <span />
+      </div>
+      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : `No notes yet. ${emp.name} writes them after each meeting she sits in on.`}</div>}
+      {list.map((r) => {
+        const isOpen = open === r.id;
+        const st = notesState(r);
+        return (
+          <React.Fragment key={r.id}>
+            <div className={`ld-rw ${isOpen ? "open" : ""}`} style={{ gridTemplateColumns: SQ_NOTES, cursor: "pointer" }} aria-expanded={isOpen} onClick={(e) => { if ((e.target as HTMLElement).closest("button,a")) return; setOpen(isOpen ? null : r.id); }}>
+              <span className="ld-strong">{r.title}</span>
+              <span>{`${day(r.startsAt, tz)} · ${time(r.startsAt, tz)}`}</span>
+              <span>{r.heldMinutes ? `${r.heldMinutes} min` : ""}</span>
+              <span className={`ld-pill ${st.c}`}>{st.l}</span>
+              <button type="button" className="ld-btn" onClick={() => setOpen(isOpen ? null : r.id)}>{isOpen ? "Close" : "Open"}</button>
+            </div>
+            {isOpen && <NotesDetail r={r} tz={tz} onClose={() => setOpen(null)} />}
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+const lines = (list: string[]) => (list.length ? list.join("\n") : "");
+
+export function NotesDetail({ r, tz, onClose }: { r: NT; tz: string; onClose?: () => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const refresh = () => Promise.all([utils.coo.invalidate(), utils.projects.invalidate()]);
+  const settings = trpc.coo.notetakerSettings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const recap = trpc.coo.sendNotesRecap.useMutation({ onSuccess: refresh });
+  const items = trpc.coo.sendNotesItems.useMutation({ onSuccess: refresh });
+  const save = trpc.coo.editNotes.useMutation({ onSuccess: async () => { setEditing(false); await refresh(); } });
+  const [showText, setShowText] = React.useState(false);
+  const transcript = trpc.coo.transcript.useQuery({ organizationId: currentOrgId, id: r.id }, { enabled: showText && r.hasTranscript });
+  const [editing, setEditing] = React.useState(false);
+  const [d, setD] = React.useState({ summary: "", decisions: "", questions: "", items: [] as { text: string; owner: string; due: string }[] });
+  const s = r.summary;
+  const open = r.actionItems.filter((i) => i.status === "open");
+  const err = recap.error || items.error || save.error;
+  const begin = () => {
+    setD({ summary: s?.summary ?? "", decisions: lines(s?.decisions ?? []), questions: lines(s?.questions ?? []), items: r.actionItems.map((i) => ({ text: i.text, owner: i.owner, due: i.due ?? "" })) });
+    setEditing(true);
+  };
+  const facts = [
+    r.actionItems.some((i) => i.status === "in_clickup" || i.status === "task") ? "Sent to Nora" : null,
+    r.mediaDeletedAt ? "Recording deleted" : r.status === "ready" ? (settings.data?.keep === "7" ? "Recording kept 7 days" : settings.data?.keep === "30" ? "Recording kept 30 days" : null) : null,
+    r.hasTranscript ? "Transcript kept" : null,
+    r.recapSentAt ? `Recap sent ${day(r.recapSentAt, tz)}` : null,
+  ].filter(Boolean);
+
+  if (r.status !== "ready") {
+    return (
+      <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24 }}>
+        <span className="ld-body">{r.status === "processing" ? "The meeting ended. The transcript and notes are being written; this usually takes a few minutes." : r.error || "There are no notes for this meeting."}</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{onClose && <button type="button" className="ld-btn" onClick={onClose}>Close</button>}</div>
+      </div>
+    );
+  }
+
+  if (editing) {
+    return (
+      <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 128px", gap: 24 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+          <div className="ld-field"><label className="ld-lbl" htmlFor={`ns-${r.id}`}>Summary</label><textarea id={`ns-${r.id}`} className="ld-ta" rows={4} value={d.summary} onChange={(e) => setD({ ...d, summary: e.target.value })} /></div>
+          <div className="ld-field"><label className="ld-lbl" htmlFor={`nd-${r.id}`}>Decisions, one per line</label><textarea id={`nd-${r.id}`} className="ld-ta" rows={3} value={d.decisions} onChange={(e) => setD({ ...d, decisions: e.target.value })} /></div>
+          <div className="ld-field"><label className="ld-lbl" htmlFor={`nq-${r.id}`}>Open questions, one per line</label><textarea id={`nq-${r.id}`} className="ld-ta" rows={2} value={d.questions} onChange={(e) => setD({ ...d, questions: e.target.value })} /></div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+          <span className="ld-lbl">Action items</span>
+          {d.items.map((i, k) => (
+            <div key={k} style={{ display: "flex", flexDirection: "column", gap: 6, paddingBottom: 8, borderBottom: "1px dashed #e3e9e6" }}>
+              <input className="ld-in" aria-label="Action item" value={i.text} onChange={(e) => setD({ ...d, items: d.items.map((x, j) => (j === k ? { ...x, text: e.target.value } : x)) })} />
+              <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 120px 96px", gap: 6, alignItems: "center" }}>
+                <input className="ld-in" aria-label="Owner" placeholder="Owner" value={i.owner} onChange={(e) => setD({ ...d, items: d.items.map((x, j) => (j === k ? { ...x, owner: e.target.value } : x)) })} />
+                <input className="ld-in" aria-label="Due MM/DD/YYYY" placeholder="MM/DD/YYYY" value={i.due} onChange={(e) => setD({ ...d, items: d.items.map((x, j) => (j === k ? { ...x, due: e.target.value } : x)) })} />
+                <button type="button" className="ld-btn" style={{ width: 96 }} onClick={() => setD({ ...d, items: d.items.filter((_, j) => j !== k) })}>Remove</button>
+              </div>
+            </div>
+          ))}
+          <div><button type="button" className="ld-btn" style={{ width: 128 }} onClick={() => setD({ ...d, items: [...d.items, { text: "", owner: "", due: "" }] })}>Add item</button></div>
+          <ErrorLine error={save.error} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button
+            type="button"
+            className="ld-btn p"
+            disabled={save.isPending}
+            onClick={() => save.mutate({ organizationId: currentOrgId, id: r.id, summary: d.summary, decisions: d.decisions.split("\n"), questions: d.questions.split("\n"), items: d.items.filter((i) => i.text.trim()) })}
+          >
+            {save.isPending ? "Saving..." : "Save"}
+          </button>
+          <button type="button" className="ld-btn" onClick={() => setEditing(false)}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 128px", gap: 24 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <KV label="Summary">{s?.summary || "None"}</KV>
+        <KV label="Decisions">{s?.decisions.length ? s.decisions.join(" ") : "None"}</KV>
+        {!!s?.questions.length && <KV label="Open questions">{s.questions.join(" ")}</KV>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+        <span className="ld-lbl">{`Action items (${r.actionItems.length})`}</span>
+        {r.actionItems.length === 0 ? (
+          <span className="ld-body ld-muted">No one agreed to do anything in this meeting.</span>
+        ) : (
+          <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 80px 110px", gap: "8px 10px", fontSize: 14, lineHeight: 1.45, alignItems: "center" }}>
+            {r.actionItems.map((i, k) => (
+              <React.Fragment key={k}>
+                <span>{i.text}</span>
+                <span>{i.owner}</span>
+                <span>{i.due ? new Date(`${i.due.slice(6)}-${i.due.slice(0, 2)}-${i.due.slice(3, 5)}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : <span className="ld-muted">No date</span>}</span>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+        {facts.length > 0 && <span className="ld-small ld-muted" style={{ paddingTop: 6 }}>{facts.join(" · ")}</span>}
+        {showText && (
+          <div className="ld-body" style={{ whiteSpace: "pre-line", maxHeight: 320, overflowY: "auto", border: "1px solid #e3e9e6", borderRadius: 8, padding: "10px 12px", background: "#fff", fontSize: 13 }}>
+            {transcript.isLoading ? "Loading..." : transcript.data?.transcript || "No transcript."}
+          </div>
+        )}
+        <ErrorLine error={err} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <button type="button" className="ld-btn p" disabled={recap.isPending} onClick={() => recap.mutate({ organizationId: currentOrgId, id: r.id })}>{recap.isPending ? "Sending..." : r.recapSentAt ? "Send again" : "Send recap"}</button>
+        {open.length > 0 && <button type="button" className="ld-btn" disabled={items.isPending} onClick={() => items.mutate({ organizationId: currentOrgId, id: r.id })}>Send to Nora</button>}
+        {r.hasTranscript && <button type="button" className="ld-btn" onClick={() => setShowText(!showText)}>{showText ? "Hide transcript" : "Transcript"}</button>}
+        <button type="button" className="ld-btn" onClick={begin}>Edit</button>
+        {onClose && <button type="button" className="ld-btn" onClick={onClose}>Close</button>}
       </div>
     </div>
   );

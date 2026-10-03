@@ -37,6 +37,7 @@ import * as sales from "./employees/sales";
 import * as team from "./employees/team";
 import * as projects from "./employees/projects";
 import * as coo from "./employees/coo";
+import * as notetaker from "./employees/notetaker";
 import { opsFor, saveOps, MEETING_MINUTES } from "./employees/ops";
 import { KPI_SOURCES } from "../drizzle/schema";
 import { postProblems, SOCIAL_CHANNELS, TIKTOK_PRIVACY, type SocialChannel } from "@shared/post-model";
@@ -1150,6 +1151,8 @@ export const appRouter = router({
 
     disconnect: protectedProcedure.input(orgInput.extend({ provider: z.enum(PROVIDERS) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "admin");
+      // Booked bots would still join after the key is gone: cancel them first.
+      if (input.provider === "recall") await notetaker.cancelAll(input.organizationId).catch(() => null);
       await integrations.disconnect(input.organizationId, input.provider);
       await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Disconnected account", details: input.provider });
       return { success: true };
@@ -1885,6 +1888,85 @@ export const appRouter = router({
         await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved meeting settings", details: `${saved.recurring.length} repeating meetings` });
         return { ok: true };
       }),
+
+    // Sitting in on meetings (Recall.ai)
+    notetaker: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return notetaker.notetakerView(input.organizationId);
+    }),
+    notes: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return notetaker.notesOne(input.organizationId, input.id);
+    }),
+    transcript: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return notetaker.transcriptOf(input.organizationId, input.id);
+    }),
+    notetakerSettings: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return notetaker.notetakerSettings(input.organizationId);
+    }),
+    saveNotetaker: protectedProcedure
+      .input(
+        orgInput.extend({
+          joins: z.enum(["all", "picked"]),
+          skipWords: z.string().max(500),
+          botName: z.string().max(60),
+          notesTo: z.enum(["me", "everyone"]),
+          keep: z.enum(["delete", "7", "30"]),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const { organizationId, ...rest } = input;
+        const saved = await notetaker.saveNotetaker(organizationId, rest);
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved notetaker settings", details: rest.joins === "all" ? "Joins every meeting with a link" : "Joins meetings you turn on" });
+        return saved;
+      }),
+    saveRecallKey: protectedProcedure.input(orgInput.extend({ apiKey: z.string().min(1).max(300) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      try {
+        await integrations.saveRecallKey(input.organizationId, input.apiKey);
+      } catch (e) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: e instanceof Error ? (/401|403/.test(e.message) ? "Recall.ai didn't accept that key. Copy it again from Recall.ai, API Keys." : e.message) : "Could not save the key." });
+      }
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Connected Recall.ai", details: "Key checked with Recall.ai and saved encrypted." });
+      await notetaker.syncCalendar(input.organizationId, new Date(), true).catch(() => null);
+      return { ok: true };
+    }),
+    setJoin: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive(), choice: z.enum(["join", "skip"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return notetaker.setChoice(input.organizationId, input.id, input.choice);
+    }),
+    refreshCalendar: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      if (!(await integrations.recallConnected(input.organizationId))) throw new TRPCError({ code: "BAD_REQUEST", message: "Connect Recall.ai on Integrations first." });
+      await notetaker.syncCalendar(input.organizationId, new Date(), true);
+      return { ok: true };
+    }),
+    editNotes: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().int().positive(),
+          summary: z.string().max(2000),
+          decisions: z.array(z.string().max(300)).max(15),
+          questions: z.array(z.string().max(300)).max(15),
+          items: z.array(z.object({ text: z.string().max(200), owner: z.string().max(60), due: z.string().max(10) })).max(25),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, id, ...rest } = input;
+        return notetaker.editNotes(organizationId, id, rest);
+      }),
+    sendNotesItems: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return notetaker.sendItems(input.organizationId, input.id);
+    }),
+    sendNotesRecap: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return notetaker.sendRecap(input.organizationId, input.id, { name: personName(ctx.user), email: ctx.user.email });
+    }),
   }),
 
   team: router({

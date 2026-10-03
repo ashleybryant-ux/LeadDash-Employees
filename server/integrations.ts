@@ -1259,3 +1259,210 @@ export async function clickupMembers(orgId: number) {
   const team = (data.teams ?? []).find((t: any) => String(t.id) === cur.teamId) ?? data.teams?.[0];
   return (team?.members ?? []).map((m: any) => ({ id: Number(m.user?.id), email: String(m.user?.email ?? "").toLowerCase(), name: String(m.user?.username ?? "") }));
 }
+
+// ==========================================
+// Google Calendar: meetings with a Zoom or Google Meet link
+// ==========================================
+
+export type CalendarMeeting = {
+  eventId: string;
+  title: string;
+  start: Date;
+  end: Date;
+  platform: "zoom" | "meet";
+  url: string;
+  /** Title, description and place, for the never-join words. */
+  text: string;
+  attendees: { name: string; email: string }[];
+  declined: boolean;
+};
+
+const MEET_RE = /https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i;
+const ZOOM_RE = /https:\/\/(?:[\w-]+\.)?zoom\.us\/(?:j|my|w)\/[^\s"'<>)]+/i;
+
+/** The meeting link on a calendar event: Google Meet or Zoom only. Teams and other links are ignored. */
+export function meetingLinkOf(e: any): { platform: "zoom" | "meet"; url: string } | null {
+  const video = (e?.conferenceData?.entryPoints ?? []).filter((p: any) => p?.entryPointType === "video" && typeof p.uri === "string").map((p: any) => p.uri as string);
+  const pool = [typeof e?.hangoutLink === "string" ? e.hangoutLink : "", ...video, String(e?.location ?? ""), String(e?.description ?? "")].join(" \n ");
+  const zoom = pool.match(ZOOM_RE);
+  const meet = pool.match(MEET_RE);
+  // A Meet link Google adds itself wins over a Zoom link pasted in the notes, and the other way round.
+  if (typeof e?.hangoutLink === "string" && meet) return { platform: "meet", url: meet[0] };
+  if (zoom) return { platform: "zoom", url: zoom[0].replace(/[.,;]+$/, "") };
+  if (meet) return { platform: "meet", url: meet[0] };
+  return null;
+}
+
+/** Timed events on the primary Google Calendar between two times that have a Zoom or Google Meet link. */
+export async function calendarMeetings(orgId: number, from: Date, to: Date): Promise<CalendarMeeting[]> {
+  const { token } = await accessToken(orgId, "google_workspace");
+  const q = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "250" });
+  const { data } = await api(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${q}`, { token });
+  const out: CalendarMeeting[] = [];
+  for (const e of data.items ?? []) {
+    if (e.status === "cancelled" || !e.start?.dateTime || !e.end?.dateTime || !e.id) continue;
+    const link = meetingLinkOf(e);
+    if (!link) continue;
+    const people = (e.attendees ?? []).filter((a: any) => a?.email && !a.resource);
+    out.push({
+      eventId: String(e.id),
+      title: String(e.summary || "Untitled meeting").slice(0, 200),
+      start: new Date(e.start.dateTime),
+      end: new Date(e.end.dateTime),
+      platform: link.platform,
+      url: link.url,
+      text: [e.summary, e.description, e.location].filter(Boolean).join(" \n ").slice(0, 8000),
+      attendees: people.slice(0, 40).map((a: any) => ({ name: String(a.displayName || a.email).slice(0, 120), email: String(a.email).slice(0, 200) })),
+      declined: people.some((a: any) => a.self && a.responseStatus === "declined"),
+    });
+  }
+  return out;
+}
+
+// ==========================================
+// Recall.ai: the bot that sits in on meetings for Simone
+// ==========================================
+
+const recallBase = () => `https://${process.env.RECALL_REGION || "us-west-2"}.recall.ai/api/v1`;
+
+async function recallFetch(key: string, pathName: string, init: { method?: string; body?: unknown } = {}) {
+  const go = (auth: string) =>
+    fetch(`${recallBase()}/${pathName.replace(/^\//, "")}`, {
+      method: init.method ?? "GET",
+      headers: { authorization: auth, accept: "application/json", ...(init.body !== undefined ? { "content-type": "application/json" } : {}) },
+      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+      signal: AbortSignal.timeout(30_000),
+    });
+  let res = await go(key);
+  // Older Recall keys expect the "Token " prefix.
+  if (res.status === 401 && !key.startsWith("Token ")) res = await go(`Token ${key}`);
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
+  if (!res.ok) throw new Error(`Recall.ai ${providerError(data, res.status)}`);
+  return data;
+}
+
+async function recallKey(orgId: number) {
+  const conn = await db.getConnectionByProvider(orgId, "recall");
+  if (!conn || conn.status !== "connected") throw new NotConnected("Connect Recall.ai on Integrations so Simone can sit in on meetings.");
+  let key = "";
+  try {
+    key = decryptJson<{ apiKey?: string }>(conn.secretsEncrypted)?.apiKey ?? "";
+  } catch {
+    key = "";
+  }
+  if (!key) throw new NotConnected("Save the Recall.ai key again on Integrations.");
+  return key;
+}
+
+export async function recallConnected(orgId: number) {
+  return (await db.getConnectionByProvider(orgId, "recall"))?.status === "connected";
+}
+
+/** Checks the key with Recall.ai, then saves it encrypted. The key is never sent back to the browser. */
+export async function saveRecallKey(orgId: number, apiKey: string) {
+  const key = apiKey.trim();
+  if (key.length < 20) throw new Error("That doesn't look like a Recall.ai API key.");
+  await recallFetch(key, "bot/?page_size=1");
+  return db.upsertExternalConnection({
+    organizationId: orgId,
+    provider: "recall",
+    accountLabel: "Recall.ai",
+    accountHandle: null,
+    status: "connected",
+    settings: JSON.stringify({ region: process.env.RECALL_REGION || "us-west-2" }),
+    secretsEncrypted: encryptJson({ apiKey: key }),
+    connectedAt: new Date(),
+    lastCheckedAt: new Date(),
+  });
+}
+
+/**
+ * Books a bot for a meeting. With joinAt more than 10 minutes away Recall reserves it and it
+ * joins on time; without joinAt it joins now. It posts the note in the meeting chat when it joins.
+ */
+export async function createRecallBot(orgId: number, b: { meetingUrl: string; joinAt: Date | null; botName: string; message: string }) {
+  const key = await recallKey(orgId);
+  const data = await recallFetch(key, "bot/", {
+    method: "POST",
+    body: {
+      meeting_url: b.meetingUrl,
+      bot_name: b.botName.slice(0, 100),
+      ...(b.joinAt ? { join_at: b.joinAt.toISOString() } : {}),
+      chat: { on_bot_join: { send_to: "everyone", message: b.message.slice(0, 480) } },
+    },
+  });
+  return String(data.id);
+}
+
+/** Cancels a booked bot, or takes it out of a meeting it is already in. */
+export async function removeRecallBot(orgId: number, botId: string) {
+  const key = await recallKey(orgId);
+  try {
+    await recallFetch(key, `bot/${encodeURIComponent(botId)}/`, { method: "DELETE" });
+  } catch {
+    await recallFetch(key, `bot/${encodeURIComponent(botId)}/leave_call/`, { method: "POST", body: {} }).catch(() => null);
+  }
+}
+
+export type RecallBotState = { code: string; subCode: string | null; recordingId: string | null; recordingDone: boolean };
+
+/** Where the bot is: its latest status code and its recording, if it has one. */
+export async function recallBotState(orgId: number, botId: string): Promise<RecallBotState> {
+  const key = await recallKey(orgId);
+  const data = await recallFetch(key, `bot/${encodeURIComponent(botId)}/`);
+  const changes = Array.isArray(data.status_changes) ? data.status_changes : [];
+  const last = changes[changes.length - 1] ?? {};
+  const rec = Array.isArray(data.recordings) ? data.recordings[0] : null;
+  return {
+    code: String(last.code ?? "ready"),
+    subCode: last.sub_code ? String(last.sub_code) : null,
+    recordingId: rec?.id ? String(rec.id) : null,
+    recordingDone: rec?.status?.code === "done",
+  };
+}
+
+/** Starts the transcript of a finished recording. Returns the transcript id. */
+export async function recallStartTranscript(orgId: number, recordingId: string) {
+  const key = await recallKey(orgId);
+  const data = await recallFetch(key, `recording/${encodeURIComponent(recordingId)}/create_transcript/`, {
+    method: "POST",
+    body: { provider: { recallai_async: { language_code: "en" } }, diarization: { use_separate_streams_when_available: true } },
+  });
+  return String(data.id);
+}
+
+/** The finished transcript as "Name: what they said" lines and its length, or the state while it is not ready. */
+export async function recallTranscript(orgId: number, transcriptId: string): Promise<{ state: "working" | "failed" } | { state: "done"; text: string; minutes: number }> {
+  const key = await recallKey(orgId);
+  const data = await recallFetch(key, `transcript/${encodeURIComponent(transcriptId)}/`);
+  const code = String(data?.status?.code ?? "");
+  if (code === "failed") return { state: "failed" };
+  if (code !== "done" || !data?.data?.download_url) return { state: "working" };
+  const r = await fetch(data.data.download_url, { signal: AbortSignal.timeout(60_000) });
+  if (!r.ok) return { state: "working" };
+  const parts = (await r.json()) as { participant?: { name?: string | null }; words?: { text: string; end_timestamp?: { relative?: number } }[] }[];
+  let last = 0;
+  const lines: string[] = [];
+  for (const p of Array.isArray(parts) ? parts : []) {
+    const words = p.words ?? [];
+    if (!words.length) continue;
+    last = Math.max(last, words[words.length - 1]?.end_timestamp?.relative ?? 0);
+    const said = words.map((w) => w.text).join(" ").replace(/\s+([.,?!])/g, "$1").trim();
+    const who = p.participant?.name?.trim() || "Someone";
+    if (lines.length && lines[lines.length - 1].startsWith(`${who}: `)) lines[lines.length - 1] += ` ${said}`;
+    else lines.push(`${who}: ${said}`);
+  }
+  return { state: "done", text: lines.join("\n").slice(0, 120_000), minutes: Math.max(1, Math.round(last / 60)) };
+}
+
+/** Deletes the recording, transcript and other media Recall holds for a bot. */
+export async function recallDeleteMedia(orgId: number, botId: string) {
+  const key = await recallKey(orgId);
+  await recallFetch(key, `bot/${encodeURIComponent(botId)}/delete_media/`, { method: "POST", body: {} });
+}

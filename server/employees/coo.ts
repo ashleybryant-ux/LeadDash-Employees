@@ -8,6 +8,7 @@ import { employeeFor, systemPromptFor, working } from "./tasks";
 import { gate, handoff, logActivity } from "./team";
 import { opsFor, saveOps, type Series } from "./ops";
 import { addActionItems, launchView } from "./projects";
+import { cancelAll, notetakerStatus, notetakerTick } from "./notetaker";
 
 /**
  * Simone (COO).
@@ -391,7 +392,9 @@ function agendaDue(m: Meeting, when: "day_before" | "morning_of", tz: string) {
 
 export async function cooTick(orgId: number, now = new Date()) {
   const simone = await db.getEmployeeByKind(orgId, "coo");
-  if (!simone || simone.status === "paused") return;
+  if (!simone) return;
+  // Paused: no bots join for her.
+  if (simone.status === "paused") return cancelAll(orgId).catch(() => null);
   const { ops, tz } = await opsFor(orgId);
   if (ops.recurring.length) await ensureMeetings(orgId);
   for (const m of await db.listMeetings(orgId)) {
@@ -409,6 +412,8 @@ export async function cooTick(orgId: number, now = new Date()) {
       if (text) await saveNotes(orgId, m.id, text, "transcript").catch(() => null);
     }
   }
+  // Sitting in on meetings (Recall.ai).
+  await notetakerTick(orgId, now).catch((err) => console.warn("[coo] notetaker failed:", err instanceof Error ? err.message : err));
 }
 
 export async function cooTicks() {
@@ -452,6 +457,7 @@ export async function cooStatus(orgId: number) {
     `Scorecard ${card.label}: ${card.rows.map((r) => `${r.label} ${r.thisWeek ?? "no data"}${r.unit}${r.goal !== null ? ` against ${r.goal}${r.unit}` : ""}`).join("; ")}.`,
     `Coming up: ${next.join("; ") || "no meetings scheduled"}.`,
     `Open action items: ${open.join("; ") || "none"}.`,
+    await notetakerStatus(orgId),
   ].join("\n");
 }
 

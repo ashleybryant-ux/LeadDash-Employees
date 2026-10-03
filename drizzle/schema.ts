@@ -382,7 +382,7 @@ export type InsertAuditLog = typeof auditLogs.$inferInsert;
 // Connections and the approval queue
 // ==========================================
 
-export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize", "threads", "tiktok", "clickup", "zoom"] as const;
+export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize", "threads", "tiktok", "clickup", "zoom", "recall"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const externalConnections = sqliteTable(
@@ -1148,3 +1148,58 @@ export const meetings = sqliteTable(
   (t) => [index("meetings_org_idx").on(t.organizationId)]
 );
 export type Meeting = typeof meetings.$inferSelect;
+
+// ==========================================
+// Simone's notetaker: meetings on the calendar she sits in on
+// ==========================================
+
+/**
+ * skipped: she is not joining (your choice, the settings, or a word that marks a client session).
+ * scheduled: a Recall.ai bot is booked to join. joining / in_call: the bot is in the meeting.
+ * processing: the meeting ended and the transcript and notes are being made.
+ * ready: notes are done. failed: the bot or transcript failed. removed: someone removed her
+ * or she was not let in. cancelled: the event left the calendar.
+ */
+export const NOTETAKER_STATUSES = ["skipped", "scheduled", "joining", "in_call", "processing", "ready", "failed", "removed", "cancelled"] as const;
+export type NotetakerStatus = (typeof NOTETAKER_STATUSES)[number];
+
+export const notetakerMeetings = sqliteTable(
+  "notetaker_meetings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    /** Google Calendar event id (each occurrence of a repeating event has its own). */
+    eventId: text("eventId").notNull(),
+    title: text("title").notNull(),
+    startsAt: integer("startsAt", { mode: "timestamp" }).notNull(),
+    endsAt: integer("endsAt", { mode: "timestamp" }).notNull(),
+    platform: text("platform", { enum: ["zoom", "meet"] }).notNull(),
+    meetingUrl: text("meetingUrl").notNull(),
+    /** JSON [{name, email}] from the calendar invite. */
+    attendees: text("attendees").notNull().default("[]"),
+    /** auto follows the settings; join and skip are your choice for this one meeting. */
+    choice: text("choice", { enum: ["auto", "join", "skip"] }).notNull().default("auto"),
+    /** Why it is locked out (a word from the never-join list). Locked meetings are never joined. */
+    lockReason: text("lockReason"),
+    status: text("status", { enum: NOTETAKER_STATUSES }).notNull().default("skipped"),
+    botId: text("botId"),
+    recordingId: text("recordingId"),
+    transcriptId: text("transcriptId"),
+    /** "Name: what they said" lines. Kept after the recording is deleted. */
+    transcript: text("transcript"),
+    /** JSON {summary, decisions, questions}. */
+    summary: text("summary"),
+    /** JSON [{text, owner, ownerKind, taskId, status, due}]. */
+    actionItems: text("actionItems"),
+    heldMinutes: integer("heldMinutes"),
+    error: text("error"),
+    mediaDeletedAt: integer("mediaDeletedAt", { mode: "timestamp" }),
+    recapSentAt: integer("recapSentAt", { mode: "timestamp" }),
+    /** Simone's own meeting (meetings.id) when this event is one she scheduled. */
+    meetingId: integer("meetingId"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("notetaker_org_event_unique").on(t.organizationId, t.eventId), index("notetaker_org_start_idx").on(t.organizationId, t.startsAt)]
+);
+export type NotetakerMeeting = typeof notetakerMeetings.$inferSelect;

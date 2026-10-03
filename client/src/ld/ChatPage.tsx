@@ -19,7 +19,7 @@ import Outreach from "./work/Outreach";
 import Leads from "./work/Leads";
 import Launches from "./work/Launches";
 import Meetings from "./work/Meetings";
-import { LaunchPlanCard, MeetingAgendaCard } from "./lead/Cards";
+import { LaunchPlanCard, MeetingAgendaCard, MeetingNotesCard } from "./lead/Cards";
 import Onboarding from "./Onboarding";
 import type { Outputs } from "./types";
 
@@ -88,7 +88,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes";
   id: number;
   title: string;
   subtitle?: string;
@@ -372,6 +372,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   if (card.type === "schedule_plan" && card.plan) return <PlanCard card={card} emp={emp} />;
   if (card.type === "launch_plan") return <LaunchPlanCard id={card.id} />;
   if (card.type === "meeting_agenda") return <MeetingAgendaCard id={card.id} />;
+  if (card.type === "meeting_notes") return <MeetingNotesCard id={card.id} />;
 
   if (card.type === "question") {
     return (

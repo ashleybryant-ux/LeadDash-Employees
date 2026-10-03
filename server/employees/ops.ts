@@ -6,9 +6,23 @@ import * as db from "../db";
  * - Simone (COO): the meeting link, repeating meetings, when agendas go out,
  *   what happens after a meeting, and the scorecard's weekly goals.
  * - Nora (Projects): who gets ClickUp tasks, the morning check time and the report day.
+ * - Simone's notetaker: which meetings she sits in on, the words that keep her out,
+ *   her name in the meeting, who gets the notes, and how long the recording is kept.
  */
 
 export type Series = { id: string; name: string; day: number; time: string; minutes: number; attendees: string[]; updatesFrom: string[] };
+
+export type Notetaker = {
+  joins: "all" | "picked";
+  /** Comma-separated words. An event whose title, description or place has one is never joined. */
+  skipWords: string;
+  /** Name shown in the meeting. Empty means "Simone (notes for <owner first name>)". */
+  botName: string;
+  notesTo: "me" | "everyone";
+  keep: "delete" | "7" | "30";
+};
+
+export const DEFAULT_SKIP_WORDS = "session, intake, therapy, telehealth, assessment, client";
 
 export type Ops = {
   meetingLink: "meet" | "zoom";
@@ -19,6 +33,7 @@ export type Ops = {
   taskOwners: "people" | "employees";
   checkTime: "07:30" | "08:30" | "09:30";
   reportDay: 1 | 5;
+  notetaker: Notetaker;
   /** Bookkeeping so daily jobs run once a day. */
   lastCheck?: string;
   lastReport?: string;
@@ -55,9 +70,30 @@ export function readOps(raw: string | null | undefined): Ops {
     taskOwners: v.taskOwners === "people" ? "people" : "employees",
     checkTime: (TIMES as readonly string[]).includes(v.checkTime ?? "") ? (v.checkTime as Ops["checkTime"]) : "08:30",
     reportDay: v.reportDay === 1 ? 1 : 5,
+    notetaker: readNotetaker(v.notetaker),
     lastCheck: typeof v.lastCheck === "string" ? v.lastCheck : undefined,
     lastReport: typeof v.lastReport === "string" ? v.lastReport : undefined,
   };
+}
+
+function readNotetaker(raw: Partial<Notetaker> | undefined): Notetaker {
+  const n = raw && typeof raw === "object" ? raw : {};
+  return {
+    joins: n.joins === "picked" ? "picked" : "all",
+    skipWords: typeof n.skipWords === "string" ? n.skipWords.slice(0, 500) : DEFAULT_SKIP_WORDS,
+    botName: typeof n.botName === "string" ? n.botName.trim().slice(0, 60) : "",
+    notesTo: n.notesTo === "everyone" ? "everyone" : "me",
+    keep: n.keep === "7" || n.keep === "30" ? n.keep : "delete",
+  };
+}
+
+/** The never-join words as a clean lowercase list. */
+export function skipWordList(n: Notetaker) {
+  return n.skipWords
+    .split(",")
+    .map((w) => w.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 40);
 }
 
 export async function opsFor(orgId: number) {
