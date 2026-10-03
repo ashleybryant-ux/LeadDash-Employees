@@ -15,8 +15,33 @@ import type { AIEmployee, EmployeeKind } from "../drizzle/schema";
 import { INTERVIEWS, allQuestions } from "../server/employees/interview-defs";
 import { readAnswers, readGuidelines, readState, refreshGuidelines, type Example } from "../server/employees/interview";
 import { saveAutonomy, type Mode } from "../server/employees/team";
+import { indexKnowledge } from "../server/employees/kb";
 
 type A = Record<string, string | string[]>;
+
+// ---------- The founder story, in Ashley's words (replaces the earlier entry) ----------
+
+const FOUNDER_STORY = `In Ashley's words:
+
+I started LeadDash because my marketing system and my EHR couldn't talk to each other, and it slowed everything down.
+
+At my group practice, Legacy Family Services, I tried running one CRM for marketing and a separate EHR for clinical work. That meant double work. A new client's information went into one system, and then someone entered it again in the other.
+
+I went looking for systems that connected the two. None did. Connecting a CRM to an EHR is hard because of HIPAA, so the tools that could have shared information didn't.
+
+Then I looked at other EHRs. They covered the clinical side, but none had what I needed on the marketing side.
+
+So I built LeadDash: everything I needed in one system with one login. It simplified the work for my team and for me, and it made things simpler for the clients we serve.
+
+Short version (one line):
+"I'm a licensed therapist who got tired of my EHR and my marketing living in two different worlds, so I built one that does both."
+
+Third person (bios, grants, press):
+Ashley R. Bryant, PhD, LPC, CRC, founded LeadDash after running her group practice, Legacy Family Services, on a separate CRM and EHR. Every new client had to be entered twice, and no existing system connected marketing and clinical records, in large part because of what HIPAA requires when health information moves between tools. The EHRs she reviewed covered clinical work but not marketing. She built LeadDash to put both in one system with one login, which simplified the work for her team and for the clients they serve.
+
+Notes for writers:
+- The problem was double entry and slow work between two systems, not a lack of effort. Keep it plain and specific; no dramatic framing.
+- The DoorDash trademark win is part of the company story, not the founder story.`;
 
 // ---------- Voice: how Ashley sounds ----------
 
@@ -67,6 +92,7 @@ const SAMPLES = (kind: EmployeeKind) => {
 };
 
 const LIKED: Example[] = [
+  { liked: true, text: "I started LeadDash because my marketing system and my EHR couldn't talk to each other, and it slowed everything down. I tried one CRM and a separate EHR, and that meant entering the same client twice." },
   { liked: true, text: "I'm a licensed therapist who got tired of my EHR and my marketing living in two different worlds, so I built one that does both. Now I help other therapists grow their practices without choosing between great clinical tools and great marketing." },
   { liked: true, text: "Two systems. Zero communication between them. And my admin bridging the gap by hand, every single day." },
   { liked: false, text: "Revolutionize your practice with our cutting-edge, AI-powered all-in-one solution! Unlock seamless growth today. 🚀" },
@@ -340,6 +366,16 @@ async function main() {
     process.exit(1);
   }
   const at = new Date().toISOString();
+
+  // The founder story: replace the earlier entry, or add it.
+  const brain = await db.listKnowledgeByOrg(org.id);
+  const story = brain.find((k) => k.title.trim().toLowerCase() === "founder story");
+  const saved = story
+    ? await db.updateKnowledgeItem(story.id, org.id, { content: FOUNDER_STORY })
+    : await db.createKnowledgeItem({ organizationId: org.id, title: "Founder story", category: "mission_profile", kind: "fact", content: FOUNDER_STORY });
+  if (saved) indexKnowledge(saved);
+  console.log(`Founder story ${story ? "replaced" : "added"} in the Brain.`);
+
   for (const emp of await db.listEmployeesByOrg(org.id)) {
     if (emp.kind === "custom") continue;
     const kind = emp.kind;
