@@ -1,5 +1,5 @@
 import * as db from "../db";
-import { ROSTER } from "./roster";
+import { OLD_TITLES, ROSTER } from "./roster";
 
 /**
  * Every workspace has every employee on the roster. Runs when a workspace is
@@ -15,8 +15,9 @@ export async function ensureRoster(organizationId: number) {
     if (current) {
       // Keep the job text current. Names stay as the workspace set them.
       const caps = JSON.stringify(r.capabilities);
-      if (current.description !== r.description || current.capabilities !== caps) {
-        await db.updateEmployee(current.id, organizationId, { description: r.description, capabilities: caps });
+      const retitle = current.roleTitle === OLD_TITLES[r.roleTitle];
+      if (current.description !== r.description || current.capabilities !== caps || retitle) {
+        await db.updateEmployee(current.id, organizationId, { description: r.description, capabilities: caps, ...(retitle ? { roleTitle: r.roleTitle } : {}) });
       }
       continue;
     }

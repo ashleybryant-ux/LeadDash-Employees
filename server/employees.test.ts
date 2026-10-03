@@ -137,3 +137,18 @@ describe("everything needed is on the row", () => {
     expect(JSON.parse(after.requirements!).contact.email).toBe("pat@county.gov");
   });
 });
+
+describe("job titles", () => {
+  it("gives existing workspaces the new titles but keeps one the owner typed", async () => {
+    const { orgId } = await makeWorkspace("titles");
+    const { ensureRoster } = await import("./employees/roster-sync");
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    const taylor = (await db.getEmployeeByKind(orgId, "speaking"))!;
+    expect(morgan.roleTitle).toBe("Grant Writer");
+    await db.updateEmployee(morgan.id, orgId, { roleTitle: "Grants" });
+    await db.updateEmployee(taylor.id, orgId, { roleTitle: "Keynote Booker" });
+    await ensureRoster(orgId);
+    expect((await db.getEmployeeByKind(orgId, "grants"))!.roleTitle).toBe("Grant Writer");
+    expect((await db.getEmployeeByKind(orgId, "speaking"))!.roleTitle).toBe("Keynote Booker");
+  });
+});

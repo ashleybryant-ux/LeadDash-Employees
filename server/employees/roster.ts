@@ -22,7 +22,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "coo",
     name: "Simone",
-    roleTitle: "COO",
+    roleTitle: "Chief Operating Officer",
     department: "Leadership",
     description: "Runs the meeting schedule across every team: writes each agenda from the week's work, sends invites with a Google Meet or Zoom link, turns your notes into action items and a recap, and keeps the company scorecard.",
     capabilities: ["Agendas from the week's work", "Invites with Google Meet or Zoom links", "Action items and recaps from your notes", "Company scorecard"],
@@ -32,7 +32,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "projects",
     name: "Nora",
-    roleTitle: "Projects",
+    roleTitle: "Project Manager",
     department: "Leadership",
     description: "Plans launches back from the launch date, keeps every task, owner and due date in ClickUp, checks progress every morning, tracks launch KPIs and sends a weekly status report.",
     capabilities: ["Launch plans with milestones", "ClickUp lists and tasks", "Morning check and reminders", "Launch KPIs and weekly reports"],
@@ -42,7 +42,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "grants",
     name: "Morgan",
-    roleTitle: "Grants",
+    roleTitle: "Grant Writer",
     department: "Revenue",
     description: "Finds open grants the workspace qualifies for, checks eligibility and drafts the application from your Brain and Knowledge files. Nothing is submitted without your approval.",
     capabilities: ["Grant search with sources", "Eligibility check", "Proposal sections from your Knowledge files", "Approval before submitting"],
@@ -52,7 +52,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "speaking",
     name: "Taylor",
-    roleTitle: "Speaking",
+    roleTitle: "Speaking Agent",
     department: "Revenue",
     description: "Finds conferences and events taking speaker proposals, tracks the deadlines and writes the pitch. Nothing is submitted without your approval.",
     capabilities: ["Event search with sources", "Proposal deadlines", "Pitch emails", "Approval before submitting"],
@@ -62,7 +62,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "prospecting",
     name: "Riley",
-    roleTitle: "Prospecting",
+    roleTitle: "Sales Prospector",
     department: "Sales",
     description: "Finds practices and businesses that fit what the workspace sells (or referral partners for a practice) using the NPI Registry, state licensing boards and their own websites, scores each fit and passes the good ones to Jada.",
     capabilities: ["NPI Registry and state board lookups", "Owner, phone and LinkedIn profile", "Fit scores with reasons", "Passes good fits to Jada"],
@@ -72,7 +72,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "outreach",
     name: "Jada",
-    roleTitle: "Outreach",
+    roleTitle: "Outreach Writer",
     department: "Sales",
     description: "Writes a 3-email sequence for each prospect and sends it from your Gmail, adds a LinkedIn connection step with the note ready, and stops when they reply or book.",
     capabilities: ["3-email sequences", "Personal first lines from Riley's research", "LinkedIn connection notes", "Stops on reply or booking", "Passes replies to Malik"],
@@ -82,7 +82,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "leads",
     name: "Malik",
-    roleTitle: "New leads",
+    roleTitle: "New Leads Assistant",
     department: "Sales",
     description: "Answers new leads within minutes and books the meeting on your calendar.",
     capabilities: ["Lead form and LeadDash platform intake", "Replies with open times", "Booking page", "Books on Google Calendar"],
@@ -92,7 +92,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "social",
     name: "Sienna",
-    roleTitle: "Social media",
+    roleTitle: "Social Media Manager",
     department: "Marketing",
     description: "Writes posts for LinkedIn, Instagram, Facebook and X and makes the image for each one.",
     capabilities: ["LinkedIn, Instagram, Facebook and X posts", "Post images", "Approval before posting"],
@@ -102,7 +102,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "blog",
     name: "Theo",
-    roleTitle: "Blog",
+    roleTitle: "Blog Writer",
     department: "Marketing",
     description: "Writes long-form articles with banner images as WordPress drafts and passes each new article to Sienna for posts.",
     capabilities: ["Long-form articles", "Banner images", "WordPress drafts", "Passes articles to Sienna"],
@@ -112,7 +112,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "website",
     name: "Jordan",
-    roleTitle: "Website",
+    roleTitle: "Website Planner",
     department: "Marketing",
     description: "Plans website pages section by section, with the headlines, copy and calls to action for each.",
     capabilities: ["Page plans", "Headlines and copy", "Calls to action"],
@@ -122,7 +122,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "video",
     name: "Elena",
-    roleTitle: "Video",
+    roleTitle: "Video Producer",
     department: "Marketing",
     description: "Finds video formats that are working now and turns them into hooks, shot lists and timed scripts.",
     capabilities: ["Trend search with sources", "Hooks", "Shot lists and timed scripts"],
@@ -132,7 +132,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "inbox",
     name: "Avery",
-    roleTitle: "Inbox and calendar",
+    roleTitle: "Executive Assistant",
     department: "Operations",
     description: "Reads your messages, says what each sender wants and how urgent it is, and drafts the reply and calendar holds.",
     capabilities: ["Reply drafts", "Urgency", "Calendar holds"],
@@ -142,7 +142,7 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "hiring",
     name: "Quinn",
-    roleTitle: "Hiring",
+    roleTitle: "Recruiter",
     department: "Operations",
     description: "Writes job posts, finds people for outreach, screens applicants against your must-haves and runs license, NPI and exclusion checks.",
     capabilities: ["Job posts", "Outreach lists with sources", "Applicant scoring against your must-haves", "License, NPI and exclusion checks", "Onboarding checklists"],
@@ -150,6 +150,23 @@ export const ROSTER: RosterEntry[] = [
     minutesPerTask: 45,
   },
 ];
+
+/** Earlier default titles. A workspace still showing one gets the new title; a title someone typed stays. */
+export const OLD_TITLES: Record<string, string> = {
+  "Chief Operating Officer": "COO",
+  "Project Manager": "Projects",
+  "Grant Writer": "Grants",
+  "Speaking Agent": "Speaking",
+  "Sales Prospector": "Prospecting",
+  "Outreach Writer": "Outreach",
+  "New Leads Assistant": "New leads",
+  "Social Media Manager": "Social media",
+  "Blog Writer": "Blog",
+  "Website Planner": "Website",
+  "Video Producer": "Video",
+  "Executive Assistant": "Inbox and calendar",
+  "Recruiter": "Hiring",
+};
 
 export function rosterEntry(kind: EmployeeKind) {
   return ROSTER.find((r) => r.kind === kind) || null;
