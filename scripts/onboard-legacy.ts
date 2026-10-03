@@ -9,7 +9,7 @@
  *   cd /home/ssm-user/employees && npx tsx scripts/onboard-legacy.ts
  *
  * Safe to run again: anything you changed yourself is kept. Profile fields,
- * Brain entries and answers this script loaded before (scripts/data/legacy-v1.json)
+ * Brain entries and answers this script loaded before (scripts/data/legacy-v*.json)
  * are updated to the current version; guideline lines are never added twice.
  */
 import "dotenv/config";
@@ -23,10 +23,13 @@ import { ensureRoster } from "../server/employees/roster-sync";
 import fs from "node:fs";
 import path from "node:path";
 
-/** What the first version of this script loaded, so a re-run can update it without touching your own edits. */
-type V1Data = { profile: Record<string, string>; entries: { title: string; content: string }[]; answers: Record<string, A> };
-const V1: V1Data = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "data", "legacy-v1.json"), "utf8"));
+/** What earlier versions of this script loaded, so a re-run can update them without touching your own edits. */
+type Snapshot = { profile: Record<string, string>; entries: { title: string; content: string }[]; answers: Record<string, A> };
+const PAST: Snapshot[] = ["legacy-v1.json", "legacy-v2.json"].map((f) => JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "data", f), "utf8")));
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? "") === JSON.stringify(b ?? "");
+const wasProfile = (k: string, cur: string) => PAST.some((p) => cur === String(p.profile[k] ?? "").trim());
+const wasEntry = (title: string, cur: string) => PAST.some((p) => p.entries.some((e) => e.title === title && e.content.trim() === cur));
+const wasAnswer = (kind: string, k: string, cur: unknown) => PAST.some((p) => p.answers[kind] && k in p.answers[kind] && same(p.answers[kind][k], cur));
 
 type A = Record<string, string | string[]>;
 
@@ -101,12 +104,12 @@ Each includes a clinical interview and history, validated screening tools scored
     category: "financial_data",
     title: "Insurance and payment",
     content: `- Most major insurance plans are accepted for therapy: BlueCross BlueShield, UnitedHealthcare, Aetna, TRICARE, Cigna, Optum, HealthChoice, Healthcare Highways, and Lyra (EAP). Self-pay is welcome.
-- Panels differ by therapist (from each profile): Amanda Case: BCBS, Aetna, HealthChoice, Optum, UnitedHealthcare. Delicia Porter: BCBS, Aetna, HealthChoice, Healthcare Highways, Optum, UnitedHealthcare. K'Deshia Martin: BCBS and Aetna. Shalena Mosley: BCBS. Ashley's panels: [CONFIRM].
+- Panels differ by therapist (from each profile): Amanda Case: BCBS, Aetna, HealthChoice, Optum, UnitedHealthcare. Delicia Porter: BCBS, Aetna, HealthChoice, Healthcare Highways, Optum, UnitedHealthcare. K'Deshia Martin: BCBS and Aetna. Shalena Mosley: BCBS. Ashley (from her Psychology Today profile): Aetna, Anthem, Blue Care Network, BCBS, Cigna/Evernorth, HealthChoice, Healthcare Highways, MHNet Behavioral Health, Optum, UnitedHealthcare, and out of network.
 - What a client pays depends on their plan's copay, coinsurance and deductible. Clients can call (405) 370-4594 to check coverage before booking.
 - Legacy is not contracted with SoonerCare (Oklahoma Medicaid).
 - Self-pay: $175 for a 50-minute session. Couples sessions and adult evaluations are self-pay only.
 - Out of network: Legacy gives a superbill the client can submit for possible reimbursement.
-- Copays and deductibles are due at the time of service. Cash, check and major credit cards are accepted.
+- Copays and deductibles are due at the time of service. Accepted: American Express, Visa, Mastercard, Discover, cash, check and HSA cards.
 - Clients without insurance, or who choose not to use it, can request a Good Faith Estimate under the No Surprises Act.
 - A sliding scale may be available based on financial need; availability is limited and needs approval.
 - Returned checks and declined payments carry a $35 fee.`,
@@ -132,7 +135,7 @@ Phone: (405) 370-4594`,
     category: "team_bios",
     title: "Team",
     content: `Clinicians (all Licensed Professional Counselors):
-- Ashley R. Bryant, LPC, CRC: owner and founder. Adults and couples, plus all adult evaluations. Anxiety, depression, trauma and complex PTSD, grief, couples and premarital counseling, LGBTQ+ affirming care, veterans. Prolonged exposure, CBT, mindfulness and strength-based work. Licensed in Oklahoma, Colorado, Texas and Florida.
+- Ashley R. Bryant, LPC-S, CRC, BC-TMH: owner and founder; LPC supervisor. Teens, adults, older adults and couples, plus all adult evaluations. Anxiety, depression, trauma and complex PTSD, sexual abuse, grief, disability adjustment, couples and premarital counseling (Gottman Method), LGBTQ+ affirming care, veterans. Prolonged exposure (trained through the VA's National Center for PTSD), CBT, family systems, solution-focused and multicultural approaches. Licensed in Oklahoma, Colorado, Texas and Florida.
 - Amanda Case, LPC, RPT: teens, adults and older adults; play therapy for younger children. Anxiety, stress, grief, self-esteem, bipolar disorder, chronic pain, disabilities and chronic conditions. CBT, DBT, person-centered, play therapy. Telehealth, Oklahoma.
 - Delicia Porter, LPC: ages 10 and up; individuals, couples and families. Trauma, sexual abuse recovery, relationship challenges, low motivation. CBT and person-centered. Video, Oklahoma.
 - K'Deshia Martin, LPC: adults. Anxiety, depression, trauma, grief. CBT, mindfulness, strength-based. Oklahoma.
@@ -146,13 +149,17 @@ Staff:
   {
     category: "team_bios",
     title: "Owner bio: Ashley R. Bryant",
-    content: `Ashley R. Bryant, PhD, LPC, CRC, founded and directs Legacy Family Services.
-- Licensed Professional Counselor in Oklahoma, Colorado and Texas; Licensed Mental Health Counselor in Florida; Certified Rehabilitation Counselor.
+    content: `Ashley R. Bryant, PhD, LPC-S, CRC, BC-TMH, founded and directs Legacy Family Services (in business since November 12, 2015).
+- Licensed Professional Counselor in Oklahoma (license LPC 5636, expires June 30, 2027), Colorado and Texas; Licensed Mental Health Counselor in Florida; Certified Rehabilitation Counselor.
+- LPC Supervisor (LPC-S): supervises counselors working toward licensure.
+- Board Certified TeleMental Health Provider (BC-TMH).
+- Trained in prolonged exposure therapy through the VA's National Center for PTSD; uses the Gottman Method with couples.
+- Serves teens, adults and older adults, individuals, couples and families, with care for LGBTQ+, Black and Hispanic/Latino clients.
 - PhD in Workforce and Adult Education, Oklahoma State University. MS in Rehabilitation Counseling, Langston University (2012).
 - 18 years of clinical experience, with a background in vocational rehabilitation and disability employment.
 - Works with self-doubt, anxiety, depression, trauma and complex PTSD, grief, couples, LGBTQ+ clients, veterans, and people adjusting to the effects of disabilities.
 - Creator of the P.U.L.S.E.™ Framework and author of Love with P.U.L.S.E.
-- Featured on TLC's My 600-lb Life and in InStyle; also PBS and FOX. More than 100 speaking engagements.
+- Featured on TLC's My 600-lb Life and in InStyle; also PBS and FOX. More than 100 speaking engagements. LinkedIn headline: "Workplace Mental Health Expert."
 For Legacy marketing, sign as Ashley R. Bryant, LPC, CRC. Oklahoma rules do not allow "Dr." in counseling practice marketing.`,
   },
   {
@@ -182,6 +189,20 @@ For Legacy marketing, sign as Ashley R. Bryant, LPC, CRC. Oklahoma rules do not 
 - After certification, Legacy can contract for SoonerCare and hire licensure candidates under supervision. Candidates cannot bill commercial insurance on their own.
 - Moving booking and the client portal into LeadDash EHR (${PORTAL}), replacing the old SimplePractice portal.
 - The office is a single therapy room, so filming and meetings there happen only when no client is present.`,
+  },
+  {
+    category: "mission_profile",
+    title: "Online listings",
+    content: `Where Legacy and Ashley are listed, and what needs fixing so every listing matches legacyfs.org (checked October 3, 2026):
+- Google (as shown on Birdeye): 3.9 stars from 7 reviews. Lists an old address (3801 NW 63rd St #137, OKC 73116) and hours of 8 AM to 9 PM weekdays plus weekends. Should be 11901 N MacArthur Blvd, Suite C6, 73162, Monday to Friday 8 AM to 5 PM.
+- Psychology Today (Ashley and Legacy): current. $175, online only, insurance list, a second online-only location in St. Petersburg, FL. Shows phone (405) 926-8907.
+- TherapyDen: old address (4301 NW 63rd St, Suite 305, OKC 73116), fees $100 to $175, says 16 years in practice, lists Magellan and WebTPA.
+- Being Seen (beingseen.org): fees $65 to $215 with a sliding scale, hours 8 AM to 8 PM, says 17 years in practice.
+- Zencare: lists Georgia as a service state with a Georgia license (LPC007819), and EMDR. Also lists license numbers Texas 85114, Colorado LPC.0015402, Florida TPMC406. [CONFIRM Georgia and EMDR.]
+- Zocdoc: lists providers Bentlee Smiley, MEd, and Kirsten Lawrence, LCSW, who are not on the current team.
+- BBB: A+ rating, not accredited, in business since November 12, 2015. Names the owner as "Dr. Ashley Bryant," which Oklahoma counseling marketing rules do not allow.
+- Also listed on Healthgrades (LPC-S), Yellow Pages, Yahoo Local, CareDash, 7 Cups and Facebook (facebook.com/Legacyfamilyservices).
+- What Google reviewers praise: a therapist who listens and doesn't judge, cultural understanding and representation, real progress with communication and confidence, and helpful front office staff. Never quote or reuse a client's review in marketing.`,
   },
   {
     category: "mission_profile",
@@ -306,7 +327,7 @@ const ANSWERS: Record<EmployeeKind, A> = {
     programs: "Individual, couples and family therapy by telehealth; therapy for children and teens and play therapy in Oklahoma; adult ADHD, autism and ADA workplace accommodation evaluations; future supervised training for licensure candidates once ODMHSAS certification is complete",
     minAward: "$10,000",
     region: "My state first, then national",
-    priorities: "Access to therapy in Oklahoma, the behavioral health workforce (supervising licensure candidates), telehealth reach, and the ODMHSAS outpatient certification",
+    priorities: "Access to therapy in Oklahoma, the behavioral health workforce (Ashley is an LPC Supervisor and can train licensure candidates), telehealth reach, disability and workplace mental health, and the ODMHSAS outpatient certification",
     autoStart: "Ask me first",
     signer: "Ashley R. Bryant, PhD, LPC, CRC, Owner and Director, Legacy Family Services, Inc.",
     ...EXAMPLES_COMMON,
@@ -316,11 +337,11 @@ const ANSWERS: Record<EmployeeKind, A> = {
     goal: ["Workshops", "Panels", "Webinars"],
     success90: "Two community or workplace talks booked that send people to Legacy",
     first: "Find employer wellness, church and community events in the Oklahoma City metro looking for mental health speakers",
-    topics: "Stronger relationships with the P.U.L.S.E.™ Framework; mental health at work; when to start therapy and what to expect",
+    topics: "Stronger relationships with the P.U.L.S.E.™ Framework; mental health at work and asking for ADA accommodations; trauma and PTSD recovery; when to start therapy and what to expect",
     abstracts: "Couples leave with one practice they can use that night; employees leave knowing the signs that it's time to get support",
-    bioShort: "Ashley R. Bryant, PhD, LPC, CRC, is a licensed therapist with 18 years in practice and the owner of Legacy Family Services in Oklahoma City. She created the P.U.L.S.E.™ Framework and has spoken at more than 100 events.",
-    credentials: "PhD, LPC, CRC",
-    pastEvents: "More than 100 speaking engagements; featured on TLC, PBS and FOX",
+    bioShort: "Ashley R. Bryant, PhD, LPC-S, CRC, is a licensed therapist with 18 years in practice and the owner of Legacy Family Services in Oklahoma City. A workplace mental health expert and creator of the P.U.L.S.E.™ Framework, she has spoken at more than 100 events and been featured on TLC and in InStyle.",
+    credentials: "PhD, LPC-S, CRC, BC-TMH",
+    pastEvents: "More than 100 speaking engagements; featured on TLC's My 600-lb Life, InStyle, PBS and FOX",
     paid: "Paid or visibility",
     travel: "In my state",
     want: "Employers, churches, community groups, universities and couples' events in Oklahoma",
@@ -423,12 +444,12 @@ const ANSWERS: Record<EmployeeKind, A> = {
   website: {
     goal: ["Book consultations", "Build trust", "Recruit staff"],
     success90: "A site that turns visitors into booked first sessions",
-    first: "An insurance and fees page that lists every plan and price in one place, then refresh the therapist profiles so each shows states, ages and plans the same way",
+    first: "An insurance and fees page that lists every plan and price in one place, then a list of every directory listing that doesn't match the site (the old addresses on Google and TherapyDen first)",
     visitors: "Adults, couples and families in Oklahoma, Colorado, Texas and Florida comparing therapists, and prescribers looking for assessments",
     pages: "Home, services, individual, couples, children and teens, play therapy, adult evaluations (ADHD, autism, ADA), state pages, team and therapist profiles, insurance and fees, careers (workatlegacy.org)",
     cta: "Book an appointment",
     diff: "Online therapy in four states with same-week openings; adults, couples, teens and children under one roof, including a Registered Play Therapist; most major insurance plans accepted; flat-fee adult ADHD, autism and ADA evaluations with a report in 5 to 7 business days; culturally competent, affirming care",
-    proof: "Founded in 2015; five licensed therapists; owner has 18 years of clinical experience, is licensed in Oklahoma, Colorado, Texas and Florida, and was featured on TLC's My 600-lb Life and in InStyle",
+    proof: "In business since 2015 with a BBB A+ rating; five licensed therapists, including a Registered Play Therapist; owner has 18 years of clinical experience, is an LPC Supervisor, Board Certified TeleMental Health Provider and Certified Rehabilitation Counselor licensed in Oklahoma, Colorado, Texas and Florida, and was featured on TLC's My 600-lb Life and in InStyle",
     voice: "Warm and personal",
     formality: "Conversational",
     ...VOICE_CLIENT,
@@ -475,7 +496,7 @@ const ANSWERS: Record<EmployeeKind, A> = {
     first: "Find fully licensed therapists in Oklahoma who want telehealth caseloads",
     often: "Weekly",
     mustHave: "An active, unrestricted license; comfortable with telehealth; committed to culturally competent care",
-    licenses: "LPC, LMFT or LCSW, fully licensed in Oklahoma. Colorado, Texas or Florida licenses are a plus for telehealth. A Registered Play Therapist credential is a plus.",
+    licenses: "LPC, LMFT or LCSW, fully licensed in Oklahoma. Colorado, Texas or Florida licenses are a plus for telehealth. A Registered Play Therapist credential is a plus. Ashley is an LPC Supervisor, so LPC candidates can be supervised in-house once Legacy can bill for them.",
     where: "workatlegacy.org (Legacy's careers site)",
     greatFit: "Warm, steady clinicians who keep their notes current, work well with a small team, and care about clients who often get overlooked",
     panel: "Ashley interviews; Angela St. Ville handles the HR paperwork",
@@ -548,7 +569,7 @@ async function main() {
   for (const [k, v] of Object.entries(PROFILE)) {
     const cur = String((org as Record<string, unknown>)[k] ?? "").trim();
     if (cur === v) continue;
-    if (!cur || (k === "timezone" && created) || cur === String(V1.profile[k] ?? "").trim()) filled[k] = v;
+    if (!cur || (k === "timezone" && created) || wasProfile(k, cur)) filled[k] = v;
   }
   if (Object.keys(filled).length) await db.updateOrganization(org.id, filled);
 
@@ -565,8 +586,7 @@ async function main() {
       continue;
     }
     // Update only what this script wrote last time; your own edits stay.
-    const old = V1.entries.find((x) => x.title === e.title);
-    if (cur.content.trim() !== e.content.trim() && old && cur.content.trim() === old.content.trim()) {
+    if (cur.content.trim() !== e.content.trim() && wasEntry(e.title, cur.content.trim())) {
       const saved = await db.updateKnowledgeItem(cur.id, org.id, { content: e.content });
       if (saved) indexKnowledge(saved);
       brainUpdated++;
@@ -594,7 +614,7 @@ async function main() {
       const has = Array.isArray(current[k]) ? (current[k] as string[]).length > 0 : !!String(current[k] ?? "").trim();
       if (same(current[k], v)) continue;
       // Fill blanks, and update answers this script gave before; never overwrite your own answer.
-      if (has && !same(current[k], V1.answers[kind]?.[k])) continue;
+      if (has && !wasAnswer(kind, k, current[k])) continue;
       answers[k] = v;
       added++;
     }

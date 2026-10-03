@@ -1,0 +1,426 @@
+{
+ "profile": {
+  "website": "legacyfs.org",
+  "state": "Oklahoma City, OK",
+  "entity": "Legacy Family Services, Inc.",
+  "description": "Group therapy practice in Oklahoma City, founded in 2015. Five licensed therapists see adults, couples, families, teens and children by video, with play therapy for younger children and flat-fee adult ADHD, autism and ADA workplace accommodation evaluations. Most major insurance plans are accepted.",
+  "audience": "Adults, couples and families in Oklahoma, Colorado, Texas and Florida looking for therapy; children and teens in Oklahoma; adults who need an ADHD, autism or ADA workplace accommodation evaluation. Referral partners include primary care offices, prescribers, pediatricians and employers.",
+  "focusAreas": "Outpatient mental health, individual therapy, couples therapy, family therapy, child and teen therapy, play therapy, adult ADHD and autism evaluations, ADA workplace accommodation evaluations, telehealth",
+  "signerName": "Ashley R. Bryant",
+  "signerTitle": "Owner and Director",
+  "timezone": "America/Chicago"
+ },
+ "entries": [
+  {
+   "category": "mission_profile",
+   "title": "What Legacy Family Services is",
+   "content": "Legacy Family Services, Inc. is a group therapy practice in Oklahoma City, founded in 2015. \"Mental health for you and your family.\" Five licensed therapists see adults, couples, families, teens and children by video, and the owner offers flat-fee adult evaluations.\n\nOffice: 11901 N MacArthur Blvd, Suite C6, Oklahoma City, OK 73162\nHours: Monday to Friday, 8 AM to 5 PM Central. Closed Saturday and Sunday.\nPhone: (405) 370-4594\nFax: (405) 421-9530\nClient email: client@legacyfs.org (a contact address only, never a login)\nWebsite: legacyfs.org (state pages for Oklahoma, Colorado, Texas and Florida, and a blog)\nNew clients book: https://schedulemytherapy.com (pick a therapist and a time in under two minutes)\nExisting clients rebook: https://reschedulemytherapy.com\nCareers: workatlegacy.org\nSame-week openings are often available."
+  },
+  {
+   "category": "mission_profile",
+   "title": "Services",
+   "content": "Individual therapy (adults): 50-minute video sessions. $175 self-pay, or billed to insurance. Focus areas: relationships, family dynamics, depression, anxiety, stress, trauma, grief, self-confidence, feeling stuck, affirming therapy.\n\nCouples therapy: 50-minute joint sessions, $175, self-pay only. Legacy does not bill any insurance for couples sessions, because insurance needs a mental health diagnosis and relationship concerns are not one. Most couples start weekly and adjust from there.\n\nChildren and teens (ages 12 and up, Oklahoma): virtual, conversation-based therapy with Delicia Porter or Amanda Case. The first session usually includes the parent; later sessions are one on one, with regular parent check-ins on themes and progress (details stay private unless there is a safety concern). Covers anxiety, depression, school stress, social media, friendships, bullying, family changes, grief, trauma, identity and self-esteem. Insurance or self-pay.\n\nPlay therapy (about ages 6 to 11, Oklahoma): with Amanda Case, LPC, RPT. Virtual, from home, using the child's own toys and art supplies. Insurance or self-pay.\n\nAdult evaluations (18 and older, all virtual in Oklahoma, Colorado, Texas and Florida), done by Ashley R. Bryant, LPC, CRC. Self-pay, one flat fee, paid at booking, with a paid receipt:\n- Adult ADHD evaluation: $525\n- Adult autism evaluation: $695\n- ADA workplace accommodation evaluation: $550\nEach includes a clinical interview and history, validated screening tools scored against DSM-5 criteria, a written report with recommendations, and a virtual feedback session. Reports arrive 5 to 7 business days after the questionnaires are done. The ADHD report can be shared with a physician or psychiatric provider. These are clinical diagnostic assessments, not psychological or neuropsychological testing; anyone who needs standardized testing is referred to a licensed psychologist."
+  },
+  {
+   "category": "mission_profile",
+   "title": "Where we see clients",
+   "content": "- Sessions are by video. Ashley sees clients in Oklahoma, Colorado, Texas and Florida (LPC in Oklahoma, Colorado and Texas; LMHC in Florida).\n- Amanda Case, Delicia Porter, K'Deshia Martin and Shalena Mosley are licensed in Oklahoma, so their clients must be in Oklahoma.\n- Children, teens and play therapy are Oklahoma only.\n- Adult evaluations are available in all four states.\n- The Oklahoma City office is a single therapy room. [CONFIRM whether in-person sessions are offered there now; the website lists video sessions.]"
+  },
+  {
+   "category": "financial_data",
+   "title": "Insurance and payment",
+   "content": "- Most major insurance plans are accepted for therapy: BlueCross BlueShield, UnitedHealthcare, Aetna, TRICARE, Cigna, Optum, HealthChoice, Healthcare Highways, and Lyra (EAP). Self-pay is welcome.\n- Panels differ by therapist (from each profile): Amanda Case: BCBS, Aetna, HealthChoice, Optum, UnitedHealthcare. Delicia Porter: BCBS, Aetna, HealthChoice, Healthcare Highways, Optum, UnitedHealthcare. K'Deshia Martin: BCBS and Aetna. Shalena Mosley: BCBS. Ashley's panels: [CONFIRM].\n- What a client pays depends on their plan's copay, coinsurance and deductible. Clients can call (405) 370-4594 to check coverage before booking.\n- Legacy is not contracted with SoonerCare (Oklahoma Medicaid).\n- Self-pay: $175 for a 50-minute session. Couples sessions and adult evaluations are self-pay only.\n- Out of network: Legacy gives a superbill the client can submit for possible reimbursement.\n- Copays and deductibles are due at the time of service. Cash, check and major credit cards are accepted.\n- Clients without insurance, or who choose not to use it, can request a Good Faith Estimate under the No Surprises Act.\n- A sliding scale may be available based on financial need; availability is limited and needs approval.\n- Returned checks and declined payments carry a $35 fee."
+  },
+  {
+   "category": "mission_profile",
+   "title": "Client policies",
+   "content": "- Cancel or reschedule at least 24 hours ahead, by phone, email, text or the client portal.\n- Late cancellations (under 24 hours) and no-shows are charged the full session fee. Insurance does not cover these fees.\n- A late arrival still ends at the scheduled time.\n- Balances more than 60 days overdue may go to collections.\n- In a genuine emergency, clients should contact the office as soon as they can.\n- Client portal: https://portal.leaddash.io/legacy"
+  },
+  {
+   "category": "mission_profile",
+   "title": "Booking link",
+   "content": "New clients: https://schedulemytherapy.com\nExisting clients: https://reschedulemytherapy.com\nPhone: (405) 370-4594"
+  },
+  {
+   "category": "team_bios",
+   "title": "Team",
+   "content": "Clinicians (all Licensed Professional Counselors):\n- Ashley R. Bryant, LPC, CRC: owner and founder. Adults and couples, plus all adult evaluations. Anxiety, depression, trauma and complex PTSD, grief, couples and premarital counseling, LGBTQ+ affirming care, veterans. Prolonged exposure, CBT, mindfulness and strength-based work. Licensed in Oklahoma, Colorado, Texas and Florida.\n- Amanda Case, LPC, RPT: teens, adults and older adults; play therapy for younger children. Anxiety, stress, grief, self-esteem, bipolar disorder, chronic pain, disabilities and chronic conditions. CBT, DBT, person-centered, play therapy. Telehealth, Oklahoma.\n- Delicia Porter, LPC: ages 10 and up; individuals, couples and families. Trauma, sexual abuse recovery, relationship challenges, low motivation. CBT and person-centered. Video, Oklahoma.\n- K'Deshia Martin, LPC: adults. Anxiety, depression, trauma, grief. CBT, mindfulness, strength-based. Oklahoma.\n- Shalena Mosley, LPC: school-age children, teens and adults; family and couples counseling. Domestic violence, adolescents. Client-guided sessions. Oklahoma.\n\nStaff:\n- BJ: COO and facility director.\n- Angela St. Ville: client services, billing lead, compliance and HR. Signs in as angela@legacyfs.org.\n- Amanda Case is also a help desk agent for client@legacyfs.org."
+  },
+  {
+   "category": "team_bios",
+   "title": "Owner bio: Ashley R. Bryant",
+   "content": "Ashley R. Bryant, PhD, LPC, CRC, founded and directs Legacy Family Services.\n- Licensed Professional Counselor in Oklahoma, Colorado and Texas; Licensed Mental Health Counselor in Florida; Certified Rehabilitation Counselor.\n- PhD in Workforce and Adult Education, Oklahoma State University. MS in Rehabilitation Counseling, Langston University (2012).\n- 18 years of clinical experience, with a background in vocational rehabilitation and disability employment.\n- Works with self-doubt, anxiety, depression, trauma and complex PTSD, grief, couples, LGBTQ+ clients, veterans, and people adjusting to the effects of disabilities.\n- Creator of the P.U.L.S.E.™ Framework and author of Love with P.U.L.S.E.\n- Featured on TLC's My 600-lb Life and in InStyle; also PBS and FOX. More than 100 speaking engagements.\nFor Legacy marketing, sign as Ashley R. Bryant, LPC, CRC. Oklahoma rules do not allow \"Dr.\" in counseling practice marketing."
+  },
+  {
+   "category": "voice_tone",
+   "title": "Privacy and safety rules",
+   "content": "- Never name a client, describe a client, or confirm that someone is a client, anywhere: posts, emails, notes, recaps or chat. Staff notices use initials only.\n- Never give clinical advice or discuss a client's care by email, text or social media. Invite them to call the office or bring it to their session.\n- Anyone who mentions thoughts of harming themselves or someone else, or a crisis: tell them to call or text 988 (Suicide and Crisis Lifeline) or call 911 for an emergency, and alert Ashley right away.\n- Never ask current clients for reviews or testimonials, and never write made-up client stories that read as real.\n- Never sit in on, record or take notes in client sessions.\n- Keep client information out of tools outside LeadDash EHR."
+  },
+  {
+   "category": "voice_tone",
+   "title": "Voice and naming rules",
+   "content": "- Warm, plain and direct, like a therapist talking to someone deciding whether to start. Short sentences. No hype, no promises of results, no em dashes.\n- Say \"clients,\" not \"patients.\" Say \"licensed therapists.\"\n- No \"Dr.\" in Legacy marketing (an Oklahoma licensing rule). Sign as Ashley R. Bryant, LPC, CRC.\n- Call the evaluations \"clinical diagnostic assessments,\" never \"psychological testing.\"\n- Write P.U.L.S.E.™ with the trademark symbol.\n- Name the practice \"Legacy Family Services\" in full the first time."
+  },
+  {
+   "category": "mission_profile",
+   "title": "Plans",
+   "content": "- Applying for ODMHSAS Outpatient Mental Health certification. Providers cannot contract with OHCA or ODMHSAS during the six-month Permit for Temporary Operation.\n- After certification, Legacy can contract for SoonerCare and hire licensure candidates under supervision. Candidates cannot bill commercial insurance on their own.\n- Moving booking and the client portal into LeadDash EHR (https://portal.leaddash.io/legacy), replacing the old SimplePractice portal.\n- The office is a single therapy room, so filming and meetings there happen only when no client is present."
+  },
+  {
+   "category": "mission_profile",
+   "title": "Website and blog",
+   "content": "- legacyfs.org pages: home, services, individual therapy, couples therapy, children and teens therapy, play therapy with Amanda, adult evaluations (ADHD, autism, ADA workplace accommodation), a page for each state (Oklahoma, Colorado, Texas, Florida), team and therapist profiles, contact, blog, privacy policy, terms.\n- Recent blog posts (2026): \"AI Chatbots vs. Real Therapy: Why the Human Connection Still Wins in OKC\" and \"7 Mistakes You're Making When Searching for a Therapist in Oklahoma City\" (Sept 1); \"Goodbye August: Reflecting on Growth and Looking Toward September\" (Aug 31); \"Preparing Your Kids (and Yourself) for the First Week of School\" (Aug 30); \"Self-Confidence Boosters: Reclaiming Your Inner Strength\" (Aug 29). Others: routine as summer ends, mental health tips for Floridians, grief and the anniversary effect, talking to your boss about mental health days, transitioning to college in Colorado.\n- Don't repeat a topic already covered without a new angle."
+  }
+ ],
+ "answers": {
+  "coo": {
+   "goal": [
+    "Running meetings",
+    "Agendas",
+    "Notes and action items",
+    "Keeping teams on track"
+   ],
+   "success90": "Staff meetings have an agenda the day before and action items the same day, and nothing about certification or billing slips through.",
+   "first": "Set up a weekly staff check-in with Angela and a monthly team meeting with the clinicians.",
+   "deciders": "Ashley makes the final call.",
+   "style": "Short: decisions first",
+   "always": "Billing and claims follow-up, open client-services issues by initials only, ODMHSAS certification steps, hiring",
+   "team": "Ashley: owner, director, clinician and evaluations. BJ: COO and facility director. Angela St. Ville: client services, billing, compliance and HR. Amanda Case, Delicia Porter, K'Deshia Martin and Shalena Mosley: licensed clinicians.",
+   "updatesFrom": "Angela on billing and client services; Nora on projects; Quinn on hiring; Malik on new client inquiries",
+   "numbers": "New client inquiries, first sessions booked, sessions held, claims sent and paid, open balances",
+   "offTrack": "Put it first on the next agenda",
+   "recapTo": "Only me",
+   "keepOff": "Client names and any clinical details (initials only), staff pay, personnel issues",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "projects": {
+   "goal": [
+    "New services",
+    "Campaigns",
+    "Hiring pushes"
+   ],
+   "horizon": "1 month",
+   "success90": "The switch to the new booking page and portal is done, and the certification checklist has an owner and a date on every step.",
+   "first": "Plan the switch to the LeadDash EHR booking page and portal, without turning off the current booking pages (schedulemytherapy.com and reschedulemytherapy.com) until the new link is out.",
+   "owners": "Ashley: approvals, clinical decisions and certification. Angela: client services, billing, paperwork and credentialing logistics. BJ: facility. Sienna, Theo and Jordan: marketing pieces.",
+   "approver": "Ashley",
+   "buffer": "2 days",
+   "how": "Small tasks, one owner each, every task tied to a milestone",
+   "noDue": [
+    "Weekends"
+   ],
+   "done": "Live or sent, not just drafted, and approved by Ashley when clients will see it",
+   "kpis": "First sessions booked, evaluations booked, inquiries answered within a day",
+   "reportStyle": "Short: on track or not",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "grants": {
+   "goal": [
+    "Grants",
+    "Government contracts"
+   ],
+   "success90": "Two strong applications ready to sign, each with real numbers and no placeholders left",
+   "first": "Find behavioral health and workforce grants open to Oklahoma practices with deadlines in the next 90 days",
+   "often": "Weekly",
+   "staff": "Owner and director, four more licensed therapists, a COO and facility director, and a client services and billing lead. Office in Oklahoma City; telehealth across Oklahoma, Colorado, Texas and Florida.",
+   "programs": "Individual, couples and family therapy by telehealth; therapy for children and teens and play therapy in Oklahoma; adult ADHD, autism and ADA workplace accommodation evaluations; future supervised training for licensure candidates once ODMHSAS certification is complete",
+   "minAward": "$10,000",
+   "region": "My state first, then national",
+   "priorities": "Access to therapy in Oklahoma, the behavioral health workforce (supervising licensure candidates), telehealth reach, and the ODMHSAS outpatient certification",
+   "autoStart": "Ask me first",
+   "signer": "Ashley R. Bryant, PhD, LPC, CRC, Owner and Director, Legacy Family Services, Inc.",
+   "dislikeWhy": [
+    "Too salesy",
+    "Clickbait"
+   ],
+   "soundLike": "Legacy's own website: warm, plain, respectful, never pushy",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "speaking": {
+   "goal": [
+    "Workshops",
+    "Panels",
+    "Webinars"
+   ],
+   "success90": "Two community or workplace talks booked that send people to Legacy",
+   "first": "Find employer wellness, church and community events in the Oklahoma City metro looking for mental health speakers",
+   "topics": "Stronger relationships with the P.U.L.S.E.™ Framework; mental health at work; when to start therapy and what to expect",
+   "abstracts": "Couples leave with one practice they can use that night; employees leave knowing the signs that it's time to get support",
+   "bioShort": "Ashley R. Bryant, PhD, LPC, CRC, is a licensed therapist with 18 years in practice and the owner of Legacy Family Services in Oklahoma City. She created the P.U.L.S.E.™ Framework and has spoken at more than 100 events.",
+   "credentials": "PhD, LPC, CRC",
+   "pastEvents": "More than 100 speaking engagements; featured on TLC, PBS and FOX",
+   "paid": "Paid or visibility",
+   "travel": "In my state",
+   "want": "Employers, churches, community groups, universities and couples' events in Oklahoma",
+   "avoidAud": "Events that require naming Cornell or Therapy In Color",
+   "often": "Twice a week",
+   "formality": "Conversational",
+   "samples": "Direct and specific",
+   "reading": "Plain (grade 6 to 8)",
+   "wordsUse": "clients, licensed therapists, in person or online, Legacy Family Services",
+   "wordsAvoid": "patients, cure, fix, guarantee, Dr., life-changing, transform, spots are filling fast",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "prospecting": {
+   "goal": [
+    "Referral partners"
+   ],
+   "success90": "25 strong referral partners a week, each with a contact name and a direct email or fax",
+   "first": "Primary care offices and prescribers in the Oklahoma City metro who see adults with attention, autism, anxiety or mood concerns",
+   "often": "Weekly",
+   "weekly": "25",
+   "size": "Solo practices",
+   "specialty": [
+    "Medical",
+    "Psychiatry"
+   ],
+   "payer": "Either",
+   "states": "Oklahoma City metro first, then the rest of Oklahoma",
+   "ideal": "Primary care offices, psychiatric nurse practitioners and other prescribers who need somewhere to send adults for therapy or an ADHD or autism evaluation; pediatricians who need therapy or play therapy for children; employers and HR teams handling ADA accommodation requests",
+   "decider": [
+    "Owner",
+    "Office manager",
+    "Clinical director"
+   ],
+   "skip": "Other therapy practices, hospital systems",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "outreach": {
+   "goal": [
+    "Partnerships",
+    "Replies"
+   ],
+   "success90": "Referral partners sending clients every month, with no complaints or unsubscribes",
+   "first": "Introduce the adult ADHD and autism evaluations to Riley's best-fit prescribers",
+   "offer": "A short call",
+   "cta": "Reply to set up a 15-minute call, or send referrals by fax to (405) 421-9530",
+   "proof": "Flat-fee adult ADHD ($525), autism ($695) and ADA accommodation ($550) evaluations, all virtual, with a written report in 5 to 7 business days that the client can share with their prescriber; therapy for adults, couples, teens and children, with most major insurance plans accepted; same-week openings; founded in 2015",
+   "objections": "\"We already refer elsewhere\": we often have same-week openings, and the client brings back a written report. \"Do you take insurance?\": therapy, yes (BCBS, UnitedHealthcare, Aetna, TRICARE, Cigna, Optum, HealthChoice, Healthcare Highways, Lyra); evaluations are a flat self-pay fee. \"Is this psychological testing?\": no, these are clinical diagnostic assessments; anyone who needs standardized testing is referred to a psychologist.",
+   "tone": "Brief and direct",
+   "formality": "Professional",
+   "signOff": "Ashley R. Bryant, LPC, CRC, Owner and Director, Legacy Family Services",
+   "address": "Legacy Family Services, 11901 N MacArthur Blvd, Suite C6, Oklahoma City, OK 73162",
+   "reading": "Clinician to clinician",
+   "wordsUse": "clients, licensed therapists, assessment, written report, telehealth",
+   "wordsAvoid": "patients' names, guarantee, Dr., life-changing",
+   "samples": "Direct and specific",
+   "dislikeWhy": [
+    "Too salesy",
+    "Clickbait"
+   ],
+   "soundLike": "Legacy's own website: warm, plain, respectful, never pushy",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "leads": {
+   "goal": [
+    "Book meetings",
+    "Answer questions",
+    "Hand hot leads to me"
+   ],
+   "success90": "Every new client inquiry answered the same day with a booking link",
+   "first": "Answer new client inquiries and send them to the booking page",
+   "services": "Individual, couples and family therapy by video; therapy for children and teens 12 and up and play therapy for about ages 6 to 11 (Oklahoma); adult ADHD, autism and ADA workplace accommodation evaluations (all four states)",
+   "prices": "Share prices",
+   "priceList": "Individual therapy: $175 per 50-minute session self-pay, or billed to insurance. Couples therapy: $175, self-pay only. Adult ADHD evaluation: $525. Adult autism evaluation: $695. ADA workplace accommodation evaluation: $550. Evaluations are flat fees paid at booking. Insurance costs depend on the plan's copay, coinsurance and deductible.",
+   "faqs": "Which insurance do you take? BlueCross BlueShield, UnitedHealthcare, Aetna, TRICARE, Cigna, Optum, HealthChoice, Healthcare Highways and Lyra (EAP); call (405) 370-4594 to check your coverage. Couples counseling? Yes, $175, self-pay only, because insurance needs a diagnosis. Online sessions? Yes, by video. Do you see kids? Yes in Oklahoma: teens 12 and up, and play therapy for about ages 6 to 11. Evaluations? Adults 18 and up, all virtual, flat fee, report in 5 to 7 business days; they are clinical diagnostic assessments, not psychological testing. How soon? Same-week openings are often available. Office hours? Monday to Friday, 8 AM to 5 PM Central. Cancellations? 24 hours' notice, or the full session fee is charged.",
+   "qualifies": "Adults and couples in Oklahoma, Colorado, Texas or Florida looking for therapy; children and teens in Oklahoma; adults in those four states who want an ADHD, autism or ADA accommodation evaluation",
+   "notFit": "Anyone in crisis: 988 or 911, and alert Ashley. Evaluations for anyone under 18, or IQ, neuropsychological or standardized testing: say we don't offer them and suggest a licensed psychologist. Children and teens outside Oklahoma, and anyone outside the four states: say we can't see them yet.",
+   "handoff": [
+    "Billing questions",
+    "Complaints",
+    "Anything urgent",
+    "Insurance questions"
+   ],
+   "hours": "8 AM to 8 PM",
+   "tone": "Warm",
+   "formality": "Conversational",
+   "never": "A therapist or time slot that isn't on the booking page, insurance coverage before it's verified, a diagnosis or evaluation result, or any clinical advice",
+   "samples": "Warm",
+   "reading": "Plain (grade 6 to 8)",
+   "wordsUse": "clients, licensed therapists, in person or online, Legacy Family Services",
+   "wordsAvoid": "patients, cure, fix, guarantee, Dr., life-changing, transform, spots are filling fast",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "social": {
+   "goal": [
+    "Bring in clients",
+    "Recruit staff"
+   ],
+   "success90": "3 posts a week going out on time, sounding like Legacy, with people booking from them",
+   "first": "Instagram and Facebook posts on what to expect in therapy, couples counseling, adult evaluations and therapy for kids and teens",
+   "formality": "Conversational",
+   "emoji": "One at most",
+   "hashtags": "2 or 3 at the end",
+   "signOff": "Legacy Family Services",
+   "platforms": [
+    "Instagram",
+    "Facebook",
+    "LinkedIn"
+   ],
+   "audience": "Adults and couples in Oklahoma, Colorado, Texas and Florida thinking about starting therapy",
+   "often": "3 a week",
+   "pillars": "What to expect in therapy; relationships and couples counseling (P.U.L.S.E.™); adult ADHD, autism and ADA accommodation evaluations; kids, teens and parents (play therapy with Amanda); everyday mental health tips; we're hiring",
+   "imageStyle": "Photos for people, illustrations for ideas",
+   "imageNotes": "Real-looking, diverse adults and couples; calm settings; nothing that looks like a real client; no stock handshakes",
+   "avoid": "Clients or anything that could identify one, testimonials from clients, before-and-after promises, crisis content without 988, politics",
+   "composites": "No, never",
+   "samples": "Warm and personal",
+   "reading": "Plain (grade 6 to 8)",
+   "wordsUse": "clients, licensed therapists, in person or online, Legacy Family Services",
+   "wordsAvoid": "patients, cure, fix, guarantee, Dr., life-changing, transform, spots are filling fast",
+   "dislikeWhy": [
+    "Too salesy",
+    "Clickbait"
+   ],
+   "soundLike": "Legacy's own website: warm, plain, respectful, never pushy",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "blog": {
+   "goal": [
+    "Bring in clients",
+    "Rank on Google"
+   ],
+   "success90": "Two articles a month ranking for local therapy searches and sending readers to book",
+   "first": "An article on adult autism evaluations by telehealth, and one on asking for ADA accommodations at work",
+   "reader": "Clients and families",
+   "questions": "How to find a therapist in Oklahoma City, whether insurance covers therapy, what couples counseling is like, how adult ADHD and autism are evaluated, how to ask for ADA accommodations, therapy and play therapy for kids, whether online therapy works",
+   "topics": "Starting therapy, couples and relationships, kids and teens, parenting, adult ADHD and autism, workplace accommodations, anxiety, depression, trauma and grief, telehealth",
+   "keywords": "therapist Oklahoma City, couples counseling Oklahoma City, adult ADHD evaluation Oklahoma, adult autism evaluation online, ADA accommodation evaluation, play therapy Oklahoma, teen therapy Oklahoma City, online therapy Texas, online therapy Colorado, online therapy Florida",
+   "length": "1,200 words",
+   "often": "Twice a month",
+   "citations": "Cite a source for every fact",
+   "cta": "Book online at https://schedulemytherapy.com or call (405) 370-4594",
+   "author": "Ashley R. Bryant, LPC, CRC, owner of Legacy Family Services in Oklahoma City",
+   "formality": "Conversational",
+   "samples": "Warm and personal",
+   "reading": "Plain (grade 6 to 8)",
+   "wordsUse": "clients, licensed therapists, in person or online, Legacy Family Services",
+   "wordsAvoid": "patients, cure, fix, guarantee, Dr., life-changing, transform, spots are filling fast",
+   "dislikeWhy": [
+    "Too salesy",
+    "Clickbait"
+   ],
+   "soundLike": "Legacy's own website: warm, plain, respectful, never pushy",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "website": {
+   "goal": [
+    "Book consultations",
+    "Build trust",
+    "Recruit staff"
+   ],
+   "success90": "A site that turns visitors into booked first sessions",
+   "first": "An insurance and fees page that lists every plan and price in one place, then refresh the therapist profiles so each shows states, ages and plans the same way",
+   "visitors": "Adults, couples and families in Oklahoma, Colorado, Texas and Florida comparing therapists, and prescribers looking for assessments",
+   "pages": "Home, services, individual, couples, children and teens, play therapy, adult evaluations (ADHD, autism, ADA), state pages, team and therapist profiles, insurance and fees, careers (workatlegacy.org)",
+   "cta": "Book an appointment",
+   "diff": "Online therapy in four states with same-week openings; adults, couples, teens and children under one roof, including a Registered Play Therapist; most major insurance plans accepted; flat-fee adult ADHD, autism and ADA evaluations with a report in 5 to 7 business days; culturally competent, affirming care",
+   "proof": "Founded in 2015; five licensed therapists; owner has 18 years of clinical experience, is licensed in Oklahoma, Colorado, Texas and Florida, and was featured on TLC's My 600-lb Life and in InStyle",
+   "voice": "Warm and personal",
+   "formality": "Conversational",
+   "samples": "Warm and personal",
+   "reading": "Plain (grade 6 to 8)",
+   "wordsUse": "clients, licensed therapists, in person or online, Legacy Family Services",
+   "wordsAvoid": "patients, cure, fix, guarantee, Dr., life-changing, transform, spots are filling fast",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "video": {
+   "goal": [
+    "Bring in clients",
+    "Teach"
+   ],
+   "success90": "Two short videos a week Ashley can film in under 15 minutes each",
+   "first": "Short videos answering the questions new clients ask most",
+   "platforms": [
+    "Instagram Reels",
+    "TikTok"
+   ],
+   "length": "30 to 60 seconds",
+   "often": "2",
+   "captions": "Captions on every video",
+   "onCamera": "Me",
+   "avoid": "Clients, client records, screens with client information, the office while any client is there",
+   "style": "Teaching",
+   "formality": "Conversational",
+   "samples": "Direct and specific",
+   "reading": "Plain (grade 6 to 8)",
+   "wordsUse": "clients, licensed therapists, in person or online, Legacy Family Services",
+   "wordsAvoid": "patients, cure, fix, guarantee, Dr., life-changing, transform, spots are filling fast",
+   "dislikeWhy": [
+    "Too salesy",
+    "Clickbait"
+   ],
+   "soundLike": "Legacy's own website: warm, plain, respectful, never pushy",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "inbox": {
+   "goal": [
+    "Drafting replies",
+    "Sorting what's urgent",
+    "Follow-ups"
+   ],
+   "success90": "The inbox sorted every day, with replies drafted for anything that needs me or Angela",
+   "first": "Sort the inbox and draft replies to referral sources and new inquiries",
+   "who": "New client inquiries, current clients, referral sources, insurance payers, ODMHSAS and other state agencies, staff",
+   "urgent": "Anything about safety or a crisis, ODMHSAS or licensing board deadlines, payer denials with a deadline, staff who can't see clients",
+   "archive": "Newsletters, vendor marketing, cold sales emails",
+   "replyTo": "New client inquiries, referral sources and scheduling questions",
+   "noReply": "Anything clinical from a client (flag it for their therapist), cold sales emails",
+   "never": "Clinical advice, insurance coverage before it's verified, a specific therapist or time not on the booking page, prices",
+   "slots": "30 minutes",
+   "buffer": "15 minutes",
+   "tone": "Warm and personal",
+   "formality": "Conversational",
+   "signature": "Ashley R. Bryant, LPC, CRC | Owner and Director, Legacy Family Services | (405) 370-4594",
+   "samples": "Warm and personal",
+   "reading": "Plain (grade 6 to 8)",
+   "wordsUse": "clients, licensed therapists, in person or online, Legacy Family Services",
+   "wordsAvoid": "patients, cure, fix, guarantee, Dr., life-changing, transform, spots are filling fast",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "hiring": {
+   "goal": [
+    "Licensed clinicians"
+   ],
+   "success90": "A short list of strong licensed clinicians interviewed, with one ready for an offer",
+   "first": "Find fully licensed therapists in Oklahoma who want telehealth caseloads",
+   "often": "Weekly",
+   "mustHave": "An active, unrestricted license; comfortable with telehealth; committed to culturally competent care",
+   "licenses": "LPC, LMFT or LCSW, fully licensed in Oklahoma. Colorado, Texas or Florida licenses are a plus for telehealth. A Registered Play Therapist credential is a plus.",
+   "where": "workatlegacy.org (Legacy's careers site)",
+   "greatFit": "Warm, steady clinicians who keep their notes current, work well with a small team, and care about clients who often get overlooked",
+   "panel": "Ashley interviews; Angela St. Ville handles the HR paperwork",
+   "interviewFormat": "Video call",
+   "outreach": "Find people and draft messages",
+   "screening": "Quinn scores, I decide",
+   "report": "A weekly summary",
+   "reach": "Push notification",
+   "know": "Legacy is Ashley's group practice. Client privacy comes first: never name or describe a client anywhere, staff notices use initials only, and crisis messages get 988 or 911 and an alert to Ashley. Angela St. Ville handles client services and billing."
+  },
+  "custom": {}
+ }
+}
