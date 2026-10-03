@@ -147,6 +147,11 @@ export type LiveInput = { kind: "click"; x: number; y: number } | { kind: "type"
 
 /** The person's own click, typing or scroll, only while they have control. Typed text is never stored. */
 export async function liveInput(orgId: number, id: string, input: LiveInput) {
+  // A page that hangs mid-navigation never holds the person's buttons for long.
+  return Promise.race([doInput(orgId, id, input), sleep(8000).then(() => liveView(orgId))]);
+}
+
+async function doInput(orgId: number, id: string, input: LiveInput) {
   const l = liveFor(orgId, id);
   if (l.state !== "control" || !l.page) throw new Error("Press Take over first.");
   const page = l.page;
@@ -383,7 +388,8 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
     const lastSteps = log.slice(-5).map((l) => `${l.action} (${l.detail})`).join("; then ");
     const why = `Stopped after ${max} steps without finishing. Last page: ${page.url()}. Last steps: ${lastSteps}`.slice(0, 900);
     // Out of steps: the person can take over, and handing back gives more steps from that page.
-    if (live && (await waitForPerson("I used all my steps without finishing."))) {
+    const lastThought = [...log].reverse().find((l) => l.action !== "person")?.detail ?? "";
+    if (live && (await waitForPerson(`I used all my steps without finishing. The last thing I did: ${lastThought || "nothing yet"}. If the page already shows what I need, press Hand back and I'll read it; if it's the wrong page, get me to the right one first`))) {
       step = max;
       max += 15;
       continue;

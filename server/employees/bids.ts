@@ -28,7 +28,7 @@ const MAX_DETAILS = 6;
 
 type BidPrimeSecrets = { email: string; password: string; storageState?: string | null };
 type BidPrimeSettings = { hints?: string[]; startUrl?: string; lastCheckedAt?: string | null; lastAttemptAt?: string | null; lastFound?: number; waitingCode?: boolean; lastError?: string | null; checking?: boolean };
-type ListedBid = { title: string; agency: string; location?: string; due?: string; detailUrl?: string; sourceUrl?: string };
+type ListedBid = { title: string; agency: string; refnum?: string; location?: string; due?: string; detailUrl?: string; sourceUrl?: string };
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -181,8 +181,9 @@ export async function checkBidPrime(orgId: number, manual = false, now = new Dat
       storageState: c.secrets.storageState ?? null,
       maxSteps: 45,
       live: { id: liveId, onStuck: stuckPoster(orgId, liveId, "in BidPrime") },
-      goal: `${(c.settings.hints ?? []).length ? `Last time the person helped you past these pages: ${(c.settings.hints ?? []).join(". ")}. Do the same if you see them.\n` : ""}Sign in to BidPrime with the saved email and password (skip this if already signed in). Open the leads inbox of new bid leads, then the saved bids.
-Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":"","detailUrl":"","sourceUrl":""}]} with up to 15 of the newest bids across both lists. detailUrl is the BidPrime page for that bid; sourceUrl is the agency's own posting link if the page shows one, else "". Do not open each bid yet.`,
+      goal: `${(c.settings.hints ?? []).length ? `Last time the person helped you past these pages: ${(c.settings.hints ?? []).join(". ")}. Do the same if you see them.\n` : ""}Sign in to BidPrime with the saved email and password (skip this if already signed in). Open the INBOX (its Notifications tab lists new bid leads).
+As soon as that list is on the screen, read it from the page text and use done right away. Do not open bids, do not page through, do not search, do not change filters.
+Return JSON exactly like {"bids":[{"title":"","agency":"","refnum":"","location":"","due":"","detailUrl":"","sourceUrl":""}]} with up to 15 of the newest rows: title from Title, agency from Entity, refnum from Refnum, location from State, due from Expires. detailUrl only if the row is a link with an address, else "". sourceUrl "".`,
     });
   } catch (err) {
     const message = (err as Error).message;
@@ -206,6 +207,8 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":""
   }
 
   const listed = parseList(res.result);
+  // Rows without their own address are opened from the list page.
+  const listUrl = [...res.log].reverse().find((l) => /bidprime\.com\/member/.test(l.url))?.url ?? null;
   const existing = await db.listOpps(orgId);
   const fresh = listed.filter((b) => !isKnown(existing, b));
   const created: Opportunity[] = [];
@@ -213,16 +216,17 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":""
   for (const b of fresh.slice(0, MAX_DETAILS)) {
     let text = [b.title, b.agency && `Agency: ${b.agency}`, b.location && `Location: ${b.location}`, b.due && `Due: ${b.due}`, b.sourceUrl && `Agency posting: ${b.sourceUrl}`].filter(Boolean).join("\n");
     let files: Download[] = [];
-    if (b.detailUrl && /^https?:\/\//.test(b.detailUrl)) {
+    const opened = b.detailUrl && /^https?:\/\//.test(b.detailUrl);
+    if (opened || listUrl) {
       const d = await runBrowserTask({
         orgId,
         actor: `${emp.name}, the grants and bids employee`,
-        startUrl: b.detailUrl,
+        startUrl: opened ? b.detailUrl! : listUrl!,
         secrets,
         storageState: state,
         maxSteps: 20,
         live: { id: liveId, holdMs: 0 },
-        goal: `This is the BidPrime page for the bid "${b.title}". Sign in again with the saved email and password only if asked. Download every bid document offered (the RFP, attachments, forms, addenda). Then use done and put in result the full bid details as plain text: scope, requirements, due date and time, how responses are submitted (portal, email address or mail), the deadline and address for questions, the agency contact, and the agency's own posting link.`,
+        goal: `${opened ? `This is the BidPrime page for the bid "${b.title}".` : `This is the BidPrime inbox. Click the row titled "${b.title}"${b.refnum ? ` (Refnum ${b.refnum})` : ""} to open it.`} Sign in again with the saved email and password only if asked. Download every bid document offered (the RFP, attachments, forms, addenda). Then use done and put in result the full bid details as plain text: scope, requirements, due date and time, how responses are submitted (portal, email address or mail), the deadline and address for questions, the agency contact, and the agency's own posting link.`,
       }).catch(() => null);
       if (d?.status === "done") {
         text += `\n\n${d.result}`;
