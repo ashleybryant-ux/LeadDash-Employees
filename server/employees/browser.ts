@@ -109,6 +109,9 @@ async function launch() {
   }
 }
 
+/** The headless browser otherwise announces itself as "HeadlessChrome", which many sites turn away with 403. */
+const DESKTOP_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+
 async function run(task: BrowserTask): Promise<BrowserResult> {
   const log: StepLog[] = [];
   const downloads: Download[] = [];
@@ -117,7 +120,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
   let screenshotUrl: string | null = null;
   try {
     const state = task.storageState ? JSON.parse(task.storageState) : undefined;
-    const context = await browser.newContext({ storageState: state, acceptDownloads: true, viewport: { width: 1280, height: 900 }, userAgent: undefined });
+    const context = await browser.newContext({ storageState: state, acceptDownloads: true, viewport: { width: 1280, height: 900 }, userAgent: DESKTOP_UA, locale: "en-US", timezoneId: "America/Chicago" });
     const page = await context.newPage();
     page.setDefaultTimeout(20_000);
     page.on("download", async (d) => {
