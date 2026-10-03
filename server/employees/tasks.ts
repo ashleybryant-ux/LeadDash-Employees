@@ -6,7 +6,7 @@ import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
 import { BASE_RULES, rosterEntry } from "./roster";
 import { guidelinesText } from "./interview";
-import { handbookText } from "./handbook";
+import { handbookText, playbookText } from "./handbook";
 import { findPassages, formatPassages } from "./kb";
 import { recordTask, withUsage } from "../usage";
 
@@ -48,7 +48,7 @@ export async function systemPromptFor(emp: AIEmployee, job: string, about?: stri
     (emp.systemPrompt?.trim() ? `\n\nMore instructions from the workspace:\n${emp.systemPrompt.trim()}` : "");
   return {
     brain,
-    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${handbookText(emp.organizationId)}\n\n# The task in front of you\n${job}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${await passagesFor(emp, about, job)}`,
+    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${handbookText(emp.organizationId)}${playbookText(emp.kind) ? `\n\n${playbookText(emp.kind)}` : ""}\n\n# The task in front of you\n${job}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${await passagesFor(emp, about, job)}`,
   };
 }
 

@@ -12,9 +12,10 @@ type Row = HbPart & { ruleCount: number; updatedBy: string | null; updatedAt: st
 /** LeadDash staff only: the base handbook every workspace follows, and who changed it. */
 export default function BaseInstructions() {
   const q = trpc.handbook.base.useQuery();
-  const [tab, setTab] = React.useState<"handbook" | "changes">("handbook");
+  const [tab, setTab] = React.useState<"handbook" | "playbooks" | "changes">("handbook");
   const [open, setOpen] = React.useState<string | null>(null);
   const parts = (q.data?.parts ?? []) as Row[];
+  const plays = (q.data?.playbooks ?? []) as Row[];
   const changes = q.data?.changes ?? [];
 
   return (
@@ -26,21 +27,22 @@ export default function BaseInstructions() {
       <FolderTabs
         tabs={[
           { key: "handbook", label: `Handbook (${parts.length})` },
+          { key: "playbooks", label: `Playbooks (${plays.length})` },
           { key: "changes", label: `Changes (${changes.length})` },
         ]}
         value={tab}
         onChange={setTab}
       >
-        {tab === "handbook" ? (
+        {tab !== "changes" ? (
           <>
             <div className="ld-hd" style={{ gridTemplateColumns: COLS }}>
-              <span>Part</span>
+              <span>{tab === "handbook" ? "Part" : "Playbook"}</span>
               <span>Rules</span>
               <span>Last changed</span>
               <span />
             </div>
-            {parts.length === 0 && <div className="ld-empty">{q.isLoading ? "Loading..." : "Could not load the handbook."}</div>}
-            {parts.map((p) => {
+            {(tab === "handbook" ? parts : plays).length === 0 && <div className="ld-empty">{q.isLoading ? "Loading..." : "Could not load the handbook."}</div>}
+            {(tab === "handbook" ? parts : plays).map((p) => {
               const isOpen = open === p.key;
               return (
                 <React.Fragment key={p.key}>

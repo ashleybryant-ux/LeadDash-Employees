@@ -1740,6 +1740,7 @@ export const appRouter = router({
       return {
         workspaces,
         parts: base.map((p) => ({ key: p.key, title: p.title, lead: p.lead, sections: p.sections, ruleCount: handbook.ruleCount(p), updatedBy: p.updatedBy, updatedAt: p.updatedAt })),
+        playbooks: handbook.playbooks().map((p) => ({ key: p.key, kind: p.kind, title: p.title, lead: p.lead, sections: p.sections, ruleCount: handbook.ruleCount(p), updatedBy: p.updatedBy, updatedAt: p.updatedAt })),
         changes: db.listHandbookChanges(null, 100).map((c) => ({ id: c.id, part: handbook.partTitle(c.partKey), actorName: c.actorName, summary: c.summary, createdAt: c.createdAt })),
       };
     }),

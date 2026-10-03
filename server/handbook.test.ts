@@ -44,6 +44,30 @@ describe("handbook: the LeadDash base plus each workspace's additions", () => {
     await expect(caller(other).handbook.saveBase({ partKey: "never", part: { title: "x", lead: "", sections: [{ title: "", rules: ["x"] }] } })).rejects.toThrow();
   });
 
+  it("each role reads its own job playbook; staff can edit one and every workspace gets it", async () => {
+    const { orgId, staff } = await makeWorkspace("hb-playbooks");
+    const emps = await db.listEmployeesByOrg(orgId);
+    const by = (k: string) => emps.find((e) => e.kind === k)!;
+    const morgan = (await systemPromptFor(by("grants"), "Find grants.")).system;
+    expect(morgan).toContain("# Your job playbook: Grant Writer playbook");
+    expect(morgan).toContain("compliance checklist");
+    expect(morgan).not.toContain("Speaking Agent and Publicist playbook");
+    const malik = (await systemPromptFor(by("leads"), "Reply to a lead.")).system;
+    expect(malik).toContain("The four pillars of lead nurture");
+    expect(malik).toContain("Never use made-up scarcity");
+    const simone = (await systemPromptFor(by("coo"), "Write the agenda.")).system;
+    expect(simone).not.toContain("# Your job playbook");
+
+    const base = await caller(staff).handbook.base();
+    expect(base.playbooks.map((p) => p.kind)).toEqual(["grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video"]);
+    const pb = base.playbooks.find((p) => p.kind === "outreach")!;
+    await caller(staff).handbook.saveBase({ partKey: pb.key, part: { title: pb.title, lead: pb.lead, sections: [...pb.sections, { title: "House rule", rules: ["Always mention the free booking-flow review."] }] } });
+    const jada = (await systemPromptFor(by("outreach"), "Write a sequence.")).system;
+    expect(jada).toContain("Always mention the free booking-flow review.");
+    await caller(staff).handbook.resetBase({ partKey: pb.key });
+    expect((await systemPromptFor(by("outreach"), "Write a sequence.")).system).not.toContain("free booking-flow review");
+  });
+
   it("Taylor is the Speaking Agent and Publicist", async () => {
     const { orgId } = await makeWorkspace("hb-taylor");
     const taylor = (await db.listEmployeesByOrg(orgId)).find((e) => e.kind === "speaking")!;

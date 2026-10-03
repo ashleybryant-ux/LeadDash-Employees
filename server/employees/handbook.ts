@@ -1,6 +1,7 @@
 import { z } from "zod";
 import * as db from "../db";
 import { DEFAULT_HANDBOOK, type HandbookPart } from "./handbook-default";
+import { DEFAULT_PLAYBOOKS, PLAYBOOK_KINDS } from "./playbooks-default";
 
 /**
  * The handbook every employee reads on every task: the LeadDash base (the
@@ -35,6 +36,21 @@ export const partSchema = z.object({
 export const additionsSchema = z.array(z.string().trim().min(1).max(MAX_RULE)).max(40);
 
 let baseCache: HandbookPart[] | null = null;
+let playbookCache: (HandbookPart & { kind: string; updatedBy: string | null; updatedAt: Date | null })[] | null = null;
+const playbookTextCache = new Map<string, string>();
+
+/** The starting text for a handbook part or a playbook. */
+function defaultFor(key: string): HandbookPart | null {
+  return DEFAULT_HANDBOOK.find((p) => p.key === key) ?? Object.values(DEFAULT_PLAYBOOKS).find((p) => p.key === key) ?? null;
+}
+
+function applySaved(d: HandbookPart, row: { content: string; updatedBy: string | null; updatedAt: Date } | undefined) {
+  if (!row) return { ...d, updatedBy: null, updatedAt: null };
+  const ok = partSchema.safeParse(parse<Partial<HandbookPart>>(row.content, {}));
+  return ok.success
+    ? { ...ok.data, sections: ok.data.sections.map((sec) => ({ ...sec, table: sec.table ?? null })), key: d.key, updatedBy: row.updatedBy, updatedAt: row.updatedAt }
+    : { ...d, updatedBy: null, updatedAt: null };
+}
 const textCache = new Map<number, string>();
 
 function parse<T>(raw: string, fallback: T): T {
@@ -48,15 +64,27 @@ function parse<T>(raw: string, fallback: T): T {
 /** The base handbook, in order, with staff edits applied. */
 export function baseHandbook(): (HandbookPart & { updatedBy: string | null; updatedAt: Date | null })[] {
   const rows = new Map(db.listHandbookParts().map((r) => [r.key, r]));
-  const parts = DEFAULT_HANDBOOK.map((d) => {
-    const row = rows.get(d.key);
-    if (!row) return { ...d, updatedBy: null, updatedAt: null };
-    const saved = parse<Partial<HandbookPart>>(row.content, {});
-    const ok = partSchema.safeParse(saved);
-    return ok.success ? { ...ok.data, sections: ok.data.sections.map((sec) => ({ ...sec, table: sec.table ?? null })), key: d.key, updatedBy: row.updatedBy, updatedAt: row.updatedAt } : { ...d, updatedBy: null, updatedAt: null };
-  });
+  const parts = DEFAULT_HANDBOOK.map((d) => applySaved(d, rows.get(d.key)));
   baseCache = parts;
   return parts;
+}
+
+/** Every job playbook, in roster order, with staff edits applied. */
+export function playbooks() {
+  if (playbookCache) return playbookCache;
+  const rows = new Map(db.listHandbookParts().map((r) => [r.key, r]));
+  playbookCache = PLAYBOOK_KINDS.map((k) => ({ ...applySaved(DEFAULT_PLAYBOOKS[k], rows.get(DEFAULT_PLAYBOOKS[k].key)), kind: k }));
+  return playbookCache;
+}
+
+/** The playbook for one kind of employee as instructions text, or "" when the role has none yet. */
+export function playbookText(kind: string) {
+  const hit = playbookTextCache.get(kind);
+  if (hit !== undefined) return hit;
+  const p = playbooks().find((x) => x.key === `playbook:${kind}`);
+  const text = p ? renderPart(p, undefined).replace(/^## /, "# Your job playbook: ") : "";
+  playbookTextCache.set(kind, text);
+  return text;
 }
 
 export function additionsFor(organizationId: number): Record<string, string[]> {
@@ -121,22 +149,20 @@ function changeSummary(before: HandbookPart, after: HandbookPart) {
 }
 
 export function saveBasePart(key: string, part: z.infer<typeof partSchema>, actorName: string) {
-  const before = (baseCache ?? baseHandbook()).find((p) => p.key === key);
+  const before = [...(baseCache ?? baseHandbook()), ...playbooks()].find((p) => p.key === key);
   if (!before) throw new Error("That part of the handbook does not exist.");
   const clean: HandbookPart = { key, title: part.title, lead: part.lead, sections: part.sections.map((sec) => ({ title: sec.title, rules: sec.rules, table: sec.table && sec.table.rows.length ? sec.table : null })) };
   db.saveHandbookPart(key, JSON.stringify(clean), actorName);
   db.logHandbookChange({ organizationId: null, partKey: key, actorName, summary: changeSummary(before, clean) });
-  baseCache = null;
-  forgetText();
-  return baseHandbook().find((p) => p.key === key)!;
+  forgetBase();
+  return [...baseHandbook(), ...playbooks()].find((p) => p.key === key)!;
 }
 
 export function resetBasePart(key: string, actorName: string) {
-  if (!DEFAULT_HANDBOOK.some((p) => p.key === key)) throw new Error("That part of the handbook does not exist.");
+  if (!defaultFor(key)) throw new Error("That part of the handbook does not exist.");
   db.deleteHandbookPart(key);
   db.logHandbookChange({ organizationId: null, partKey: key, actorName, summary: "back to the original text" });
-  baseCache = null;
-  forgetText();
+  forgetBase();
 }
 
 export function saveAdditions(organizationId: number, key: string, rules: string[], actorName: string) {
@@ -150,5 +176,12 @@ export function saveAdditions(organizationId: number, key: string, rules: string
 }
 
 export function partTitle(key: string) {
-  return (baseCache ?? baseHandbook()).find((p) => p.key === key)?.title ?? key;
+  return [...(baseCache ?? baseHandbook()), ...playbooks()].find((p) => p.key === key)?.title ?? key;
+}
+
+function forgetBase() {
+  baseCache = null;
+  playbookCache = null;
+  playbookTextCache.clear();
+  forgetText();
 }
