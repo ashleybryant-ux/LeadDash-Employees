@@ -722,10 +722,18 @@ export const appRouter = router({
       }),
 
     answer: protectedProcedure
-      .input(orgInput.extend({ questionId: z.number(), answer: z.string().max(200) }))
+      .input(orgInput.extend({ questionId: z.number(), answer: z.string().max(1000) }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
         return apply.answerQuestion(input.organizationId, input.questionId, input.answer, personName(ctx.user));
+      }),
+
+    /** "Look it up": the employee researches the question instead of the person. */
+    research: protectedProcedure
+      .input(orgInput.extend({ questionId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return apply.researchQuestion(input.organizationId, input.questionId);
       }),
 
     /** The person's Submit tap: they certify the application, then it goes in. */

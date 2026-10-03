@@ -224,25 +224,47 @@ function MainView({ d, emp, base }: { d: AppDetail; emp: EmployeeRow; base: stri
 }
 
 function AskCards({ list, onDone }: { list: AppDetail["questions"]; onDone: () => void }) {
-  const { currentOrgId } = useTenant();
-  const answer = trpc.applications.answer.useMutation({ onSuccess: onDone });
   return (
     <>
       {list.map((q) => (
-        <div key={q.id} className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, borderColor: "#e8b98a" }}>
-          <span className="ld-lbl">{q.label}</span>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>{q.question}</span>
-          <div className="ld-row" style={{ flexWrap: "wrap" }}>
-            {parseJson<string[]>(q.options, []).map((o) => (
-              <button key={o} type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "#14221c" }} disabled={answer.isPending} onClick={() => answer.mutate({ organizationId: currentOrgId, questionId: q.id, answer: o })}>
-                {o}
-              </button>
-            ))}
-          </div>
-          <ErrorLine error={answer.error} />
-        </div>
+        <AskCard key={q.id} q={q} onDone={onDone} />
       ))}
     </>
+  );
+}
+
+/** A question an employee asked: a choice, Look it up (the employee researches it), or a typed answer. */
+function AskCard({ q, onDone }: { q: AppDetail["questions"][number]; onDone: () => void }) {
+  const { currentOrgId } = useTenant();
+  const [text, setText] = React.useState("");
+  const answer = trpc.applications.answer.useMutation({ onSuccess: onDone });
+  const research = trpc.applications.research.useMutation({ onSuccess: onDone });
+  const busy = answer.isPending || research.isPending;
+  const r = research.data;
+  return (
+    <div className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, borderColor: "#e8b98a" }}>
+      <span className="ld-lbl">{q.label}</span>
+      <span style={{ fontSize: 15, fontWeight: 700 }}>{q.question}</span>
+      <div className="ld-row" style={{ flexWrap: "wrap" }}>
+        {parseJson<string[]>(q.options, []).map((o) => (
+          <button key={o} type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "#14221c" }} disabled={busy} onClick={() => answer.mutate({ organizationId: currentOrgId, questionId: q.id, answer: o })}>
+            {o}
+          </button>
+        ))}
+        <button type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "#155c3e", borderColor: "#1b6b4a" }} disabled={busy} onClick={() => research.mutate({ organizationId: currentOrgId, questionId: q.id })}>
+          {research.isPending ? "Looking it up..." : "Look it up"}
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px", gap: 8, alignItems: "end" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label className="ld-lbl" htmlFor={`ask-${q.id}`}>Or type your answer</label>
+          <input id={`ask-${q.id}`} className="ld-in" value={text} maxLength={1000} onChange={(e) => setText(e.target.value)} />
+        </div>
+        <button type="button" className="ld-btn" style={{ width: 96 }} disabled={busy || text.trim().length < 2} onClick={() => answer.mutate({ organizationId: currentOrgId, questionId: q.id, answer: text.trim() })}>Send</button>
+      </div>
+      {r?.status === "not_found" && <span className="ld-small" style={{ color: "#8a4510" }}>It isn't stated anywhere public, and there's no contact email to ask. Pick a choice or type what you know.</span>}
+      <ErrorLine error={answer.error || research.error} />
+    </div>
   );
 }
 

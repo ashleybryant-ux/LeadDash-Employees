@@ -183,7 +183,8 @@ export const BASE_RULES = `Rules for everything you write:
 - No hype words, no filler, no generic claims. Do not invent statistics, awards, credentials, clients, or quotes.
 - If a fact you need is missing from the Brain, write a bracketed placeholder like [CLINICIAN NAME] instead of making it up.
 - Never include a client's name or any client health information. If a pasted message contains it, refer to the person by initials only and leave clinical details out.
-- Follow the workspace's voice, names and signatures exactly as the Brain states them.`;
+- Follow the workspace's voice, names and signatures exactly as the Brain states them.
+- Never ask the person to look up anything you can find yourself on the web, in the Brain or in the documents you have. Do the research. Ask the person only what only they can know or decide (internal numbers, decisions, signatures, approvals).`
 
 /** The three Guidelines fields, labeled for each job. */
 export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: string; avoid: string; signAs: string }> = {

@@ -906,11 +906,22 @@ ${formatPassages(passages) || "(none found)"}`;
     return { ...q, outline: r.outline ?? [], facts: r.facts ?? [], status: q.answer ? ("yours" as const) : ("empty" as const), sources: Array.from(new Set(passages.map((p) => p.source))) };
   }
 
-  const r = await generateJson<{ answer: string; missing: { label: string; question: string; options: string[] }[]; sources: string[] }>({
+  const r = await generateJson<{ answer: string; missing: { label: string; question: string; options: string[]; who: "research" | "person" }[]; sources: string[] }>({
     system,
     prompt,
     schemaName: "answer",
-    schema: obj({ answer: str, missing: arr(obj({ label: str, question: str, options: arr(str) })), sources: arr(str) }),
+    schema: obj({
+      answer: str,
+      missing: arr(
+        obj({
+          label: str,
+          question: str,
+          options: arr(str),
+          who: { type: "string", enum: ["research", "person"], description: "research: a public fact you can look up (a funder's rules, eligibility, deadlines, amounts, a program's history). person: only the person can know or decide it (internal numbers, decisions, signatures)" },
+        })
+      ),
+      sources: arr(str),
+    }),
     maxTokens: Math.min(6000, Math.max(1500, (q.maxWords || 600) * 3)),
     timeoutMs: 180_000,
   });
@@ -925,12 +936,24 @@ ${formatPassages(passages) || "(none found)"}`;
     });
     if (short.answer && words(short.answer) < words(answer)) answer = short.answer.trim();
   }
-  for (const m of (r.missing ?? []).slice(0, 2)) {
+  // Public facts are looked up, never asked. Only what the person alone knows becomes a question.
+  const found: string[] = [];
+  for (const m of (r.missing ?? []).slice(0, 3)) {
+    if (!m.question) continue;
+    if (m.who === "research") {
+      const fact = await researchFact(orgId, emp, ctx.opp, m.question).catch(() => null);
+      if (fact) found.push(`${m.label}: ${fact.answer} (source: ${fact.source})`);
+      else await askHostByEmail(orgId, ctx.opp, m.question).catch(() => null);
+      continue;
+    }
     const options = (m.options ?? []).map((o) => o.trim()).filter(Boolean).slice(0, 4);
-    if (options.length < 2 || !m.question) continue;
+    if (options.length < 2) continue;
     const already = await db.listOpenQuestions(orgId, app.id);
     if (already.some((x) => norm(x.label) === norm(m.label))) continue;
     await db.createEmployeeQuestion({ organizationId: orgId, employeeId: emp.id, applicationId: app.id, label: m.label.slice(0, 120), question: m.question.slice(0, 300), options: JSON.stringify(options) });
+  }
+  if (found.length && !guidance?.startsWith("Research found:")) {
+    return writeQuestion(orgId, ctx, app, q, others, `Research found: ${found.join(". ")}. Use these facts and fill any placeholder they answer.`);
   }
   const sources = Array.from(new Set([...(r.sources ?? []), ...passages.map((p) => p.source)])).slice(0, 8);
   return { ...q, answer, status: "done" as const, sources };
@@ -1264,12 +1287,62 @@ export async function applyFix(orgId: number, appId: number, fixId: string) {
 // Questions answered with fixed choices
 // ==========================================
 
+/** Looks a public fact up on the web: the host's own pages first. Null when nothing solid is found. */
+export async function researchFact(orgId: number, emp: AIEmployee, opp: Opportunity | null, question: string) {
+  if (process.env.NODE_ENV === "test" && !(globalThis as any).__allowResearch) return null;
+  const { system } = await systemPromptFor(
+    emp,
+    `Your job now: answer one factual question by searching the web. Use the host's or funder's own pages and documents first (eligibility rules, FAQs, guidelines, 990s, past grantee lists), then reliable sources. Answer only when a source clearly says it. If you cannot find it stated, set found to false.`
+  );
+  const r = await searchJson<{ found: boolean; answer: string; source: string }>({
+    system,
+    prompt: `Question: ${question}${opp ? `\nOpportunity: ${opp.title} (${opp.host})${opp.sourceUrl ? `\nHost's page: ${opp.sourceUrl}` : ""}` : ""}`,
+    schemaName: "research_fact",
+    schema: obj({ found: bool, answer: { type: "string", description: "The answer in one or two sentences, as the source states it" }, source: { type: "string", description: "The page that says it" } }),
+    maxUses: 5,
+    maxTokens: 1500,
+  });
+  const real = r.data.source && r.sources.some((x) => hostOf(x.url) === hostOf(r.data.source));
+  if (!r.data.found || !r.data.answer || !real) return null;
+  const item = await db.createKnowledgeItem({ organizationId: orgId, employeeId: emp.id, folder: "Research", kind: "fact", category: "financial_data", title: question.slice(0, 120), content: `${question} ${r.data.answer} Source: ${r.data.source}`, chars: r.data.answer.length });
+  indexKnowledge(item);
+  return { answer: r.data.answer, source: r.data.source };
+}
+
+/** When the web doesn't say, the question goes to the host as an email draft in Approvals, never to the person. */
+async function askHostByEmail(orgId: number, opp: Opportunity | null, question: string) {
+  if (!opp) return null;
+  const { askQuestion } = await import("./bids");
+  return askQuestion(orgId, opp.id, question);
+}
+
+/** "Look it up" on a question an employee asked: research it, answer it, or email the host. */
+export async function researchQuestion(orgId: number, questionId: number) {
+  const q = await db.getEmployeeQuestion(questionId, orgId);
+  if (!q) throw new TRPCError({ code: "NOT_FOUND", message: "That question is not in this workspace." });
+  if (q.answeredAt) return { status: "answered" as const, answer: q.answer ?? "" };
+  const emp = (q.employeeId && (await db.getEmployeeForOrg(q.employeeId, orgId))) || (await employeeFor(orgId, "grants"));
+  const app = q.applicationId ? await db.getApplication(q.applicationId, orgId) : null;
+  const opp = app ? await db.getOpp(app.opportunityId, orgId) : null;
+  const fact = await researchFact(orgId, emp, opp ?? null, q.question);
+  if (fact) {
+    await answerQuestion(orgId, questionId, `${fact.answer} (source: ${fact.source})`, emp.name);
+    return { status: "found" as const, answer: fact.answer, source: fact.source };
+  }
+  const draft = await askHostByEmail(orgId, opp ?? null, q.question).catch(() => null);
+  if (draft) {
+    await answerQuestion(orgId, questionId, `Not stated publicly. ${emp.name} drafted an email asking ${opp?.host ?? "the host"}; it's waiting in Approvals`, emp.name);
+    return { status: "emailed" as const, answer: "" };
+  }
+  return { status: "not_found" as const, answer: "" };
+}
+
 export async function answerQuestion(orgId: number, questionId: number, answer: string, personName: string) {
   const q = await db.getEmployeeQuestion(questionId, orgId);
   if (!q) throw new TRPCError({ code: "NOT_FOUND", message: "That question is not in this workspace." });
   if (q.answeredAt) return q;
-  const options = parse<string[]>(q.options, []);
-  if (!options.includes(answer)) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick one of the choices." });
+  answer = answer.trim();
+  if (answer.length < 2) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick a choice or type an answer." });
   await db.answerEmployeeQuestion(questionId, orgId, answer, personName);
   const item = await db.createKnowledgeItem({
     organizationId: orgId,

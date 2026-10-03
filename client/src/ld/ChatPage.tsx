@@ -380,6 +380,12 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   const skip = trpc.opps.skip.useMutation({ onSuccess: () => { setDone("Skipped"); utils.opps.invalidate(); } });
   const submit = trpc.applications.submit.useMutation({ onSuccess: () => { setDone("Approved"); utils.applications.invalidate(); } });
   const answer = trpc.applications.answer.useMutation({ onSuccess: (_r, v) => { setDone(v.answer); utils.applications.invalidate(); } });
+  const research = trpc.applications.research.useMutation({
+    onSuccess: (r) => {
+      setDone(r.status === "found" ? `Found: ${r.answer}` : r.status === "emailed" ? "Not public. The email to the host is in Approvals" : r.status === "answered" ? r.answer : "Not found anywhere public");
+      utils.applications.invalidate();
+    },
+  });
   const move = trpc.hiring.move.useMutation({
     onSuccess: (_r, v) => {
       setDone(v.stage === "interview" ? "Moved to Interview" : v.stage === "hold" ? "On hold" : "Passed");
@@ -389,7 +395,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   });
   const outreach = trpc.sales.startOutreach.useMutation({ onSuccess: () => { setDone("Passed to Jada"); utils.sales.invalidate(); } });
   const notFit = trpc.sales.notFit.useMutation({ onSuccess: () => { setDone("Not a fit"); utils.sales.invalidate(); } });
-  const err = start.error || skip.error || submit.error || answer.error || move.error || outreach.error || notFit.error;
+  const err = start.error || skip.error || submit.error || answer.error || research.error || move.error || outreach.error || notFit.error;
 
   if (card.type === "schedule_plan" && card.plan) return <PlanCard card={card} emp={emp} />;
   if (card.type === "launch_plan") return <LaunchPlanCard id={card.id} />;
@@ -421,6 +427,9 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
                 {o}
               </button>
             ))}
+            <button type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "#155c3e", borderColor: "#1b6b4a" }} disabled={research.isPending} onClick={() => research.mutate({ organizationId: currentOrgId, questionId: card.id })}>
+              {research.isPending ? "Looking it up..." : "Look it up"}
+            </button>
           </div>
         )}
         <ErrorLine error={err} />

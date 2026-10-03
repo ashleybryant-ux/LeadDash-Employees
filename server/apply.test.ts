@@ -142,7 +142,7 @@ describe("applying, end to end", () => {
     const got = await caller(owner).applications.get({ organizationId: orgId, id: app.id });
     expect(got.app.status).toBe("needs_answer");
     expect(got.questions).toHaveLength(1);
-    await expect(caller(owner).applications.answer({ organizationId: orgId, questionId: got.questions[0].id, answer: "Something else" })).rejects.toThrow(/choices/);
+    await expect(caller(owner).applications.answer({ organizationId: orgId, questionId: got.questions[0].id, answer: " " })).rejects.toThrow(/type an answer/);
 
     answerFor = () => ({ answer: "Indirect costs use the 15% de minimis rate.", missing: [], sources: [] });
     await caller(owner).applications.answer({ organizationId: orgId, questionId: got.questions[0].id, answer: "15% de minimis" });

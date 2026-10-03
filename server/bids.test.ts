@@ -21,7 +21,11 @@ vi.mock("./_core/llm", async (orig) => {
   const actual: any = await orig();
   return {
     ...actual,
-    searchJson: vi.fn(async () => ({ queries: [], sources: [], data: { history: "", url: "" } })),
+    searchJson: vi.fn(async (opts: any) =>
+      opts.schemaName === "research_fact"
+        ? { queries: ["hearst health grants eligibility"], sources: [{ url: "https://www.hearstfdn.org/funding-priorities", title: "Funding priorities" }], data: { found: true, answer: "Hearst funds 501(c)(3) organizations only.", source: "https://www.hearstfdn.org/funding-priorities" } }
+        : { queries: [], sources: [], data: { history: "", url: "" } }
+    ),
     generateJson: vi.fn(async (opts: any) => {
       if (opts.schemaName === "chat_decision") {
         chatSystems.push(opts.system);
@@ -152,6 +156,32 @@ describe("Showing that Morgan is still working", () => {
     expect(await caller(owner).chat.working({ organizationId: orgId, employeeId: morgan.id })).toMatchObject({ busy: true, what: "Downloading and reading the documents for County EHR" });
     await db.updateOpp(opp.id, orgId, { packageStatus: "ready" });
     expect((await caller(owner).chat.working({ organizationId: orgId, employeeId: morgan.id })).busy).toBe(false);
+  });
+});
+
+describe("Employees look things up instead of asking", () => {
+  it("Look it up answers a question from the funder's own page and saves the source", async () => {
+    (globalThis as any).__allowResearch = true;
+    const { orgId, owner } = await makeWorkspace("lookup");
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    const opp = await db.createOpp({ organizationId: orgId, kind: "grant", title: "Health Grants", host: "Hearst Foundations" });
+    const app = await db.createApplication({ organizationId: orgId, opportunityId: opp.id, title: opp.title, status: "needs_answer", channel: "form", questions: "[]", attachments: "[]", employeeId: morgan.id } as any);
+    const q = await db.createEmployeeQuestion({ organizationId: orgId, employeeId: morgan.id, applicationId: app.id, label: "Hearst eligibility", question: "Are for-profit organizations eligible for Hearst Health Grants?", options: JSON.stringify(["Yes", "No"]) });
+    const r = await caller(owner).applications.research({ organizationId: orgId, questionId: q.id });
+    expect(r).toMatchObject({ status: "found", source: "https://www.hearstfdn.org/funding-priorities" });
+    const after = (await db.getEmployeeQuestion(q.id, orgId))!;
+    expect(after.answer).toContain("501(c)(3)");
+    expect((await db.listKnowledgeByOrg(orgId)).concat(await db.listEmployeeKnowledge(orgId, morgan.id)).some((k) => k.folder === "Research" && /hearstfdn/.test(k.content ?? ""))).toBe(true);
+    await apply.idle();
+    (globalThis as any).__allowResearch = false;
+  });
+
+  it("takes a typed answer, not only the choices", async () => {
+    const { orgId, owner } = await makeWorkspace("typed");
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    const q = await db.createEmployeeQuestion({ organizationId: orgId, employeeId: morgan.id, applicationId: null, label: "Staff", question: "How many clinicians?", options: JSON.stringify(["5", "10"]) });
+    const r = await caller(owner).applications.answer({ organizationId: orgId, questionId: q.id, answer: "12 licensed clinicians" });
+    expect(r?.answer).toBe("12 licensed clinicians");
   });
 });
 
