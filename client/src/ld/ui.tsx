@@ -70,7 +70,17 @@ export function Avatar({ name, kind, src, size = 44 }: { name: string; kind?: st
   );
 }
 
-export function PersonAvatar({ name, size = 36 }: { name: string; size?: number }) {
+export function PersonAvatar({ name, src, size = 36 }: { name: string; src?: string | null; size?: number }) {
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => setBroken(false), [src]);
+  if (src && !broken) {
+    // Photos are rounded squares, like the employees' headshots.
+    return (
+      <span aria-label={name} style={{ width: size, height: size, borderRadius: Math.round(size * 0.24), overflow: "hidden", flexShrink: 0, display: "flex" }}>
+        <img src={src} alt={name} onError={() => setBroken(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      </span>
+    );
+  }
   return (
     <span
       aria-label={name}
@@ -91,6 +101,21 @@ export function PersonAvatar({ name, size = 36 }: { name: string; size?: number 
       {initials(name)}
     </span>
   );
+}
+
+/** A workspace's logo on white, or its initials. */
+export function OrgLogo({ name, src, size = 36 }: { name: string; src?: string | null; size?: number }) {
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => setBroken(false), [src]);
+  const box: React.CSSProperties = { width: size, height: size, borderRadius: Math.round(size * 0.25), flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" };
+  if (src && !broken) {
+    return (
+      <span style={{ ...box, background: "#fff", border: "1px solid #e3e9e6", padding: Math.max(2, Math.round(size * 0.08)) }}>
+        <img src={src} alt={`${name} logo`} onError={() => setBroken(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+      </span>
+    );
+  }
+  return <span style={{ ...box, background: "#2f6b5a", color: "#fff", fontWeight: 800, fontSize: Math.round(size * 0.36) }}>{initials(name)}</span>;
 }
 
 // ==========================================
@@ -194,13 +219,8 @@ export function Rail({ active }: { active: RailKey }) {
           {Icons.help}
           <span>Help</span>
         </a>
-        <button
-          type="button"
-          aria-label="My account"
-          onClick={() => setMenu((v) => !v)}
-          style={{ width: 36, height: 36, borderRadius: 999, background: "#e88a3a", color: "#1a1209", border: 0, font: "inherit", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
-        >
-          {initials(user?.name || user?.email || "?")}
+        <button type="button" aria-label="My account" onClick={() => setMenu((v) => !v)} style={{ border: 0, padding: 0, background: "none", cursor: "pointer", display: "flex" }}>
+          <PersonAvatar name={user?.name || user?.email || "?"} src={user?.avatarUrl} size={36} />
         </button>
         {menu && (
           <div className="ld-card" style={{ position: "absolute", left: 60, bottom: 0, width: 240, padding: 12, display: "flex", flexDirection: "column", gap: 8, boxShadow: "0 12px 32px rgba(18,33,29,0.14)" }}>
@@ -269,7 +289,7 @@ export function Switcher({ onClose, style, className }: { onClose: () => void; s
             onClose();
           }}
         >
-          <span style={lg("#2f6b5a")}>{o.logoUrl ? <img src={o.logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : initials(o.name)}</span>
+          <OrgLogo name={o.name} src={o.logoUrl} size={36} />
           <span style={{ flex: 1 }}>{o.name}</span>
           {o.id === currentOrgId && Icons.check}
         </button>
@@ -322,12 +342,13 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
   return (
     <aside className="ld-chatlist" style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "#fff", borderRight: "1px solid #e3e9e6", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
       <div style={{ padding: "18px 18px 12px 18px", position: "relative" }} className="ld-between">
-        <button type="button" onClick={() => setSwitcher((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 8, border: 0, background: "none", font: "inherit", fontSize: 16, fontWeight: 800, color: "#14221c", cursor: "pointer", padding: 0 }}>
-          {currentOrg?.name ?? "Choose a workspace"}
+        <button type="button" onClick={() => setSwitcher((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 10, border: 0, background: "none", font: "inherit", fontSize: 16, fontWeight: 800, color: "#14221c", cursor: "pointer", padding: 0, minWidth: 0, textAlign: "left" }}>
+          {currentOrg && <OrgLogo name={currentOrg.name} src={currentOrg.logoUrl} size={32} />}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentOrg?.name ?? "Choose a workspace"}</span>
           {Icons.chevron}
         </button>
         <Link href="/account" className="ld-mobile-only" aria-label="My account" style={{ textDecoration: "none" }}>
-          <PersonAvatar name={user?.name || user?.email || "?"} size={32} />
+          <PersonAvatar name={user?.name || user?.email || "?"} src={user?.avatarUrl} size={32} />
         </Link>
         {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 88, top: 52 }} />}
       </div>

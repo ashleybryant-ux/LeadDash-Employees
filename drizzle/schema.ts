@@ -27,6 +27,8 @@ export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   email: text("email").notNull().unique(),
   name: text("name"),
+  /** The person's own photo (shown instead of their initials). */
+  avatarUrl: text("avatarUrl"),
   /** admin = LeadDash staff (support access to every workspace). user = everyone else. */
   role: text("role", { enum: ["user", "admin"] }).notNull().default("user"),
   /** JSON {event: {push: boolean, email: boolean}} for the "Tell me when" choices. */

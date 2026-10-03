@@ -9,7 +9,7 @@ const COLS = "44px minmax(0,1fr) 140px 128px";
 type Role = "owner" | "admin" | "member" | "reviewer";
 const ROLE_LABEL: Record<Role, string> = { owner: "Owner", admin: "Admin", member: "Member", reviewer: "Reviewer" };
 
-type Member = { userId: number; email: string; name: string | null; role: Role };
+type Member = { userId: number; email: string; name: string | null; avatarUrl?: string | null; role: Role };
 
 export default function Team() {
   const { currentOrgId } = useTenant();
@@ -69,7 +69,7 @@ export default function Team() {
           return (
             <React.Fragment key={m.userId}>
               <div className={`ld-rw ${isOpen ? "open" : ""}`} style={{ gridTemplateColumns: COLS }}>
-                <PersonAvatar name={name} size={40} />
+                <PersonAvatar name={name} src={m.avatarUrl} size={40} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 800 }}>{name}</div>
                   {m.name?.trim() && <div className="ld-small ld-muted" style={{ overflowWrap: "anywhere" }}>{m.email}</div>}

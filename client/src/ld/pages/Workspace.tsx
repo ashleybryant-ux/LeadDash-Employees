@@ -1,7 +1,7 @@
 import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
-import { ErrorLine, Page } from "../ui";
+import { ErrorLine, OrgLogo, Page } from "../ui";
 import { initials, parseJson } from "../meta";
 
 const TIMEZONES = [
@@ -60,6 +60,8 @@ export default function Workspace() {
     },
   });
   const uploadLogo = trpc.organizations.uploadLogo.useMutation({ onSuccess: () => refetchOrgs() });
+  const removeLogo = trpc.organizations.removeLogo.useMutation({ onSuccess: () => refetchOrgs() });
+  const logoRef = React.useRef<HTMLInputElement>(null);
 
   if (!currentOrg) {
     return (
@@ -239,10 +241,11 @@ export default function Workspace() {
         {editing === "brand" && f ? (
           <div className="ld-kv">
             <label htmlFor="w-logo" className="ld-k">Logo</label>
-            <span className="ld-row" style={{ flexWrap: "wrap" }}>
-              {o.logoUrl ? <img src={o.logoUrl} alt="" style={{ width: 32, height: 32, objectFit: "contain", borderRadius: 6, border: "1px solid #e3e9e6" }} /> : null}
-              <input id="w-logo" type="file" className="ld-small" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" onChange={(e) => onLogo(e.target.files?.[0])} />
-              {uploadLogo.isPending && <span className="ld-small ld-muted">Uploading...</span>}
+            <span className="ld-row" style={{ flexWrap: "wrap", gap: 12 }}>
+              <OrgLogo name={o.name} src={o.logoUrl} size={40} />
+              <input id="w-logo" ref={logoRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" style={{ display: "none" }} onChange={(e) => { onLogo(e.target.files?.[0]); e.target.value = ""; }} />
+              <button type="button" className="ld-btn sm" style={{ width: 120 }} disabled={uploadLogo.isPending} onClick={() => logoRef.current?.click()}>{uploadLogo.isPending ? "Uploading..." : o.logoUrl ? "Change logo" : "Upload logo"}</button>
+              {o.logoUrl && <button type="button" className="ld-btn sm" style={{ width: 120 }} disabled={removeLogo.isPending} onClick={() => removeLogo.mutate({ id: o.id })}>Remove</button>}
             </span>
             <label htmlFor="w-colors" className="ld-k">Colors</label>
             <input id="w-colors" className="ld-in" type="text" placeholder="#0d3b2e, #e88a3a" value={f.brandColors} onChange={set("brandColors")} />
@@ -276,7 +279,7 @@ export default function Workspace() {
           {logoError}
         </p>
       )}
-      <ErrorLine error={update.error ?? uploadLogo.error} />
+      <ErrorLine error={update.error ?? uploadLogo.error ?? removeLogo.error} />
       <Registrations />
     </Page>
   );

@@ -140,6 +140,14 @@ export async function saveImage(orgId: number, base64: string, folder = "brain")
   return storagePut(`org-${orgId}/${folder}/image${IMAGE_TYPES[type]}`, buf, type);
 }
 
+/** A person's own photo (My account). */
+export async function savePhoto(userId: number, base64: string) {
+  const buf = decode(base64, 8_000_000);
+  const type = sniffImage(buf);
+  if (!type) throw new TRPCError({ code: "BAD_REQUEST", message: "Photos must be PNG, JPG, WebP or GIF." });
+  return storagePut(`user-${userId}/photo/image${IMAGE_TYPES[type]}`, buf, type);
+}
+
 export async function saveDocument(orgId: number, base64: string, fileName: string, mimeType: string) {
   const buf = decode(base64, 12_000_000);
   const { readFile, unsupportedNote } = await import("./docs");

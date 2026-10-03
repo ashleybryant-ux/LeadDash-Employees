@@ -64,6 +64,13 @@
       "when": 1790993466465,
       "tag": "0008_interview",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790995320494,
+      "tag": "0009_photo",
+      "breakpoints": true
     }
   ]
 }

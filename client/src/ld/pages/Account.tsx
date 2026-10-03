@@ -1,7 +1,7 @@
 import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { ErrorLine, Page } from "../ui";
+import { ErrorLine, Page, PersonAvatar } from "../ui";
 import { fmtDate, fmtTime } from "../meta";
 import { currentSubscription, needsHomeScreen, pushSupported, subscribe, unsubscribeHere } from "../push";
 
@@ -19,7 +19,7 @@ export default function Account() {
         <div className="ld-empty">{account.isLoading ? "Loading..." : "Could not load your account."}</div>
       ) : (
         <>
-          <YouCard name={a.name ?? ""} email={a.email} />
+          <YouCard name={a.name ?? ""} email={a.email} photo={a.avatarUrl} />
           {a.staff && <ReviewCard />}
           <PushCard pushReady={a.pushReady} vapid={a.vapidPublicKey} devices={a.devices} />
           <PrefsCard prefs={a.prefs as Prefs} events={a.events} />
@@ -34,23 +34,37 @@ export default function Account() {
   );
 }
 
-function YouCard({ name, email }: { name: string; email: string }) {
+function YouCard({ name, email, photo }: { name: string; email: string; photo: string | null }) {
   const utils = trpc.useUtils();
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(name);
+  const [fileError, setFileError] = React.useState<string | null>(null);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+  const refresh = () => Promise.all([utils.account.get.invalidate(), utils.auth.me.invalidate(), utils.members.invalidate()]);
   const save = trpc.auth.updateProfile.useMutation({
     onSuccess: async () => {
       setEditing(false);
-      await Promise.all([utils.account.get.invalidate(), utils.auth.me.invalidate()]);
+      await refresh();
     },
   });
+  const upload = trpc.auth.uploadPhoto.useMutation({ onSuccess: refresh });
+  const remove = trpc.auth.removePhoto.useMutation({ onSuccess: refresh });
+  const onFile = (file?: File) => {
+    setFileError(null);
+    if (!file) return;
+    if (file.size > 8_000_000) return setFileError("Photos must be under 8 MB.");
+    const r = new FileReader();
+    r.onload = () => upload.mutate({ data: String(r.result) });
+    r.readAsDataURL(file);
+  };
+  const shown = name || email;
   return (
     <section className={`ld-card ${editing ? "editing" : ""}`}>
       <div className="ld-sh">
         <span className="ld-st">You</span>
         {editing ? (
           <span className="ld-row">
-            <button type="button" className="ld-btn sm" onClick={() => { setEditing(false); setDraft(name); }}>Cancel</button>
+            <button type="button" className="ld-btn sm" onClick={() => { setEditing(false); setDraft(name); setFileError(null); }}>Cancel</button>
             <button type="button" className="ld-btn p sm" disabled={save.isPending || !draft.trim()} onClick={() => save.mutate({ name: draft.trim() })}>Save</button>
           </span>
         ) : (
@@ -58,9 +72,21 @@ function YouCard({ name, email }: { name: string; email: string }) {
         )}
       </div>
       <div className="ld-kv">
+        <span className="ld-k">Photo</span>
+        <span className="ld-row" style={{ gap: 12, flexWrap: "wrap" }}>
+          <PersonAvatar name={shown} src={photo} size={56} />
+          {editing && (
+            <>
+              <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" style={{ display: "none" }} onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
+              <button type="button" className="ld-btn sm" style={{ width: 120 }} disabled={upload.isPending} onClick={() => fileRef.current?.click()}>{upload.isPending ? "Uploading..." : photo ? "Change photo" : "Upload photo"}</button>
+              {photo && <button type="button" className="ld-btn sm" style={{ width: 120 }} disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</button>}
+            </>
+          )}
+          {!editing && !photo && <span style={{ color: "#8a9a93" }}>Not set. Your initials show until you add one.</span>}
+        </span>
         <span className="ld-k">Name</span>
         {editing ? (
-          <input className="ld-in" style={{ maxWidth: 320 }} value={draft} maxLength={120} onChange={(e) => setDraft(e.target.value)} aria-label="Name" autoFocus />
+          <input className="ld-in" style={{ maxWidth: 320 }} value={draft} maxLength={120} onChange={(e) => setDraft(e.target.value)} aria-label="Name" />
         ) : (
           <span style={{ color: name ? undefined : "#8a9a93" }}>{name || "Not set. Your employees see your email until you add it."}</span>
         )}
@@ -68,7 +94,8 @@ function YouCard({ name, email }: { name: string; email: string }) {
         <span style={{ overflowWrap: "anywhere" }}>{email}</span>
       </div>
       <div style={{ padding: "0 18px 12px" }}>
-        <ErrorLine error={save.error} />
+        <ErrorLine error={save.error ?? upload.error ?? remove.error} />
+        {fileError && <span className="ld-small" style={{ color: "#b42318" }}>{fileError}</span>}
       </div>
     </section>
   );

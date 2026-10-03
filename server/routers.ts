@@ -24,7 +24,7 @@ import * as exportsFor from "./employees/exports";
 import { indexKnowledge } from "./employees/kb";
 import { describeRule, isValidTimeZone, nextRun } from "./employees/schedule";
 import { runTaskNow } from "./employees/runner";
-import { fetchWebpage, saveDocument, saveImage } from "./employees/files";
+import { fetchWebpage, saveDocument, saveImage, savePhoto } from "./employees/files";
 import { sendEmail } from "./_core/email";
 import { ENV } from "./_core/env";
 import { REPEATS, HR_STAGES } from "../drizzle/schema";
@@ -131,7 +131,7 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(({ ctx }) =>
       ctx.user
-        ? { id: ctx.user.id, email: ctx.user.email, name: ctx.user.name, role: ctx.user.role, reviewer: review.isReviewUser(ctx.user) }
+        ? { id: ctx.user.id, email: ctx.user.email, name: ctx.user.name, avatarUrl: ctx.user.avatarUrl ?? null, role: ctx.user.role, reviewer: review.isReviewUser(ctx.user) }
         : null
     ),
 
@@ -143,7 +143,7 @@ export const appRouter = router({
       .input(z.object({ email: z.string().trim().email().max(320), code: z.string().min(6).max(12) }))
       .mutation(async ({ ctx, input }) => {
         const user = await verifyCode(input.email, input.code, ctx.req, ctx.res);
-        return { id: user.id, email: user.email, name: user.name, role: user.role, reviewer: review.isReviewUser(user) };
+        return { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl ?? null, role: user.role, reviewer: review.isReviewUser(user) };
       }),
 
     logout: publicProcedure.mutation(async ({ ctx }) => {
@@ -155,8 +155,22 @@ export const appRouter = router({
       .input(z.object({ name: z.string().trim().min(1).max(120) }))
       .mutation(async ({ ctx, input }) => {
         const user = await db.updateUser(ctx.user.id, { name: input.name });
-        return { id: user!.id, email: user!.email, name: user!.name, role: user!.role };
+        return { id: user!.id, email: user!.email, name: user!.name, avatarUrl: user!.avatarUrl ?? null, role: user!.role };
       }),
+
+    /** Your photo, shown instead of your initials. */
+    uploadPhoto: protectedProcedure
+      .input(z.object({ data: z.string().max(12_000_000) }))
+      .mutation(async ({ ctx, input }) => {
+        const saved = await savePhoto(ctx.user.id, input.data);
+        const user = await db.updateUser(ctx.user.id, { avatarUrl: saved.url });
+        return { avatarUrl: user?.avatarUrl ?? null };
+      }),
+
+    removePhoto: protectedProcedure.mutation(async ({ ctx }) => {
+      await db.updateUser(ctx.user.id, { avatarUrl: null });
+      return { avatarUrl: null };
+    }),
   }),
 
   /** Which AI services are configured on this server (no secrets returned). */
@@ -272,6 +286,13 @@ export const appRouter = router({
         await requireMember(ctx, input.id, "admin");
         const saved = await saveImage(input.id, input.data, "logo");
         return db.updateOrganization(input.id, { logoUrl: saved.url });
+      }),
+
+    removeLogo: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.id, "admin");
+        return db.updateOrganization(input.id, { logoUrl: null });
       }),
   }),
 
@@ -1514,6 +1535,7 @@ export const appRouter = router({
       const me = (await db.getUserById(ctx.user.id)) ?? ctx.user;
       return {
         name: me.name,
+        avatarUrl: me.avatarUrl ?? null,
         email: me.email,
         staff: me.role === "admin",
         prefs: readPrefs(me.notifyPrefs),

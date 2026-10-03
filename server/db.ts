@@ -307,7 +307,7 @@ export async function listMembers(organizationId: number) {
   const people = await getUsersByIds(members.map((m) => m.userId));
   return members.map((m) => {
     const u = people.find((p) => p.id === m.userId);
-    return { ...m, email: u?.email ?? "", name: u?.name ?? null };
+    return { ...m, email: u?.email ?? "", name: u?.name ?? null, avatarUrl: u?.avatarUrl ?? null };
   });
 }
 

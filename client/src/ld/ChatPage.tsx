@@ -2,6 +2,7 @@ import React from "react";
 import { Link, Redirect } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, BottomNav, ChatList, EmpHeader, ErrorLine, PersonAvatar, Rail, useEmployees, useGo, useIsMobile } from "./ui";
 import { SUGGESTIONS, fmtDate, fmtTime, isSameDay, parseJson, type Kind } from "./meta";
 import Guidelines from "./work/Guidelines";
@@ -107,6 +108,9 @@ type Plan = Outputs["social"]["schedulePlan"];
 
 function ChatPane({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
+  const { user } = useAuth();
+  const team = trpc.members.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, staleTime: 60_000 });
+  const photoOf = (userId: number | null | undefined) => (userId && userId === user?.id ? user?.avatarUrl : team.data?.find((t) => t.userId === userId)?.avatarUrl) ?? null;
   const utils = trpc.useUtils();
   const messages = trpc.chat.list.useQuery({ organizationId: currentOrgId, employeeId: emp.id }, { refetchInterval: 20_000 });
   const markRead = trpc.chat.markRead.useMutation({ onSuccess: () => utils.chat.summaries.invalidate() });
@@ -171,7 +175,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             <React.Fragment key={m.id}>
               {sep && <DaySep date={day} />}
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                {m.role === "user" ? <PersonAvatar name={m.authorName.replace(/^Scheduled task: /, "Task")} /> : <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={36} />}
+                {m.role === "user" ? <PersonAvatar name={m.authorName.replace(/^Scheduled task: /, "Task")} src={photoOf(m.userId)} /> : <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={36} />}
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
                   <div>
                     <div>
@@ -203,7 +207,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
         {pending && (
           <>
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start", opacity: 0.8 }}>
-              <PersonAvatar name="You" />
+              <PersonAvatar name="You" src={user?.avatarUrl} />
               <div style={{ fontSize: 15, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{pending}</div>
             </div>
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
