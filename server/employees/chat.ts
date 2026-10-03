@@ -39,7 +39,7 @@ export type ChatCard = {
 };
 
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "report", "find_grants", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   speaking: ["none", "report", "find_events", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "start_onboarding"],
@@ -76,6 +76,7 @@ const ACTION_HELP: Record<string, string> = {
   report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
   find_people: "find_people: search the web for professionals to reach out to for an open role. Put the role or any focus (city, license, specialty) in `focus`.",
   write_job_post: "write_job_post: write or rewrite the job post for a role. Put the role title in `target` ('' for the newest open role).",
+  check_bidprime: "check_bidprime: the person asks about BidPrime (their leads inbox, saved bids, \"did you look in BidPrime\", \"check BidPrime\"). You sign in to their BidPrime account with the sign-in saved on Integrations; you never need them to share a login.",
   find_grants: "find_grants: search the web now. Set `oppKind` to grant, pitch (pitch competitions), accelerator (accelerator or incubator programs) or bid (government or agency RFPs and bids); default grant. Put any focus the person gave in `focus`.",
   find_events: "find_events: search the web for speaking events taking proposals now. Set `oppKind` to speaking. Put any focus in `focus`.",
   add_link: "add_link: the person gave a link to an opportunity they found. Put the link in `url`.",
@@ -180,6 +181,20 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
         if (best.length) text += ` I started ${best.length === 1 ? "the application for the best fit" : `applications for the ${best.length} best fits`} and will post ${best.length === 1 ? "it" : "each one"} here when it's ready for you.`;
       }
       return { text, cards, queries: r.queries };
+    }
+    case "check_bidprime": {
+      const bids = await import("./bids");
+      const v = await bids.bidprimeView(org);
+      if (!v.connected) return { text: "BidPrime isn't connected for this workspace yet. Add your BidPrime email and password on Integrations, Applying, BidPrime, and I'll sign in and read your leads inbox and saved bids.", cards: [], queries: [] };
+      if (v.waitingCode) return { text: "BidPrime sent a sign-in code to " + v.email + ". Paste it in the code card above and I'll finish reading your leads inbox.", cards: [], queries: [] };
+      bids.queueCheck(org, true);
+      const fromBp = (await db.listOpps(org, ["bid"])).filter((o) => o.source === "BidPrime" && o.status === "new");
+      const last = v.lastError ? ` My last check stopped: ${v.lastError}.` : "";
+      return {
+        text: `Signing in to BidPrime as ${v.email} now to read your leads inbox and saved bids. I'll post what I find here in a few minutes.${last}${fromBp.length ? ` These ${fromBp.length} came from BidPrime before:` : ""}`,
+        cards: fromBp.slice(0, 6).map(oppCard),
+        queries: [],
+      };
     }
     case "add_link": {
       if (!/\S+\.\S+/.test(d.url)) return { text: "Send me the link to the opportunity's page and I'll add it.", cards: [], queries: [] };
@@ -446,6 +461,15 @@ function oppCard(o: Opportunity): ChatCard {
   return apply.oppCardFor(o);
 }
 
+/** What Morgan knows about the BidPrime connection, so she answers from it instead of guessing. */
+async function bidprimeFacts(emp: AIEmployee) {
+  if (emp.kind !== "grants") return "";
+  const v = await (await import("./bids")).bidprimeView(emp.organizationId);
+  if (!v.connected) return "\nBidPrime: not connected for this workspace.";
+  const when = v.lastCheckedAt ? `last read ${new Date(v.lastCheckedAt).toLocaleString("en-US", { timeZone: "America/Chicago", dateStyle: "medium", timeStyle: "short" })}, ${v.lastFound} new` : "not read yet";
+  return `\nBidPrime: connected as ${v.email}; ${when}${v.lastError ? `; last check stopped: ${v.lastError}` : ""}${v.waitingCode ? "; waiting for a sign-in code" : ""}. You can sign in and read it any time with check_bidprime.`;
+}
+
 async function nowIn(orgId: number) {
   const org = await db.getOrganizationById(orgId);
   const tz = org?.timezone || "America/Chicago";
@@ -498,6 +522,7 @@ export async function sendChatMessage(opts: {
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
+Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await bidprimeFacts(emp)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     );

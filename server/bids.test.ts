@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The browser is scripted here; browser.test.ts drives a real one.
 const browserCalls: any[] = [];
+const chatSystems: string[] = [];
 let browserReplies: ((task: any) => any)[] = [];
 vi.mock("./employees/browser", async (orig) => {
   const actual: any = await orig();
@@ -22,6 +23,10 @@ vi.mock("./_core/llm", async (orig) => {
     ...actual,
     searchJson: vi.fn(async () => ({ queries: [], sources: [], data: { history: "", url: "" } })),
     generateJson: vi.fn(async (opts: any) => {
+      if (opts.schemaName === "chat_decision") {
+        chatSystems.push(opts.system);
+        return { reply: "", action: "check_bidprime" };
+      }
       if (opts.schemaName === "opportunity_details")
         return { title: "Behavioral Health EHR System", host: "Oklahoma County Purchasing", sourceUrl: "", deadline: "Nov 14, 2026", amount: "", equity: "", stage: "", eligibility: "Registered county vendors", location: "Oklahoma City", eventDate: "", audience: "", angle: "", summary: "A cloud EHR for 12 clinicians.", fitScore: 88, fitCall: "apply", fitReason: "Covers every module.", kind: "bid" };
       if (opts.schemaName === "requirements") return { due: "Nov 14, 2026", questions: [], attachments: [], channel: "portal", channelDetail: "oklahomacounty.bonfirehub.com", questionsDue: "Oct 24, 2026", questionsTo: "buyer@oklahomacounty.org", aiPolicy: { restricted: false, note: "", citation: "" } };
@@ -117,6 +122,24 @@ describe("BidPrime", () => {
     await bids.bidsTick(new Date("2026-10-05T18:00:00Z"));
     await apply.idle();
     expect(mine()).toBe(after);
+  });
+});
+
+describe("Asking Morgan about BidPrime in chat", () => {
+  it("knows it is connected, signs in with the saved login, and never asks for one", async () => {
+    const { orgId, owner } = await makeWorkspace("bp-chat");
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    const before = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "did you look in bidprime" });
+    expect(before.reply.content).toMatch(/isn't connected/);
+    await bids.saveBidPrime(orgId, "a@b.co", "pw-123456");
+    browserReplies.push(() => ({ status: "done", result: '{"bids":[]}' }));
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "whats in my bidprime inbox?" });
+    expect(r.reply.content).toMatch(/Signing in to BidPrime as a@b\.co/);
+    expect(chatSystems.at(-1)).toContain("BidPrime: connected as a@b.co");
+    expect(chatSystems.at(-1)).toContain("Never ask the person for a password");
+    await apply.idle();
+    expect(browserCalls.at(-1).secrets.email).toBe("a@b.co");
+    expect((await lastChat(orgId)).content).toMatch(/Nothing new/);
   });
 });
 
