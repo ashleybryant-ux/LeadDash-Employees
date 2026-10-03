@@ -1207,3 +1207,29 @@ export const notetakerMeetings = sqliteTable(
   (t) => [uniqueIndex("notetaker_org_event_unique").on(t.organizationId, t.eventId), index("notetaker_org_start_idx").on(t.organizationId, t.startsAt)]
 );
 export type NotetakerMeeting = typeof notetakerMeetings.$inferSelect;
+
+// ==========================================
+// Usage: time saved and what the AI cost, per workspace and employee
+// ==========================================
+
+/** task = a finished piece of work (minutes saved); the rest are AI costs. */
+export const USAGE_TYPES = ["task", "writing", "search", "image", "meeting"] as const;
+
+export const usageEvents = sqliteTable(
+  "usage_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId"),
+    type: text("type", { enum: USAGE_TYPES }).notNull(),
+    /** Minutes of work saved (tasks only). */
+    minutes: integer("minutes").notNull().default(0),
+    /** Estimated cost in millionths of a dollar. */
+    costMicros: integer("costMicros").notNull().default(0),
+    /** Tokens, searches, image size or meeting minutes, for checking the math. */
+    detail: text("detail"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("usage_org_time_idx").on(t.organizationId, t.createdAt)]
+);
+export type UsageEvent = typeof usageEvents.$inferSelect;

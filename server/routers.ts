@@ -25,6 +25,7 @@ import { indexKnowledge } from "./employees/kb";
 import { describeRule, isValidTimeZone, nextRun } from "./employees/schedule";
 import { runTaskNow } from "./employees/runner";
 import { fetchWebpage, saveDocument, saveImage, savePhoto } from "./employees/files";
+import { usageSummary } from "./usage";
 import { sendEmail } from "./_core/email";
 import { ENV } from "./_core/env";
 import { REPEATS, HR_STAGES } from "../drizzle/schema";
@@ -2318,6 +2319,14 @@ export const appRouter = router({
   // ==========================================
   // Activity
   // ==========================================
+  /** Hours saved and estimated AI cost for a month. */
+  usage: router({
+    summary: protectedProcedure.input(orgInput.extend({ back: z.number().int().min(0).max(1).default(0) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return usageSummary(input.organizationId, input.back);
+    }),
+  }),
+
   audit: router({
     list: protectedProcedure
       .input(orgInput.extend({ limit: z.number().int().min(1).max(200).default(30) }))

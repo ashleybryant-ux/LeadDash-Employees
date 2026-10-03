@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
+import { withUsage } from "../usage";
 import type { AIEmployee, HrPerson, HrRole } from "../../drizzle/schema";
 import { ENV } from "../_core/env";
 import { generateJson, generateText, searchJson, type JsonSchema } from "../_core/llm";
@@ -652,9 +653,13 @@ export async function hiringDaily(now = new Date()) {
   if (day === lastHiringDay) return;
   lastHiringDay = day;
   await db.purgeHrProspects(now);
-  for (const orgId of await db.listAllOrganizationIds()) {
+  for (const orgId of await db.listAllOrganizationIds()) await withUsage({ orgId, kind: "hiring" }, () => hiringDailyFor(orgId, now));
+}
+
+async function hiringDailyFor(orgId: number, now: Date) {
+  {
     const emp = await db.getEmployeeByKind(orgId, "hiring");
-    if (!emp || emp.status === "paused") continue;
+    if (!emp || emp.status === "paused") return;
     const due = (await db.listHrPeople(orgId, "prospect")).filter((p) => p.stage === "contacted" && p.followUpAt && p.followUpAt < now);
     for (const p of due) {
       await db.updateHrPerson(p.id, orgId, { followUpAt: null });

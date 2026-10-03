@@ -1,4 +1,5 @@
 import * as db from "../db";
+import { withUsage } from "../usage";
 import type { ScheduledTask } from "../../drizzle/schema";
 import { sendChatMessage } from "./chat";
 import { nextRun } from "./schedule";
@@ -25,7 +26,11 @@ async function timezoneFor(orgId: number) {
   return org?.timezone || "America/Chicago";
 }
 
-export async function runTaskNow(task: ScheduledTask, manual = false) {
+export function runTaskNow(task: ScheduledTask, manual = false) {
+  return withUsage({ orgId: task.organizationId, employeeId: task.employeeId }, () => runTask(task, manual));
+}
+
+async function runTask(task: ScheduledTask, manual: boolean) {
   if (running.has(task.id)) return null;
   running.add(task.id);
   const startedAt = new Date();

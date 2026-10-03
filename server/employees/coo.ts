@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
+import { withUsage } from "../usage";
 import type { AIEmployee, Meeting } from "../../drizzle/schema";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import * as integrations from "../integrations";
@@ -418,7 +419,7 @@ export async function cooTick(orgId: number, now = new Date()) {
 
 export async function cooTicks() {
   for (const orgId of await db.listAllOrganizationIds()) {
-    await cooTick(orgId).catch((err) => console.warn("[coo] tick failed:", err instanceof Error ? err.message : err));
+    await withUsage({ orgId, kind: "coo" }, () => cooTick(orgId)).catch((err) => console.warn("[coo] tick failed:", err instanceof Error ? err.message : err));
   }
 }
 

@@ -1,6 +1,7 @@
 import { storagePut } from "../storage";
 import { ENV } from "./env";
 import { AiNotConfiguredError } from "./llm";
+import { recordImage } from "../usage";
 
 export type ImageSize = "1024x1024" | "1024x1536" | "1536x1024";
 
@@ -32,6 +33,7 @@ export async function generateImage(opts: {
   const raw = await res.text();
   if (!res.ok) throw new Error(`Image generation error ${res.status}: ${raw.slice(0, 300)}`);
   const data = JSON.parse(raw);
+  await recordImage(opts.size ?? "1024x1024");
   const item = data?.data?.[0];
   let buffer: Buffer;
   if (item?.b64_json) {

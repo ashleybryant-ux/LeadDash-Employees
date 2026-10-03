@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
+import { withUsage } from "../usage";
 import type { AIEmployee, EmployeeKind } from "../../drizzle/schema";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import { loadBrain } from "./brain";
@@ -431,7 +432,7 @@ export async function interviewTick(orgId: number, now = new Date()) {
 }
 
 export async function interviewTicks() {
-  for (const orgId of await db.listAllOrganizationIds()) await interviewTick(orgId).catch((err) => console.warn("[interview] tick failed:", err instanceof Error ? err.message : err));
+  for (const orgId of await db.listAllOrganizationIds()) await withUsage({ orgId }, () => interviewTick(orgId)).catch((err) => console.warn("[interview] tick failed:", err instanceof Error ? err.message : err));
 }
 
 /** The question card in chat: which part and question it is. */

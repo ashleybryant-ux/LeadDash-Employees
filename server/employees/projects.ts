@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
+import { withUsage } from "../usage";
 import type { AIEmployee, Launch, LaunchKpi, LaunchTask, KpiSource } from "../../drizzle/schema";
 import { KPI_SOURCES } from "../../drizzle/schema";
 import { generateJson, type JsonSchema } from "../_core/llm";
@@ -514,7 +515,7 @@ export async function morningCheck(orgId: number, opts: { force?: boolean } = {}
 
 export async function morningChecks() {
   for (const orgId of await db.listAllOrganizationIds()) {
-    await morningCheck(orgId).catch((err) => console.warn("[projects] morning check failed:", err instanceof Error ? err.message : err));
+    await withUsage({ orgId, kind: "projects" }, () => morningCheck(orgId)).catch((err) => console.warn("[projects] morning check failed:", err instanceof Error ? err.message : err));
   }
 }
 

@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
+import { recordSearch, recordTokens } from "../usage";
 
 /**
  * Two routes to the model:
@@ -40,6 +41,8 @@ async function callGateway(body: Record<string, unknown>, timeoutMs = 120_000) {
   }
   const data = JSON.parse(text);
   if (data.request_id) console.log(`[ai] gateway request ${data.request_id} (${ENV.llmModel})`);
+  const u = data?.usage ?? {};
+  await recordTokens(String(data?.model || ENV.llmModel), Number(u.prompt_tokens) || 0, Number(u.completion_tokens) || 0);
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return content.map((p: any) => p?.text ?? "").join("");
@@ -196,6 +199,7 @@ export async function searchJson<T>(opts: {
   const queries: string[] = [];
   const sources = new Map<string, string>();
   let finalText = "";
+  const used = { input: 0, output: 0, cacheRead: 0, searches: 0 };
 
   // pause_turn means a long search was paused; send the turn back to resume it.
   for (let round = 0; round < 4; round++) {
@@ -214,6 +218,10 @@ export async function searchJson<T>(opts: {
     const raw = await res.text();
     if (!res.ok) throw new Error(`Web search error ${res.status}: ${raw.slice(0, 300)}`);
     const data = JSON.parse(raw);
+    used.input += Number(data.usage?.input_tokens) || 0;
+    used.output += Number(data.usage?.output_tokens) || 0;
+    used.cacheRead += Number(data.usage?.cache_read_input_tokens) || 0;
+    used.searches += Number(data.usage?.server_tool_use?.web_search_requests) || 0;
 
     for (const block of data.content ?? []) {
       if (block.type === "server_tool_use" && block.name === "web_search" && block.input?.query) {
@@ -236,6 +244,8 @@ export async function searchJson<T>(opts: {
     }
     break;
   }
+
+  await recordSearch(ENV.anthropicModel, used.input, used.output, used.searches, used.cacheRead);
 
   let parsed = extractJson(finalText);
   if (parsed === undefined) {

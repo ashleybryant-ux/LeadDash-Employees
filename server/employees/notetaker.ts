@@ -7,6 +7,7 @@ import { employeeFor, systemPromptFor, working } from "./tasks";
 import { gate, handoff, logActivity } from "./team";
 import { opsFor, saveOps, skipWordList, type Notetaker } from "./ops";
 import { addActionItems } from "./projects";
+import { recordMeeting } from "../usage";
 
 /**
  * Simone sits in on your meetings.
@@ -193,6 +194,8 @@ export async function followBots(orgId: number, now = new Date()) {
         await db.updateNotetaker(row.id, orgId, { status: "failed", error: "Recall.ai could not make the transcript." });
       } else if (t.state === "done") {
         await db.updateNotetaker(row.id, orgId, { transcript: t.text, heldMinutes: t.minutes });
+        const billed = t.minutes || Math.max(1, Math.round((new Date(row.endsAt).getTime() - new Date(row.startsAt).getTime()) / 60000));
+        await recordMeeting(orgId, (await db.getEmployeeByKind(orgId, "coo"))?.id ?? null, billed);
         await writeNotes(orgId, row.id);
         if (ops.notetaker.keep === "delete") await deleteMedia(orgId, row.id);
       }

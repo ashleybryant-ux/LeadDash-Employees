@@ -6,6 +6,7 @@ import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
 import { BASE_RULES, rosterEntry } from "./roster";
 import { guidelinesText } from "./interview";
+import { recordTask, withUsage } from "../usage";
 
 // ==========================================
 // Shared helpers
@@ -43,8 +44,10 @@ export async function working<T>(emp: AIEmployee, fn: () => Promise<T>): Promise
   const before = emp.status;
   await db.updateEmployee(emp.id, emp.organizationId, { status: "working" });
   try {
-    const result = await fn();
-    await db.recordEmployeeTask(emp.id, emp.organizationId, rosterEntry(emp.kind)?.minutesPerTask ?? 15);
+    const result = await withUsage({ orgId: emp.organizationId, employeeId: emp.id, kind: emp.kind }, fn);
+    const minutes = rosterEntry(emp.kind)?.minutesPerTask ?? 15;
+    await db.recordEmployeeTask(emp.id, emp.organizationId, minutes);
+    await recordTask(emp.organizationId, emp.id, minutes);
     return result;
   } finally {
     await db.updateEmployee(emp.id, emp.organizationId, { status: before === "working" ? "active" : before });

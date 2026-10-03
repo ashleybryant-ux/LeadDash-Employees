@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, OrgLogo, Page } from "../ui";
 import { initials, parseJson } from "../meta";
+import { UsageCard } from "../work/Usage";
 
 const TIMEZONES = [
   { value: "America/New_York", label: "Eastern" },
@@ -170,6 +171,8 @@ export default function Workspace() {
         </div>
         <h1 className="ld-h1">{o.name}</h1>
       </div>
+
+      <UsageCard />
 
       <section className={`ld-card ${editing === "about" ? "editing" : ""}`}>
         {header("about", "About the business")}
