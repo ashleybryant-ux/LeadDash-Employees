@@ -8,9 +8,9 @@
  *
  *   cd /home/ssm-user/employees && npx tsx scripts/onboard-legacy.ts
  *
- * Safe to run twice: profile fields already set are kept, Brain entries whose
- * title exists are kept, answers already given are kept, and guideline lines
- * already there are not added again.
+ * Safe to run again: anything you changed yourself is kept. Profile fields,
+ * Brain entries and answers this script loaded before (scripts/data/legacy-v1.json)
+ * are updated to the current version; guideline lines are never added twice.
  */
 import "dotenv/config";
 import * as db from "../server/db";
@@ -20,12 +20,20 @@ import { readAnswers, readGuidelines, readState, refreshGuidelines, type Example
 import { saveAutonomy, type Mode } from "../server/employees/team";
 import { indexKnowledge } from "../server/employees/kb";
 import { ensureRoster } from "../server/employees/roster-sync";
+import fs from "node:fs";
+import path from "node:path";
+
+/** What the first version of this script loaded, so a re-run can update it without touching your own edits. */
+type V1Data = { profile: Record<string, string>; entries: { title: string; content: string }[]; answers: Record<string, A> };
+const V1: V1Data = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "data", "legacy-v1.json"), "utf8"));
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? "") === JSON.stringify(b ?? "");
 
 type A = Record<string, string | string[]>;
 
 const NAME = "Legacy Family Services";
 const SLUG = "legacy-family-services";
-const BOOKING = "https://portal.leaddash.io/book/legacy-family";
+const BOOKING = "https://schedulemytherapy.com";
+const REBOOK = "https://reschedulemytherapy.com";
 const PORTAL = "https://portal.leaddash.io/legacy";
 
 // ---------- Workspace profile (only empty fields are filled) ----------
@@ -35,10 +43,10 @@ const PROFILE: Record<string, string> = {
   state: "Oklahoma City, OK",
   entity: "Legacy Family Services, Inc.",
   description:
-    "Group therapy practice in Oklahoma City, founded in 2015. Licensed therapists see individuals, couples and families in person in Oklahoma City and online by telehealth, and the practice offers adult clinical and ADHD assessments.",
+    "Group therapy practice in Oklahoma City, founded in 2015. Five licensed therapists see adults, couples, families, teens and children by video, with play therapy for younger children and flat-fee adult ADHD, autism and ADA workplace accommodation evaluations. Most major insurance plans are accepted.",
   audience:
-    "Adults, couples and families looking for therapy in Oklahoma, Colorado, Texas and Florida, plus adults who need a clinical or ADHD assessment. Referral partners include primary care offices and prescribers.",
-  focusAreas: "Outpatient mental health, individual therapy, couples therapy, family therapy, adult clinical and ADHD assessments, telehealth",
+    "Adults, couples and families in Oklahoma, Colorado, Texas and Florida looking for therapy; children and teens in Oklahoma; adults who need an ADHD, autism or ADA workplace accommodation evaluation. Referral partners include primary care offices, prescribers, pediatricians and employers.",
+  focusAreas: "Outpatient mental health, individual therapy, couples therapy, family therapy, child and teen therapy, play therapy, adult ADHD and autism evaluations, ADA workplace accommodation evaluations, telehealth",
   signerName: "Ashley R. Bryant",
   signerTitle: "Owner and Director",
   timezone: "America/Chicago",
@@ -50,43 +58,58 @@ const ENTRIES: { title: string; category: string; content: string }[] = [
   {
     category: "mission_profile",
     title: "What Legacy Family Services is",
-    content: `Legacy Family Services, Inc. is a group therapy practice in Oklahoma City, founded in 2015. Licensed therapists see individuals, couples and families, in person in Oklahoma City and online by telehealth.
+    content: `Legacy Family Services, Inc. is a group therapy practice in Oklahoma City, founded in 2015. "Mental health for you and your family." Five licensed therapists see adults, couples, families, teens and children by video, and the owner offers flat-fee adult evaluations.
 
 Office: 11901 N MacArthur Blvd, Suite C6, Oklahoma City, OK 73162
+Hours: Monday to Friday, 8 AM to 5 PM Central. Closed Saturday and Sunday.
 Phone: (405) 370-4594
 Fax: (405) 421-9530
 Client email: client@legacyfs.org (a contact address only, never a login)
-Website: legacyfs.org
-
-Owner and director: Ashley R. Bryant, PhD, LPC, CRC.`,
+Website: legacyfs.org (state pages for Oklahoma, Colorado, Texas and Florida, and a blog)
+New clients book: ${BOOKING} (pick a therapist and a time in under two minutes)
+Existing clients rebook: ${REBOOK}
+Careers: workatlegacy.org
+Same-week openings are often available.`,
   },
   {
     category: "mission_profile",
     title: "Services",
-    content: `- Individual therapy for adults, in person or online.
-- Couples therapy. Couples counseling is self-pay only: insurance usually requires a mental health diagnosis, and relationship concerns are not a diagnosis. Most couples start weekly and adjust from there.
-- Family therapy.
-- Adult clinical assessments and ADHD-focused assessments by telehealth, self-pay, $400 per client. Each comes with a written report; the ADHD report includes a statement for the client's prescriber. Adults only: no children or teens. Autism assessments are not offered.
-- Standard sessions run about 50 to 55 minutes. Online booking is offered at the top of the hour.`,
+    content: `Individual therapy (adults): 50-minute video sessions. $175 self-pay, or billed to insurance. Focus areas: relationships, family dynamics, depression, anxiety, stress, trauma, grief, self-confidence, feeling stuck, affirming therapy.
+
+Couples therapy: 50-minute joint sessions, $175, self-pay only. Legacy does not bill any insurance for couples sessions, because insurance needs a mental health diagnosis and relationship concerns are not one. Most couples start weekly and adjust from there.
+
+Children and teens (ages 12 and up, Oklahoma): virtual, conversation-based therapy with Delicia Porter or Amanda Case. The first session usually includes the parent; later sessions are one on one, with regular parent check-ins on themes and progress (details stay private unless there is a safety concern). Covers anxiety, depression, school stress, social media, friendships, bullying, family changes, grief, trauma, identity and self-esteem. Insurance or self-pay.
+
+Play therapy (about ages 6 to 11, Oklahoma): with Amanda Case, LPC, RPT. Virtual, from home, using the child's own toys and art supplies. Insurance or self-pay.
+
+Adult evaluations (18 and older, all virtual in Oklahoma, Colorado, Texas and Florida), done by Ashley R. Bryant, LPC, CRC. Self-pay, one flat fee, paid at booking, with a paid receipt:
+- Adult ADHD evaluation: $525
+- Adult autism evaluation: $695
+- ADA workplace accommodation evaluation: $550
+Each includes a clinical interview and history, validated screening tools scored against DSM-5 criteria, a written report with recommendations, and a virtual feedback session. Reports arrive 5 to 7 business days after the questionnaires are done. The ADHD report can be shared with a physician or psychiatric provider. These are clinical diagnostic assessments, not psychological or neuropsychological testing; anyone who needs standardized testing is referred to a licensed psychologist.`,
   },
   {
     category: "mission_profile",
     title: "Where we see clients",
-    content: `- In person at the Oklahoma City office.
-- Online (telehealth) for clients in Oklahoma, Colorado, Texas and Florida.
-- Ashley is licensed as an LPC in Oklahoma, Colorado and Texas and as an LMHC in Florida. Clinicians Amanda Case and Delicia Porter see clients by telehealth. [CONFIRM which states each clinician is licensed in before promising a state.]`,
+    content: `- Sessions are by video. Ashley sees clients in Oklahoma, Colorado, Texas and Florida (LPC in Oklahoma, Colorado and Texas; LMHC in Florida).
+- Amanda Case, Delicia Porter, K'Deshia Martin and Shalena Mosley are licensed in Oklahoma, so their clients must be in Oklahoma.
+- Children, teens and play therapy are Oklahoma only.
+- Adult evaluations are available in all four states.
+- The Oklahoma City office is a single therapy room. [CONFIRM whether in-person sessions are offered there now; the website lists video sessions.]`,
   },
   {
     category: "financial_data",
     title: "Insurance and payment",
-    content: `- Legacy accepts insurance and files claims as a courtesy when it is in network with the client's plan. In-network plans: [CONFIRM THE CURRENT LIST].
+    content: `- Most major insurance plans are accepted for therapy: BlueCross BlueShield, UnitedHealthcare, Aetna, TRICARE, Cigna, Optum, HealthChoice, Healthcare Highways, and Lyra (EAP). Self-pay is welcome.
+- Panels differ by therapist (from each profile): Amanda Case: BCBS, Aetna, HealthChoice, Optum, UnitedHealthcare. Delicia Porter: BCBS, Aetna, HealthChoice, Healthcare Highways, Optum, UnitedHealthcare. K'Deshia Martin: BCBS and Aetna. Shalena Mosley: BCBS. Ashley's panels: [CONFIRM].
+- What a client pays depends on their plan's copay, coinsurance and deductible. Clients can call (405) 370-4594 to check coverage before booking.
 - Legacy is not contracted with SoonerCare (Oklahoma Medicaid).
+- Self-pay: $175 for a 50-minute session. Couples sessions and adult evaluations are self-pay only.
 - Out of network: Legacy gives a superbill the client can submit for possible reimbursement.
 - Copays and deductibles are due at the time of service. Cash, check and major credit cards are accepted.
 - Clients without insurance, or who choose not to use it, can request a Good Faith Estimate under the No Surprises Act.
 - A sliding scale may be available based on financial need; availability is limited and needs approval.
-- Returned checks and declined payments carry a $35 fee.
-- Couples counseling and assessments are self-pay.`,
+- Returned checks and declined payments carry a $35 fee.`,
   },
   {
     category: "mission_profile",
@@ -101,28 +124,35 @@ Owner and director: Ashley R. Bryant, PhD, LPC, CRC.`,
   {
     category: "mission_profile",
     title: "Booking link",
-    content: `${BOOKING}
-
-New and existing clients book on the same page; the page asks whether they are new. [CONFIRM the new booking page is live before employees send it. Until then, send people to legacyfs.org or the office phone, (405) 370-4594.]`,
+    content: `New clients: ${BOOKING}
+Existing clients: ${REBOOK}
+Phone: (405) 370-4594`,
   },
   {
     category: "team_bios",
     title: "Team",
-    content: `- Ashley R. Bryant, PhD, LPC, CRC: owner and director. Sees clients and runs the practice.
+    content: `Clinicians (all Licensed Professional Counselors):
+- Ashley R. Bryant, LPC, CRC: owner and founder. Adults and couples, plus all adult evaluations. Anxiety, depression, trauma and complex PTSD, grief, couples and premarital counseling, LGBTQ+ affirming care, veterans. Prolonged exposure, CBT, mindfulness and strength-based work. Licensed in Oklahoma, Colorado, Texas and Florida.
+- Amanda Case, LPC, RPT: teens, adults and older adults; play therapy for younger children. Anxiety, stress, grief, self-esteem, bipolar disorder, chronic pain, disabilities and chronic conditions. CBT, DBT, person-centered, play therapy. Telehealth, Oklahoma.
+- Delicia Porter, LPC: ages 10 and up; individuals, couples and families. Trauma, sexual abuse recovery, relationship challenges, low motivation. CBT and person-centered. Video, Oklahoma.
+- K'Deshia Martin, LPC: adults. Anxiety, depression, trauma, grief. CBT, mindfulness, strength-based. Oklahoma.
+- Shalena Mosley, LPC: school-age children, teens and adults; family and couples counseling. Domestic violence, adolescents. Client-guided sessions. Oklahoma.
+
+Staff:
 - BJ: COO and facility director.
 - Angela St. Ville: client services, billing lead, compliance and HR. Signs in as angela@legacyfs.org.
-- Amanda Case: licensed clinician, telehealth. Also a help desk agent for client@legacyfs.org.
-- Delicia Porter: licensed clinician, telehealth.`,
+- Amanda Case is also a help desk agent for client@legacyfs.org.`,
   },
   {
     category: "team_bios",
     title: "Owner bio: Ashley R. Bryant",
-    content: `Ashley R. Bryant, PhD, LPC, CRC, owns and directs Legacy Family Services.
+    content: `Ashley R. Bryant, PhD, LPC, CRC, founded and directs Legacy Family Services.
 - Licensed Professional Counselor in Oklahoma, Colorado and Texas; Licensed Mental Health Counselor in Florida; Certified Rehabilitation Counselor.
 - PhD in Workforce and Adult Education, Oklahoma State University. MS in Rehabilitation Counseling, Langston University (2012).
 - 18 years of clinical experience, with a background in vocational rehabilitation and disability employment.
+- Works with self-doubt, anxiety, depression, trauma and complex PTSD, grief, couples, LGBTQ+ clients, veterans, and people adjusting to the effects of disabilities.
 - Creator of the P.U.L.S.E.™ Framework and author of Love with P.U.L.S.E.
-- More than 100 speaking engagements; featured on TLC, PBS and FOX.
+- Featured on TLC's My 600-lb Life and in InStyle; also PBS and FOX. More than 100 speaking engagements.
 For Legacy marketing, sign as Ashley R. Bryant, LPC, CRC. Oklahoma rules do not allow "Dr." in counseling practice marketing.`,
   },
   {
@@ -141,6 +171,7 @@ For Legacy marketing, sign as Ashley R. Bryant, LPC, CRC. Oklahoma rules do not 
     content: `- Warm, plain and direct, like a therapist talking to someone deciding whether to start. Short sentences. No hype, no promises of results, no em dashes.
 - Say "clients," not "patients." Say "licensed therapists."
 - No "Dr." in Legacy marketing (an Oklahoma licensing rule). Sign as Ashley R. Bryant, LPC, CRC.
+- Call the evaluations "clinical diagnostic assessments," never "psychological testing."
 - Write P.U.L.S.E.™ with the trademark symbol.
 - Name the practice "Legacy Family Services" in full the first time.`,
   },
@@ -151,6 +182,13 @@ For Legacy marketing, sign as Ashley R. Bryant, LPC, CRC. Oklahoma rules do not 
 - After certification, Legacy can contract for SoonerCare and hire licensure candidates under supervision. Candidates cannot bill commercial insurance on their own.
 - Moving booking and the client portal into LeadDash EHR (${PORTAL}), replacing the old SimplePractice portal.
 - The office is a single therapy room, so filming and meetings there happen only when no client is present.`,
+  },
+  {
+    category: "mission_profile",
+    title: "Website and blog",
+    content: `- legacyfs.org pages: home, services, individual therapy, couples therapy, children and teens therapy, play therapy with Amanda, adult evaluations (ADHD, autism, ADA workplace accommodation), a page for each state (Oklahoma, Colorado, Texas, Florida), team and therapist profiles, contact, blog, privacy policy, terms.
+- Recent blog posts (2026): "AI Chatbots vs. Real Therapy: Why the Human Connection Still Wins in OKC" and "7 Mistakes You're Making When Searching for a Therapist in Oklahoma City" (Sept 1); "Goodbye August: Reflecting on Growth and Looking Toward September" (Aug 31); "Preparing Your Kids (and Yourself) for the First Week of School" (Aug 30); "Self-Confidence Boosters: Reclaiming Your Inner Strength" (Aug 29). Others: routine as summer ends, mental health tips for Floridians, grief and the anniversary effect, talking to your boss about mental health days, transitioning to college in Colorado.
+- Don't repeat a topic already covered without a new angle.`,
   },
 ];
 
@@ -236,7 +274,7 @@ const ANSWERS: Record<EmployeeKind, A> = {
     deciders: "Ashley makes the final call.",
     style: "Short: decisions first",
     always: "Billing and claims follow-up, open client-services issues by initials only, ODMHSAS certification steps, hiring",
-    team: "Ashley: owner, director and clinician. BJ: COO and facility director. Angela St. Ville: client services, billing, compliance and HR. Amanda Case and Delicia Porter: licensed clinicians by telehealth.",
+    team: "Ashley: owner, director, clinician and evaluations. BJ: COO and facility director. Angela St. Ville: client services, billing, compliance and HR. Amanda Case, Delicia Porter, K'Deshia Martin and Shalena Mosley: licensed clinicians.",
     updatesFrom: "Angela on billing and client services; Nora on projects; Quinn on hiring; Malik on new client inquiries",
     numbers: "New client inquiries, first sessions booked, sessions held, claims sent and paid, open balances",
     offTrack: "Put it first on the next agenda",
@@ -248,14 +286,14 @@ const ANSWERS: Record<EmployeeKind, A> = {
     goal: ["New services", "Campaigns", "Hiring pushes"],
     horizon: "1 month",
     success90: "The switch to the new booking page and portal is done, and the certification checklist has an owner and a date on every step.",
-    first: "Plan the switch from the old booking page to the new LeadDash EHR booking page and portal, without turning off the old services until the new link is out.",
+    first: "Plan the switch to the LeadDash EHR booking page and portal, without turning off the current booking pages (schedulemytherapy.com and reschedulemytherapy.com) until the new link is out.",
     owners: "Ashley: approvals, clinical decisions and certification. Angela: client services, billing, paperwork and credentialing logistics. BJ: facility. Sienna, Theo and Jordan: marketing pieces.",
     approver: "Ashley",
     buffer: "2 days",
     how: "Small tasks, one owner each, every task tied to a milestone",
     noDue: ["Weekends"],
     done: "Live or sent, not just drafted, and approved by Ashley when clients will see it",
-    kpis: "First sessions booked, assessments booked, inquiries answered within a day",
+    kpis: "First sessions booked, evaluations booked, inquiries answered within a day",
     reportStyle: "Short: on track or not",
     ...WORKING,
   },
@@ -264,8 +302,8 @@ const ANSWERS: Record<EmployeeKind, A> = {
     success90: "Two strong applications ready to sign, each with real numbers and no placeholders left",
     first: "Find behavioral health and workforce grants open to Oklahoma practices with deadlines in the next 90 days",
     often: "Weekly",
-    staff: "Owner and director, a COO and facility director, a client services and billing lead, and two licensed clinicians. In person in Oklahoma City; telehealth across Oklahoma, Colorado, Texas and Florida.",
-    programs: "Individual, couples and family therapy in person and by telehealth; adult clinical and ADHD assessments; future supervised training for licensure candidates once ODMHSAS certification is complete",
+    staff: "Owner and director, four more licensed therapists, a COO and facility director, and a client services and billing lead. Office in Oklahoma City; telehealth across Oklahoma, Colorado, Texas and Florida.",
+    programs: "Individual, couples and family therapy by telehealth; therapy for children and teens and play therapy in Oklahoma; adult ADHD, autism and ADA workplace accommodation evaluations; future supervised training for licensure candidates once ODMHSAS certification is complete",
     minAward: "$10,000",
     region: "My state first, then national",
     priorities: "Access to therapy in Oklahoma, the behavioral health workforce (supervising licensure candidates), telehealth reach, and the ODMHSAS outpatient certification",
@@ -296,26 +334,26 @@ const ANSWERS: Record<EmployeeKind, A> = {
   prospecting: {
     goal: ["Referral partners"],
     success90: "25 strong referral partners a week, each with a contact name and a direct email or fax",
-    first: "Primary care offices and prescribers in the Oklahoma City metro who see adults with attention, anxiety or mood concerns",
+    first: "Primary care offices and prescribers in the Oklahoma City metro who see adults with attention, autism, anxiety or mood concerns",
     often: "Weekly",
     weekly: "25",
     size: "Solo practices",
     specialty: ["Medical", "Psychiatry"],
     payer: "Either",
     states: "Oklahoma City metro first, then the rest of Oklahoma",
-    ideal: "Primary care offices, psychiatric nurse practitioners and other prescribers who need somewhere to send adults for therapy or an ADHD or mental health assessment",
+    ideal: "Primary care offices, psychiatric nurse practitioners and other prescribers who need somewhere to send adults for therapy or an ADHD or autism evaluation; pediatricians who need therapy or play therapy for children; employers and HR teams handling ADA accommodation requests",
     decider: ["Owner", "Office manager", "Clinical director"],
-    skip: "Other therapy practices, hospital systems, pediatric-only offices (Legacy sees adults for assessments)",
+    skip: "Other therapy practices, hospital systems",
     ...WORKING,
   },
   outreach: {
     goal: ["Partnerships", "Replies"],
     success90: "Referral partners sending clients every month, with no complaints or unsubscribes",
-    first: "Introduce the adult ADHD and mental health assessments to Riley's best-fit prescribers",
+    first: "Introduce the adult ADHD and autism evaluations to Riley's best-fit prescribers",
     offer: "A short call",
     cta: "Reply to set up a 15-minute call, or send referrals by fax to (405) 421-9530",
-    proof: "Adult clinical and ADHD assessments by telehealth, each with a written report and a statement for the prescriber; therapy in person in Oklahoma City and online in Oklahoma, Colorado, Texas and Florida; founded in 2015",
-    objections: "\"We already refer elsewhere\": we can usually see adults for assessments sooner, and you get a written report back. \"Do you take insurance?\": therapy, yes, with a list of plans; assessments are self-pay.",
+    proof: "Flat-fee adult ADHD ($525), autism ($695) and ADA accommodation ($550) evaluations, all virtual, with a written report in 5 to 7 business days that the client can share with their prescriber; therapy for adults, couples, teens and children, with most major insurance plans accepted; same-week openings; founded in 2015",
+    objections: "\"We already refer elsewhere\": we often have same-week openings, and the client brings back a written report. \"Do you take insurance?\": therapy, yes (BCBS, UnitedHealthcare, Aetna, TRICARE, Cigna, Optum, HealthChoice, Healthcare Highways, Lyra); evaluations are a flat self-pay fee. \"Is this psychological testing?\": no, these are clinical diagnostic assessments; anyone who needs standardized testing is referred to a psychologist.",
     tone: "Brief and direct",
     formality: "Professional",
     signOff: "Ashley R. Bryant, LPC, CRC, Owner and Director, Legacy Family Services",
@@ -329,16 +367,17 @@ const ANSWERS: Record<EmployeeKind, A> = {
     goal: ["Book meetings", "Answer questions", "Hand hot leads to me"],
     success90: "Every new client inquiry answered the same day with a booking link",
     first: "Answer new client inquiries and send them to the booking page",
-    services: "Individual, couples and family therapy, in person in Oklahoma City or online; adult clinical and ADHD assessments by telehealth",
-    prices: "Never share prices",
-    faqs: "Do you take insurance? Yes for therapy; we check your plan when you book, and we can give a superbill if we are out of network. Couples counseling? Yes, self-pay only, because insurance needs a diagnosis. Online sessions? Yes, for clients in Oklahoma, Colorado, Texas and Florida. Do you see kids? Not for assessments; assessments are adults only. Cancellations? 24 hours' notice, or the full session fee is charged.",
-    qualifies: "Adults, couples and families in Oklahoma, Colorado, Texas or Florida looking for therapy, and adults who want a clinical or ADHD assessment",
-    notFit: "Anyone in crisis: 988 or 911, and alert Ashley. Children's assessments and autism assessments: say we don't offer them and suggest asking their doctor. People outside the four states: say we can't see them yet.",
+    services: "Individual, couples and family therapy by video; therapy for children and teens 12 and up and play therapy for about ages 6 to 11 (Oklahoma); adult ADHD, autism and ADA workplace accommodation evaluations (all four states)",
+    prices: "Share prices",
+    priceList: "Individual therapy: $175 per 50-minute session self-pay, or billed to insurance. Couples therapy: $175, self-pay only. Adult ADHD evaluation: $525. Adult autism evaluation: $695. ADA workplace accommodation evaluation: $550. Evaluations are flat fees paid at booking. Insurance costs depend on the plan's copay, coinsurance and deductible.",
+    faqs: "Which insurance do you take? BlueCross BlueShield, UnitedHealthcare, Aetna, TRICARE, Cigna, Optum, HealthChoice, Healthcare Highways and Lyra (EAP); call (405) 370-4594 to check your coverage. Couples counseling? Yes, $175, self-pay only, because insurance needs a diagnosis. Online sessions? Yes, by video. Do you see kids? Yes in Oklahoma: teens 12 and up, and play therapy for about ages 6 to 11. Evaluations? Adults 18 and up, all virtual, flat fee, report in 5 to 7 business days; they are clinical diagnostic assessments, not psychological testing. How soon? Same-week openings are often available. Office hours? Monday to Friday, 8 AM to 5 PM Central. Cancellations? 24 hours' notice, or the full session fee is charged.",
+    qualifies: "Adults and couples in Oklahoma, Colorado, Texas or Florida looking for therapy; children and teens in Oklahoma; adults in those four states who want an ADHD, autism or ADA accommodation evaluation",
+    notFit: "Anyone in crisis: 988 or 911, and alert Ashley. Evaluations for anyone under 18, or IQ, neuropsychological or standardized testing: say we don't offer them and suggest a licensed psychologist. Children and teens outside Oklahoma, and anyone outside the four states: say we can't see them yet.",
     handoff: ["Billing questions", "Complaints", "Anything urgent", "Insurance questions"],
     hours: "8 AM to 8 PM",
     tone: "Warm",
     formality: "Conversational",
-    never: "A specific therapist, a time slot that isn't on the booking page, prices, insurance coverage before it's verified, or any clinical advice",
+    never: "A therapist or time slot that isn't on the booking page, insurance coverage before it's verified, a diagnosis or evaluation result, or any clinical advice",
     ...VOICE_CLIENT,
     samples: "Warm",
     ...WORKING,
@@ -346,7 +385,7 @@ const ANSWERS: Record<EmployeeKind, A> = {
   social: {
     goal: ["Bring in clients", "Recruit staff"],
     success90: "3 posts a week going out on time, sounding like Legacy, with people booking from them",
-    first: "Instagram and Facebook posts on what to expect in therapy, couples counseling and adult assessments",
+    first: "Instagram and Facebook posts on what to expect in therapy, couples counseling, adult evaluations and therapy for kids and teens",
     formality: "Conversational",
     emoji: "One at most",
     hashtags: "2 or 3 at the end",
@@ -354,7 +393,7 @@ const ANSWERS: Record<EmployeeKind, A> = {
     platforms: ["Instagram", "Facebook", "LinkedIn"],
     audience: "Adults and couples in Oklahoma, Colorado, Texas and Florida thinking about starting therapy",
     often: "3 a week",
-    pillars: "What to expect in therapy; relationships and couples counseling (P.U.L.S.E.™); adult ADHD and mental health assessments; everyday mental health tips; we're hiring",
+    pillars: "What to expect in therapy; relationships and couples counseling (P.U.L.S.E.™); adult ADHD, autism and ADA accommodation evaluations; kids, teens and parents (play therapy with Amanda); everyday mental health tips; we're hiring",
     imageStyle: "Photos for people, illustrations for ideas",
     imageNotes: "Real-looking, diverse adults and couples; calm settings; nothing that looks like a real client; no stock handshakes",
     avoid: "Clients or anything that could identify one, testimonials from clients, before-and-after promises, crisis content without 988, politics",
@@ -366,11 +405,11 @@ const ANSWERS: Record<EmployeeKind, A> = {
   blog: {
     goal: ["Bring in clients", "Rank on Google"],
     success90: "Two articles a month ranking for local therapy searches and sending readers to book",
-    first: "An article on what to expect in a first therapy session, and one on adult ADHD assessments by telehealth",
+    first: "An article on adult autism evaluations by telehealth, and one on asking for ADA accommodations at work",
     reader: "Clients and families",
-    questions: "How to find a therapist in Oklahoma City, whether insurance covers therapy, what couples counseling is like, how adult ADHD is assessed, whether online therapy works",
-    topics: "Starting therapy, couples and relationships, family therapy, adult ADHD, anxiety and depression in everyday life, telehealth",
-    keywords: "therapist Oklahoma City, couples counseling Oklahoma City, adult ADHD assessment Oklahoma, online therapy Oklahoma, online therapy Texas, online therapy Colorado, online therapy Florida",
+    questions: "How to find a therapist in Oklahoma City, whether insurance covers therapy, what couples counseling is like, how adult ADHD and autism are evaluated, how to ask for ADA accommodations, therapy and play therapy for kids, whether online therapy works",
+    topics: "Starting therapy, couples and relationships, kids and teens, parenting, adult ADHD and autism, workplace accommodations, anxiety, depression, trauma and grief, telehealth",
+    keywords: "therapist Oklahoma City, couples counseling Oklahoma City, adult ADHD evaluation Oklahoma, adult autism evaluation online, ADA accommodation evaluation, play therapy Oklahoma, teen therapy Oklahoma City, online therapy Texas, online therapy Colorado, online therapy Florida",
     length: "1,200 words",
     often: "Twice a month",
     citations: "Cite a source for every fact",
@@ -384,12 +423,12 @@ const ANSWERS: Record<EmployeeKind, A> = {
   website: {
     goal: ["Book consultations", "Build trust", "Recruit staff"],
     success90: "A site that turns visitors into booked first sessions",
-    first: "The home page and a booking page that embeds the new booking widget",
+    first: "An insurance and fees page that lists every plan and price in one place, then refresh the therapist profiles so each shows states, ages and plans the same way",
     visitors: "Adults, couples and families in Oklahoma, Colorado, Texas and Florida comparing therapists, and prescribers looking for assessments",
-    pages: "Home, book now, couples counseling, adult assessments, insurance and fees, one page for each state served, careers",
+    pages: "Home, services, individual, couples, children and teens, play therapy, adult evaluations (ADHD, autism, ADA), state pages, team and therapist profiles, insurance and fees, careers (workatlegacy.org)",
     cta: "Book an appointment",
-    diff: "In person in Oklahoma City and online in four states; individual, couples and family therapy under one roof; insurance accepted for therapy; adult ADHD and mental health assessments with a written report; culturally competent care",
-    proof: "Founded in 2015; owner has 18 years of clinical experience and is licensed in Oklahoma, Colorado, Texas and Florida",
+    diff: "Online therapy in four states with same-week openings; adults, couples, teens and children under one roof, including a Registered Play Therapist; most major insurance plans accepted; flat-fee adult ADHD, autism and ADA evaluations with a report in 5 to 7 business days; culturally competent, affirming care",
+    proof: "Founded in 2015; five licensed therapists; owner has 18 years of clinical experience, is licensed in Oklahoma, Colorado, Texas and Florida, and was featured on TLC's My 600-lb Life and in InStyle",
     voice: "Warm and personal",
     formality: "Conversational",
     ...VOICE_CLIENT,
@@ -436,7 +475,8 @@ const ANSWERS: Record<EmployeeKind, A> = {
     first: "Find fully licensed therapists in Oklahoma who want telehealth caseloads",
     often: "Weekly",
     mustHave: "An active, unrestricted license; comfortable with telehealth; committed to culturally competent care",
-    licenses: "LPC, LMFT or LCSW, fully licensed in Oklahoma. Colorado, Texas or Florida licenses are a plus for telehealth.",
+    licenses: "LPC, LMFT or LCSW, fully licensed in Oklahoma. Colorado, Texas or Florida licenses are a plus for telehealth. A Registered Play Therapist credential is a plus.",
+    where: "workatlegacy.org (Legacy's careers site)",
     greatFit: "Warm, steady clinicians who keep their notes current, work well with a small team, and care about clients who often get overlooked",
     panel: "Ashley interviews; Angela St. Ville handles the HR paperwork",
     interviewFormat: "Video call",
@@ -507,22 +547,34 @@ async function main() {
   const filled: Record<string, string> = {};
   for (const [k, v] of Object.entries(PROFILE)) {
     const cur = String((org as Record<string, unknown>)[k] ?? "").trim();
-    if (!cur || (k === "timezone" && created)) filled[k] = v;
+    if (cur === v) continue;
+    if (!cur || (k === "timezone" && created) || cur === String(V1.profile[k] ?? "").trim()) filled[k] = v;
   }
   if (Object.keys(filled).length) await db.updateOrganization(org.id, filled);
 
   // Brain entries: skip titles that exist.
-  const have = new Set((await db.listKnowledgeByOrg(org.id)).map((k) => k.title.trim().toLowerCase()));
+  const brain = await db.listKnowledgeByOrg(org.id);
   let brainAdded = 0;
+  let brainUpdated = 0;
   for (const e of ENTRIES) {
-    if (have.has(e.title.toLowerCase())) continue;
-    const saved = await db.createKnowledgeItem({ organizationId: org.id, title: e.title, category: e.category as never, kind: "fact", content: e.content });
-    if (saved) indexKnowledge(saved);
-    brainAdded++;
+    const cur = brain.find((k) => k.title.trim().toLowerCase() === e.title.toLowerCase());
+    if (!cur) {
+      const saved = await db.createKnowledgeItem({ organizationId: org.id, title: e.title, category: e.category as never, kind: "fact", content: e.content });
+      if (saved) indexKnowledge(saved);
+      brainAdded++;
+      continue;
+    }
+    // Update only what this script wrote last time; your own edits stay.
+    const old = V1.entries.find((x) => x.title === e.title);
+    if (cur.content.trim() !== e.content.trim() && old && cur.content.trim() === old.content.trim()) {
+      const saved = await db.updateKnowledgeItem(cur.id, org.id, { content: e.content });
+      if (saved) indexKnowledge(saved);
+      brainUpdated++;
+    }
   }
   console.log(`Workspace: ${org.name} (#${org.id})${created ? " created" : ""}`);
   console.log(`Profile fields filled: ${Object.keys(filled).length ? Object.keys(filled).join(", ") : "none (already set)"}`);
-  console.log(`Brain entries added: ${brainAdded} of ${ENTRIES.length}${brainAdded < ENTRIES.length ? " (the rest were already there)" : ""}`);
+  console.log(`Brain entries: ${brainAdded} added, ${brainUpdated} updated, ${ENTRIES.length - brainAdded - brainUpdated} already current or edited by you`);
 
   for (const emp of await db.listEmployeesByOrg(org.id)) {
     if (emp.kind === "custom") continue;
@@ -540,7 +592,9 @@ async function main() {
       } else if (q.type === "choice" && (typeof v !== "string" || !q.options?.includes(v))) throw new Error(`${kind}.${k}: "${v}" is not an option`);
       if (q.type === "multi" && (!Array.isArray(v) || v.some((x) => !q.options?.includes(x)))) throw new Error(`${kind}.${k}: not all options are real`);
       const has = Array.isArray(current[k]) ? (current[k] as string[]).length > 0 : !!String(current[k] ?? "").trim();
-      if (has) continue;
+      if (same(current[k], v)) continue;
+      // Fill blanks, and update answers this script gave before; never overwrite your own answer.
+      if (has && !same(current[k], V1.answers[kind]?.[k])) continue;
       answers[k] = v;
       added++;
     }
@@ -585,7 +639,7 @@ async function main() {
       const v = answers[q.key];
       return Array.isArray(v) ? !v.length : !String(v ?? "").trim();
     });
-    console.log(`${emp.name} (${emp.roleTitle}): ${added} answers added, ${lines} practice lines, ${missing.length} left for you${missing.length ? `: ${missing.map((q) => q.label).join("; ")}` : ""}`);
+    console.log(`${emp.name} (${emp.roleTitle}): ${added} answers added or updated, ${lines} practice lines, ${missing.length} left for you${missing.length ? `: ${missing.map((q) => q.label).join("; ")}` : ""}`);
   }
   console.log(`\nDone. Workspace: ${org.name} (#${org.id}). Every employee is marked onboarded, so none will send a welcome message.`);
 }
