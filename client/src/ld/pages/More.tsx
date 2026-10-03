@@ -14,6 +14,7 @@ export default function More() {
     ["Activity", "/activity", Icons.activity],
     ["Brain", "/brain", Icons.brain],
     ["Workspace", "/workspace", Icons.workspace],
+    ["Handbook", "/handbook", Icons.workspace],
     ["Integrations", "/integrations", Icons.integrations],
     ["Team", "/team", Icons.team],
   ];

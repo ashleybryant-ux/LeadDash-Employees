@@ -17,6 +17,8 @@ import Integrations from "./ld/pages/Integrations";
 import Team from "./ld/pages/Team";
 import Account from "./ld/pages/Account";
 import More from "./ld/pages/More";
+import Handbook from "./ld/pages/Handbook";
+import BaseInstructions from "./ld/pages/BaseInstructions";
 import { Rail, Switcher } from "./ld/ui";
 import "./ld/theme.css";
 import { useEffect } from "react";
@@ -57,6 +59,8 @@ function Router() {
       <Route path="/team" component={Team} />
       <Route path="/account" component={Account} />
       <Route path="/more" component={More} />
+      <Route path="/handbook" component={Handbook} />
+      <Route path="/base" component={BaseInstructions} />
       <Route>{() => <Redirect to="/chats" />}</Route>
     </Switch>
   );

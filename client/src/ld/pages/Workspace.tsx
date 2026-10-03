@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, OrgLogo, Page } from "../ui";
@@ -170,6 +171,7 @@ export default function Workspace() {
           {o.logoUrl ? <img src={o.logoUrl} alt={`${o.name} logo`} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : initials(o.name)}
         </div>
         <h1 className="ld-h1">{o.name}</h1>
+        <Link href="/handbook" className="ld-btn" style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none", color: "#14221c" }}>Handbook</Link>
       </div>
 
       <UsageCard />

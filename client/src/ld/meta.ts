@@ -44,7 +44,7 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
   coo: ["Write Monday's agenda", "What did we decide in my last meeting?", "Skip my next meeting", "How did we do this week?"],
   projects: ["Plan a launch", "What's behind this week?", "Move launch day", "Send me the status report"],
   grants: ["Find grants for this quarter", "Find pitch competitions", "Apply to the best fit", "Check application status"],
-  speaking: ["Find speaking events for the spring", "Find paid speaking events", "Apply to the best fit", "Check application status"],
+  speaking: ["Find speaking events for the spring", "Find media requests I can answer", "Find podcasts to pitch me to", "Check what's waiting on me"],
   prospecting: ["Find practices in a state", "Find practices hiring", "Find referral partners", "What did you find this week?"],
   outreach: ["Start outreach for new prospects", "Who replied this week?", "Ask Malik about demos"],
   leads: ["How many meetings this week?", "Any new leads?", "Ask Jada who replied"],
@@ -95,9 +95,9 @@ export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
     "No client names or health information.",
   ],
   speaking: [
-    "Every event comes with its call-for-proposals page.",
-    "Nothing is submitted without your Submit tap.",
-    "No invented credentials or talk history.",
+    "Every event and media opportunity comes with its source page.",
+    "Nothing is submitted or pitched without your approval.",
+    "No invented credentials, talk history or past press.",
   ],
   social: [
     "Posts wait for your approval before anything is posted.",
@@ -181,14 +181,17 @@ export function initials(name: string) {
 }
 
 /** What each employee's opportunity tabs are called. */
-export const OPP_TABS: Record<"grants" | "speaking", { key: "grant" | "pitch" | "accelerator" | "speaking" | "bid"; label: string }[]> = {
+export const OPP_TABS: Record<"grants" | "speaking", { key: "grant" | "pitch" | "accelerator" | "speaking" | "bid" | "media"; label: string }[]> = {
   grants: [
     { key: "grant", label: "Grants" },
     { key: "pitch", label: "Pitch competitions" },
     { key: "accelerator", label: "Accelerators" },
     { key: "bid", label: "Bids" },
   ],
-  speaking: [{ key: "speaking", label: "Speaking" }],
+  speaking: [
+    { key: "speaking", label: "Speaking" },
+    { key: "media", label: "Media" },
+  ],
 };
 
 export const APP_STATUS: Record<string, { label: string; cls: "green" | "amber" | "gray" | "red" }> = {

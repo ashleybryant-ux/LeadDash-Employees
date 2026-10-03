@@ -8,11 +8,11 @@ import { APP_STATUS, CHANNEL_LABEL, OPP_TABS, fmtDate, openDownload, parseJson, 
 import type { AppRow, Award, OppRow, Question, Requirements, Attachment } from "../types";
 
 type EmpKind = "grants" | "speaking";
-type OppKind = "grant" | "pitch" | "accelerator" | "speaking" | "bid";
+type OppKind = "grant" | "pitch" | "accelerator" | "speaking" | "bid" | "media";
 
-const HOST_LABEL: Record<OppKind, string> = { grant: "Funder", pitch: "Host", accelerator: "Program", speaking: "Organizer", bid: "Agency" };
-const AMOUNT_LABEL: Record<OppKind, string> = { grant: "Award", pitch: "Prize", accelerator: "Offer", speaking: "Pays", bid: "Goes in" };
-const THING: Record<OppKind, string> = { grant: "Opportunity", pitch: "Competition", accelerator: "Program", speaking: "Event", bid: "Bid" };
+const HOST_LABEL: Record<OppKind, string> = { grant: "Funder", pitch: "Host", accelerator: "Program", speaking: "Organizer", bid: "Agency", media: "Outlet" };
+const AMOUNT_LABEL: Record<OppKind, string> = { grant: "Award", pitch: "Prize", accelerator: "Offer", speaking: "Pays", bid: "Goes in", media: "Audience" };
+const THING: Record<OppKind, string> = { grant: "Opportunity", pitch: "Competition", accelerator: "Program", speaking: "Event", bid: "Bid", media: "Media" };
 
 const OPP_COLS = "minmax(0,2.2fr) minmax(0,1.3fr) 130px 140px 130px 128px";
 const APP_COLS = "minmax(0,2.4fr) minmax(0,1.4fr) 130px 160px 128px";
@@ -71,7 +71,7 @@ export default function ApplyWork({ emp }: { emp: EmployeeRow }) {
           Add
         </button>
         <button type="button" className="ld-btn p" disabled={find.isPending} onClick={() => { setTab("opps"); find.mutate({ organizationId: currentOrgId, employee: empKind, kind }); }}>
-          {find.isPending ? "Searching..." : empKind === "speaking" ? "Find events" : "Find more"}
+          {find.isPending ? "Searching..." : kind === "media" ? "Find press" : empKind === "speaking" ? "Find events" : "Find more"}
         </button>
       </div>
       <ErrorLine error={find.error} />
@@ -141,10 +141,10 @@ function AddPanel({ empKind, onDone }: { empKind: EmpKind; onDone: () => void })
   return (
     <div style={{ background: "#f4f8f6", padding: "16px 18px", borderBottom: "1px solid #e3e9e6", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <span className="ld-st">{empKind === "speaking" ? "Add an event" : "Add an opportunity"}</span>
+        <span className="ld-st">{empKind === "speaking" ? "Add an event or media request" : "Add an opportunity"}</span>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)", gap: 12, alignItems: "end" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <label htmlFor="add-link" className="ld-lbl">{empKind === "speaking" ? "Call for proposals link" : "Page link"}</label>
+            <label htmlFor="add-link" className="ld-lbl">{empKind === "speaking" ? "Call for proposals or request link" : "Page link"}</label>
             <input id="add-link" className="ld-in lg" type="text" value={url} disabled={Boolean(file)} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -192,7 +192,7 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen }: {
         <span>{kind === "bid" ? "Fit" : `${emp.name}'s call`}</span>
         <span />
       </div>
-      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : `Nothing here yet. Press ${emp.kind === "speaking" ? "Find events" : "Find more"}, add one, or ask ${emp.name} in Chat.`}</div>}
+      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : `Nothing here yet. Press ${kind === "media" ? "Find press" : emp.kind === "speaking" ? "Find events" : "Find more"}, add one, or ask ${emp.name} in Chat.`}</div>}
       {list.map((o) => {
         const isOpen = open === o.id;
         const app = apps.find((a) => a.opportunityId === o.id);
@@ -227,7 +227,13 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen }: {
             {isOpen && (
               <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  {o.kind === "speaking" ? (
+                  {o.kind === "media" ? (
+                    <>
+                      {o.audience && <KV label="Audience">{o.audience}</KV>}
+                      {o.angle && <KV label="Angle to pitch">{o.angle}</KV>}
+                      {o.fitReason && <KV label={o.fitCall === "skip" ? "Why skip" : "Why it fits"}>{o.fitReason}</KV>}
+                    </>
+                  ) : o.kind === "speaking" ? (
                     <>
                       {o.audience && <KV label="Audience">{o.audience}</KV>}
                       {o.angle && <KV label="Session to pitch">{o.angle}</KV>}

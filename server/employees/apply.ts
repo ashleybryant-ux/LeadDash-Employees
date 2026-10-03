@@ -139,11 +139,11 @@ const PLACEHOLDER = /\[[A-Z0-9][A-Z0-9 ,'&/()-]{2,60}\]/g;
 
 export const KINDS_FOR: Record<string, OppKind[]> = {
   grants: ["grant", "pitch", "accelerator", "bid"],
-  speaking: ["speaking"],
+  speaking: ["speaking", "media"],
 };
 
 export function employeeKindFor(kind: OppKind) {
-  return kind === "speaking" ? "speaking" : "grants";
+  return kind === "speaking" || kind === "media" ? "speaking" : "grants";
 }
 
 const KIND_WORDS: Record<OppKind, { thing: string; host: string; amount: string }> = {
@@ -152,6 +152,7 @@ const KIND_WORDS: Record<OppKind, { thing: string; host: string; amount: string 
   accelerator: { thing: "accelerator program", host: "program", amount: "investment or stipend" },
   speaking: { thing: "speaking opportunity", host: "organizer", amount: "pay or honorarium" },
   bid: { thing: "bid", host: "agency", amount: "contract value" },
+  media: { thing: "media opportunity", host: "outlet", amount: "audience" },
 };
 
 const DEFAULT_QUESTIONS: Record<OppKind, string[]> = {
@@ -181,6 +182,7 @@ const DEFAULT_QUESTIONS: Record<OppKind, string[]> = {
     "What do you want to accomplish during the program?",
   ],
   speaking: ["Session title", "Session description", "Three learning objectives", "Speaker bio", "Audience level and format"],
+  media: ["Subject line", "The story angle and why it matters now", "Why this expert is the right source", "Two or three talking points", "Short bio and contact"],
   bid: [
     "Company overview and relevant experience",
     "Understanding of the scope of work",
@@ -328,6 +330,11 @@ const FIND_JOB: Record<OppKind, string> = {
 - Search widely, one angle per search: the state's procurement portal, counties and cities where the company works, school districts, universities, tribal health systems, state health and behavioral health agencies, and federal notices that fit.
 - Keep only bids for what the company actually provides. Note the due date, how responses are submitted, and the deadline for questions.
 - Leave out bids whose due date has passed.`,
+  media: `Your job: find media opportunities open now where the expert in the Brain can be quoted, interviewed or published. You are the publicist.
+- Search widely, one angle per search: journalist source requests (Qwoted, Featured, Help a B2B Writer, SourceBottle, #journorequest), podcasts in the expert's field that book guests and say how to pitch, reporters and newsletters that covered the expert's topics in the last 90 days, publications that accept contributed articles or op-eds, and local TV and radio segments in the expert's state.
+- Keep only what fits the expert's topics and credentials in the Brain. A request with a deadline that has passed is out.
+- Note the outlet, the reporter or host by name when public, the deadline, how to pitch (form, email, platform), the audience size or reach when stated, and the angle this expert should take.
+- Prefer outlets the expert's buyers and clients read, then national outlets in the field, then general media.`,
   speaking: `Your job: find conferences, summits and events taking speaker proposals now that fit the speaker in the Brain.
 - Only events with an open call for proposals, speaker application, or a booking contact. Leave out events whose proposal deadline has passed.
 - Note what the slot pays, the audience, location and event date, and the session this speaker should pitch.`,
@@ -863,6 +870,7 @@ const WRITE_JOB: Record<OppKind, string> = {
   pitch: "You are writing a pitch competition application for the company in the Brain.",
   accelerator: "You are writing an accelerator application for the company in the Brain.",
   speaking: "You are writing a speaker proposal for the speaker in the Brain.",
+  media: "You are the publicist writing a media pitch for the expert in the Brain. Lead with the story and why it matters to this outlet's audience now, then why this expert is the right source, then two or three talking points. Under 200 words unless the outlet asks for more. Never promise exclusives or claim past coverage the Brain does not list.",
   bid: "You are writing a response to a government or agency bid (RFP) for the company in the Brain. Answer each section directly and show how each requirement is met. Never claim a capability the Brain does not support: say \"partly met\" and give the roadmap answer instead. Never invent a price; leave [PRICE] for the person to fill.",
 };
 
@@ -1218,6 +1226,8 @@ export async function reviewApplication(orgId: number, appId: number) {
     ? reqs.scoring
     : opp.kind === "speaking"
       ? [{ name: "Relevance to the audience", points: 40 }, { name: "Clear takeaways", points: 30 }, { name: "Speaker credibility", points: 30 }]
+      : opp.kind === "media"
+        ? [{ name: "Newsworthy angle", points: 40 }, { name: "Fit with the outlet's audience", points: 30 }, { name: "Expert credibility", points: 30 }]
       : opp.kind === "grant"
         ? [{ name: "Need", points: 25 }, { name: "Program design", points: 35 }, { name: "Evaluation", points: 20 }, { name: "Budget", points: 20 }]
         : [{ name: "Problem and solution", points: 30 }, { name: "Traction", points: 25 }, { name: "Market and model", points: 25 }, { name: "Team", points: 20 }];

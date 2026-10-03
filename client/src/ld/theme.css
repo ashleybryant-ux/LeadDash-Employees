@@ -215,3 +215,16 @@ html.ld-review .ld-emphead { top: 34px !important; }
   .ld-hours { position: relative !important; margin-top: 12px !important; }
 }
 .ld-chatlist > * { flex-shrink: 0; }
+
+/* Handbook editors: compact rows of rule inputs */
+.ld-hb-ed { display: grid; grid-template-columns: 28px minmax(0, 1fr) 64px 64px 96px; gap: 8px; align-items: center; padding: 4px 0; }
+.ld-hb-ed > textarea { align-self: start; }
+.ld-btn.ld-hb-mini { width: 64px; height: 32px; padding: 0; }
+.ld-btn.ld-hb-mini.wide { width: 96px; }
+@media (max-width: 640px) {
+  .ld-hb-ed { grid-template-columns: 22px minmax(0, 1fr) 96px; }
+  .ld-hb-ed > .ld-hb-mini:not(.wide) { display: none; }
+}
+.ld-hb-sub { font-size: 13px; font-weight: 800; padding: 6px 0 2px 0; }
+.ld-hb-m { display: none; }
+@media (max-width: 760px) { .ld-hb-m { display: inline; } }

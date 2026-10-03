@@ -567,7 +567,7 @@ export type TaskRun = typeof taskRuns.$inferSelect;
 // Taylor's speaking calls)
 // ==========================================
 
-export const OPP_KINDS = ["grant", "pitch", "accelerator", "speaking", "bid"] as const;
+export const OPP_KINDS = ["grant", "pitch", "accelerator", "speaking", "bid", "media"] as const;
 export type OppKind = (typeof OPP_KINDS)[number];
 
 export const opportunities = sqliteTable(
@@ -1233,3 +1233,48 @@ export const usageEvents = sqliteTable(
   (t) => [index("usage_org_time_idx").on(t.organizationId, t.createdAt)]
 );
 export type UsageEvent = typeof usageEvents.$inferSelect;
+
+// ==========================================
+// Handbook: the LeadDash base every employee follows, plus each workspace's additions
+// ==========================================
+
+/** A part of the base handbook that LeadDash staff edited. Parts not here use the text in code. */
+export const handbookParts = sqliteTable("handbook_parts", {
+  key: text("key").primaryKey(),
+  /** JSON HandbookPart (title, lead, sections). */
+  content: text("content").notNull(),
+  updatedBy: text("updatedBy"),
+  updatedAt: updatedAt(),
+});
+export type HandbookPartRow = typeof handbookParts.$inferSelect;
+
+/** A workspace's own rules under one part of the handbook. */
+export const handbookAdditions = sqliteTable(
+  "handbook_additions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    partKey: text("partKey").notNull(),
+    /** JSON string[]. */
+    rules: text("rules").notNull(),
+    updatedBy: text("updatedBy"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("handbook_add_org_part_idx").on(t.organizationId, t.partKey)]
+);
+export type HandbookAddition = typeof handbookAdditions.$inferSelect;
+
+/** Who changed what in the handbook. organizationId null = the LeadDash base. */
+export const handbookChanges = sqliteTable(
+  "handbook_changes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId"),
+    partKey: text("partKey").notNull(),
+    actorName: text("actorName").notNull(),
+    summary: text("summary").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("handbook_changes_time_idx").on(t.createdAt)]
+);
+export type HandbookChange = typeof handbookChanges.$inferSelect;

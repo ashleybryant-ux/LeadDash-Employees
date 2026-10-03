@@ -76,6 +76,19 @@ describe("employees do real work", () => {
     const talks = await caller(owner).opps.list({ organizationId: orgId, employee: "speaking" });
     expect(talks.map((t) => t.kind)).toEqual(["speaking"]);
     expect((await caller(owner).opps.list({ organizationId: orgId, employee: "grants" })).map((o) => o.title)).toEqual(["Grant A"]);
+
+    // Taylor is also the publicist: media searches land on Taylor's Media tab, with the publicist job in the instructions.
+    calls.length = 0;
+    searchResponse = {
+      queries: ["therapist burnout journalist request"],
+      sources: [{ url: "https://qwoted.com/req/1", title: "Request" }],
+      data: { items: [item({ title: "Reporter needs a therapist on burnout", host: "Health desk", audience: "National readers", angle: "Burnout in group practices", sourceUrl: "https://qwoted.com/req/1", fitScore: 82 })] },
+    };
+    await caller(owner).opps.find({ organizationId: orgId, employee: "speaking", kind: "media" });
+    expect(calls[0].system).toContain("You are the publicist");
+    expect(calls[0].system).toContain("LeadDash Employees Handbook");
+    const taylor = await caller(owner).opps.list({ organizationId: orgId, employee: "speaking" });
+    expect(taylor.map((t) => t.kind).sort()).toEqual(["media", "speaking"]);
     vi.unstubAllGlobals();
   });
 

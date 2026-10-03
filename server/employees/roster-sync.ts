@@ -15,7 +15,8 @@ export async function ensureRoster(organizationId: number) {
     if (current) {
       // Keep the job text current. Names stay as the workspace set them.
       const caps = JSON.stringify(r.capabilities);
-      const retitle = current.roleTitle === OLD_TITLES[r.roleTitle];
+      const old = OLD_TITLES[r.roleTitle];
+      const retitle = Array.isArray(old) ? old.includes(current.roleTitle) : current.roleTitle === old;
       if (current.description !== r.description || current.capabilities !== caps || retitle) {
         await db.updateEmployee(current.id, organizationId, { description: r.description, capabilities: caps, ...(retitle ? { roleTitle: r.roleTitle } : {}) });
       }

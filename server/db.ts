@@ -38,6 +38,9 @@ import {
   salesProspects,
   salesLeads,
   teamActivity,
+  handbookParts,
+  handbookAdditions,
+  handbookChanges,
   type ReviewAccess,
   type HrStage,
   type InsertOpportunity,
@@ -1413,4 +1416,45 @@ export async function createNotetaker(row: typeof notetakerMeetings.$inferInsert
 export async function updateNotetaker(id: number, orgId: number, data: Partial<typeof notetakerMeetings.$inferInsert>) {
   getDb().update(notetakerMeetings).set({ ...data, updatedAt: new Date() }).where(and(eq(notetakerMeetings.id, id), eq(notetakerMeetings.organizationId, orgId))).run();
   return getNotetaker(id, orgId);
+}
+
+// ==========================================
+// Handbook
+// ==========================================
+
+export function listHandbookParts() {
+  return getDb().select().from(handbookParts).all();
+}
+
+export function saveHandbookPart(key: string, content: string, updatedBy: string) {
+  getDb()
+    .insert(handbookParts)
+    .values({ key, content, updatedBy })
+    .onConflictDoUpdate({ target: handbookParts.key, set: { content, updatedBy, updatedAt: new Date() } })
+    .run();
+}
+
+export function deleteHandbookPart(key: string) {
+  getDb().delete(handbookParts).where(eq(handbookParts.key, key)).run();
+}
+
+export function listHandbookAdditions(organizationId: number) {
+  return getDb().select().from(handbookAdditions).where(eq(handbookAdditions.organizationId, organizationId)).all();
+}
+
+export function saveHandbookAddition(organizationId: number, partKey: string, rules: string, updatedBy: string) {
+  getDb()
+    .insert(handbookAdditions)
+    .values({ organizationId, partKey, rules, updatedBy })
+    .onConflictDoUpdate({ target: [handbookAdditions.organizationId, handbookAdditions.partKey], set: { rules, updatedBy, updatedAt: new Date() } })
+    .run();
+}
+
+export function logHandbookChange(data: { organizationId: number | null; partKey: string; actorName: string; summary: string }) {
+  getDb().insert(handbookChanges).values(data).run();
+}
+
+export function listHandbookChanges(organizationId: number | null, limit = 100) {
+  const where = organizationId === null ? isNull(handbookChanges.organizationId) : eq(handbookChanges.organizationId, organizationId);
+  return getDb().select().from(handbookChanges).where(where).orderBy(desc(handbookChanges.id)).limit(limit).all();
 }

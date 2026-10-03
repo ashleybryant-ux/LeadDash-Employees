@@ -52,10 +52,10 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "speaking",
     name: "Taylor",
-    roleTitle: "Speaking Agent",
+    roleTitle: "Speaking Agent and Publicist",
     department: "Revenue",
-    description: "Finds conferences and events taking speaker proposals, tracks the deadlines and writes the pitch. Nothing is submitted without your approval.",
-    capabilities: ["Event search with sources", "Proposal deadlines", "Pitch emails", "Approval before submitting"],
+    description: "Books you on stages and in the press: finds conferences taking speaker proposals, journalist requests, podcasts booking guests and op-ed openings, tracks the deadlines and writes each proposal and pitch. Nothing goes out without your approval.",
+    capabilities: ["Event and media search with sources", "Proposal and pitch deadlines", "Speaker proposals and media pitches", "Approval before anything goes out"],
     searches: true,
     minutesPerTask: 45,
   },
@@ -152,11 +152,11 @@ export const ROSTER: RosterEntry[] = [
 ];
 
 /** Earlier default titles. A workspace still showing one gets the new title; a title someone typed stays. */
-export const OLD_TITLES: Record<string, string> = {
+export const OLD_TITLES: Record<string, string | string[]> = {
   "Chief Operating Officer": "COO",
   "Project Manager": "Projects",
   "Grant Writer": "Grants",
-  "Speaking Agent": "Speaking",
+  "Speaking Agent and Publicist": ["Speaking", "Speaking Agent"],
   "Sales Prospector": "Prospecting",
   "Outreach Writer": "Outreach",
   "New Leads Assistant": "New leads",
@@ -189,7 +189,7 @@ export const BASE_RULES = `Rules for everything you write:
 /** The three Guidelines fields, labeled for each job. */
 export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: string; avoid: string; signAs: string }> = {
   grants: { focus: "Look for", avoid: "Skip", signAs: "Sign proposals as" },
-  speaking: { focus: "Talks to pitch", avoid: "Skip", signAs: "Sign pitches as" },
+  speaking: { focus: "Talks and story topics to pitch", avoid: "Skip", signAs: "Sign pitches as" },
   social: { focus: "Topics", avoid: "Avoid", signAs: "Sign posts as" },
   blog: { focus: "Topics", avoid: "Avoid", signAs: "Author name" },
   website: { focus: "Pages to focus on", avoid: "Avoid", signAs: "Main call to action" },

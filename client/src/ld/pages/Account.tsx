@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ErrorLine, Page, PersonAvatar } from "../ui";
@@ -20,6 +21,12 @@ export default function Account() {
       ) : (
         <>
           <YouCard name={a.name ?? ""} email={a.email} photo={a.avatarUrl} />
+          {a.staff && (
+            <section className="ld-card ld-between" style={{ padding: "14px 18px" }}>
+              <span className="ld-strong">Base instructions</span>
+              <Link href="/base" className="ld-btn" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>Open</Link>
+            </section>
+          )}
           {a.staff && <ReviewCard />}
           <PushCard pushReady={a.pushReady} vapid={a.vapidPublicKey} devices={a.devices} />
           <PrefsCard prefs={a.prefs as Prefs} events={a.events} />

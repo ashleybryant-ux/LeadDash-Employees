@@ -253,7 +253,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
   speaking: build(
     [],
     [
-      job("What kind of speaking?", ["Conferences", "Webinars", "Podcasts", "Panels", "Workshops"], "talks"),
+      job("What should I book you for?", ["Conferences", "Webinars", "Podcasts", "Panels", "Workshops", "News interviews", "Op-eds and articles"], "talks"),
       {
         key: "talks",
         title: "Your talks",
@@ -287,10 +287,21 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
           { key: "often", label: "How often should I look?", type: "choice", options: OFTEN, short: "Look", guide: "terms" },
         ],
       },
+      {
+        key: "press",
+        title: "Press",
+        intro: "What I pitch to reporters and podcasts.",
+        questions: [
+          { key: "pressTopics", label: "Topics you'll comment on as an expert", type: "text", placeholder: "Therapist burnout; why EHRs and marketing tools don't talk; couples and money", short: "Press topics", guide: "press" },
+          { key: "outlets", label: "Outlets and podcasts you want", type: "text", placeholder: "Psychology Today, Counseling Today, The Oklahoman, therapy business podcasts", short: "Want", guide: "press" },
+          { key: "mediaAvoid", label: "Outlets or topics to avoid", type: "text", short: "Avoid in press", guide: "press" },
+        ],
+      },
       voice("pitch"),
     ],
     [
       { key: "talks", title: "What do I pitch?" },
+      { key: "press", title: "What will you talk to reporters about?" },
       { key: "bio", title: "How should I introduce you?" },
       { key: "terms", title: "Fees, travel and dates" },
       { key: "audience", title: "Who should I pitch to?" },

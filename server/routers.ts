@@ -45,6 +45,7 @@ import { TEMPLATES, progress as onboardingProgress, writeDayToDay } from "./empl
 import * as interview from "./employees/interview";
 import * as integrations from "./integrations";
 import * as review from "./review";
+import * as handbook from "./employees/handbook";
 import * as social from "./social";
 import * as sales from "./employees/sales";
 import * as team from "./employees/team";
@@ -1704,6 +1705,63 @@ export const appRouter = router({
       const sent = await pushTo([ctx.user.id], { title: "LeadDash Employees", body: "Push notifications are on for this device.", url: "/account", tag: "test" });
       if (!sent) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No device took the test. Turn push on here first." });
       return { sent };
+    }),
+  }),
+
+  // ==========================================
+  // Handbook: the LeadDash base plus each workspace's additions
+  // ==========================================
+  handbook: router({
+    view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const m = await requireMember(ctx, input.organizationId);
+      const base = handbook.baseHandbook();
+      const extra = handbook.additionsFor(input.organizationId);
+      return {
+        canEdit: m.role === "owner" || m.role === "admin",
+        parts: base.map((p) => ({ key: p.key, title: p.title, lead: p.lead, sections: p.sections, ruleCount: handbook.ruleCount(p), additions: extra[p.key] ?? [] })),
+      };
+    }),
+
+    saveAdditions: protectedProcedure
+      .input(orgInput.extend({ partKey: z.string().max(40), rules: handbook.additionsSchema }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        blockReviewer(ctx);
+        try {
+          return { rules: handbook.saveAdditions(input.organizationId, input.partKey, input.rules, personName(ctx.user)) };
+        } catch (err) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : "Could not save." });
+        }
+      }),
+
+    base: adminProcedure.query(async () => {
+      const base = handbook.baseHandbook();
+      const workspaces = (await db.listAllOrganizationIds()).length;
+      return {
+        workspaces,
+        parts: base.map((p) => ({ key: p.key, title: p.title, lead: p.lead, sections: p.sections, ruleCount: handbook.ruleCount(p), updatedBy: p.updatedBy, updatedAt: p.updatedAt })),
+        changes: db.listHandbookChanges(null, 100).map((c) => ({ id: c.id, part: handbook.partTitle(c.partKey), actorName: c.actorName, summary: c.summary, createdAt: c.createdAt })),
+      };
+    }),
+
+    saveBase: adminProcedure
+      .input(z.object({ partKey: z.string().max(40), part: handbook.partSchema }))
+      .mutation(({ ctx, input }) => {
+        try {
+          const p = handbook.saveBasePart(input.partKey, input.part, personName(ctx.user));
+          return { key: p.key };
+        } catch (err) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : "Could not save." });
+        }
+      }),
+
+    resetBase: adminProcedure.input(z.object({ partKey: z.string().max(40) })).mutation(({ ctx, input }) => {
+      try {
+        handbook.resetBasePart(input.partKey, personName(ctx.user));
+        return { ok: true };
+      } catch (err) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : "Could not reset." });
+      }
     }),
   }),
 
