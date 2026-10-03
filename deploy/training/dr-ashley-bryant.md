@@ -93,7 +93,8 @@ Use only these facts. Anything else needs a source or her confirmation.
 | Area | Fact |
 | --- | --- |
 | Education | PhD in Workforce and Adult Education, Oklahoma State University; MS in Rehabilitation Counseling, Langston University (2012) |
-| Credentials | Licensed Professional Counselor (LPC); Certified Rehabilitation Counselor (CRC) |
+| Credentials | Licensed Professional Counselor (LPC); Certified Rehabilitation Counselor (CRC); Board Certified-TeleMental Health Provider (BC-TMH) |
+| Clinical training | Prolonged exposure therapy for PTSD (trained through the VA's National Center for PTSD); Gottman Method couples work |
 | Licenses | LPC in Oklahoma, Colorado and Texas; LMHC in Florida |
 | Experience | 18 years in mental health; a background in vocational rehabilitation and disability employment |
 | Practice | Owner of Legacy Family Services, a group therapy practice in Oklahoma City |
@@ -108,7 +109,7 @@ Dr. Ashley Bryant is a licensed therapist, TEDx speaker and author with 18 years
 
 ### Longer bio (about 100 words)
 
-Dr. Ashley Bryant, PhD, LPC, CRC, is a licensed therapist, TEDx speaker and author who has spent 18 years in mental health. Her background in vocational rehabilitation and disability employment shapes how she helps organizations build workplaces where people do their best work. She has given more than 100 talks on burnout, workplace mental health and inclusion, and she created the P.U.L.S.E.™ Framework, the foundation of her book Love with PULSE. She owns Legacy Family Services, a group practice in Oklahoma City, and founded LeadDash, a platform that runs behavioral health practices. Her work has been featured on TLC, PBS, FOX and more.
+Dr. Ashley Bryant, PhD, LPC, CRC, is a licensed therapist, TEDx speaker and author who has spent 18 years in mental health. Her background in vocational rehabilitation and disability employment shapes how she helps organizations build workplaces where people do their best work. She has given more than 100 talks on burnout, workplace mental health and inclusion, and she created the P.U.L.S.E.™ Framework, the foundation of her book Love with PULSE. She owns Legacy Family Services, a group practice in Oklahoma City, and founded LeadDash, a platform that runs behavioral health practices. She has been featured on TLC's My 600-lb Life, PBS, NPR, FOX and CBS.
 
 ### Never include unless she asks
 
@@ -117,15 +118,40 @@ Dr. Ashley Bryant, PhD, LPC, CRC, is a licensed therapist, TEDx speaker and auth
 
 ## [past_performance] Media and proof
 
-### Media features she has named
+Every item below was found on a public page on Oct 3, 2026, except the two marked "her own list". Use the outlet names as written.
 
-- TLC (My 600-lb Life), PBS, NPR, FOX (including Good Day DC), US Weekly, Daily Mail, Black News Channel and 11 Alive.
+### TV, radio and magazines
 
-### Proof points
+| Outlet | Where it is documented |
+| --- | --- |
+| TLC, My 600-lb Life (mental health expert) | BlackNews.com (Mar 3, 2026), her Legacy Family Services bio, TherapyDen |
+| PBS | BlackNews.com, TherapyDen |
+| NPR | BlackNews.com, her Legacy Family Services bio |
+| FOX, including FOX 5 and Good Day DC | BlackNews.com, Legacy bio, TherapyDen |
+| CBS | BlackNews.com, Legacy bio |
+| US Weekly, Life & Style, InTouch Weekly, Daily Mail | TherapyDen |
+| InStyle magazine | Legacy bio |
+| BlackDoctor.org | Legacy bio |
+| Black News Channel, 11 Alive | Her own list (2023); not found online |
 
-- TEDx speaker.
+### Her trademark win in the news
+
+- First reported by KFOR in Oklahoma City, then carried by NewsNation, WFLA and CW39 ("Oklahoma woman represents self in trademark fight with DoorDash and wins").
+- BlackNews.com, Mar 3, 2026: "Black Woman Therapist Defeats DoorDash in Federal Trademark Battle, Without a Lawyer."
+- BlackNews.com, Jul 8, 2026: "It's Official. Black Woman Therapist Who Beat DoorDash Without a Lawyer Now Holds Federal Trademark."
+- The facts as reported: DoorDash, represented by Kilpatrick Townsend & Stockton, opposed the LeadDash trademark; she represented herself for eight months; the opposition was dismissed with prejudice on Feb 18, 2026; registration No. 8,227,151 issued Apr 28, 2026.
+
+### Quotes she has given the press (use word for word, with the outlet)
+
+- "I built LeadDash to serve mental health professionals, a community that is already underserved and overworked. My brand has nothing to do with food delivery." (BlackNews.com)
+- "I knew that. The facts showed that. And I wasn't going to let the size of their legal team change what was true." (BlackNews.com)
+- "The size of the company across from you doesn't decide the outcome. The facts do. And you are allowed to fight for what you built." (BlackNews.com)
+
+### Other proof points
+
+- TEDx speaker (event name and year still needed).
 - More than 100 speaking engagements.
-- Defended her company's federal trademark against an opposition from DoorDash, without a lawyer, and won (dismissed with prejudice, February 2026). It is a strong founder story for press and podcasts about entrepreneurship.
+- Profiled by Voyage Dallas ("Meet Ashley Bryant").
 - Built a group practice while working a separate full-time job, then built software to run it.
 
 ### What is not on file yet
@@ -178,5 +204,5 @@ Use a placeholder for any of these until Dr. Ashley answers.
 - TEDx event name and year, for bios and pitches.
 - Testimonials and past event names she approves for public use.
 - Where her headshots, speaker one-sheet and media kit live.
-- Her website lists "15+ years clinical experience" and "18+ years in mental health": which number to use where.
+- Years of experience differ across her pages (TherapyDen says 16 years in clinical practice; her website says 15+ years clinical and 18+ years in mental health): which number to use where.
 - Any new talks beyond the four on her website.
