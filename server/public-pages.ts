@@ -18,7 +18,7 @@ body{margin:0;background:#F8FAFB;font-family:'Plus Jakarta Sans',system-ui,-appl
 a{color:#1b6b4a}
 .top{min-height:68px;background:#fff;border-bottom:1px solid #e3e9e6;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 48px}
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;color:#14221c;text-decoration:none}
-.lg{width:34px;height:34px;border-radius:9px;background:#12211d;color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.lg{width:34px;height:34px;border-radius:9px;display:block;flex-shrink:0}
 .nav{display:flex;align-items:center;gap:24px;font-size:14px;font-weight:700}
 .nav a{color:#3d4c45;text-decoration:none}
 .nav a[aria-current=page]{color:#14221c;text-decoration:underline;text-underline-offset:4px}
@@ -85,7 +85,7 @@ function shell(key: Key, title: string, description: string, body: string) {
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="/"><span class="lg">LD</span>LeadDash Employees</a>
+  <a class="brand" href="/"><img class="lg" src="/brand/icon.png" alt="" width="34" height="34">LeadDash Employees</a>
   <nav class="nav" aria-label="Site"><a href="/privacy"${cur("privacy")}>Privacy</a><a href="/terms"${cur("terms")}>Terms</a><a class="btn" href="/signin">Sign in</a></nav>
 </header>
 ${body}

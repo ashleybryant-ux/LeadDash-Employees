@@ -176,9 +176,9 @@ export function Rail({ active }: { active: RailKey }) {
         type="button"
         aria-label="Switch workspace"
         onClick={() => setSwitcher((v) => !v)}
-        style={{ width: 44, height: 44, borderRadius: 11, background: "#fff", color: "#12211d", border: 0, font: "inherit", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 12 }}
+        style={{ width: 44, height: 44, borderRadius: 11, background: "transparent", border: 0, padding: 0, cursor: "pointer", marginBottom: 12 }}
       >
-        LD
+        <img src="/brand/icon.png" alt="LeadDash Employees" width={44} height={44} style={{ display: "block", width: 44, height: 44, borderRadius: 11 }} />
       </button>
       {item("chats", "Chats", "/chats", Icons.chats)}
       {item("activity", "Activity", "/activity", Icons.activity)}

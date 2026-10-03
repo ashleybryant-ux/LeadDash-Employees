@@ -29,7 +29,7 @@ export default function More() {
       </Link>
       <div className="ld-card" style={{ overflow: "hidden" }}>
         <button type="button" style={{ ...row, borderBottom: "1px solid #eef2f0" }} onClick={() => setSwitcher((v) => !v)}>
-          <span style={{ width: 22, height: 22, borderRadius: 6, background: "#12211d", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>LD</span>
+          <img src="/brand/icon.png" alt="" width={22} height={22} style={{ width: 22, height: 22, borderRadius: 6, display: "block" }} />
           <span style={{ flex: 1 }}>Workspace: {currentOrg?.name ?? "Choose"}</span>
           {Icons.chevron}
         </button>
