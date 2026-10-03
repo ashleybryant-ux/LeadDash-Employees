@@ -13,6 +13,13 @@ describe("company training", () => {
     expect(s.some((x) => /—/.test(x.content))).toBe(false);
   });
 
+  it("the Dr. Ashley Bryant personal brand file parses the same way", () => {
+    const s = parseTraining(fs.readFileSync("deploy/training/dr-ashley-bryant.md", "utf8"));
+    expect(s.map((x) => x.title)).toContain("Company training: Keynotes and workshops");
+    expect(s.every((x) => x.content.length > 100 && x.content.length < 6000)).toBe(true);
+    expect(s.some((x) => /\u2014/.test(x.content))).toBe(false);
+  });
+
   it("loads into one workspace's Brain, and loading again updates instead of duplicating", async () => {
     const { orgId } = await makeWorkspace("training");
     const text = fs.readFileSync("deploy/training/leaddash.md", "utf8");
