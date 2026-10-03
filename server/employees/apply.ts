@@ -249,8 +249,11 @@ const FOUND_SCHEMA = obj({
 });
 
 const FIND_JOB: Record<OppKind, string> = {
-  grant: `Your job: find grants that are open now.
-- Read the legal entity in the Brain. Most foundation grants fund 501(c)(3) nonprofits only. For a for-profit, mark a nonprofit-only grant "partner" if it allows a nonprofit lead applicant with the business as a partner or contractor, otherwise "skip". Government contracts and small-business programs often accept for-profits.
+  grant: `Your job: find grants and funding RFPs that are open now, from every kind of funder, not only federal listings.
+- Search widely, one angle per search, and use the words funders use: grant, RFP, RFA, NOFO, request for applications, funding opportunity, call for proposals.
+- Angles to cover: the workspace's state agencies (health, mental health and substance use, Medicaid, workforce, commerce) and the state's procurement or bid portal; counties and cities where the workspace operates; the state's community foundations and health foundations; national private foundations; hospital systems, health plans and corporate giving programs; universities and research partners looking for community partners; and federal programs (the Grants.gov list below is only one source).
+- Read the legal entity in the Brain. Most foundation grants fund 501(c)(3) nonprofits only. For a for-profit, mark a nonprofit-only grant "partner" if it allows a nonprofit lead applicant with the business as a partner or contractor, otherwise "skip". Government contracts, state RFPs and small-business programs often accept for-profits.
+- SAM.gov registration only matters for federal awards; never skip a state, local or foundation opportunity because of it.
 - Leave out anything whose deadline has passed. Prefer funders in the workspace's state, then national programs.`,
   pitch: `Your job: find startup pitch competitions taking applications now that fit this company.
 - Search widely, one angle per search: the company's state and city (state innovation agencies, universities, chambers, startup weeks), its region, its sector (health tech, software, SaaS), founder-focused competitions (women founders, Black founders, veteran founders) when the Brain says the founder qualifies, corporate and bank-sponsored competitions, and national virtual competitions.

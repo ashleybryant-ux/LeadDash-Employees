@@ -210,7 +210,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         intro: "What every funder asks first.",
         questions: [
           { key: "status", label: "Tax status", type: "choice", options: ["501(c)(3) nonprofit", "LLC or for-profit", "Fiscal sponsor", "Not sure"], short: "Tax status", guide: "org" },
-          { key: "sam", label: "SAM.gov registration", type: "choice", options: ["Registered, with a UEI", "In progress", "Not registered"], short: "SAM.gov", guide: "org" },
+          { key: "sam", label: "SAM.gov registration", type: "choice", options: ["Registered, with a UEI", "In progress", "Not registered"], note: "Only federal awards need it. State, local and foundation grants don't.", short: "SAM.gov", guide: "org" },
           { key: "staff", label: "Staff size and service area", type: "text", placeholder: "14 clinicians; Oklahoma, Logan and Canadian counties", short: "Staff and area", guide: "org" },
           { key: "served", label: "People served per year", type: "text", placeholder: "About 1,200 clients in 2025", short: "Served per year", guide: "org" },
         ],
