@@ -546,8 +546,9 @@ export async function sendChatMessage(opts: {
   try {
     const history = await db.listChatMessages(opts.organizationId, emp.id, 30);
     const actions = (ACTIONS[emp.kind] ?? ["none"]).filter((a) => a !== "none");
-    const { system } = await tasks.systemPromptFor(
+    const { system } = await tasks.systemPromptAbout(
       emp,
+      opts.text,
       `You are chatting with ${opts.authorName}. Answer questions about your work directly and briefly.
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".

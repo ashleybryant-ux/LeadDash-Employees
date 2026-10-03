@@ -12,6 +12,9 @@ export const CATEGORY_LABELS: Record<KnowledgeCategory, string> = {
   speaking: "Speaking",
 };
 
+/** Documents and pages longer than this are searched per task rather than pasted whole. */
+export const LONG_DOC = 6000;
+
 /**
  * The Brain is everything an employee knows about the workspace: the profile
  * fields from Settings plus every Brain entry. Every employee gets it on
@@ -40,7 +43,15 @@ export function formatBrain(org: Organization | null, entries: OrganizationKnowl
     if (items.length === 0) continue;
     lines.push("", `## ${CATEGORY_LABELS[cat]}`);
     for (const item of items) {
-      lines.push(`### ${item.title}${item.sourceUrl ? ` (${item.sourceUrl})` : ""}`, item.content.trim().slice(0, 6000));
+      const head = `### ${item.title}${item.sourceUrl ? ` (${item.sourceUrl})` : ""}`;
+      // Long uploaded documents and pages (books, playbooks) are searched per task instead of
+      // pasted into every task: their best-fitting passages appear under "From your documents".
+      if ((item.kind === "document" || item.kind === "webpage") && item.content.trim().length > LONG_DOC) {
+        const size = item.pages ? `${item.pages} ${item.pagesUnit ?? "pages"}` : `${Math.round(item.content.length / 1000)}k characters`;
+        lines.push(head, `(${item.kind === "document" ? "Document" : "Web page"} on file, ${size}. The passages that fit each task appear under "From your documents".)`);
+        continue;
+      }
+      lines.push(head, item.content.trim().slice(0, 6000));
     }
   }
   const images = entries.filter((e) => e.kind === "image");

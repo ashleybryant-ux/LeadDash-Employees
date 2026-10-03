@@ -8,7 +8,7 @@ import * as integrations from "../integrations";
 import { notify } from "../notify";
 import { afterSent, localParts, postNow } from "../social";
 import { partsIn, zonedToUtc } from "./schedule";
-import { actor, employeeFor, systemPromptFor, withRealSource, working } from "./tasks";
+import { actor, employeeFor, systemPromptAbout, systemPromptFor, withRealSource, working } from "./tasks";
 import { gate, handoff, logActivity, workLink } from "./team";
 import { NPI_HOST, npiKinds, npiPractices, parseArea, type NpiPractice } from "./npi";
 
@@ -312,8 +312,9 @@ export async function startOutreach(orgId: number, ids: number[]) {
     if (already) continue;
     const noteWanted = settings.linkedin.on && settings.linkedin.note;
     const seq = await working(jada, async () => {
-      const { system } = await systemPromptFor(
+      const { system } = await systemPromptAbout(
         jada,
+        `${p.kind === "referral" ? "referral partner" : "prospect"} offer outreach email sequence follow up`,
         `Your job: write a 3-email sequence to one ${p.kind === "referral" ? "possible referral partner" : "prospect"}, from the owner.
 - Email 1: 4 to 6 short lines. Open with one real thing from the research, say what ${p.kind === "referral" ? "the practice offers the people they see" : "the workspace offers"} in one sentence, then ask for ${p.kind === "referral" ? "a short call or a time to drop off information" : "a short meeting"} and give the booking link. Sign with the signer given.
 - Email 2 (3 business days later, only if no reply): 1 or 2 sentences that add one new useful fact and the link.
@@ -581,8 +582,9 @@ export async function replyToLead(orgId: number, leadId: number) {
   const three = pickThree(open.times, tz);
   const therapy = settings.sells === "therapy";
   const out = await working(malik, async () => {
-    const { system } = await systemPromptFor(
+    const { system } = await systemPromptAbout(
       malik,
+      `${lead.message ?? ""} lead reply book meeting`,
       `Your job: reply to a new ${therapy ? "inquiry from someone looking for care" : "lead"} within minutes, from the owner.
 - 3 to 6 short lines. Thank them, answer what they asked only if the Brain has the answer, then offer the meeting times given (one per line, exactly as written) and the booking link.
 - If no times are given, ask which days and times work for them and include the booking link if one is given.

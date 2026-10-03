@@ -7,6 +7,7 @@ import { loadBrain } from "./brain";
 import { BASE_RULES, rosterEntry } from "./roster";
 import { guidelinesText } from "./interview";
 import { handbookText } from "./handbook";
+import { findPassages, formatPassages } from "./kb";
 import { recordTask, withUsage } from "../usage";
 
 // ==========================================
@@ -27,7 +28,18 @@ export async function employeeFor(organizationId: number, kind: EmployeeKind): P
   return emp;
 }
 
-export async function systemPromptFor(emp: AIEmployee, job: string) {
+/**
+ * Everything an employee knows for one task: the handbook, the job, the rules,
+ * the owner's Guidelines, the Brain, and the passages from uploaded documents
+ * and web pages (books, playbooks, guides) that best fit the task. `about` is
+ * what the task is about (a post's topic, the person's message); the job text
+ * is searched when it is missing.
+ */
+export async function systemPromptAbout(emp: AIEmployee, about: string, job: string) {
+  return systemPromptFor(emp, job, about);
+}
+
+export async function systemPromptFor(emp: AIEmployee, job: string, about?: string) {
   const brain = await loadBrain(emp.organizationId);
   const orgName = brain.org?.name ?? "the workspace";
   const guides = guidelinesText(emp);
@@ -36,8 +48,24 @@ export async function systemPromptFor(emp: AIEmployee, job: string) {
     (emp.systemPrompt?.trim() ? `\n\nMore instructions from the workspace:\n${emp.systemPrompt.trim()}` : "");
   return {
     brain,
-    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${handbookText(emp.organizationId)}\n\n# The task in front of you\n${job}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}`,
+    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${handbookText(emp.organizationId)}\n\n# The task in front of you\n${job}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${await passagesFor(emp, about, job)}`,
   };
+}
+
+/**
+ * Passages from the workspace's documents and pages (and this employee's own
+ * Knowledge) that match the task, so a 200-page book is used where it applies
+ * instead of only its first pages. Kept to about 9,000 characters.
+ */
+async function passagesFor(emp: AIEmployee, about: string | undefined, job: string) {
+  try {
+    const query = `${about ?? ""} ${job}`.slice(0, 2000);
+    const passages = await findPassages(emp.organizationId, query, { employeeId: emp.id, limit: 8 });
+    if (!passages.length) return "";
+    return `\n\n# From your documents (the passages that best fit this task; use what applies, in your own words, and never copy long stretches of a book word for word)\n${formatPassages(passages, 9_000)}`;
+  } catch {
+    return "";
+  }
 }
 
 /** Marks the employee busy while a task runs, then counts the finished task. */
@@ -108,8 +136,9 @@ type PagePlan = {
 export async function planWebsitePage(organizationId: number, page: string, goal: string) {
   const emp = await employeeFor(organizationId, "website");
   return working(emp, async () => {
-    const { system } = await systemPromptFor(
+    const { system } = await systemPromptAbout(
       emp,
+      `${page} ${goal}`,
       `Your job: plan one website page, section by section, with the finished copy for each section.
 - 4 to 7 sections in the order a visitor reads them. Each has a short label (Headline, How it works, ...), the on-page heading, and the copy.
 - Use real names, services and details from the Brain; placeholders where facts are missing.
@@ -360,8 +389,9 @@ export async function writeSocialPost(
   return working(emp, async () => {
     const wantsX = input.targetPlatforms.includes("x");
     const wantsThreads = input.targetPlatforms.includes("threads");
-    const { system } = await systemPromptFor(
+    const { system } = await systemPromptAbout(
       emp,
+      input.topic,
       `Your job: write one social post and describe the image for it.
 - Opening line that earns the next line. Short paragraphs. A clear call to action. 3 to 5 relevant hashtags at the end.
 - Keep it under 1,300 characters so it fits LinkedIn, Instagram and Facebook.
@@ -594,8 +624,9 @@ export async function writeBlogArticle(
   const emp = await employeeFor(organizationId, "blog");
   const wp = await db.getConnectionByProvider(organizationId, "wordpress");
   return working(emp, async () => {
-    const { system } = await systemPromptFor(
+    const { system } = await systemPromptAbout(
       emp,
+      `${input.title} ${input.outlineNotes ?? ""}`,
       `Your job: write a publication-ready blog article in markdown.
 - 900 to 1,500 words. Open with the point, not a warm-up. Use ## headings. End with practical takeaways.
 - No made-up studies or numbers. If a claim needs a source you do not have, leave it out.`
