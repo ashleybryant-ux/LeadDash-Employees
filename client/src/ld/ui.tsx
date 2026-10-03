@@ -329,6 +329,60 @@ export function Switcher({ onClose, style, className }: { onClose: () => void; s
 }
 
 // ==========================================
+// Hours saved (bottom of the chat list)
+// ==========================================
+
+/** A soft area chart of hours saved per day, drawn behind the total. */
+function hoursPath(daily: number[], w: number, h: number) {
+  const pts = daily.length > 1 ? daily : [0, ...daily, 0];
+  // Running 3-day average keeps the curve smooth on quiet days.
+  const smooth = pts.map((_, i) => {
+    const a = pts.slice(Math.max(0, i - 1), i + 2);
+    return a.reduce((x, y) => x + y, 0) / a.length;
+  });
+  const max = Math.max(...smooth, 0.5);
+  const xy = smooth.map((v, i) => [(i / (smooth.length - 1)) * w, h - (v / max) * (h * 0.85)] as const);
+  let d = `M0,${h} L${xy[0][0]},${xy[0][1]}`;
+  for (let i = 1; i < xy.length; i++) {
+    const [x0, y0] = xy[i - 1];
+    const [x1, y1] = xy[i];
+    const mx = (x0 + x1) / 2;
+    d += ` C${mx},${y0} ${mx},${y1} ${x1},${y1}`;
+  }
+  return { area: `${d} L${w},${h} Z`, line: d.replace(/^M0,[\d.]+ L/, "M") };
+}
+
+export function HoursSaved() {
+  const { currentOrgId } = useTenant();
+  const q = trpc.usage.summary.useQuery({ organizationId: currentOrgId, back: 0 }, { enabled: currentOrgId > 0, refetchInterval: 300_000 });
+  const u = q.data;
+  if (!u) return null;
+  const w = 300;
+  const h = 96;
+  const { area, line } = hoursPath(u.daily, w, h);
+  const n = u.hours;
+  const label = `${n.toLocaleString("en-US", { maximumFractionDigits: 1 })} ${n === 1 ? "hour" : "hours"}`;
+  return (
+    <Link href="/workspace" className="ld-hours" aria-label={`${label} saved this month`} style={{ marginTop: "auto", position: "sticky", bottom: 0, display: "block", textDecoration: "none", color: "#14221c", background: "#fff", borderTop: "1px solid #eef2f0", overflow: "hidden" }}>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 0, width: "100%", height: h }}>
+        <defs>
+          <linearGradient id="ld-hours-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#2f6b5a" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#2f6b5a" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#ld-hours-fill)" />
+        <path d={line} fill="none" stroke="#2f6b5a" strokeOpacity="0.35" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <span style={{ position: "relative", display: "flex", flexDirection: "column", gap: 2, padding: "26px 18px 18px" }}>
+        <span style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.01em", lineHeight: 1.1 }}>{label}</span>
+        <span style={{ fontSize: 14, color: "#5b6b64", fontWeight: 600 }}>saved this month →</span>
+      </span>
+    </Link>
+  );
+}
+
+// ==========================================
 // Chat list
 // ==========================================
 
@@ -386,6 +440,7 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
         );
       })}
       {list.length === 0 && <div className="ld-empty">No employees in this workspace yet.</div>}
+      <HoursSaved />
     </aside>
   );
 }

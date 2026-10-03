@@ -120,6 +120,14 @@ export async function usageSummary(orgId: number, back = 0) {
     .where(and(eq(usageEvents.organizationId, orgId), gte(usageEvents.createdAt, start), lt(usageEvents.createdAt, end)))
     .all();
   const emps = await db.listEmployeesByOrg(orgId);
+  // Hours saved each day of the month, up to today for this month.
+  const tz = org?.timezone || "America/Chicago";
+  const lastDay = back === 0 ? partsIn(new Date(), tz).d : partsIn(new Date(end.getTime() - 1000), tz).d;
+  const dailyMin = new Array<number>(lastDay).fill(0);
+  for (const r of rows) if (r.type === "task") {
+    const d = partsIn(new Date(r.createdAt), tz).d;
+    if (d >= 1 && d <= lastDay) dailyMin[d - 1] += r.minutes;
+  }
   const by = new Map<number | null, { minutes: number; tasks: number; micros: number }>();
   for (const r of rows) {
     const key = r.employeeId && emps.some((e) => e.id === r.employeeId) ? r.employeeId : null;
@@ -140,6 +148,7 @@ export async function usageSummary(orgId: number, back = 0) {
   const shared = by.get(null);
   return {
     month: label,
+    daily: dailyMin.map((m) => Math.round((m / 60) * 10) / 10),
     hours: hours(total.minutes),
     tasks: total.tasks,
     cost: dollars(total.micros),

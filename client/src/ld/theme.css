@@ -209,3 +209,9 @@ html.ld-review .ld-emphead { top: 34px !important; }
   .ld-usage-tiles { gap: 8px !important; }
   .ld-usage-tiles span:last-child { font-size: 22px !important; }
 }
+
+/* Hours saved at the bottom of the chat list: pinned on desktop, part of the list on phones. */
+@media (max-width: 760px) {
+  .ld-hours { position: relative !important; margin-top: 12px !important; }
+}
+.ld-chatlist > * { flex-shrink: 0; }
