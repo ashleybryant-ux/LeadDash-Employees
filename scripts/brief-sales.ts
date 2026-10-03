@@ -27,24 +27,24 @@ const ENTRIES: { title: string; category: string; content: string }[] = [
     title: "Plans and pricing",
     content: `Every plan is month to month with no contract. Seat counts are hard caps: a practice that needs more users moves to the next plan.
 
+Founding member rates are open now: Core $99, Complete $299, Practice $797 a month, locked for as long as the practice stays subscribed, with insurance billing and AI note-taking included.
+
 - Core, $99 a month, 1 user: the HIPAA-compliant EHR (SOAP, DAP, BIRP and GIRP notes, scheduling, client records, treatment plans) plus the CRM and lead pipeline. No 24/7 receptionist, websites or marketing automation.
 - Complete, $299 a month, up to 5 users: everything in Core plus the 24/7 receptionist answering and booking calls, a practice phone line with call tracking and missed-call text back, email and text automation, the website and funnel builder with web chat, review generation, team scheduling and role permissions, and LeadDash University with the weekly live Q&A.
 - Practice, $797 a month, up to 10 users: everything in Complete plus staff calendar management across the team, advanced reporting on caseload, referrals and conversion, and priority support.
 - Agency (11 to 40 clinicians) and Enterprise (40 or more, or several sites): custom pricing, set on a call.
 - Done-For-You setup, $1,500 one time on any plan: a 10-day build of the receptionist, phone and email, workflows, booking and intake calendars, pipeline, and a team training call.
 - Insurance billing and eFax are included on every plan.
-- AI note-taking (DashNotes™) is $40 per clinician per month for practices that joined after the founding period.
-- Ashley is considering raising Core to $129 now that billing and fax are included. [CONFIRM before quoting Core.]
-- [CONFIRM whether the founding member offer closed on September 30, 2026 or was extended, and what a new practice pays today.]
+- AI note-taking (DashNotes™) is included for founding members. When the founding rate closes, it becomes $40 per clinician per month for new practices.
 
 Prices are for Ashley or the demo call to share. Employees never quote a price, discount or trial in writing.`,
   },
   {
     category: "financial_data",
     title: "Founding members",
-    content: `- LeadDash had 5 founding members as of June 2026.
-- The rule, in Ashley's words: everything LeadDash ships before September 30, 2026 is theirs at no additional charge for as long as they stay subscribed; anything shipped after that is priced separately; and their base rate never goes up while the subscription stays active.
-- That includes insurance billing and AI note-taking at no charge.
+    content: `- The founding member rate is still open: Core $99, Complete $299, Practice $797 a month.
+- Founding members keep their rate for as long as they stay subscribed; it never goes up. Insurance billing and AI note-taking are included at no charge. Features shipped later may be priced separately.
+- LeadDash had 5 founding members as of June 2026.
 - Not covered for founding members: eligibility-check packs past the monthly allowance, and fax page packs.
 - Never name a current member practice to a prospect without Ashley's permission.`,
   },
@@ -108,7 +108,10 @@ Prices are for Ashley or the demo call to share. Employees never quote a price, 
   },
 ];
 
-/** Entries the first LeadDash preload wrote; replaced only if nobody has edited them since. */
+/** Entries written before (the first LeadDash preload, and earlier versions of this script); replaced only if nobody has edited them since. */
+import fs from "node:fs";
+import path from "node:path";
+const PAST_SALES: { entries: { title: string; content: string }[] }[] = ["sales-v1.json"].map((f) => JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "data", f), "utf8")));
 const PRELOADED: Record<string, string> = {
   "Plans and pricing": `- Plans: Core, Complete, Practice and Agency. Core is $99 a month (a move to $129 is under consideration). Each plan has a set number of clinician seats.
 - Insurance billing and fax are included on every plan.
@@ -191,8 +194,8 @@ async function main() {
   for (const e of ENTRIES) {
     const cur = brain.find((k) => k.title.trim().toLowerCase() === e.title.toLowerCase());
     if (cur) {
-      const before = PRELOADED[e.title];
-      if (before && cur.content.trim() === before.trim()) {
+      const earlier = [PRELOADED[e.title], ...PAST_SALES.flatMap((p) => p.entries.filter((x) => x.title === e.title).map((x) => x.content))].filter(Boolean) as string[];
+      if (cur.content.trim() !== e.content.trim() && earlier.some((b) => cur.content.trim() === b.trim())) {
         const saved = await db.updateKnowledgeItem(cur.id, org.id, { content: e.content, category: e.category as never });
         if (saved) indexKnowledge(saved);
         replaced++;
