@@ -22,17 +22,21 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
 export const KIND_ORDER: Kind[] = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring", "custom"];
 export const GROUP_ORDER = ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"] as const;
 
-/** Portraits live in client/public/avatars/<kind>.webp (256 px, from the Manus originals). */
+/** Portraits live in client/public/avatars/<kind>.webp (256 px, cut from the LeadDash Employees team sheet). */
 export const AVATAR_FILES: Partial<Record<Kind, string>> = {
+  coo: "/avatars/coo.webp",
+  projects: "/avatars/projects.webp",
   grants: "/avatars/grants.webp",
   speaking: "/avatars/speaking.webp",
+  prospecting: "/avatars/prospecting.webp",
+  outreach: "/avatars/outreach.webp",
+  leads: "/avatars/leads.webp",
   social: "/avatars/social.webp",
   blog: "/avatars/blog.webp",
   website: "/avatars/website.webp",
   video: "/avatars/video.webp",
   inbox: "/avatars/inbox.webp",
-  // Quinn uses the default portrait until one is made to match the set.
-  hiring: "/avatars/custom.webp",
+  hiring: "/avatars/hiring.webp",
   custom: "/avatars/custom.webp",
 };
 

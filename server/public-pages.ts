@@ -105,7 +105,7 @@ const EMPLOYEES = [
   ["website", "Jordan", "Website", "Plans website pages, sections and copy."],
   ["video", "Elena", "Video", "Finds video ideas and trends and plans short videos."],
   ["inbox", "Avery", "Inbox and calendar", "Drafts emails and meeting invites for you to approve."],
-  ["custom", "Quinn", "Hiring", "Writes job posts, screens applicants and drafts outreach."],
+  ["hiring", "Quinn", "Hiring", "Writes job posts, screens applicants and drafts outreach."],
 ] as const;
 
 const CONNECT = [
