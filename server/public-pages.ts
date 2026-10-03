@@ -36,7 +36,7 @@ ul{padding-left:22px}
 .muted{color:#5b6b64;font-size:13px}
 .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .emp{background:#fff;border:1px solid #e3e9e6;border-radius:12px;padding:16px}
-.av{width:40px;height:40px;border-radius:999px;display:block;margin-bottom:10px;object-fit:cover}
+.av{width:40px;height:40px;border-radius:10px;display:block;margin-bottom:10px;object-fit:cover}
 .en{font-weight:800;font-size:15px}
 .ej{font-size:12px;font-weight:700;color:#5b6b64;text-transform:uppercase;letter-spacing:.06em;margin:2px 0 6px}
 .ed{font-size:13px;line-height:1.5;color:#3d4c45}

@@ -57,7 +57,8 @@ export function Avatar({ name, kind, src, size = 44 }: { name: string; kind?: st
   };
   if (file && !broken) {
     return (
-      <span style={{ ...style, background: "transparent" }}>
+      // Headshots are rounded squares so more of the face shows; initials stay round.
+      <span style={{ ...style, background: "transparent", borderRadius: Math.round(size * 0.24) }}>
         <img src={file} alt={name} onError={() => setBroken(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       </span>
     );
