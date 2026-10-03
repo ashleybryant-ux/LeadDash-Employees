@@ -24,7 +24,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q";
+  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live";
   id: number;
   title: string;
   subtitle?: string;
@@ -189,12 +189,13 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       if (v.checking) return { text: `I'm signed in to BidPrime as ${v.email} and reading it now. I'll post what I find here in a few minutes.`, cards: [], queries: [] };
       // Asking again always starts a fresh sign-in, even if an earlier one stopped for a code.
       await bids.clearWaiting(org);
-      bids.queueCheck(org, true);
+      const liveId = bids.newLiveId();
+      bids.queueCheck(org, true, new Date(), liveId);
       const fromBp = (await db.listOpps(org, ["bid"])).filter((o) => o.source === "BidPrime" && o.status === "new");
       const last = v.lastError ? ` My last check stopped: ${v.lastError}.` : "";
       return {
-        text: `Signing in to BidPrime as ${v.email} now to read your leads inbox and saved bids. I'll post what I find here in a few minutes.${last}${fromBp.length ? ` These ${fromBp.length} came from BidPrime before:` : ""}`,
-        cards: fromBp.slice(0, 6).map(oppCard),
+        text: `Signing in to BidPrime as ${v.email} now to read your leads inbox and saved bids. You can watch here and take over any time.${last}`,
+        cards: [bids.liveCard(liveId, `${emp.name}'s browser`) as ChatCard],
         queries: [],
       };
     }

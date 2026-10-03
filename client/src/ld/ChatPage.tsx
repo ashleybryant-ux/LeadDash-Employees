@@ -90,7 +90,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live";
   id: number;
   title: string;
   subtitle?: string;
@@ -381,6 +381,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   if (card.type === "onboarding") return <OnboardingCard emp={emp} />;
   if (card.type === "onboarding_q") return <OnboardingQuestionCard emp={emp} qkey={card.title} />;
   if (card.type === "bidprime_code" || card.type === "portal_code") return <CodeCard card={card} />;
+  if (card.type === "browser_live") return <BrowserCard card={card} />;
   if (card.type === "bidprime_screen" && card.imageUrl)
     return (
       <div className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -543,6 +544,124 @@ function CodeCard({ card }: { card: Card }) {
             {m.isPending ? "Sending..." : "Send code"}
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+const LIVE_KEYS = new Set(["Enter", "Tab", "Backspace", "Delete", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
+
+/** An employee's browser, live: watch it, take over when it's stuck, hand it back. */
+function BrowserCard({ card }: { card: Card }) {
+  const { currentOrgId } = useTenant();
+  const id = card.url ?? "";
+  const [ended, setEnded] = React.useState(false);
+  const q = trpc.browser.live.useQuery({ organizationId: currentOrgId }, { refetchInterval: ended ? false : 1000 });
+  const utils = trpc.useUtils();
+  const after = () => utils.browser.live.invalidate();
+  const takeOver = trpc.browser.takeOver.useMutation({ onSuccess: after });
+  const handBack = trpc.browser.handBack.useMutation({ onSuccess: after });
+  const stop = trpc.browser.stop.useMutation({ onSuccess: after });
+  const input = trpc.browser.input.useMutation({ onSuccess: after });
+  const [text, setText] = React.useState("");
+  const v = q.data;
+  const mine = v && v.id === id;
+  const state = mine ? v.state : v ? "ended" : "starting";
+  React.useEffect(() => {
+    if (state === "done" || state === "stopped" || state === "ended") setEnded(true);
+  }, [state]);
+  const control = state === "control";
+  const active = state === "starting" || state === "running" || state === "waiting" || state === "control";
+  const send = (i: { kind: "click"; x: number; y: number } | { kind: "type"; text: string } | { kind: "key"; key: string } | { kind: "scroll"; dy: number }) =>
+    input.mutate({ organizationId: currentOrgId, id, ...i } as Parameters<typeof input.mutate>[0]);
+
+  if (state === "ended")
+    return (
+      <div className="ld-card" style={{ padding: "14px 18px" }}>
+        <span className="ld-small ld-muted">{card.title}: this session has ended.</span>
+      </div>
+    );
+
+  const pill =
+    state === "control" ? <span className="ld-pill" style={{ background: "#e8effd", color: "#1e3a8a" }}>You're in control</span>
+    : state === "waiting" ? <span className="ld-pill amber">Waiting for you</span>
+    : state === "done" ? <span className="ld-pill green">Finished</span>
+    : state === "stopped" ? <span className="ld-pill gray">Stopped</span>
+    : <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#155c3e" }}><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: "#1b8a5a" }} />Live</span>;
+
+  return (
+    <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 128px", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+        <div className="ld-row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 800, fontSize: 15 }}>{card.title}</span>
+          {pill}
+        </div>
+        {control && (
+          <div style={{ background: "#e8effd", border: "1px solid #c7d6fb", borderRadius: 10, padding: "10px 14px", fontSize: 14, color: "#1e3a8a", lineHeight: 1.5 }}>
+            {card.title.replace(/'s browser$/, "")} is paused. Click and type right in the page. What you type goes straight to the site and isn't saved.
+          </div>
+        )}
+        <div style={{ border: control ? "2px solid #1d4ed8" : "1px solid #cfd9d4", boxShadow: control ? "0 0 0 4px #dbe6fd" : undefined, borderRadius: 10, overflow: "hidden", background: "#fff" }}>
+          <div style={{ display: "flex", alignItems: "center", padding: "8px 10px", background: "#eef2f0", borderBottom: "1px solid #dbe4df" }}>
+            <span style={{ flex: 1, background: "#fff", border: "1px solid #dbe4df", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "#3d4c45", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {mine && v.url ? v.url.replace(/^https?:\/\//, "") : "Opening..."}
+            </span>
+          </div>
+          <div
+            tabIndex={control ? 0 : -1}
+            role={control ? "application" : undefined}
+            aria-label={control ? "The site. Click to click there; typing goes to the site." : undefined}
+            style={{ position: "relative", aspectRatio: "1280 / 900", background: "#f4f6f8", cursor: control ? "pointer" : "default", outline: "none" }}
+            onClick={(e) => {
+              if (!control) return;
+              const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+              (e.currentTarget as HTMLDivElement).focus();
+              send({ kind: "click", x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height });
+            }}
+            onWheel={(e) => {
+              if (control) send({ kind: "scroll", dy: Math.round(e.deltaY) });
+            }}
+            onKeyDown={(e) => {
+              if (!control) return;
+              if (LIVE_KEYS.has(e.key)) {
+                e.preventDefault();
+                send({ kind: "key", key: e.key });
+              } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+                e.preventDefault();
+                send({ kind: "type", text: e.key });
+              }
+            }}
+          >
+            {mine && v.frame ? (
+              <img src={v.frame} alt={`What ${card.title.replace(/'s browser$/, "")} sees`} draggable={false} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }} />
+            ) : (
+              <span className="ld-small ld-muted" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>Opening the browser...</span>
+            )}
+          </div>
+        </div>
+        {mine && !control && (state === "waiting" ? v.reason : v.step) && <span style={{ fontSize: 13, color: "#3d4c45", lineHeight: 1.6 }}>{state === "waiting" ? v.reason : v.step}</span>}
+        {control && (
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px", gap: 8, alignItems: "end" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label className="ld-lbl" htmlFor={`live-type-${id}`}>Type into the page</label>
+              <input id={`live-type-${id}`} className="ld-in" value={text} autoComplete="off" placeholder="Text goes into the box you clicked" onChange={(e) => setText(e.target.value)} />
+            </div>
+            <button type="button" className="ld-btn" style={{ width: 96 }} disabled={input.isPending} onClick={async () => {
+              if (text) await input.mutateAsync({ organizationId: currentOrgId, id, kind: "type", text });
+              await input.mutateAsync({ organizationId: currentOrgId, id, kind: "key", key: "Enter" });
+              setText("");
+            }}>Enter</button>
+          </div>
+        )}
+        <ErrorLine error={takeOver.error || handBack.error || stop.error || input.error} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {active && (control ? (
+          <button type="button" className="ld-btn p" disabled={handBack.isPending} onClick={() => handBack.mutate({ organizationId: currentOrgId, id })}>Hand back</button>
+        ) : (
+          <button type="button" className={`ld-btn ${state === "waiting" ? "p" : ""}`} disabled={takeOver.isPending} onClick={() => takeOver.mutate({ organizationId: currentOrgId, id })}>Take over</button>
+        ))}
+        {active && <button type="button" className="ld-btn" disabled={stop.isPending} onClick={() => stop.mutate({ organizationId: currentOrgId, id })}>Stop</button>}
       </div>
     </div>
   );

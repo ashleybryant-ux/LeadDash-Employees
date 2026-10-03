@@ -7,7 +7,7 @@ import { extractJson } from "../_core/llm";
 import * as integrations from "../integrations";
 import { uploadsRoot } from "../storage";
 import type { Application, Opportunity, PortalLogin } from "../../drizzle/schema";
-import { runBrowserTask, tempFiles, type BrowserResult, type Download } from "./browser";
+import { liveStart, runBrowserTask, tempFiles, type BrowserResult, type Download } from "./browser";
 import { addOpportunityFromText, enqueue, markSubmitted, oppCardFor, parse, type Attachment, type Requirements } from "./apply";
 import { employeeFor } from "./tasks";
 import { partsIn } from "./schedule";
@@ -27,7 +27,7 @@ const BIDPRIME_HOME = "https://www.bidprime.com/";
 const MAX_DETAILS = 6;
 
 type BidPrimeSecrets = { email: string; password: string; storageState?: string | null };
-type BidPrimeSettings = { startUrl?: string; lastCheckedAt?: string | null; lastAttemptAt?: string | null; lastFound?: number; waitingCode?: boolean; lastError?: string | null; checking?: boolean };
+type BidPrimeSettings = { hints?: string[]; startUrl?: string; lastCheckedAt?: string | null; lastAttemptAt?: string | null; lastFound?: number; waitingCode?: boolean; lastError?: string | null; checking?: boolean };
 type ListedBid = { title: string; agency: string; location?: string; due?: string; detailUrl?: string; sourceUrl?: string };
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -121,8 +121,26 @@ export async function clearWaiting(orgId: number) {
   await saveSettings(orgId, { waitingCode: false });
 }
 
-export function queueCheck(orgId: number, manual = false, now = new Date()) {
-  return enqueue(`bidprime-${orgId}`, () => withUsage({ orgId, kind: "grants" }, () => checkBidPrime(orgId, manual, now)));
+export function queueCheck(orgId: number, manual = false, now = new Date(), liveId = newLiveId()) {
+  liveStart(orgId, liveId);
+  return enqueue(`bidprime-${orgId}`, () => withUsage({ orgId, kind: "grants" }, () => checkBidPrime(orgId, manual, now, liveId)));
+}
+
+export function newLiveId() {
+  return Math.random().toString(36).slice(2, 12);
+}
+
+/** The chat card that shows the browser live, with Take over. */
+export function liveCard(liveId: string, title = "Morgan's browser") {
+  return { type: "browser_live", id: 0, title, url: liveId };
+}
+
+/** When the browser is stuck: a message with the live card, waiting for the person. */
+function stuckPoster(orgId: number, liveId: string, what: string) {
+  return async (reason: string) => {
+    const emp = await employeeFor(orgId, "grants");
+    await post(orgId, `I'm stuck ${what}: ${reason.replace(/\.$/, "")}. Take over and get me past it, then press Hand back and I'll keep going. I'll wait 10 minutes.`, [liveCard(liveId, `${emp.name}'s browser`)]);
+  };
 }
 
 // ==========================================
@@ -146,7 +164,7 @@ function isKnown(opps: Opportunity[], b: ListedBid) {
 }
 
 /** Signs in, reads new bids, opens up to six, and adds them to Opportunities. */
-export async function checkBidPrime(orgId: number, manual = false, now = new Date()) {
+export async function checkBidPrime(orgId: number, manual = false, now = new Date(), liveId = newLiveId()) {
   const c = await connection(orgId);
   if (!c?.secrets?.email || !c.secrets.password) return { added: 0, status: "not_connected" as const };
   const emp = await employeeFor(orgId, "grants");
@@ -162,7 +180,8 @@ export async function checkBidPrime(orgId: number, manual = false, now = new Dat
       secrets,
       storageState: c.secrets.storageState ?? null,
       maxSteps: 45,
-      goal: `Sign in to BidPrime with the saved email and password (skip this if already signed in). Open the leads inbox of new bid leads, then the saved bids.
+      live: { id: liveId, onStuck: stuckPoster(orgId, liveId, "in BidPrime") },
+      goal: `${(c.settings.hints ?? []).length ? `Last time the person helped you past these pages: ${(c.settings.hints ?? []).join(". ")}. Do the same if you see them.\n` : ""}Sign in to BidPrime with the saved email and password (skip this if already signed in). Open the leads inbox of new bid leads, then the saved bids.
 Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":"","detailUrl":"","sourceUrl":""}]} with up to 15 of the newest bids across both lists. detailUrl is the BidPrime page for that bid; sourceUrl is the agency's own posting link if the page shows one, else "". Do not open each bid yet.`,
     });
   } catch (err) {
@@ -171,6 +190,9 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":""
     if (manual) await post(orgId, `I couldn't open BidPrime: ${message}`);
     return { added: 0, status: "failed" as const };
   }
+
+  // What the person did to get past a page is remembered for next time.
+  if (res.helped?.length) await saveSettings(orgId, { hints: [...(c.settings.hints ?? []), ...res.helped].slice(-6) });
 
   if (res.status === "need_code") {
     await saveSettings(orgId, { checking: false, waitingCode: true }, { storageState: res.storageState });
@@ -199,6 +221,7 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":""
         secrets,
         storageState: state,
         maxSteps: 20,
+        live: { id: liveId, holdMs: 0 },
         goal: `This is the BidPrime page for the bid "${b.title}". Sign in again with the saved email and password only if asked. Download every bid document offered (the RFP, attachments, forms, addenda). Then use done and put in result the full bid details as plain text: scope, requirements, due date and time, how responses are submitted (portal, email address or mail), the deadline and address for questions, the agency contact, and the agency's own posting link.`,
       }).catch(() => null);
       if (d?.status === "done") {
@@ -341,6 +364,7 @@ export async function autoSubmit(orgId: number, appId: number) {
   if (!login) return;
   const secrets = decryptJson<{ password: string }>(login.secretEncrypted);
   const upload = tempFiles(files);
+  const liveId = newLiveId();
   const qs = parse<{ text: string; answer: string }[]>(app.questions, []);
   const res = await runBrowserTask({
     orgId,
@@ -350,6 +374,7 @@ export async function autoSubmit(orgId: number, appId: number) {
     allowSubmit: true,
     files: upload,
     maxSteps: 60,
+    live: { id: liveId, onStuck: stuckPoster(orgId, liveId, `submitting ${app.title} on ${login.name}`) },
     goal: `Sign in to ${login.name} with the saved email and password. Find the opportunity "${opp?.title ?? app.title}"${opp?.sourceUrl ? ` (${opp.sourceUrl})` : ""} and start a response or submission.
 Upload each file from the file list to the matching upload field (the response document goes where the proposal or response is asked for; attachments to their named fields).
 Fill required text fields using these answers when a field matches:

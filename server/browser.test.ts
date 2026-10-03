@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { browserReady, runBrowserTask, type Action, type PageView } from "./employees/browser";
+import { browserReady, liveHandBack, liveInput, liveTakeOver, liveView, runBrowserTask, type Action, type PageView } from "./employees/browser";
 
 // On a machine without Chromium yet, these skip instead of blocking a deploy.
 const ready = await browserReady();
@@ -135,6 +135,39 @@ describe.skipIf(!ready)("the server's browser", () => {
     });
     expect(r.status).toBe("done");
     expect(r.result).toBe(`${base}/`);
+  }, 60_000);
+
+  it("streams the page live, waits when stuck, lets the person take over, then keeps going", async () => {
+    let stuck = false;
+    let handedBack = false;
+    const job = runBrowserTask({
+      orgId: 77,
+      goal: "read leads",
+      startUrl: base,
+      secrets: { email: "a@b.co", password: "pw" },
+      live: { id: "s1", holdMs: 20_000, onStuck: async () => { stuck = true; } },
+      decide: async (v, history) => {
+        if (history.some((h) => h.action === "person")) {
+          handedBack = true;
+          return act({ action: "done", result: v.url });
+        }
+        return act({ action: "fail", result: "a page I don't understand" });
+      },
+    });
+    while (!stuck) await new Promise((r) => setTimeout(r, 100));
+    expect(liveView(77)).toMatchObject({ id: "s1", state: "waiting", reason: "a page I don't understand" });
+    expect(liveView(77).frame).toMatch(/^data:image\/jpeg;base64,/);
+    await expect(liveInput(77, "s1", { kind: "click", x: 0.1, y: 0.1 })).rejects.toThrow(/Take over/);
+    liveTakeOver(77, "s1");
+    expect(liveView(77).state).toBe("control");
+    // The person clicks the email box and types; the employee waits meanwhile.
+    await liveInput(77, "s1", { kind: "type", text: "hello" });
+    liveHandBack(77, "s1");
+    const r = await job;
+    expect(handedBack).toBe(true);
+    expect(r.status).toBe("done");
+    expect(r.helped.join(" ")).toMatch(/typed into a box/);
+    expect(liveView(77).state).toBe("done");
   }, 60_000);
 
   it("downloads a linked document", async () => {

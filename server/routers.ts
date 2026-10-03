@@ -27,6 +27,16 @@ import { runTaskNow } from "./employees/runner";
 import { fetchWebpage, saveDocument, saveImage, savePhoto } from "./employees/files";
 import { usageSummary } from "./usage";
 import * as bids from "./employees/bids";
+import * as browserLive from "./employees/browser";
+
+/** Live-browser errors (session ended, not in control) reach the person as plain messages. */
+async function liveCall<T>(fn: () => T | Promise<T>) {
+  try {
+    return await fn();
+  } catch (err) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: (err as Error).message });
+  }
+}
 import { sendEmail } from "./_core/email";
 import { ENV } from "./_core/env";
 import { REPEATS, HR_STAGES } from "../drizzle/schema";
@@ -550,6 +560,44 @@ export const appRouter = router({
   }),
 
   /** BidPrime: Morgan signs in with the saved account and reads new bids every morning. */
+  /** Watching an employee's browser in chat, and taking over. */
+  browser: router({
+    live: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return browserLive.liveView(input.organizationId);
+    }),
+    takeOver: protectedProcedure.input(orgInput.extend({ id: z.string().max(40) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return liveCall(() => browserLive.liveTakeOver(input.organizationId, input.id));
+    }),
+    handBack: protectedProcedure.input(orgInput.extend({ id: z.string().max(40) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return liveCall(() => browserLive.liveHandBack(input.organizationId, input.id));
+    }),
+    stop: protectedProcedure.input(orgInput.extend({ id: z.string().max(40) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return liveCall(() => browserLive.liveStop(input.organizationId, input.id));
+    }),
+    input: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.string().max(40),
+          kind: z.enum(["click", "type", "key", "scroll"]),
+          x: z.number().min(0).max(1).default(0),
+          y: z.number().min(0).max(1).default(0),
+          text: z.string().max(500).default(""),
+          key: z.string().max(20).default(""),
+          dy: z.number().min(-2000).max(2000).default(0),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const i =
+          input.kind === "click" ? { kind: "click" as const, x: input.x, y: input.y } : input.kind === "type" ? { kind: "type" as const, text: input.text } : input.kind === "key" ? { kind: "key" as const, key: input.key } : { kind: "scroll" as const, dy: input.dy };
+        return liveCall(() => browserLive.liveInput(input.organizationId, input.id, i));
+      }),
+  }),
+
   bidprime: router({
     get: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

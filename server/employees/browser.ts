@@ -27,6 +27,8 @@ export type BrowserResult = {
   downloads: Download[];
   log: StepLog[];
   screenshotUrl: string | null;
+  /** What the person did while they had control, to remember for next time. */
+  helped: string[];
 };
 
 export type BrowserTask = {
@@ -42,6 +44,8 @@ export type BrowserTask = {
   maxSteps?: number;
   /** Who is doing the work, for the AI's instructions. */
   actor?: string;
+  /** Lets the person watch in chat and take over. onStuck posts the "waiting for you" card. */
+  live?: { id: string; onStuck?: (reason: string) => Promise<void>; holdMs?: number };
   /** For tests: replaces the AI's choice of action. */
   decide?: (view: PageView, history: StepLog[]) => Promise<Action>;
 };
@@ -78,6 +82,123 @@ const ACTION_SCHEMA: JsonSchema = {
 export const SUBMIT_WORDS = /\b(submit|place bid|send bid|send response|finali[sz]e|sign and submit|certify and submit|complete submission)\b/i;
 
 let running: Promise<unknown> = Promise.resolve();
+
+// ==========================================
+// Live view: watch the browser in chat and take over
+// ==========================================
+
+type Page = import("playwright-core").Page;
+export type LiveState = "starting" | "running" | "waiting" | "control" | "done" | "stopped";
+type Live = {
+  id: string;
+  orgId: number;
+  state: LiveState;
+  step: string;
+  url: string;
+  reason: string;
+  frame: Buffer | null;
+  frameAt: number;
+  page: Page | null;
+  stop: boolean;
+  handBack: boolean;
+  helped: string[];
+};
+const lives = new Map<number, Live>();
+
+export function liveView(orgId: number) {
+  const l = lives.get(orgId);
+  if (!l) return { id: "", state: "none" as const, step: "", url: "", reason: "", frame: null as string | null, frameAt: 0 };
+  return { id: l.id, state: l.state, step: l.step, url: l.url, reason: l.reason, frame: l.frame ? `data:image/jpeg;base64,${l.frame.toString("base64")}` : null, frameAt: l.frameAt };
+}
+
+/** Shows "Opening the browser" for a session that is queued but not started yet. */
+export function liveStart(orgId: number, id: string) {
+  const l = lives.get(orgId);
+  if (l && l.page && l.state !== "done" && l.state !== "stopped") return;
+  lives.set(orgId, { id, orgId, state: "starting", step: "Opening the browser", url: "", reason: "", frame: null, frameAt: 0, page: null, stop: false, handBack: false, helped: [] });
+}
+
+function liveFor(orgId: number, id: string) {
+  const l = lives.get(orgId);
+  if (!l || l.id !== id || l.state === "done" || l.state === "stopped") throw new Error("That browser session has ended.");
+  return l;
+}
+
+export function liveTakeOver(orgId: number, id: string) {
+  const l = liveFor(orgId, id);
+  l.state = "control";
+  return liveView(orgId);
+}
+export function liveHandBack(orgId: number, id: string) {
+  const l = liveFor(orgId, id);
+  if (l.state !== "control") return liveView(orgId);
+  l.state = "running";
+  l.handBack = true;
+  return liveView(orgId);
+}
+export function liveStop(orgId: number, id: string) {
+  const l = liveFor(orgId, id);
+  l.stop = true;
+  return liveView(orgId);
+}
+
+const KEYS = new Set(["Enter", "Tab", "Backspace", "Delete", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
+export type LiveInput = { kind: "click"; x: number; y: number } | { kind: "type"; text: string } | { kind: "key"; key: string } | { kind: "scroll"; dy: number };
+
+/** The person's own click, typing or scroll, only while they have control. Typed text is never stored. */
+export async function liveInput(orgId: number, id: string, input: LiveInput) {
+  const l = liveFor(orgId, id);
+  if (l.state !== "control" || !l.page) throw new Error("Press Take over first.");
+  const page = l.page;
+  if (input.kind === "click") {
+    const x = Math.round(Math.max(0, Math.min(1, input.x)) * VIEW.width);
+    const y = Math.round(Math.max(0, Math.min(1, input.y)) * VIEW.height);
+    const what = await page
+      .evaluate(([px, py]) => {
+        const el = document.elementFromPoint(px, py) as HTMLElement | null;
+        if (!el || (el as HTMLInputElement).type === "password") return "";
+        return (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "").trim().replace(/\s+/g, " ").slice(0, 60);
+      }, [x, y] as [number, number])
+      .catch(() => "");
+    await page.mouse.click(x, y);
+    if (what) l.helped.push(`On ${pathOf(page.url())} they clicked "${what}"`);
+  } else if (input.kind === "type") {
+    await page.keyboard.type(input.text.slice(0, 500));
+    l.helped.push(`On ${pathOf(page.url())} they typed into a box`);
+  } else if (input.kind === "key") {
+    if (!KEYS.has(input.key)) throw new Error("That key isn't supported.");
+    await page.keyboard.press(input.key);
+  } else {
+    await page.mouse.wheel(0, Math.max(-2000, Math.min(2000, input.dy)));
+  }
+  await page.waitForTimeout(300);
+  await capture(l);
+  l.helped = l.helped.slice(-8);
+  return liveView(orgId);
+}
+
+function pathOf(url: string) {
+  try {
+    const u = new URL(url);
+    return u.host + u.pathname;
+  } catch {
+    return url;
+  }
+}
+
+async function capture(l: Live) {
+  if (!l.page) return;
+  try {
+    l.frame = await l.page.screenshot({ type: "jpeg", quality: 55 });
+    l.frameAt = Date.now();
+    l.url = l.page.url();
+  } catch {
+    /* a page mid-navigation is caught on the next tick */
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const VIEW = { width: 1280, height: 900 };
 
 /** One browser at a time keeps memory flat on a small server. */
 export function runBrowserTask(task: BrowserTask): Promise<BrowserResult> {
@@ -118,9 +239,10 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
   const browser = await launch();
   let storageState: string | null = null;
   let screenshotUrl: string | null = null;
+  let ticker: ReturnType<typeof setInterval> | undefined;
   try {
     const state = task.storageState ? JSON.parse(task.storageState) : undefined;
-    const context = await browser.newContext({ storageState: state, acceptDownloads: true, viewport: { width: 1280, height: 900 }, userAgent: DESKTOP_UA, locale: "en-US", timezoneId: "America/Chicago" });
+    const context = await browser.newContext({ storageState: state, acceptDownloads: true, viewport: VIEW, userAgent: DESKTOP_UA, locale: "en-US", timezoneId: "America/Chicago" });
     const watch = (pg: import("playwright-core").Page) => {
       pg.setDefaultTimeout(20_000);
       pg.on("download", async (d) => {
@@ -138,9 +260,43 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
     context.on("page", (pg) => {
       watch(pg);
       page = pg;
+      if (live) live.page = pg;
     });
+
+    // The live view: a fresh picture about once a second while the session is open.
+    let live: Live | null = null;
+    if (task.live) {
+      const prev = lives.get(task.orgId);
+      live = { id: task.live.id, orgId: task.orgId, state: "starting", step: "Opening the site", url: task.startUrl, reason: "", frame: null, frameAt: 0, page, stop: prev?.id === task.live.id && prev.stop, handBack: false, helped: [] };
+      lives.set(task.orgId, live);
+      const l = live;
+      let busy = false;
+      ticker = setInterval(() => {
+        if (busy) return;
+        busy = true;
+        capture(l).finally(() => (busy = false));
+      }, 1000);
+    }
+    /** Stuck: wait for the person to take over and hand back. True means keep going. */
+    const waitForPerson = async (reason: string) => {
+      if (!live) return false;
+      live.state = "waiting";
+      live.reason = reason;
+      await capture(live);
+      await task.live?.onStuck?.(reason).catch(() => null);
+      const until = Date.now() + (task.live?.holdMs ?? 10 * 60_000);
+      while (Date.now() < until) {
+        if (live.stop) return false;
+        if (live.handBack) break;
+        await sleep(500);
+      }
+      if (!live.handBack) return false;
+      return true;
+    };
+
     await page.goto(task.startUrl, { waitUntil: "domcontentloaded" });
-    const max = task.maxSteps ?? 30;
+    if (live) live.state = "running";
+    let max = task.maxSteps ?? 30;
     const finish = async (status: BrowserResult["status"], result: string, note: string): Promise<BrowserResult> => {
       try {
         const shot = await page.screenshot({ fullPage: false });
@@ -154,12 +310,33 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       } catch {
         storageState = null;
       }
-      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl };
+      if (live) {
+        await capture(live);
+        live.state = status === "done" ? "done" : "stopped";
+        live.step = status === "done" ? "Finished" : note.slice(0, 200);
+        live.page = null;
+      }
+      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl, helped: live?.helped ?? [] };
     };
 
     let lastSig = "";
     let repeats = 0;
-    for (let step = 1; step <= max; step++) {
+    let step = 0;
+    for (;;) {
+    while (++step <= max) {
+      if (live) {
+        if (live.stop) return await finish("failed", "", "Stopped by you.");
+        // While the person has control, the employee waits.
+        while (live.state === "control" && !live.stop) await sleep(500);
+        if (live.stop) return await finish("failed", "", "Stopped by you.");
+        if (live.handBack) {
+          live.handBack = false;
+          live.state = "running";
+          log.push({ step, action: "person", detail: `The person took over and handed back.${live.helped.length ? ` ${live.helped.join(". ")}.` : ""} Continue the goal from this page.`, url: page.url() });
+          max += 15;
+          lastSig = "";
+        }
+      }
       await page.waitForLoadState("domcontentloaded").catch(() => null);
       const view = hideSecrets(await snapshot(page), task.secrets);
       const act = task.decide ? await task.decide(view, log) : await decide(task, view, log);
@@ -170,6 +347,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       }
       if (act.action === "fail") {
         entry(act.result || act.thought);
+        if (live && (await waitForPerson(act.result || act.thought))) continue;
         return await finish("failed", "", act.result || act.thought);
       }
       if (act.action === "need_code") {
@@ -193,6 +371,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         repeats = 0;
         continue;
       }
+      if (live) live.step = `Step ${step}: ${act.thought || describe(act, view)}`.slice(0, 220);
       try {
         await perform(page, task, view, act);
         entry(describe(act, view));
@@ -202,8 +381,17 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       await page.waitForTimeout(600);
     }
     const lastSteps = log.slice(-5).map((l) => `${l.action} (${l.detail})`).join("; then ");
-    return await finish("failed", "", `Stopped after ${max} steps without finishing. Last page: ${page.url()}. Last steps: ${lastSteps}`.slice(0, 900));
+    const why = `Stopped after ${max} steps without finishing. Last page: ${page.url()}. Last steps: ${lastSteps}`.slice(0, 900);
+    // Out of steps: the person can take over, and handing back gives more steps from that page.
+    if (live && (await waitForPerson("I used all my steps without finishing."))) {
+      step = max;
+      max += 15;
+      continue;
+    }
+    return await finish("failed", "", why);
+    }
   } finally {
+    clearInterval(ticker);
     await browser.close().catch(() => null);
   }
 }
