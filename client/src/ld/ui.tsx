@@ -341,15 +341,16 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
               const s = summaries.data?.find((x) => x.employeeId === e.id);
               const href = e.kind === "custom" ? `/chats/e/${e.id}` : `/chats/${e.kind}`;
               const on = activeKind === (e.kind === "custom" ? `e${e.id}` : e.kind);
-              const preview = s ? `${s.role === "user" ? s.authorName.split(" ")[0] : e.name}: ${s.content}` : `${e.name}: ${e.description ?? ""}`;
+              const preview = s ? (s.role === "user" ? `${s.authorName.split(" ")[0]}: ${s.content}` : s.content) : e.description ?? "";
               return (
                 <Link key={e.id} href={href} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 14px", margin: "2px 8px", borderRadius: 12, textDecoration: "none", color: "#14221c", background: on ? "#eef3f0" : "transparent" }}>
                   <Avatar name={e.name} kind={e.kind} src={e.avatar} size={46} />
-                  <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
                     <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.roleTitle}</span>
+                      <span style={{ fontWeight: 800, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
                       <span style={{ fontSize: 12, color: "#5b6b64", whiteSpace: "nowrap" }}>{s ? fmtWhen(s.createdAt) : ""}</span>
                     </span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#1b6b4a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.roleTitle}</span>
                     <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 13, color: "#3d4c45", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview}</span>
                       {s && s.unread > 0 && !on ? (
