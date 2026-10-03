@@ -103,6 +103,19 @@ describe.skipIf(!ready)("the server's browser", () => {
     expect(ok.screenshotUrl).toMatch(/^\/files\//);
   }, 90_000);
 
+  it("won't stop for a code on a page with no code box", async () => {
+    let n = 0;
+    const r = await runBrowserTask({
+      orgId: 1,
+      goal: "read leads",
+      startUrl: base,
+      secrets: { email: "a@b.co", password: "pw" },
+      decide: async () => (n++ === 0 ? act({ action: "need_code" }) : act({ action: "fail", result: "stopped for the test" })),
+    });
+    expect(r.status).toBe("failed");
+    expect(r.log[0].detail).toMatch(/no code box/);
+  }, 60_000);
+
   it("downloads a linked document", async () => {
     let asked = false;
     const r = await runBrowserTask({

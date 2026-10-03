@@ -136,7 +136,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
     const finish = async (status: BrowserResult["status"], result: string, note: string): Promise<BrowserResult> => {
       try {
         const shot = await page.screenshot({ fullPage: false });
-        screenshotUrl = (await storagePut(`org-${task.orgId}/browser/step.png`, shot, "image/png")).url;
+        screenshotUrl = (await storagePut(`org-${task.orgId}/browser/step-${Date.now()}.png`, shot, "image/png")).url;
       } catch (err) {
         console.warn("[browser] screenshot failed:", (err as Error).message);
         screenshotUrl = null;
@@ -167,8 +167,13 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
           entry("A code was asked for and one was given; typing it is the next step");
           continue;
         }
+        // Only stop for a code when the page really shows a box for one.
+        if (!hasCodeBox(view)) {
+          entry("There is no code box on this page, so no code is needed. Sign in with the email and password, or use fail and say what the page shows.");
+          continue;
+        }
         entry("The site asked for a sign-in code");
-        return await finish("need_code", "", act.thought);
+        return await finish("need_code", "", codeWords(view) || act.thought);
       }
       try {
         await perform(page, task, view, act);
@@ -252,6 +257,19 @@ async function perform(page: import("playwright-core").Page, task: BrowserTask, 
       await page.waitForTimeout(2000);
       return;
   }
+}
+
+const CODE_WORDS = /\b(code|verification|verify|one[- ]time|otp|passcode|2fa|two[- ]factor|security code)\b/i;
+
+/** A visible text box labeled for a code (not the email or password box). */
+export function hasCodeBox(view: PageView) {
+  return view.elements.some((e) => e.tag === "input" && !["password", "email", "hidden", "checkbox", "radio", "submit", "button"].includes(e.type) && CODE_WORDS.test(e.label));
+}
+
+/** The page's own sentence about the code, to show the person. */
+function codeWords(view: PageView) {
+  const line = view.text.split(/\n+/).map((l) => l.trim()).find((l) => CODE_WORDS.test(l) && l.length > 12 && l.length < 220);
+  return line ?? "";
 }
 
 // Downloads fetched directly (not through the browser's download event) are added here, then merged.

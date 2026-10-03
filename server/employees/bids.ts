@@ -116,6 +116,11 @@ export async function submitBidPrimeCode(orgId: number, code: string) {
   return { success: true };
 }
 
+/** Clears an unanswered code request so a fresh sign-in can run. */
+export async function clearWaiting(orgId: number) {
+  await saveSettings(orgId, { waitingCode: false });
+}
+
 export function queueCheck(orgId: number, manual = false, now = new Date()) {
   return enqueue(`bidprime-${orgId}`, () => withUsage({ orgId, kind: "grants" }, () => checkBidPrime(orgId, manual, now)));
 }
@@ -169,12 +174,12 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":""
 
   if (res.status === "need_code") {
     await saveSettings(orgId, { checking: false, waitingCode: true }, { storageState: res.storageState });
-    await post(orgId, "BidPrime asked for a sign-in code, so I paused before reading your leads.", [{ type: "bidprime_code", id: 0, title: "BidPrime sign-in code", subtitle: `Sent to ${c.secrets.email}. It expires in about 10 minutes.` }]);
+    await post(orgId, `BidPrime asked for a sign-in code, so I paused before reading your leads.${res.note ? ` The page says: "${res.note}"` : ""}`, [{ type: "bidprime_code", id: 0, title: "BidPrime sign-in code", subtitle: `Check ${c.secrets.email}. Codes usually expire in about 10 minutes.`, imageUrl: res.screenshotUrl }]);
     return { added: 0, status: "need_code" as const };
   }
   if (res.status === "failed") {
     await saveSettings(orgId, { checking: false, lastError: res.note }, { status: "error", storageState: res.storageState });
-    await post(orgId, `I couldn't finish reading BidPrime: ${res.note}`);
+    await post(orgId, `I couldn't finish reading BidPrime: ${res.note}`, res.screenshotUrl ? [{ type: "bidprime_screen", id: 0, title: "What BidPrime showed", imageUrl: res.screenshotUrl }] : []);
     return { added: 0, status: "failed" as const };
   }
 
@@ -227,7 +232,7 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":""
 export async function bidsTick(now = new Date()) {
   for (const orgId of await db.listAllOrganizationIds()) {
     const c = await connection(orgId).catch(() => null);
-    if (!c || c.conn.status === "disconnected" || !c.secrets?.password || c.settings.waitingCode || c.settings.checking) continue;
+    if (!c || c.conn.status === "disconnected" || !c.secrets?.password || c.settings.checking) continue;
     const org = await db.getOrganizationById(orgId);
     const tz = org?.timezone || "America/Chicago";
     const p = partsIn(now, tz);

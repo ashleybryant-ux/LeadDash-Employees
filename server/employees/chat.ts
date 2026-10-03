@@ -186,7 +186,9 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       const bids = await import("./bids");
       const v = await bids.bidprimeView(org);
       if (!v.connected) return { text: "BidPrime isn't connected for this workspace yet. Add your BidPrime email and password on Integrations, Applying, BidPrime, and I'll sign in and read your leads inbox and saved bids.", cards: [], queries: [] };
-      if (v.waitingCode) return { text: "BidPrime sent a sign-in code to " + v.email + ". Paste it in the code card above and I'll finish reading your leads inbox.", cards: [], queries: [] };
+      if (v.checking) return { text: `I'm signed in to BidPrime as ${v.email} and reading it now. I'll post what I find here in a few minutes.`, cards: [], queries: [] };
+      // Asking again always starts a fresh sign-in, even if an earlier one stopped for a code.
+      await bids.clearWaiting(org);
       bids.queueCheck(org, true);
       const fromBp = (await db.listOpps(org, ["bid"])).filter((o) => o.source === "BidPrime" && o.status === "new");
       const last = v.lastError ? ` My last check stopped: ${v.lastError}.` : "";

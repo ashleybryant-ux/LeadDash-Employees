@@ -90,7 +90,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code";
+  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen";
   id: number;
   title: string;
   subtitle?: string;
@@ -381,6 +381,13 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   if (card.type === "onboarding") return <OnboardingCard emp={emp} />;
   if (card.type === "onboarding_q") return <OnboardingQuestionCard emp={emp} qkey={card.title} />;
   if (card.type === "bidprime_code" || card.type === "portal_code") return <CodeCard card={card} />;
+  if (card.type === "bidprime_screen" && card.imageUrl)
+    return (
+      <div className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <span className="ld-lbl">{card.title}</span>
+        <a href={card.imageUrl} target="_blank" rel="noreferrer noopener"><img src={card.imageUrl} alt={card.title} style={{ width: "100%", maxWidth: 640, borderRadius: 8, border: "1px solid #e3e9e6" }} /></a>
+      </div>
+    );
 
   if (card.type === "question") {
     return (
@@ -507,6 +514,9 @@ function CodeCard({ card }: { card: Card }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
         <span style={{ fontWeight: 800, fontSize: 15 }}>{card.title}</span>
         {card.subtitle && <span style={{ fontSize: 14, color: "#3d4c45" }}>{card.subtitle}</span>}
+        {card.imageUrl && (
+          <a href={card.imageUrl} target="_blank" rel="noreferrer noopener"><img src={card.imageUrl} alt="What the site showed" style={{ width: "100%", maxWidth: 480, borderRadius: 8, border: "1px solid #e3e9e6", marginTop: 4 }} /></a>
+        )}
         {m.isSuccess ? (
           <span className="ld-pill green" style={{ alignSelf: "flex-start" }}>Got it. Signing in now</span>
         ) : (
