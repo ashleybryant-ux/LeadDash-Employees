@@ -101,3 +101,39 @@ describe("employees do real work", () => {
     ).rejects.toThrow(/paused/);
   });
 });
+
+describe("everything needed is on the row", () => {
+  it("leaves out closed, unclear and past-due bids, keeps the contact, and downloads each package", async () => {
+    calls.length = 0;
+    const { orgId, owner } = await makeWorkspace("bid-details");
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => ({}) })));
+    const item = (o: any) => ({ equity: "", stage: "", eligibility: "", location: "", eventDate: "", audience: "", angle: "", summary: "", fitReason: "Fits", fitCall: "apply", fitScore: 80, deadline: "Dec 1, 2099", amount: "", status: "open", howToSubmit: "", contact: { name: "", title: "", phone: "", email: "" }, ...o });
+    const src = (n: string) => `https://county.gov/bids/${n}`;
+    searchResponse = {
+      queries: ["oklahoma county counseling rfp"],
+      sources: ["open", "closed", "unclear", "past"].map((n) => ({ url: src(n), title: n })),
+      data: {
+        items: [
+          item({ title: "Open bid", host: "County", sourceUrl: src("open"), howToSubmit: "bids@county.gov", contact: { name: "Pat Lee", title: "Buyer", phone: "(405) 555-0100", email: "pat@county.gov" } }),
+          item({ title: "Closed bid", host: "County", sourceUrl: src("closed"), status: "closed" }),
+          item({ title: "Unclear bid", host: "County", sourceUrl: src("unclear"), status: "unclear", deadline: "" }),
+          item({ title: "Past bid", host: "County", sourceUrl: src("past"), deadline: "Sep 5, 2025" }),
+        ],
+      },
+    };
+    const r = await caller(owner).opps.find({ organizationId: orgId, employee: "grants", kind: "bid" });
+    expect(r.added).toBe(1);
+    const [o] = await caller(owner).opps.list({ organizationId: orgId, employee: "grants" });
+    expect(o.title).toBe("Open bid");
+    const reqs = JSON.parse(o.requirements!);
+    expect(reqs.contact).toMatchObject({ name: "Pat Lee", phone: "(405) 555-0100", email: "pat@county.gov" });
+    expect(reqs.channelDetail).toBe("bids@county.gov");
+    expect(calls[0].system).toContain("Never tell the person to call");
+    const { idle } = await import("./employees/apply");
+    await idle();
+    // The package download ran (the stubbed site fails, so it says so instead of staying blank).
+    const after = (await db.getOpp(o.id, orgId))!;
+    expect(after.packageStatus).toBe("failed");
+    expect(JSON.parse(after.requirements!).contact.email).toBe("pat@county.gov");
+  });
+});

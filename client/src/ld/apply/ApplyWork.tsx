@@ -46,12 +46,18 @@ export default function ApplyWork({ emp }: { emp: EmployeeRow }) {
   const [tab, setTab] = React.useState<"opps" | "apps" | "awards">(initial === "applications" ? "apps" : initial === "awards" ? "awards" : "opps");
   const [kind, setKind] = React.useState<OppKind>(OPP_TABS[empKind][0].key);
   const [adding, setAdding] = React.useState(false);
+  const linkedOpp = typeof window !== "undefined" ? Number(new URLSearchParams(window.location.search).get("opp")) || null : null;
   const opps = trpc.opps.list.useQuery({ organizationId: currentOrgId, employee: empKind }, { refetchInterval: (q) => ((q.state.data ?? []).some((o) => o.packageStatus === "fetching") ? 5000 : false) });
   const apps = trpc.applications.list.useQuery({ organizationId: currentOrgId, employee: empKind }, { refetchInterval: (q) => ((q.state.data ?? []).some((a) => a.status === "writing") ? 5000 : 30_000) });
   const utils = trpc.useUtils();
   const find = trpc.opps.find.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
 
   const oppList = opps.data ?? [];
+  // A chat card's Details button opens that row on the right folder tab.
+  const linkedKind = linkedOpp ? oppList.find((o) => o.id === linkedOpp)?.kind : undefined;
+  React.useEffect(() => {
+    if (linkedKind && OPP_TABS[empKind].some((t) => t.key === linkedKind)) setKind(linkedKind as OppKind);
+  }, [linkedKind, empKind]);
   const appList = (apps.data ?? []).filter((a) => a.status !== "awarded" && a.status !== "declined");
   const awardList = (apps.data ?? []).filter((a) => a.status === "awarded" || a.status === "declined");
 
@@ -88,12 +94,12 @@ export default function ApplyWork({ emp }: { emp: EmployeeRow }) {
             tabs={OPP_TABS[empKind].map((t) => ({ key: t.key, label: `${t.label} (${oppList.filter((o) => o.kind === t.key).length})` }))}
           >
             {adding && <AddPanel empKind={empKind} onDone={() => setAdding(false)} />}
-            <OppTable list={oppList.filter((o) => o.kind === kind)} kind={kind} loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
+            <OppTable initialOpen={linkedOpp} list={oppList.filter((o) => o.kind === kind)} kind={kind} loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
           </FolderTabs>
         ) : (
           <div className="ld-card" style={{ overflow: "hidden" }}>
             {adding && <AddPanel empKind={empKind} onDone={() => setAdding(false)} />}
-            <OppTable list={oppList} kind={kind} loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
+            <OppTable initialOpen={linkedOpp} list={oppList} kind={kind} loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
           </div>
         ))}
       {tab === "apps" && <AppTable list={appList} loading={apps.isLoading} emp={emp} />}
@@ -166,10 +172,10 @@ function AddPanel({ empKind, onDone }: { empKind: EmpKind; onDone: () => void })
 // Opportunities
 // ==========================================
 
-function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow[]; kind: OppKind; loading: boolean; apps: AppRow[]; emp: EmployeeRow; onOpenApps: () => void }) {
+function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen }: { list: OppRow[]; kind: OppKind; loading: boolean; apps: AppRow[]; emp: EmployeeRow; onOpenApps: () => void; initialOpen?: number | null }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
-  const [open, setOpen] = React.useState<number | null>(null);
+  const [open, setOpen] = React.useState<number | null>(initialOpen ?? null);
   const [asking, setAsking] = React.useState<number | null>(null);
   const start = trpc.applications.start.useMutation({ onSuccess: async () => { await utils.applications.list.invalidate(); await utils.opps.list.invalidate(); onOpenApps(); } });
   const skip = trpc.opps.skip.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
@@ -207,7 +213,7 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
                 {o.source === "BidPrime" && <span className="ld-small ld-muted">From BidPrime</span>}
               </span>
               <span>{o.host}</span>
-              <span>{o.deadline || reqs.due || "Not listed"}</span>
+              <span>{o.deadline || reqs.due || "Not posted"}</span>
               <span>{o.kind === "bid" ? goesIn(reqs) : o.amount || "Not listed"}</span>
               {app ? <span className={`ld-pill ${APP_STATUS[app.status]?.cls ?? "gray"}`}>{APP_STATUS[app.status]?.label ?? app.status}</span> : o.fitScore > 0 || o.fitReason ? callPill(o) : <span className="ld-pill gray">Not scored</span>}
               {app ? (
@@ -261,6 +267,15 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
                       )}
                     </KV>
                   )}
+                  {reqs.contact && (reqs.contact.name || reqs.contact.phone || reqs.contact.email) && (
+                    <KV label="Contact">
+                      <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        {(reqs.contact.name || reqs.contact.title) && <span>{[reqs.contact.name, reqs.contact.title].filter(Boolean).join(", ")}</span>}
+                        {reqs.contact.phone && <a href={`tel:${reqs.contact.phone.replace(/[^\d+]/g, "")}`} style={{ fontWeight: 600 }}>{reqs.contact.phone}</a>}
+                        {reqs.contact.email && <a href={`mailto:${reqs.contact.email}`} style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{reqs.contact.email}</a>}
+                      </span>
+                    </KV>
+                  )}
                   {o.sourceUrl && (
                     <KV label="Source">
                       <a href={o.sourceUrl} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 600 }}>
@@ -278,14 +293,14 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps }: { list: OppRow
                   <button type="button" className="ld-btn" disabled={dl.isPending || o.files.length === 0} onClick={() => dl.mutate({ organizationId: currentOrgId, id: o.id })}>
                     Download
                   </button>
-                  {o.kind === "bid" && (
+                  {(o.kind === "bid" || /@/.test(`${reqs.questionsTo ?? ""} ${reqs.contact?.email ?? ""}`)) && (
                     <button type="button" className="ld-btn" onClick={() => setAsking(asking === o.id ? null : o.id)}>Ask a question</button>
                   )}
                   <button type="button" className="ld-btn" onClick={() => skip.mutate({ organizationId: currentOrgId, id: o.id })}>Skip</button>
                 </div>
                 {asking === o.id && (
                   <div style={{ gridColumn: "1 / -1" }}>
-                    <AskPanel oppId={o.id} to={reqs.questionsTo} due={reqs.questionsDue} onDone={() => setAsking(null)} />
+                    <AskPanel oppId={o.id} to={/@/.test(reqs.questionsTo ?? "") ? reqs.questionsTo : reqs.contact?.email || reqs.questionsTo} due={reqs.questionsDue} who={o.kind === "bid" ? "buyer" : "host"} onDone={() => setAsking(null)} />
                   </div>
                 )}
                 {(dl.error || start.error) && (
@@ -317,7 +332,7 @@ function goesIn(reqs: Requirements) {
 }
 
 /** Ask the buyer a question: becomes an email draft in Approvals. */
-function AskPanel({ oppId, to, due, onDone }: { oppId: number; to?: string; due?: string; onDone: () => void }) {
+function AskPanel({ oppId, to, due, who, onDone }: { oppId: number; to?: string; due?: string; who: string; onDone: () => void }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const [q, setQ] = React.useState("");
@@ -332,7 +347,7 @@ function AskPanel({ oppId, to, due, onDone }: { oppId: number; to?: string; due?
   return (
     <div style={{ background: "#f4f8f6", padding: "14px 16px", borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
       <label htmlFor={`ask-${oppId}`} className="ld-lbl">
-        Question for the buyer{to ? ` (${to}` : ""}{to && due ? `, due ${due})` : to ? ")" : due ? ` (due ${due})` : ""}
+        Question for the {who}{to ? ` (${to}` : ""}{to && due ? `, due ${due})` : to ? ")" : due ? ` (due ${due})` : ""}
       </label>
       <textarea id={`ask-${oppId}`} className="ld-in" rows={3} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Is a hosted (cloud) system acceptable?" />
       <div className="ld-row" style={{ justifyContent: "flex-end" }}>
@@ -356,6 +371,7 @@ function Package({ opp, reqs, onRetry }: { opp: OppRow; reqs: Requirements; onRe
     ["Attachments", reqs.attachments?.length ? reqs.attachments.map((a) => a.name).join(", ") : undefined],
     ["Submit", reqs.submitWhat || undefined],
     ["Goes in", reqs.channel ? `${CHANNEL_LABEL[reqs.channel] ?? reqs.channel}${reqs.channelDetail ? `, ${reqs.channelDetail}` : ""}` : undefined],
+    ...(reqs.terms ?? []).filter((t) => t.label && t.value).map((t) => [t.label, t.value] as [string, string]),
     ["AI rule", reqs.aiPolicy?.restricted ? `${reqs.aiPolicy.note || "Restricted"}${reqs.aiPolicy.citation ? ` (${reqs.aiPolicy.citation})` : ""}` : undefined],
   ];
   return (

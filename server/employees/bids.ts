@@ -8,7 +8,7 @@ import * as integrations from "../integrations";
 import { uploadsRoot } from "../storage";
 import type { Application, Opportunity, PortalLogin } from "../../drizzle/schema";
 import { runBrowserTask, tempFiles, type BrowserResult, type Download } from "./browser";
-import { addOpportunityFromText, enqueue, markSubmitted, parse, type Attachment, type Requirements } from "./apply";
+import { addOpportunityFromText, enqueue, markSubmitted, oppCardFor, parse, type Attachment, type Requirements } from "./apply";
 import { employeeFor } from "./tasks";
 import { partsIn } from "./schedule";
 import { withUsage } from "../usage";
@@ -217,7 +217,7 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":""
     const content = created.length
       ? `Signed in to BidPrime. ${created.length} new ${created.length === 1 ? "bid" : "bids"}: ${strong.length} strong ${strong.length === 1 ? "fit" : "fits"}${skipped.length ? `, ${skipped.length} I'd skip` : ""}. They're on Opportunities with the documents downloaded.${more}`
       : "Signed in to BidPrime. Nothing new since my last check.";
-    const cards = created.map((o) => ({ type: "opportunity", id: o.id, title: o.title, subtitle: [o.host, o.deadline && `Due ${o.deadline}`].filter(Boolean).join(" · "), body: o.fitReason ?? o.summary ?? "", url: o.sourceUrl, call: o.fitCall, score: o.fitScore }));
+    const cards = created.map((o) => oppCardFor(o));
     await post(orgId, content, cards);
   }
   return { added: created.length, status: "done" as const };
@@ -382,8 +382,8 @@ export async function askQuestion(orgId: number, oppId: number, question: string
   const opp = await db.getOpp(oppId, orgId);
   if (!opp) throw new TRPCError({ code: "NOT_FOUND", message: "That opportunity is not in this workspace." });
   const reqs = parse<Partial<Requirements>>(opp.requirements, {});
-  const to = emailOf(reqs.questionsTo) ?? emailOf(reqs.channelDetail);
-  if (!to) throw new TRPCError({ code: "BAD_REQUEST", message: "The bid documents don't list an email address for questions. Ask through the agency's portal instead." });
+  const to = emailOf(reqs.questionsTo) ?? emailOf(reqs.contact?.email) ?? emailOf(reqs.channelDetail);
+  if (!to) throw new TRPCError({ code: "BAD_REQUEST", message: "The documents don't list an email address for questions." });
   const emp = await employeeFor(orgId, "grants");
   const org = await db.getOrganizationById(orgId);
   const item = await db.createOutboundItem({

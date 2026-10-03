@@ -413,6 +413,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
         <button type="button" className={`ld-btn ${card.call === "skip" ? "" : "p"}`} disabled={start.isPending} onClick={() => start.mutate({ organizationId: currentOrgId, opportunityId: card.id })}>
           {start.isPending ? "Starting..." : "Apply"}
         </button>
+        <Link href={`${base}/work?opp=${card.id}`} className="ld-btn">Details</Link>
         <button type="button" className="ld-btn" onClick={() => skip.mutate({ organizationId: currentOrgId, id: card.id })}>Skip</button>
       </>
     );

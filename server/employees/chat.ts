@@ -443,16 +443,7 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
 }
 
 function oppCard(o: Opportunity): ChatCard {
-  return {
-    type: "opportunity",
-    id: o.id,
-    title: o.title,
-    subtitle: [o.host, o.amount, o.deadline && `Due ${o.deadline}`].filter(Boolean).join(" · "),
-    body: o.fitReason ?? o.summary ?? "",
-    url: o.sourceUrl,
-    call: o.fitCall,
-    score: o.fitScore,
-  };
+  return apply.oppCardFor(o);
 }
 
 async function nowIn(orgId: number) {

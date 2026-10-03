@@ -26,6 +26,8 @@ export type Requirements = {
   pages?: Record<string, string>;
   questionsDue?: string;
   questionsTo?: string;
+  contact?: { name: string; title: string; phone: string; email: string };
+  terms?: { label: string; value: string }[];
 };
 
 export type Question = {

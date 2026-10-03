@@ -40,11 +40,37 @@ export type Requirements = {
   decisionDate: string;
   questionsDue?: string;
   questionsTo?: string;
+  contact?: Contact;
+  terms?: { label: string; value: string }[];
   videoRequired: boolean;
   videoLimit: string;
   deckLimit: string;
   pages: Record<string, string>;
 };
+
+export type Contact = { name: string; title: string; phone: string; email: string };
+
+/** Keeps whatever contact details either source found. */
+export function mergeContact(a?: Partial<Contact> | null, b?: Partial<Contact> | null): Contact {
+  return { name: a?.name || b?.name || "", title: a?.title || b?.title || "", phone: a?.phone || b?.phone || "", email: a?.email || b?.email || "" };
+}
+
+/** The chat card for an opportunity: the facts on the card, the full details one tap away. */
+export function oppCardFor(o: Opportunity) {
+  const reqs = parse<Partial<Requirements>>(o.requirements, {});
+  const c = reqs.contact;
+  const who = c && (c.name || c.email || c.phone) ? `Contact: ${[c.name, c.title].filter(Boolean).join(", ")}${c.phone ? ` · ${c.phone}` : ""}${c.email ? ` · ${c.email}` : ""}`.replace("Contact:  · ", "Contact: ") : "";
+  return {
+    type: "opportunity" as const,
+    id: o.id,
+    title: o.title,
+    subtitle: [o.host, o.amount, `Due ${o.deadline || reqs.due || "not posted"}`].filter(Boolean).join(" · "),
+    body: [o.fitReason ?? o.summary ?? "", who].filter(Boolean).join("\n"),
+    url: o.sourceUrl,
+    call: o.fitCall,
+    score: o.fitScore,
+  };
+}
 
 export type Question = {
   id: string;
@@ -235,7 +261,17 @@ type Found = {
   fitScore: number;
   fitCall: "apply" | "partner" | "skip";
   fitReason: string;
+  status: "open" | "forecast" | "closed" | "unclear";
+  howToSubmit: string;
+  contact: Contact;
 };
+
+const CONTACT_SCHEMA = obj({
+  name: { type: "string", description: "The contact person or office named for this opportunity, or ''" },
+  title: { type: "string", description: "Their title or office, or ''" },
+  phone: { type: "string", description: "Phone number as posted, or ''" },
+  email: { type: "string", description: "Email address as posted, or ''" },
+});
 
 const FOUND_SCHEMA = obj({
   items: arr(
@@ -255,10 +291,21 @@ const FOUND_SCHEMA = obj({
       sourceUrl: { type: "string", description: "The host's page for this opportunity" },
       fitScore: { type: "integer", description: "0 to 100" },
       fitCall: { type: "string", enum: ["apply", "partner", "skip"] },
-      fitReason: { type: "string", description: "One or two sentences: why apply, or why skip" },
+      fitReason: { type: "string", description: "One or two sentences: why it fits or why skip. Never tell the person to call, visit, check or confirm anything" },
+      status: { type: "string", enum: ["open", "forecast", "closed", "unclear"], description: "open: taking responses now or rolling. forecast: posted with a future open date. closed: deadline passed. unclear: no current window posted" },
+      howToSubmit: { type: "string", description: "How responses go in (portal name, email address, mail), or ''" },
+      contact: CONTACT_SCHEMA,
     })
   ),
 });
+
+/** "Nov 14, 2026" in the past means it closed. Unreadable dates are kept. */
+function isPast(date: string, now = new Date()) {
+  if (!date || /rolling|continuous|open until/i.test(date)) return false;
+  const t = Date.parse(date.replace(/\bat\b.*$/i, "").replace(/(\d)(st|nd|rd|th)\b/g, "$1"));
+  if (Number.isNaN(t)) return false;
+  return t < now.getTime() - 86_400_000;
+}
 
 const FIND_JOB: Record<OppKind, string> = {
   grant: `Your job: find grants and funding RFPs that are open now, from every kind of funder, not only federal listings.
@@ -327,7 +374,9 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
       `${FIND_JOB[kind]}
 - Score each one 0 to 100 for fit (eligibility first, then fit with the workspace's work, award size compared to effort, competition, time left). Mark it "apply" only when the score is 60 or higher. Below 60, mark it "skip", or "partner" when a partner could lead. Say why in one or two sentences.
 - A request for "this quarter" or "this month" means deadlines in that window; still include rolling ones.
-- Return up to 8, best fit first. Include lower scores too so the person sees what is out there. If you find fewer real ones, return fewer.`
+- Return up to 8, best fit first. Include lower scores too so the person sees what is out there. If you find fewer real ones, return fewer.
+- Only return ones taking responses now, rolling, or posted with a future open date. If you cannot find a current window, mark it "unclear"; it will be left out.
+- Record everything the person needs so they never have to open the site: the contact person, phone and email, how responses are submitted, the value or rates. Never tell the person to call, visit, check or confirm anything; if a fact is not posted, leave it "".`
     );
     const federal =
       kind === "grant" ? await grantsGovListings(opts.focus || brain.org?.focusAreas?.split(/[,;\n]/)[0] || brain.org?.description?.slice(0, 60) || "behavioral health") : [];
@@ -342,6 +391,7 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
     const created: Opportunity[] = [];
     for (const f of withRealSource(result.data.items, sources)) {
       if (!f.title || !f.host) continue;
+      if (f.status === "closed" || f.status === "unclear" || isPast(f.deadline)) continue;
       if (existing.some((o) => norm(o.title) === norm(f.title) && norm(o.host) === norm(f.host))) continue;
       created.push(
         await db.createOpp({
@@ -366,9 +416,13 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
           fitCall: callFor(f.fitCall, f.fitScore),
           fitReason: f.fitReason || null,
           searchQueries: JSON.stringify(result.queries),
+          requirements: JSON.stringify({ contact: mergeContact(f.contact), channelDetail: f.howToSubmit || "" }),
+          packageStatus: f.sourceUrl ? "fetching" : "none",
         })
       );
     }
+    // Download each one's documents and read what it requires, so every detail is on the row.
+    for (const o of created) if (o.sourceUrl) enqueue(`package-${o.id}`, () => fetchPackage(orgId, o.id));
     await db.logAction({
       organizationId: orgId,
       actorType: "employee",
@@ -442,6 +496,7 @@ Use only what the text says; use "" for anything it does not state.`
     fitScore: Math.max(0, Math.min(100, Math.round(details.fitScore || 0))),
     fitCall: callFor(details.fitCall, details.fitScore),
     fitReason: details.fitReason || null,
+    requirements: JSON.stringify({ contact: mergeContact(details.contact), channelDetail: details.howToSubmit || "" }),
   });
   if (input.file) {
     const saved = await storagePut(`org-${orgId}/packages/${input.file.name}`, input.file.buf, input.file.mime);
@@ -512,6 +567,7 @@ Use only what the text says; use "" for anything it does not state.`
     fitScore: Math.max(0, Math.min(100, Math.round(details.fitScore || 0))),
     fitCall: callFor(details.fitCall, details.fitScore),
     fitReason: details.fitReason || null,
+    requirements: JSON.stringify({ contact: mergeContact(details.contact), channelDetail: details.howToSubmit || "" }),
   });
   for (const f of input.files.slice(0, 8)) {
     try {
@@ -559,6 +615,13 @@ const REQ_SCHEMA = obj({
   decisionDate: { type: "string", description: "When decisions are announced, or ''" },
   questionsDue: { type: "string", description: "Deadline for questions to the buyer or host, as written, or ''" },
   questionsTo: { type: "string", description: "Where questions go: the buyer's email address or portal, or ''" },
+  contact: CONTACT_SCHEMA,
+  terms: arr(
+    obj({
+      label: { type: "string", description: "Short label: Contract term, Rates, Value, Start, Insurance, Licenses, Location, Reporting" },
+      value: { type: "string", description: "What the documents say, in one line" },
+    })
+  ),
   videoRequired: bool,
   videoLimit: { type: "string", description: "Video length limit, or ''" },
   deckLimit: { type: "string", description: "Pitch deck slide limit, or ''" },
@@ -636,7 +699,7 @@ export async function fetchPackage(orgId: number, oppId: number) {
 
     const { system } = await systemPromptFor(
       emp!,
-      `Your job now: read the host's documents below in full and record exactly what the application requires. Copy questions word for word in the order asked. Use only what the documents say; "" or [] where they say nothing.`
+      `Your job now: read the host's documents below in full and record exactly what the application requires. Copy questions word for word in the order asked. Record the contact person with phone and email, and the key terms (contract term, rates or value, start requirement, insurance, licenses, location) so the person never has to open the documents. Use only what the documents say; "" or [] where they say nothing.`
     );
     const reqs = await generateJson<Requirements>({
       system,
@@ -661,6 +724,9 @@ export async function fetchPackage(orgId: number, oppId: number) {
       funderHistory = await funderHistoryFor(emp!, opp).catch(() => null);
     }
 
+    const before = parse<Partial<Requirements>>(opp.requirements, {});
+    reqs.contact = mergeContact(reqs.contact, before.contact);
+    if (!reqs.channelDetail && before.channelDetail) reqs.channelDetail = before.channelDetail;
     await db.updateOpp(oppId, orgId, {
       requirements: JSON.stringify(reqs),
       packageStatus: "ready",
