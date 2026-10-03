@@ -161,7 +161,7 @@ export async function checkBidPrime(orgId: number, manual = false, now = new Dat
       startUrl: c.settings.startUrl || BIDPRIME_HOME,
       secrets,
       storageState: c.secrets.storageState ?? null,
-      maxSteps: 30,
+      maxSteps: 45,
       goal: `Sign in to BidPrime with the saved email and password (skip this if already signed in). Open the leads inbox of new bid leads, then the saved bids.
 Return JSON exactly like {"bids":[{"title":"","agency":"","location":"","due":"","detailUrl":"","sourceUrl":""}]} with up to 15 of the newest bids across both lists. detailUrl is the BidPrime page for that bid; sourceUrl is the agency's own posting link if the page shows one, else "". Do not open each bid yet.`,
     });

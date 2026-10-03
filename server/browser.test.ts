@@ -25,6 +25,7 @@ beforeAll(async () => {
       seen.code = url.searchParams.get("c") ?? undefined;
       return res.end(page(`<h1>Leads inbox</h1><a href="/bid/1">County EHR System</a><a href="/doc.pdf">RFP document</a><form action="/submit"><button>Submit response</button></form>`));
     }
+    if (url.pathname === "/home") return res.end(page(`<a href="/" target="_blank">Log In</a>`));
     if (url.pathname === "/doc.pdf") {
       res.setHeader("content-type", "application/pdf");
       return res.end("%PDF-1.4 fake");
@@ -114,6 +115,26 @@ describe.skipIf(!ready)("the server's browser", () => {
     });
     expect(r.status).toBe("failed");
     expect(r.log[0].detail).toMatch(/no code box/);
+  }, 60_000);
+
+  it("follows a Log In link that opens a new tab", async () => {
+    let clicked = false;
+    const urls: string[] = [];
+    const r = await runBrowserTask({
+      orgId: 1,
+      goal: "open sign in",
+      startUrl: `${base}/home`,
+      decide: async (v) => {
+        urls.push(v.url);
+        if (!clicked) {
+          clicked = true;
+          return act({ action: "click", index: el(v, /Log In/) });
+        }
+        return act({ action: "done", result: v.url });
+      },
+    });
+    expect(r.status).toBe("done");
+    expect(r.result).toBe(`${base}/`);
   }, 60_000);
 
   it("downloads a linked document", async () => {

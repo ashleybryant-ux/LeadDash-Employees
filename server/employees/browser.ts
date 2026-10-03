@@ -121,15 +121,23 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
   try {
     const state = task.storageState ? JSON.parse(task.storageState) : undefined;
     const context = await browser.newContext({ storageState: state, acceptDownloads: true, viewport: { width: 1280, height: 900 }, userAgent: DESKTOP_UA, locale: "en-US", timezoneId: "America/Chicago" });
-    const page = await context.newPage();
-    page.setDefaultTimeout(20_000);
-    page.on("download", async (d) => {
-      try {
-        const p = await d.path();
-        if (p) downloads.push({ name: d.suggestedFilename(), buf: fs.readFileSync(p), mime: mimeOf(d.suggestedFilename()), url: d.url() });
-      } catch {
-        /* a download that fails is skipped */
-      }
+    const watch = (pg: import("playwright-core").Page) => {
+      pg.setDefaultTimeout(20_000);
+      pg.on("download", async (d) => {
+        try {
+          const p = await d.path();
+          if (p) downloads.push({ name: d.suggestedFilename(), buf: fs.readFileSync(p), mime: mimeOf(d.suggestedFilename()), url: d.url() });
+        } catch {
+          /* a download that fails is skipped */
+        }
+      });
+    };
+    let page = await context.newPage();
+    watch(page);
+    // A link that opens a new tab (a "Log in" button often does) is followed there.
+    context.on("page", (pg) => {
+      watch(pg);
+      page = pg;
     });
     await page.goto(task.startUrl, { waitUntil: "domcontentloaded" });
     const max = task.maxSteps ?? 30;
@@ -149,6 +157,8 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl };
     };
 
+    let lastSig = "";
+    let repeats = 0;
     for (let step = 1; step <= max; step++) {
       await page.waitForLoadState("domcontentloaded").catch(() => null);
       const view = hideSecrets(await snapshot(page), task.secrets);
@@ -175,6 +185,14 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         entry("The site asked for a sign-in code");
         return await finish("need_code", "", codeWords(view) || act.thought);
       }
+      const sig = `${act.action}:${act.index}:${act.secret}:${act.value}`;
+      repeats = sig === lastSig ? repeats + 1 : 0;
+      lastSig = sig;
+      if (repeats >= 2) {
+        entry("That was tried three times with no change. Do something different: another element, goto a URL, or fail and say what the page shows.");
+        repeats = 0;
+        continue;
+      }
       try {
         await perform(page, task, view, act);
         entry(describe(act, view));
@@ -183,7 +201,8 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       }
       await page.waitForTimeout(600);
     }
-    return await finish("failed", "", `Stopped after ${max} steps without finishing.`);
+    const lastSteps = log.slice(-5).map((l) => `${l.action} (${l.detail})`).join("; then ");
+    return await finish("failed", "", `Stopped after ${max} steps without finishing. Last page: ${page.url()}. Last steps: ${lastSteps}`.slice(0, 900));
   } finally {
     await browser.close().catch(() => null);
   }
