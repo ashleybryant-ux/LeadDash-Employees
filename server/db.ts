@@ -41,6 +41,15 @@ import {
   dramaSeries,
   dramaCast,
   dramaEpisodes,
+  pressContacts,
+  pressStories,
+  pressCampaigns,
+  pressPitches,
+  pressReplies,
+  pressInterviews,
+  pressCoverage,
+  pressLibrary,
+  pressSettings,
   platformFindings,
   pushSubscriptions,
   hrRoles,
@@ -1776,3 +1785,54 @@ export function updateDramaEpisode(id: number, orgId: number, data: Partial<type
 export function listMakingDramaEpisodes() {
   return getDb().select().from(dramaEpisodes).where(eq(dramaEpisodes.status, "making")).all();
 }
+
+
+// ==========================================
+// Taylor's newsroom
+// ==========================================
+
+type AnyTable = any;
+/** Workspace-scoped list, get, create, update and remove for one newsroom table. */
+function orgCrud<T extends { $inferSelect: unknown; $inferInsert: unknown }>(table: AnyTable) {
+  type Row = T["$inferSelect"];
+  type Ins = T["$inferInsert"];
+  const get = (id: number, orgId: number): Row | null => getDb().select().from(table).where(and(eq(table.id, id), eq(table.organizationId, orgId))).limit(1).all()[0] ?? null;
+  return {
+    list: (orgId: number): Row[] => getDb().select().from(table).where(eq(table.organizationId, orgId)).orderBy(desc(table.id)).all() as Row[],
+    listIn: (orgIds: number[]): Row[] => (orgIds.length ? (getDb().select().from(table).where(inArray(table.organizationId, orgIds)).orderBy(desc(table.id)).all() as Row[]) : []),
+    get,
+    create: (row: Ins): Row => (getDb().insert(table).values(row as never).returning().all() as Row[])[0],
+    update: (id: number, orgId: number, data: Partial<Ins>): Row | null => {
+      getDb().update(table).set({ ...(data as object), ...("updatedAt" in table ? { updatedAt: new Date() } : {}) } as never).where(and(eq(table.id, id), eq(table.organizationId, orgId))).run();
+      return get(id, orgId);
+    },
+    remove: (id: number, orgId: number) => {
+      getDb().delete(table).where(and(eq(table.id, id), eq(table.organizationId, orgId))).run();
+    },
+  };
+}
+
+export const press = {
+  contacts: orgCrud<typeof pressContacts>(pressContacts),
+  stories: orgCrud<typeof pressStories>(pressStories),
+  campaigns: orgCrud<typeof pressCampaigns>(pressCampaigns),
+  pitches: orgCrud<typeof pressPitches>(pressPitches),
+  replies: orgCrud<typeof pressReplies>(pressReplies),
+  interviews: orgCrud<typeof pressInterviews>(pressInterviews),
+  coverage: orgCrud<typeof pressCoverage>(pressCoverage),
+  library: orgCrud<typeof pressLibrary>(pressLibrary),
+  getSettings(orgId: number) {
+    return getDb().select().from(pressSettings).where(eq(pressSettings.organizationId, orgId)).limit(1).all()[0] ?? null;
+  },
+  saveSettings(orgId: number, data: Partial<typeof pressSettings.$inferInsert>) {
+    const now = new Date();
+    if (press.getSettings(orgId)) getDb().update(pressSettings).set({ ...data, updatedAt: now }).where(eq(pressSettings.organizationId, orgId)).run();
+    else getDb().insert(pressSettings).values({ organizationId: orgId, shared: JSON.stringify([orgId]), ...data, updatedAt: now }).run();
+    return press.getSettings(orgId)!;
+  },
+  /** Every pitch sent to this reporter from any of these desks since a time (the cooling rule). */
+  sentTo(contactId: number, orgIds: number[], since: Date) {
+    if (!orgIds.length) return [];
+    return getDb().select().from(pressPitches).where(and(eq(pressPitches.contactId, contactId), inArray(pressPitches.organizationId, orgIds), gt(pressPitches.sentAt, since))).all();
+  },
+};

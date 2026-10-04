@@ -6,6 +6,7 @@ import type { Opportunity } from "../../drizzle/schema";
 import { htmlToText } from "./files";
 import { addOpportunityFromText, enqueue, oppCardFor, startApplication } from "./apply";
 import { employeeFor, systemPromptFor, working } from "./tasks";
+import { contactsFor } from "./newsroom";
 
 /**
  * Taylor's press inbox: the free reporter request services, read the moment
@@ -33,12 +34,12 @@ export type Service = (typeof SERVICES)[number];
 type Secrets = { host: string; port: number; user: string; pass: string };
 type Sync = { lastUid?: number; checkedAt?: string; found?: number; pitched?: number; seen?: string[]; lastFound?: number };
 
-export type MailMessage = { uid: number; messageId: string; from: string; subject: string; text: string };
+export type MailMessage = { uid: number; messageId: string; from: string; fromEmail?: string; subject: string; text: string; date?: Date };
 export type Mailbox = {
   /** Signs in and out, to check the password. */
   test(cfg: Secrets): Promise<void>;
-  /** Emails from the press services newer than `afterUid`, received since `since`. */
-  fetch(cfg: Secrets, afterUid: number, since: Date): Promise<MailMessage[]>;
+  /** Emails from the press services (and from reporters Taylor pitched) newer than `afterUid`, received since `since`. */
+  fetch(cfg: Secrets, afterUid: number, since: Date, alsoFrom?: string[]): Promise<MailMessage[]>;
 };
 
 const parse = <T,>(raw: string | null | undefined, fallback: T): T => {
@@ -79,14 +80,14 @@ const realMailbox: Mailbox = {
     await client.connect();
     await client.logout().catch(() => null);
   },
-  async fetch(cfg, afterUid, since) {
+  async fetch(cfg, afterUid, since, alsoFrom = []) {
     const { ImapFlow } = await import("imapflow");
     const { simpleParser } = await import("mailparser");
     const client = new ImapFlow({ host: cfg.host, port: cfg.port, secure: true, auth: { user: cfg.user, pass: cfg.pass }, logger: false, connectionTimeout: 30_000, greetingTimeout: 20_000, socketTimeout: 120_000 });
     await client.connect();
     const lock = await client.getMailboxLock("INBOX");
     try {
-      const or = SERVICES.flatMap((s) => s.from.map((f) => ({ from: f })));
+      const or = [...SERVICES.flatMap((s) => s.from.map((f) => ({ from: f }))), ...alsoFrom.slice(0, 40).map((f) => ({ from: f }))];
       const found = (await client.search({ since, or }, { uid: true })) || [];
       const uids = found.filter((u) => u > afterUid).slice(-20);
       const out: MailMessage[] = [];
@@ -94,7 +95,7 @@ const realMailbox: Mailbox = {
       for await (const m of client.fetch(uids, { uid: true, source: true }, { uid: true })) {
         if (!m.source) continue;
         const p = await simpleParser(m.source);
-        out.push({ uid: m.uid, messageId: p.messageId || `uid-${m.uid}`, from: p.from?.text ?? "", subject: p.subject ?? "", text: (p.text || htmlToText(typeof p.html === "string" ? p.html : "")).slice(0, 120_000) });
+        out.push({ uid: m.uid, messageId: p.messageId || `uid-${m.uid}`, from: p.from?.text ?? "", fromEmail: p.from?.value?.[0]?.address ?? "", subject: p.subject ?? "", text: (p.text || htmlToText(typeof p.html === "string" ? p.html : "")).slice(0, 120_000), date: p.date ?? undefined });
       }
       return out;
     } finally {
@@ -108,6 +109,11 @@ let mailbox: Mailbox = realMailbox;
 /** For tests: a fake inbox. */
 export function setMailbox(m: Mailbox | null) {
   mailbox = m ?? realMailbox;
+}
+
+/** Reporters' addresses across the newsroom, so their answers are read too. */
+function reporterEmails(orgId: number) {
+  return contactsFor(orgId).map((c) => (c.email ?? "").toLowerCase()).filter(Boolean);
 }
 
 export function pressLink(orgId: number) {
@@ -242,7 +248,7 @@ export async function checkPress(orgId: number) {
   try {
     let msgs: MailMessage[];
     try {
-      msgs = await mailbox.fetch(cfg, sync.lastUid ?? 0, new Date(Date.now() - 3 * 86_400_000));
+      msgs = await mailbox.fetch(cfg, sync.lastUid ?? 0, new Date(Date.now() - 3 * 86_400_000), reporterEmails(orgId));
     } catch (err) {
       db.updateAccountLink(link.id, orgId, { status: "error", error: friendly(err), sync: JSON.stringify({ ...sync, checkedAt: new Date().toISOString() }) });
       return { found: 0, pitched: 0 };
@@ -250,11 +256,24 @@ export async function checkPress(orgId: number) {
     const seen = new Set(sync.seen ?? []);
     const made: { service: Service; opp: Opportunity }[] = [];
     let lastUid = sync.lastUid ?? 0;
+    let replies = 0;
     await working(emp, async () => {
       for (const m of msgs.sort((a, b) => a.uid - b.uid)) {
         lastUid = Math.max(lastUid, m.uid);
         if (seen.has(m.messageId)) continue;
         seen.add(m.messageId);
+        // A reporter answering a pitch: sorted on the Replies tab (crisis words stop the desk).
+        const fromEmail = (m.fromEmail || m.from.match(/[^\s<>"]+@[^\s<>"]+/)?.[0] || "").toLowerCase();
+        if (fromEmail && reporterEmails(orgId).includes(fromEmail)) {
+          try {
+            const { handleReply } = await import("./pitching");
+            await handleReply(orgId, { messageId: m.messageId, fromEmail, fromName: m.from.replace(/<.*>/, "").replace(/"/g, "").trim(), subject: m.subject, text: m.text, date: m.date });
+            replies++;
+          } catch (err) {
+            console.warn("[press] reporter reply skipped:", err instanceof Error ? err.message : err);
+          }
+          continue;
+        }
         const service = serviceOf(m);
         if (!service) continue;
         try {
@@ -267,6 +286,10 @@ export async function checkPress(orgId: number) {
     // Pitches start for the good fits; each waits in Approvals until the owner sends it.
     const good = made.filter((x) => x.opp.fitCall === "apply");
     for (const x of good) await startApplication(orgId, x.opp.id, null);
+    // Each request also shows on the Newsroom tab, with its pitch.
+    for (const x of made) {
+      db.press.stories.create({ organizationId: orgId, title: `${x.service.name}: ${x.opp.title}`.slice(0, 255), source: x.service.name, sourceUrl: x.opp.sourceUrl, windowEnds: x.opp.deadline ?? "", score: x.opp.fitScore, angle: x.opp.fitReason ?? "", offer: "", spokesperson: "", oppId: x.opp.id });
+    }
     const next: Sync = { ...sync, lastUid, checkedAt: new Date().toISOString(), seen: Array.from(seen).slice(-300), found: (sync.found ?? 0) + made.length, pitched: (sync.pitched ?? 0) + good.length, lastFound: made.length };
     db.updateAccountLink(link.id, orgId, { status: "connected", error: null, sync: JSON.stringify(next) });
     if (made.length) {

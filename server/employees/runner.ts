@@ -135,6 +135,8 @@ export function startScheduler() {
       await (await import("./dev")).devTicks();
       // Taylor: reporter requests from the press inbox, every 15 minutes.
       await (await import("./press")).pressTicks();
+      // Taylor's newsroom: Monday scout and briefing, follow-ups, seasonal alerts.
+      await (await import("./newsroom")).newsroomTicks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

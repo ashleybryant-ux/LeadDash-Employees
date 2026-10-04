@@ -1739,3 +1739,232 @@ export const dramaEpisodes = sqliteTable(
   (t) => [index("drama_episodes_org_idx").on(t.organizationId)]
 );
 export type DramaEpisode = typeof dramaEpisodes.$inferSelect;
+
+// ==========================================
+// Taylor's newsroom: one shared press desk per workspace, sharing reporters
+// across the workspaces the owner links (LeadDash, Legacy, Dr. Ashley Bryant).
+// ==========================================
+
+/** One record per reporter, shared by every linked desk. Every reporter carries article proof. */
+export const pressContacts = sqliteTable(
+  "press_contacts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** The desk that added them. Linked desks see them too. */
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    outlet: text("outlet").notNull().default(""),
+    title: text("title").notNull().default(""),
+    /** JSON string[]: what they cover. */
+    beats: text("beats").notNull().default("[]"),
+    location: text("location").notNull().default(""),
+    /** Only from a public source (an author or contact page); never guessed. */
+    email: text("email"),
+    emailSource: text("emailSource"),
+    verifiedAt: integer("verifiedAt", { mode: "timestamp" }),
+    authorPage: text("authorPage"),
+    /** JSON [{title, url, date, topics}]: the proof, newest first. */
+    articles: text("articles").notNull().default("[]"),
+    /** Why this person, in two or three sentences. */
+    why: text("why").notNull().default(""),
+    /** JSON {storyType, sources, launches, strongest, likes}: how they work. */
+    profile: text("profile").notNull().default("{}"),
+    /** JSON {orgId: 0-100}: fit for each desk. */
+    fit: text("fit").notNull().default("{}"),
+    relationship: text("relationship", { enum: ["prospect", "contacted", "engaged", "source", "warm", "advocate"] }).notNull().default("prospect"),
+    lastContactAt: integer("lastContactAt", { mode: "timestamp" }),
+    lastContactOrgId: integer("lastContactOrgId"),
+    lastPitch: text("lastPitch"),
+    /** What they asked for ("usage numbers from more than one practice"), so the next pitch has it. */
+    asks: text("asks"),
+    notes: text("notes"),
+    doNotContact: integer("doNotContact", { mode: "boolean" }).notNull().default(false),
+    /** Their previous outlet, when they moved. */
+    movedFrom: text("movedFrom"),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("press_contacts_org_idx").on(t.organizationId)]
+);
+export type PressContact = typeof pressContacts.$inferSelect;
+
+/** A story the desk could join: a report, a news event, a source request, a seasonal moment. */
+export const pressStories = sqliteTable(
+  "press_stories",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    title: text("title").notNull(),
+    source: text("source").notNull().default(""),
+    sourceUrl: text("sourceUrl"),
+    /** "Oct 7, 2026" or "Rolling". */
+    windowEnds: text("windowEnds").notNull().default(""),
+    score: integer("score").notNull().default(0),
+    /** JSON [{orgId, why}]: other desks it also fits. */
+    alsoFits: text("alsoFits").notNull().default("[]"),
+    angle: text("angle").notNull().default(""),
+    offer: text("offer").notNull().default(""),
+    spokesperson: text("spokesperson").notNull().default(""),
+    quote: text("quote"),
+    /** JSON number[]: reporters on it. */
+    contactIds: text("contactIds").notNull().default("[]"),
+    /** JSON [{contactId, reason}]: reporters skipped (another desk pitched them recently, do not contact). */
+    skipped: text("skipped").notNull().default("[]"),
+    /** A press inbox request (HARO, Qwoted...) behind this story. */
+    oppId: integer("oppId"),
+    status: text("status", { enum: ["open", "pitched", "dismissed"] }).notNull().default("open"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("press_stories_org_idx").on(t.organizationId)]
+);
+export type PressStory = typeof pressStories.$inferSelect;
+
+export const pressCampaigns = sqliteTable(
+  "press_campaigns",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    title: text("title").notNull(),
+    status: text("status", { enum: ["planning", "pitching", "scheduled", "done"] }).notNull().default("planning"),
+    /** "Jan 5, 2027" for a seasonal campaign that starts later. */
+    startsOn: text("startsOn"),
+    /** JSON {goal, audience, story, founderAngle, proof, beats, neverSay, order}. */
+    plan: text("plan").notNull().default("{}"),
+    /** JSON [{text, use}]: five story angles. */
+    angles: text("angles").notNull().default("[]"),
+    storyId: integer("storyId"),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("press_campaigns_org_idx").on(t.organizationId)]
+);
+export type PressCampaign = typeof pressCampaigns.$inferSelect;
+
+/** One pitch to one reporter, with its quality score. Sent only through Approvals. */
+export const pressPitches = sqliteTable(
+  "press_pitches",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    campaignId: integer("campaignId"),
+    storyId: integer("storyId"),
+    contactId: integer("contactId").notNull(),
+    subject: text("subject").notNull().default(""),
+    body: text("body").notNull().default(""),
+    score: integer("score").notNull().default(0),
+    /** JSON [{name, points, max}]: the 8-part pitch check. */
+    rubric: text("rubric").notNull().default("[]"),
+    /** weak: still under 85 after rewrites. cooling: another desk pitched them recently. */
+    status: text("status", { enum: ["draft", "weak", "ready", "pending", "sent", "cooling", "skipped", "replied"] }).notNull().default("draft"),
+    coolingUntil: integer("coolingUntil", { mode: "timestamp" }),
+    followUp: integer("followUp", { mode: "boolean" }).notNull().default(false),
+    /** The Approvals item that sends it. */
+    itemId: integer("itemId"),
+    sentAt: integer("sentAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("press_pitches_org_idx").on(t.organizationId), index("press_pitches_contact_idx").on(t.contactId)]
+);
+export type PressPitch = typeof pressPitches.$inferSelect;
+
+/** A reporter's answer, sorted, with a reply draft. */
+export const pressReplies = sqliteTable(
+  "press_replies",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    contactId: integer("contactId"),
+    pitchId: integer("pitchId"),
+    messageId: text("messageId"),
+    fromEmail: text("fromEmail").notNull().default(""),
+    fromName: text("fromName").notNull().default(""),
+    subject: text("subject").notNull().default(""),
+    text: text("text").notNull().default(""),
+    kind: text("kind", { enum: ["interview", "not_now", "questions", "dnc", "referral", "moved", "ooo", "crisis", "other"] }).notNull().default("other"),
+    draft: text("draft"),
+    status: text("status", { enum: ["open", "pending", "sent", "done"] }).notNull().default("open"),
+    itemId: integer("itemId"),
+    receivedAt: integer("receivedAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("press_replies_org_idx").on(t.organizationId)]
+);
+export type PressReply = typeof pressReplies.$inferSelect;
+
+export const pressInterviews = sqliteTable(
+  "press_interviews",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    contactId: integer("contactId"),
+    title: text("title").notNull(),
+    at: integer("at", { mode: "timestamp" }),
+    place: text("place").notNull().default(""),
+    /** JSON briefing: reporter, points, likely questions, hard questions with answers, don't claim, logistics. */
+    briefing: text("briefing").notNull().default("{}"),
+    status: text("status", { enum: ["upcoming", "done"] }).notNull().default("upcoming"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("press_interviews_org_idx").on(t.organizationId)]
+);
+export type PressInterview = typeof pressInterviews.$inferSelect;
+
+export const pressCoverage = sqliteTable(
+  "press_coverage",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    contactId: integer("contactId"),
+    campaignId: integer("campaignId"),
+    headline: text("headline").notNull(),
+    outlet: text("outlet").notNull().default(""),
+    url: text("url"),
+    ranOn: text("ranOn").notNull().default(""),
+    /** JSON {author, quotesUsed, messagesIn, messagesMissed, backlink, visits, demos}. */
+    details: text("details").notNull().default("{}"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("press_coverage_org_idx").on(t.organizationId)]
+);
+export type PressCoverage = typeof pressCoverage.$inferSelect;
+
+/** Quote bank, bios, story bank, seasonal calendar, press kits and approved answers to hard questions. */
+export const pressLibrary = sqliteTable(
+  "press_library",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    kind: text("kind", { enum: ["quote", "bio", "story", "moment", "kit", "answer"] }).notNull(),
+    topic: text("topic").notNull().default(""),
+    text: text("text").notNull().default(""),
+    /** JSON: desks, length and angle (bios), pitchBy and lead (calendar), question (answers), items (kits). */
+    meta: text("meta").notNull().default("{}"),
+    /** A draft Taylor wrote stays a draft until the owner approves it. */
+    approved: integer("approved", { mode: "boolean" }).notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("press_library_org_idx").on(t.organizationId)]
+);
+export type PressLibraryItem = typeof pressLibrary.$inferSelect;
+
+export const pressSettings = sqliteTable("press_settings", {
+  organizationId: integer("organizationId").primaryKey(),
+  /** JSON number[]: the workspaces sharing this newsroom (always includes this one). */
+  shared: text("shared").notNull().default("[]"),
+  coolingDays: integer("coolingDays").notNull().default(21),
+  /** 1: you approve everything. 3: follow-ups send themselves. 4: strong pitches on safe topics send. 5: within your rules. */
+  level: integer("level").notNull().default(1),
+  alwaysNeedsYou: text("alwaysNeedsYou").notNull().default("Crisis, regulators, legal, sensitive clinical topics, statements about patients"),
+  stopWords: text("stopWords").notNull().default("Breach, lawsuit, complaint, investigation, harm, death"),
+  /** What this desk owns ("Product, health tech, AI employees..."). */
+  owns: text("owns").notNull().default(""),
+  /** JSON string[]: beats the weekly scout watches. */
+  beats: text("beats").notNull().default("[]"),
+  paused: integer("paused", { mode: "boolean" }).notNull().default(false),
+  pausedReason: text("pausedReason"),
+  lastScoutAt: integer("lastScoutAt", { mode: "timestamp" }),
+  lastBriefAt: integer("lastBriefAt", { mode: "timestamp" }),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }),
+});
+export type PressSettings = typeof pressSettings.$inferSelect;

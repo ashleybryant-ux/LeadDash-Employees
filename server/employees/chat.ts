@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign";
   id: number;
   /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -62,7 +62,7 @@ export const LAYOUTS = [
 
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  speaking: ["none", "report", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  speaking: ["none", "report", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -141,6 +141,9 @@ const ACTION_HELP: Record<string, string> = {
   write_job_post: "write_job_post: write or rewrite the job post for a role. Put the role title in `target` ('' for the newest open role).",
   check_bidprime: "check_bidprime: the person asks about BidPrime (their leads inbox, saved bids, \"did you look in BidPrime\", \"check BidPrime\"). You sign in to their BidPrime account with the sign-in saved on Integrations; you never need them to share a login.",
   find_grants: "find_grants: search the web now. Set `oppKind` to grant, pitch (pitch competitions), accelerator (accelerator or incubator programs) or bid (government or agency RFPs and bids); default grant. Put any focus the person gave in `focus`.",
+  press_campaign: "press_campaign: she wants a media campaign or a media list for a story, launch or topic (\"build a media list for the LeadDash Employees launch\", \"pitch me on burnout\"). Put what it's about in `notes`. You plan it (goal, story, angles), then match reporters and write pitches; every pitch waits for her approval.",
+  press_scout: "press_scout: she wants you to find reporters and stories now (\"who's covering AI in healthcare this week\", \"scout the news\"). Put any focus in `focus`.",
+  press_brief: "press_brief: she asks for the weekly press briefing or what's going on with the press desk.",
   find_events: "find_events: search the web now. Set `oppKind` to speaking (events taking speaker proposals) or media (press: journalist source requests, podcasts booking guests, reporters covering the topic, op-ed and contributed article openings). Put any focus in `focus`.",
   add_link: "add_link: the person gave a link to an opportunity they found. Put the link in `url`.",
   apply: "apply: start the application for an opportunity already found. Put its name (or 'best' for the best fit not yet started) in `target`.",
@@ -293,7 +296,7 @@ async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "onboarding") return (await import("./customers")).customersFacts(emp.organizationId);
   if (emp.kind === "platform") return (await import("./platform")).platformFacts(emp.organizationId);
   if (emp.kind === "video") return (await import("./drama")).dramaFacts(emp.organizationId);
-  if (emp.kind === "speaking") return (await import("./press")).pressFacts(emp.organizationId);
+  if (emp.kind === "speaking") return `${(await import("./press")).pressFacts(emp.organizationId)}${await (await import("./newsroom")).newsroomFacts(emp.organizationId)}`;
   if (emp.kind === "inbox") {
     const cals = db.listAccountLinks(emp.organizationId, "calendar");
     return cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : "";
@@ -331,7 +334,9 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 - To change an answer on an application, choose revise_answer. After you showed a rewritten answer: "Use this" keeps it (say it's saved), "Make it shorter" is revise_answer with "to" concise, "Go back to the old one" is restore_answer.
 - An attached RFP or opportunity file: choose add_file.`,
 };
-TALK_BY_KIND.speaking = TALK_BY_KIND.grants;
+TALK_BY_KIND.speaking = `${TALK_BY_KIND.grants}
+- You are also the publicist, running this workspace's press desk in a newsroom the owner may share across her workspaces. A media campaign or media list for a story is press_campaign; finding reporters and stories now is press_scout; "what's happening with press" is press_brief. Speaking events stay find_events.
+- Never invent a reporter, an article, an email, a quote or a statistic. Every pitch waits for her approval (unless she raised the sending level), and a reporter another desk pitched in the cooling period is left alone.`;
 TALK_BY_KIND.developer = `- You never write or change code yourself. Claude does, from your write-up, and the owner merges. Say that plainly when it matters.
 - Nothing goes live until the owner merges the change and runs the deploy. After a merge, give her the deploy command for that code from your list.
 - Keep it plain: what's broken, what changed, how to check. No jargon unless she uses it.`;
@@ -367,6 +372,23 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
   const files = ctx.files ?? [];
   const docText = files.filter((f) => f.kind === "document").map((f) => `${f.name}:\n${f.text.slice(0, 6000)}`).join("\n\n");
   switch (d.action) {
+    case "press_campaign": {
+      const pitching = await import("./pitching");
+      if (!db.press.getSettings(org)) db.press.saveSettings(org, {});
+      const c = await pitching.planCampaign(org, d.notes || d.focus || d.title || "A media campaign");
+      const v = pitching.campaignView(org, c);
+      return { text: `I planned "${v.title}": ${v.plan.story} Here are five angles; I picked the two strongest. Change the plan or the angles on my Campaigns tab, then press Add reporters and I'll match the right reporters and write each a pitch. Nothing goes out until you approve it.`, cards: [{ type: "press_campaign", id: v.id, title: v.title }], queries: [] };
+    }
+    case "press_scout": {
+      const newsroom = await import("./newsroom");
+      if (!db.press.getSettings(org)) db.press.saveSettings(org, {});
+      const r = await newsroom.scout(org, { focus: d.focus || undefined, quiet: true });
+      return { text: `I scouted the news: ${plural(r.added, "new reporter")} with recent articles as proof${r.moved ? `, ${plural(r.moved, "reporter")} changed outlets` : ""}, ${plural(r.stories, "story", "stories")} routed to the desk each fits best${r.coverage ? `, and ${plural(r.coverage, "new coverage mention")}` : ""}. It's all on my Newsroom tab.`, cards: [{ type: "press_brief", id: Date.now(), title: "Newsroom" }], queries: [] };
+    }
+    case "press_brief": {
+      if (!db.press.getSettings(org)) db.press.saveSettings(org, {});
+      return { text: "Here's where the press desk stands this week.", cards: [{ type: "press_brief", id: Date.now(), title: "This week" }], queries: [] };
+    }
     case "find_grants":
     case "find_events":
     case "find_and_apply": {

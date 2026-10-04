@@ -39,7 +39,7 @@ function KV({ label, children }: { label: string; children: React.ReactNode }) {
 }
 
 /** Morgan's and Taylor's Work tab: Opportunities, Applications, Awards. */
-export default function ApplyWork({ emp }: { emp: EmployeeRow }) {
+export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedded?: boolean }) {
   const empKind: EmpKind = emp.kind === "speaking" ? "speaking" : "grants";
   const { currentOrgId } = useTenant();
   const initial = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
@@ -61,8 +61,9 @@ export default function ApplyWork({ emp }: { emp: EmployeeRow }) {
   const appList = (apps.data ?? []).filter((a) => a.status !== "awarded" && a.status !== "declined");
   const awardList = (apps.data ?? []).filter((a) => a.status === "awarded" || a.status === "declined");
 
+  const Shell = embedded ? EmbeddedShell : MainShell;
   return (
-    <main className="ld-main" style={{ padding: "28px 36px" }}>
+    <Shell>
       <div className="ld-row" style={{ justifyContent: "flex-end" }}>
         {find.data && !find.isPending && (
           <span className="ld-small ld-muted">{find.data.added ? `Added ${find.data.added} from ${find.data.queries.length} searches.` : `Nothing new from ${find.data.queries.length} searches.`}</span>
@@ -104,8 +105,16 @@ export default function ApplyWork({ emp }: { emp: EmployeeRow }) {
         ))}
       {tab === "apps" && <AppTable list={appList} loading={apps.isLoading} emp={emp} />}
       {tab === "awards" && <AwardTable list={awardList} loading={apps.isLoading} emp={emp} />}
-    </main>
+    </Shell>
   );
+}
+
+function MainShell({ children }: { children: React.ReactNode }) {
+  return <main className="ld-main" style={{ padding: "28px 36px" }}>{children}</main>;
+}
+/** Inside Taylor's Press tab: the same screen without its own page frame. */
+function EmbeddedShell({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>{children}</div>;
 }
 
 // ==========================================

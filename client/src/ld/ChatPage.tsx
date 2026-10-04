@@ -7,6 +7,8 @@ import { Avatar, BottomNav, ChatList, EmpHeader, ErrorLine, PersonAvatar, Rail, 
 import { SUGGESTIONS, fmtDate, fmtTime, isSameDay, parseJson, type Kind } from "./meta";
 import Guidelines from "./work/Guidelines";
 import ApplyWork from "./apply/ApplyWork";
+import PressWork from "./press/PressWork";
+import { PressBriefCard, PressCampaignCard, PressStoryCard } from "./chat/Press";
 import ApplicationPage from "./apply/ApplicationPage";
 import Knowledge from "./apply/Knowledge";
 import Drafts from "./work/Drafts";
@@ -36,7 +38,7 @@ export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
 
 const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   grants: ApplyWork,
-  speaking: ApplyWork,
+  speaking: PressWork,
   inbox: Drafts,
   social: Posts,
   blog: Articles,
@@ -99,7 +101,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign";
   id: number;
   title: string;
   subtitle?: string;
@@ -265,6 +267,12 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <DramaKeyframesCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "campaign_directions" ? (
                       <CampaignDirectionsCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "press_brief" ? (
+                      <PressBriefCard key={`${c.type}-${c.id}`} />
+                    ) : c.type === "press_story" ? (
+                      <PressStoryCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "press_campaign" ? (
+                      <PressCampaignCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "drama_episode" ? (
                       <DramaEpisodeCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "platform_page" ? (

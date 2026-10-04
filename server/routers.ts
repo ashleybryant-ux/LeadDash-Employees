@@ -56,6 +56,9 @@ import * as notetaker from "./employees/notetaker";
 import * as huddle from "./employees/huddle";
 import { endOneOnOne } from "./employees/oneonone";
 import * as avatar from "./employees/avatar";
+import * as newsroom from "./employees/newsroom";
+import * as pitching from "./employees/pitching";
+import * as presslib from "./employees/presslib";
 import * as history from "./employees/history";
 import { linkFor } from "./mcp";
 import * as dev from "./employees/dev";
@@ -77,6 +80,21 @@ const RANK: Record<Role, number> = { reviewer: 1, member: 2, admin: 3, owner: 4 
  * the given role). LeadDash staff (users.role = admin) get support access to
  * every workspace without being added to its team.
  */
+/** Taylor's long newsroom jobs run in the background; a failure is posted in her chat. */
+const pressBusy = new Set<string>();
+function press_bg(orgId: number, label: string, job: () => Promise<unknown>, quiet = false) {
+  const key = `${orgId}:${label}`;
+  if (pressBusy.has(key)) throw new TRPCError({ code: "BAD_REQUEST", message: `Taylor is already ${label}.` });
+  pressBusy.add(key);
+  void job()
+    .catch(async (err) => {
+      if (quiet) return;
+      const emp = await db.getEmployeeByKind(orgId, "speaking");
+      if (emp) await db.createChatMessage({ organizationId: orgId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `I stopped ${label}: ${(err instanceof Error ? err.message : String(err)).slice(0, 300)}` });
+    })
+    .finally(() => pressBusy.delete(key));
+}
+
 async function requireMember(ctx: TrpcContext & { user: User }, organizationId: number, minRole: Role = "reviewer") {
   if (ctx.user.role === "admin") return { role: "owner" as Role, support: true };
   // The app reviewer only ever reaches the demo workspace.
@@ -985,6 +1003,241 @@ export const appRouter = router({
   }),
 
   // Calendars Avery checks, and sending addresses (extra Google accounts)
+  // Taylor's newsroom: shared reporters, stories, campaigns, pitches, replies, interviews, coverage, library.
+  newsroom: router({
+    view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const v = await newsroom.newsroomView(input.organizationId);
+      const mine = await db.listOrganizationsForUser(ctx.user.id);
+      return { ...v, myWorkspaces: mine.map((o) => ({ id: o.id, name: o.name })) };
+    }),
+    scout: protectedProcedure.input(orgInput.extend({ focus: z.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      if (newsroom.settingsOf(input.organizationId).paused) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "This desk is paused. Resume it in Press settings first." });
+      if (!db.press.getSettings(input.organizationId)) db.press.saveSettings(input.organizationId, {});
+      press_bg(input.organizationId, "scouting", () => newsroom.scout(input.organizationId, { focus: input.focus }));
+      return { started: true };
+    }),
+    saveSettings: protectedProcedure
+      .input(orgInput.extend({ shared: z.array(z.number().int()).max(10), coolingDays: z.number().int().min(0).max(120), level: z.number().int().min(1).max(5), alwaysNeedsYou: z.string().max(500), stopWords: z.string().max(500), owns: z.string().max(500).optional(), beats: z.array(z.string().max(60)).max(20).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const { organizationId, ...rest } = input;
+        const st = await newsroom.saveSettings(organizationId, ctx.user.id, ctx.user.role === "admin", rest);
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Changed press settings", details: `Level ${st.level}, cooling ${st.coolingDays} days` });
+        return { success: true };
+      }),
+    resume: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      newsroom.resume(input.organizationId);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Resumed the press desk", details: "" });
+      return { success: true };
+    }),
+    moveStory: protectedProcedure.input(orgInput.extend({ id: z.number(), to: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      newsroom.moveStory(input.organizationId, input.id, input.to);
+      return { success: true };
+    }),
+    dismissStory: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      newsroom.dismissStory(input.organizationId, input.id);
+      return { success: true };
+    }),
+    pitchStory: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const story = db.press.stories.get(input.id, input.organizationId);
+      if (!story) throw new TRPCError({ code: "NOT_FOUND", message: "That story isn't on this desk." });
+      press_bg(input.organizationId, "writing pitches", () => pitching.rapidResponse(story));
+      return { started: true };
+    }),
+    contacts: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const pitches = db.press.pitches.list(input.organizationId).filter((p) => !p.campaignId && !p.storyId);
+      return newsroom.contactsFor(input.organizationId).map((c) => ({ ...newsroom.contactView(input.organizationId, c), pitch: (() => { const p = pitches.filter((x) => x.contactId === c.id && x.status !== "sent").sort((a, b) => b.id - a.id)[0]; return p ? pitching.pitchView(input.organizationId, p) : null; })() }));
+    }),
+    saveContact: protectedProcedure
+      .input(orgInput.extend({ id: z.number().optional(), name: z.string().trim().min(1).max(120), outlet: z.string().max(160), title: z.string().max(160), email: z.string().max(200), beats: z.array(z.string().max(60)).max(10), relationship: z.enum(newsroom.RELATIONSHIPS), notes: z.string().max(1000), doNotContact: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const email = input.email.trim().toLowerCase();
+        if (email && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) throw new TRPCError({ code: "BAD_REQUEST", message: "That email doesn't look right." });
+        const data = { name: input.name.trim(), outlet: input.outlet.trim(), title: input.title.trim(), beats: JSON.stringify(input.beats.map((b) => b.trim()).filter(Boolean)), relationship: input.relationship, notes: input.notes.trim() || null, doNotContact: input.doNotContact };
+        if (input.id) {
+          const c = newsroom.contactFor(input.organizationId, input.id);
+          if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "That reporter isn't in this newsroom." });
+          newsroom.updateContact(input.organizationId, input.id, { ...data, ...(email !== (c.email ?? "") ? { email: email || null, emailSource: email ? `Added by ${personName(ctx.user)}` : null } : {}) } as never);
+          return { id: input.id };
+        }
+        const made = db.press.contacts.create({ organizationId: input.organizationId, ...data, email: email || null, emailSource: email ? `Added by ${personName(ctx.user)}` : null, why: `Added by ${personName(ctx.user)}. Taylor checks their recent articles before any pitch.` });
+        press_bg(input.organizationId, "checking a reporter", () => newsroom.recheck(input.organizationId, made.id), true);
+        return { id: made.id };
+      }),
+    recheck: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return newsroom.contactView(input.organizationId, await newsroom.recheck(input.organizationId, input.id));
+    }),
+    removeContact: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const c = newsroom.contactFor(input.organizationId, input.id);
+      if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "That reporter isn't in this newsroom." });
+      db.press.contacts.remove(c.id, c.organizationId);
+      return { success: true };
+    }),
+    pitchContact: protectedProcedure.input(orgInput.extend({ id: z.number(), angle: z.string().max(400).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      if (newsroom.settingsOf(input.organizationId).paused) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "This desk is paused. Resume it in Press settings first." });
+      const c = newsroom.contactFor(input.organizationId, input.id);
+      if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "That reporter isn't in this newsroom." });
+      const p = await pitching.writePitch(input.organizationId, input.id, { angle: input.angle || JSON.parse(c.profile || "{}").strongest || undefined });
+      return pitching.pitchView(input.organizationId, p);
+    }),
+    campaigns: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.press.campaigns.list(input.organizationId).map((c) => pitching.campaignView(input.organizationId, c));
+    }),
+    planCampaign: protectedProcedure.input(orgInput.extend({ brief: z.string().trim().min(3).max(1000), storyId: z.number().optional(), startsOn: z.string().max(40).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const c = await pitching.planCampaign(input.organizationId, input.brief, { storyId: input.storyId, startsOn: input.startsOn });
+      return pitching.campaignView(input.organizationId, c);
+    }),
+    planMoment: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const m = db.press.library.get(input.id, input.organizationId);
+      if (!m || m.kind !== "moment") throw new TRPCError({ code: "NOT_FOUND", message: "That moment isn't on this desk's calendar." });
+      const meta = JSON.parse(m.meta || "{}");
+      const c = await pitching.planCampaign(input.organizationId, `${m.topic}. ${m.text}`, { startsOn: meta.pitchBy, title: m.topic });
+      return pitching.campaignView(input.organizationId, c);
+    }),
+    saveCampaign: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), title: z.string().trim().min(1).max(200), plan: z.object({ goal: z.string().max(600), audience: z.string().max(600), story: z.string().max(600), founderAngle: z.string().max(600), proof: z.string().max(600), beats: z.array(z.string().max(60)).max(12), neverSay: z.string().max(600), order: z.string().max(600) }), angles: z.array(z.object({ text: z.string().max(400), use: z.boolean() })).max(5) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return pitching.campaignView(input.organizationId, pitching.saveCampaign(input.organizationId, input.id, input));
+      }),
+    addReporters: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const camp = db.press.campaigns.get(input.id, input.organizationId);
+      if (!camp) throw new TRPCError({ code: "NOT_FOUND", message: "That campaign isn't on this desk." });
+      if (!JSON.parse(camp.angles || "[]").some((a: { use: boolean }) => a.use)) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick at least one story angle first." });
+      press_bg(input.organizationId, "matching reporters", () => pitching.addReporters(input.organizationId, input.id));
+      return { started: true };
+    }),
+    approveReady: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return pitching.approveReady(input.organizationId, input.id, personName(ctx.user));
+    }),
+    finishCampaign: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      pitching.finishCampaign(input.organizationId, input.id);
+      return { success: true };
+    }),
+    makeKit: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return presslib.libraryView(await presslib.makeKit(input.organizationId, input.id));
+    }),
+    pitches: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.press.pitches.list(input.organizationId).map((p) => pitching.pitchView(input.organizationId, p));
+    }),
+    editPitch: protectedProcedure.input(orgInput.extend({ id: z.number(), subject: z.string().trim().min(1).max(200), body: z.string().trim().min(1).max(4000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return pitching.pitchView(input.organizationId, await pitching.editPitch(input.organizationId, input.id, input));
+    }),
+    approvePitch: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return pitching.pitchView(input.organizationId, await pitching.approvePitch(input.organizationId, input.id, personName(ctx.user)));
+    }),
+    replies: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.press.replies.list(input.organizationId).map((r) => pitching.replyView(input.organizationId, r));
+    }),
+    editReply: protectedProcedure.input(orgInput.extend({ id: z.number(), draft: z.string().max(4000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return pitching.replyView(input.organizationId, await pitching.editReply(input.organizationId, input.id, input.draft));
+    }),
+    approveReply: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return pitching.replyView(input.organizationId, await pitching.approveReply(input.organizationId, input.id, personName(ctx.user)));
+    }),
+    doneReply: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return pitching.replyView(input.organizationId, pitching.doneReply(input.organizationId, input.id));
+    }),
+    interviews: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.press.interviews.list(input.organizationId).map((i) => presslib.interviewView(input.organizationId, i));
+    }),
+    addInterview: protectedProcedure.input(orgInput.extend({ contactId: z.number().nullable(), title: z.string().trim().min(1).max(200), at: z.string().max(40), place: z.string().max(200) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const at = input.at ? new Date(input.at) : null;
+      if (at && Number.isNaN(at.getTime())) throw new TRPCError({ code: "BAD_REQUEST", message: "Type the date and time like 10/08/2026 10:00 AM." });
+      return presslib.interviewView(input.organizationId, await presslib.createInterview(input.organizationId, { contactId: input.contactId, title: input.title, at, place: input.place }));
+    }),
+    saveInterview: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), title: z.string().trim().min(1).max(200), at: z.string().max(40), place: z.string().max(200), briefing: z.object({ reporter: z.string().max(2000), points: z.array(z.string().max(400)).max(5), likely: z.array(z.string().max(400)).max(8), hard: z.array(z.object({ q: z.string().max(400), answer: z.string().max(2000), approved: z.boolean() })).max(8), dontClaim: z.string().max(1000), where: z.string().max(300), bio: z.string().max(300), after: z.string().max(600) }) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const at = input.at ? new Date(input.at) : null;
+        if (at && Number.isNaN(at.getTime())) throw new TRPCError({ code: "BAD_REQUEST", message: "Type the date and time like 10/08/2026 10:00 AM." });
+        return presslib.interviewView(input.organizationId, presslib.saveBriefing(input.organizationId, input.id, { title: input.title, at, place: input.place, briefing: input.briefing }));
+      }),
+    rebuildBriefing: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return presslib.interviewView(input.organizationId, await presslib.buildBriefing(input.organizationId, input.id));
+    }),
+    finishInterview: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return presslib.interviewView(input.organizationId, presslib.finishInterview(input.organizationId, input.id));
+    }),
+    briefingDocx: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return presslib.briefingDocx(input.organizationId, input.id);
+    }),
+    coverage: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return { stats: presslib.coverageStats(input.organizationId), list: db.press.coverage.list(input.organizationId).map((c) => presslib.coverageView(input.organizationId, c)) };
+    }),
+    addCoverage: protectedProcedure.input(orgInput.extend({ url: z.string().trim().url().max(1000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return presslib.coverageView(input.organizationId, await presslib.addCoverage(input.organizationId, input.url));
+    }),
+    saveCoverage: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), headline: z.string().trim().min(1).max(255), outlet: z.string().max(160), ranOn: z.string().max(40), details: z.object({ quotesUsed: z.string().max(100).optional(), messagesIn: z.string().max(600).optional(), messagesMissed: z.string().max(600).optional(), backlink: z.boolean().optional(), visits: z.number().int().min(0).max(100_000_000).optional(), demos: z.number().int().min(0).max(1_000_000).optional() }) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return presslib.coverageView(input.organizationId, presslib.saveCoverage(input.organizationId, input.id, input));
+      }),
+    removeCoverage: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      presslib.removeCoverage(input.organizationId, input.id);
+      return { success: true };
+    }),
+    library: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.press.library.list(input.organizationId).map(presslib.libraryView);
+    }),
+    saveLibrary: protectedProcedure
+      .input(orgInput.extend({ id: z.number().optional(), kind: z.enum(["quote", "bio", "story", "moment", "kit", "answer"]), topic: z.string().max(200), text: z.string().max(8000), meta: z.record(z.string(), z.unknown()), approved: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, ...rest } = input;
+        return presslib.libraryView(presslib.saveLibrary(organizationId, rest as never));
+      }),
+    removeLibrary: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      presslib.removeLibrary(input.organizationId, input.id);
+      return { success: true };
+    }),
+    fillLibrary: protectedProcedure.input(orgInput.extend({ what: z.enum(["bios", "stories", "calendar"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return { added: await presslib.fillLibrary(input.organizationId, input.what) };
+    }),
+    kitDocx: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return presslib.kitDocx(input.organizationId, input.id);
+    }),
+  }),
+
   // Taylor's press inbox: HARO, Source of Sources, Qwoted and Featured requests by email.
   press: router({
     view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {

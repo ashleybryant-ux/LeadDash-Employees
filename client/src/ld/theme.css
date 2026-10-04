@@ -76,6 +76,8 @@
 .ld-pill.amber { background: #fdf0e3; color: #8a4510; }
 .ld-pill.gray { background: #eef2f0; color: #3d4c45; }
 .ld-pill.red { background: #fdecea; color: #b42318; }
+.ld-pill.purple { background: #ece8f6; color: #4b3a8a; }
+.ld-pill.blue { background: #e4eef8; color: #1f4f7a; }
 
 .ld-sh { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #eef2f0; gap: 12px; }
 .ld-st { font-weight: 800; font-size: 15px; }
