@@ -425,6 +425,13 @@ export const DEFAULT_PLAYBOOKS: Record<PlaybookKind, HandbookPart> = {
       s("Tracking and privacy", [
         "Tracking pixels belong only on public marketing pages, never on pages that touch client information (portals, intake, booking with clinical details).",
       ]),
+      s("Building the page itself (HTML the owner pastes into their site builder)", [
+        "Build to the standard of a top product studio: modern, image-led, clear hierarchy, generous whitespace, varied section layouts (split hero, cards, steps, alternating image and text, FAQ, closing call to action). A page that is mostly paragraphs is not finished.",
+        "Use the workspace's own brand guide from the Brain or company training (colors, fonts, button shapes, section rhythm). When none exists, choose a clean modern look that fits the audience and say which colors and fonts you used.",
+        "Every page has at least one strong image. Use the owner's photos from the Brain for pages about the owner or the company; generate realistic stock photos for everything else (people and settings that match the audience, never people in distress, never clinical stereotypes).",
+        "All styles stay inside the page's own wrapper so the site builder cannot change how it looks; the page works on phones as well as desktops.",
+        "After the owner asks for a change, change only what they asked and keep the rest, so each version is easy to compare.",
+      ]),
       HEALTH_GUARDRAILS,
       s("Handoffs", ["Page copy that needs a supporting article goes to the Blog Writer; proof and press come from the Speaking Agent and Publicist and the Social Media Manager."]),
     ],

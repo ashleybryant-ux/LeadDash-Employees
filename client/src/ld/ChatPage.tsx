@@ -496,6 +496,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
         <Link href={`${base}/work`} className="ld-btn">Open</Link>
       );
   } else if (card.type === "post" || card.type === "article" || card.type === "reply") actions = <Link href="/approvals" className="ld-btn p">Review</Link>;
+  else if (card.type === "page" && card.subtitle?.includes("version")) actions = <PageCardActions id={card.id} href={`${base}/work?page=${card.id}`} />;
   else if (card.type === "page" || card.type === "video") actions = <Link href={`${base}/work`} className="ld-btn">Open plan</Link>;
   else actions = <Link href={`${base}/work`} className="ld-btn">Open</Link>;
 
@@ -690,5 +691,24 @@ function BrowserCard({ card }: { card: Card }) {
         {active && <button type="button" className="ld-btn" disabled={stop.isPending} onClick={() => stop.mutate({ organizationId: currentOrgId, id })}>Stop</button>}
       </div>
     </div>
+  );
+}
+
+/** A page Jordan built: open its preview, or copy its HTML straight from chat. */
+function PageCardActions({ id, href }: { id: number; href: string }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const [copied, setCopied] = React.useState(false);
+  const copy = async () => {
+    const r = await utils.pages.get.fetch({ organizationId: currentOrgId, id });
+    await navigator.clipboard.writeText(r.html);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <>
+      <Link href={href} className="ld-btn p">Preview</Link>
+      <button type="button" className="ld-btn" onClick={copy}>{copied ? "Copied" : "Copy HTML"}</button>
+    </>
   );
 }

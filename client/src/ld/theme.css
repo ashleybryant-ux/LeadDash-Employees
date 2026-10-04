@@ -228,3 +228,24 @@ html.ld-review .ld-emphead { top: 34px !important; }
 .ld-hb-sub { font-size: 13px; font-weight: 800; padding: 6px 0 2px 0; }
 .ld-hb-m { display: none; }
 @media (max-width: 760px) { .ld-hb-m { display: inline; } }
+
+/* Jordan's pages */
+.ld-pg-build { padding: 16px 18px; display: grid; grid-template-columns: minmax(0, 1.3fr) 250px minmax(0, 1fr) 128px; gap: 14px; align-items: end; margin-bottom: 16px; }
+.ld-pg-panel { display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 20px; padding-top: 14px; }
+.ld-pg-actions { display: flex; flex-direction: column; gap: 8px; }
+.ld-pg-actions a.ld-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; color: #14221c; }
+.ld-pg-actions a.ld-btn.disabled { opacity: 0.6; pointer-events: none; }
+.ld-pg-toggle { display: flex; gap: 4px; background: #f1f5f3; padding: 4px; border-radius: 10px; }
+.ld-pg-toggle button { height: 30px; padding: 0 14px; border-radius: 8px; border: 0; background: transparent; font: inherit; font-size: 13px; font-weight: 700; color: #5b6b64; cursor: pointer; }
+.ld-pg-toggle button.on { background: #fff; color: #14221c; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.ld-pg-frame { border: 1px solid #dbe4df; border-radius: 12px; overflow: hidden; background: #fff; }
+.ld-pg-phone { width: 375px; max-width: 100%; border: 10px solid #14221c; border-radius: 34px; overflow: hidden; background: #fff; margin: 0 auto; }
+.ld-pg-ver { display: grid; grid-template-columns: 50px minmax(0, 1fr) 130px 128px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid #eef2f0; font-size: 14px; }
+.ld-pg-ver:last-child { border-bottom: 0; }
+@media (max-width: 760px) {
+  .ld-pg-build { grid-template-columns: 1fr; }
+  .ld-pg-panel { grid-template-columns: 1fr; }
+  .ld-pg-actions { flex-direction: row; flex-wrap: wrap; }
+  .ld-pg-ver { grid-template-columns: 40px minmax(0, 1fr) 128px; }
+  .ld-pg-ver > span:nth-child(3) { display: none; }
+}

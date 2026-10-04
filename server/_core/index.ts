@@ -6,14 +6,15 @@ import { appRouter } from "../routers";
 import { authenticateRequest, createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { ENV } from "./env";
-import { getDb, getOrganizationMembership, purgeExpiredAuthRecords } from "../db";
+import { getDb, getOrganizationMembership, publicFileByToken, purgeExpiredAuthRecords } from "../db";
+import path from "node:path";
 import { uploadsRoot } from "../storage";
 import { aiStatus } from "./llm";
 import { hasSecretsKey } from "./crypto";
 import { startScheduler } from "../employees/runner";
 import { registerUploads } from "../uploads";
 import { ensureIndexed } from "../employees/kb";
-import { markStuckApplications } from "../db";
+import { markStuckApplications, markStuckPages } from "../db";
 import { ensureAllRosters } from "../employees/roster-sync";
 import { pushReady, startNotifications } from "../notify";
 import { readyApps, registerOAuth } from "../integrations";
@@ -24,6 +25,7 @@ async function startServer() {
   // Open the database and run any pending migrations before taking traffic.
   getDb();
   await markStuckApplications();
+  markStuckPages();
   await ensureAllRosters();
   startNotifications();
   ensureIndexed().catch((err) => console.error("[knowledge] indexing failed:", err));
@@ -66,6 +68,22 @@ async function startServer() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey(), push: pushReady(), connect: readyApps() });
+  });
+
+  // Public links for images used on published pages (photos and stock images Jordan
+  // placed). Only files given a link are served; everything else stays private.
+  app.get("/pub/:file", async (req, res) => {
+    const token = String(req.params.file).replace(/\.[a-z0-9]+$/i, "");
+    if (!/^[a-f0-9]{24}$/.test(token)) return res.status(404).send("Not found");
+    const row = publicFileByToken(token);
+    if (!row) return res.status(404).send("Not found");
+    const root = uploadsRoot();
+    const full = path.resolve(root, row.fileKey);
+    if (!full.startsWith(root + path.sep)) return res.status(404).send("Not found");
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    return res.sendFile(full, (err) => {
+      if (err && !res.headersSent) res.status(404).send("Not found");
+    });
   });
 
   // Stored files (W-9s, licenses, RFPs, videos, downloads, images). Keys are

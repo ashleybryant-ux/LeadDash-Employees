@@ -4,6 +4,7 @@ import type { AIEmployee, ChatMessage } from "../../drizzle/schema";
 import { generateJson, generateText, type JsonSchema } from "../_core/llm";
 import * as tasks from "./tasks";
 import * as apply from "./apply";
+import * as pages from "./pages";
 import * as hiring from "./hiring";
 import { writeReport } from "./onboarding";
 import type { Opportunity, OppKind } from "../../drizzle/schema";
@@ -44,7 +45,7 @@ const ACTIONS: Record<string, string[]> = {
   video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "start_onboarding"],
-  website: ["none", "report", "plan_page", "ask_teammate", "add_guideline", "start_onboarding"],
+  website: ["none", "report", "build_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "start_onboarding"],
   inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
@@ -87,7 +88,9 @@ const ACTION_HELP: Record<string, string> = {
   write_post: "write_post: write a social post. Put the subject in `topic` and the platforms (linkedin, instagram, facebook, x, threads) in `platforms`; default to linkedin and instagram.",
   schedule_posts: "schedule_posts: the person wants upcoming posts put on the calendar for an account (for example \"schedule the next 12 posts on Facebook\"). Put the one account in `platforms` (facebook, instagram, linkedin, x or threads) and how many posts in `count` (default 8). You suggest the days and time; they confirm with a button.",
   write_article: "write_article: write a blog article. Put the title in `title` and points to cover in `notes`.",
-  plan_page: "plan_page: plan a website page. Put the page name in `page` and its goal in `goal`.",
+  plan_page: "plan_page: only when the person asks for a plan or outline of a page (not the page itself). Put the page name in `page` and its goal in `goal`.",
+  build_page: "build_page: build a landing page or website page as HTML. Put the page name or offer in `page`, the goal in `goal`, and `landing` or `website` in `target` (landing unless they say website or a page of their site).",
+  change_page: "change_page: change a page you already built. Put the page's name in `target` ('' for the most recent page) and exactly what to change in `notes`.",
   draft_reply: "draft_reply: the person pasted a message they received. Put the sender in `from`, the subject in `subject` (make one up from the content if missing) and the full pasted message in `message`.",
 };
 
@@ -415,6 +418,18 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
         queries: [],
       };
     }
+    case "build_page": {
+      const p = await pages.startPage(org, { title: d.page || d.topic || "New page", pageType: /website/i.test(d.target) ? "website" : "landing", goal: d.goal || "Book a call" });
+      return { text: `Building the ${p.title} page now. It takes a few minutes; I'll post it here with a preview when it's ready.`, cards: [], queries: [] };
+    }
+    case "change_page": {
+      const list = db.listSitePages(org).filter((x) => x.currentVersion > 0);
+      const t = d.target.trim().toLowerCase();
+      const p = (t && list.find((x) => x.title.toLowerCase().includes(t))) || list[0];
+      if (!p) return { text: "I haven't built a page yet. Tell me the offer and the goal and I'll build one.", cards: [], queries: [] };
+      await pages.revisePage(org, p.id, d.notes || d.message || d.reply);
+      return { text: `Making those changes to ${p.title} now. The new version will show up here when it's ready.`, cards: [], queries: [] };
+    }
     case "plan_page": {
       const item = await tasks.planWebsitePage(org, d.page || d.topic || "New page", d.goal || "Book a consultation");
       const data = JSON.parse(item.data || "{}");
@@ -489,6 +504,10 @@ export async function workingOn(orgId: number, emp: AIEmployee): Promise<{ busy:
     if (writing) return { busy: true, what: `${writing.progress || "Writing"}: ${writing.title}` };
     const fetching = (await db.listOpps(orgId, kinds)).find((o) => o.packageStatus === "fetching");
     if (fetching) return { busy: true, what: `Downloading and reading the documents for ${fetching.title}` };
+  }
+  if (emp.kind === "website") {
+    const building = db.listSitePages(orgId).find((p) => p.status === "building");
+    if (building) return { busy: true, what: `${building.progress || "Building"}: ${building.title}` };
   }
   if (emp.status === "working") return { busy: true, what: "Working on your request" };
   return { busy: false, what: "" };

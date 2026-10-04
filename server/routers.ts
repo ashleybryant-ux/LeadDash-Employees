@@ -46,6 +46,7 @@ import * as interview from "./employees/interview";
 import * as integrations from "./integrations";
 import * as review from "./review";
 import * as handbook from "./employees/handbook";
+import * as pages from "./employees/pages";
 import * as social from "./social";
 import * as sales from "./employees/sales";
 import * as team from "./employees/team";
@@ -895,6 +896,71 @@ export const appRouter = router({
   // ==========================================
   // Wren: website
   // ==========================================
+  // Jordan's pages: built as HTML, previewed, copied into the site builder
+  pages: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.listSitePages(input.organizationId);
+    }),
+    get: protectedProcedure.input(orgInput.extend({ id: z.number() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const page = db.getSitePage(input.id, input.organizationId);
+      if (!page) throw new TRPCError({ code: "NOT_FOUND", message: "That page is not in this workspace." });
+      const versions = db.listSitePageVersions(input.id, input.organizationId);
+      const current = versions.find((v) => v.version === page.currentVersion) ?? versions[0] ?? null;
+      return {
+        page,
+        html: current?.html ?? "",
+        document: current ? pages.fullDocument(page.title, current.html) : "",
+        versions: versions.map((v) => ({ version: v.version, note: v.note, createdAt: v.createdAt })),
+      };
+    }),
+    build: protectedProcedure
+      .input(orgInput.extend({ title: z.string().trim().min(2).max(200), pageType: z.enum(["landing", "website"]), goal: z.string().trim().min(2).max(500) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return pages.startPage(input.organizationId, { title: input.title, pageType: input.pageType, goal: input.goal });
+      }),
+    revise: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), request: z.string().trim().min(2).max(2000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        try {
+          return await pages.revisePage(input.organizationId, input.id, input.request);
+        } catch (err) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : "Could not start the change." });
+        }
+      }),
+    restore: protectedProcedure.input(orgInput.extend({ id: z.number(), version: z.number().int().min(1) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      try {
+        return pages.restoreVersion(input.organizationId, input.id, input.version);
+      } catch (err) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : "Could not restore." });
+      }
+    }),
+    approve: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return pages.approvePage(input.organizationId, input.id);
+    }),
+    saveDetails: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), buttonUrl: z.string().trim().max(2000), embedCode: z.string().max(20_000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        if (input.buttonUrl && !/^https?:\/\/\S+$/i.test(input.buttonUrl)) throw new TRPCError({ code: "BAD_REQUEST", message: "The button link must start with https://" });
+        try {
+          return pages.saveDetails(input.organizationId, input.id, { buttonUrl: input.buttonUrl, embedCode: input.embedCode });
+        } catch (err) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : "Could not save." });
+        }
+      }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      db.deleteSitePage(input.id, input.organizationId);
+      return { ok: true };
+    }),
+  }),
+
   website: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

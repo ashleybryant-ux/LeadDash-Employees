@@ -1278,3 +1278,65 @@ export const handbookChanges = sqliteTable(
   (t) => [index("handbook_changes_time_idx").on(t.createdAt)]
 );
 export type HandbookChange = typeof handbookChanges.$inferSelect;
+
+// ==========================================
+// Jordan: landing and website pages built as HTML, with versions
+// ==========================================
+
+export const SITE_PAGE_STATUSES = ["building", "ready", "approved", "failed"] as const;
+
+export const sitePages = sqliteTable(
+  "site_pages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId"),
+    title: text("title").notNull(),
+    /** landing | website */
+    pageType: text("pageType").notNull().default("landing"),
+    goal: text("goal").notNull().default(""),
+    status: text("status", { enum: SITE_PAGE_STATUSES }).notNull().default("building"),
+    /** Where the page's main button goes (booking page, form, checkout). */
+    buttonUrl: text("buttonUrl"),
+    /** A form or calendar embed code pasted by the owner, placed on the page. */
+    embedCode: text("embedCode"),
+    currentVersion: integer("currentVersion").notNull().default(0),
+    /** What Jordan is doing right now, or why the last build failed. */
+    progress: text("progress"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("site_pages_org_idx").on(t.organizationId)]
+);
+export type SitePage = typeof sitePages.$inferSelect;
+
+export const sitePageVersions = sqliteTable(
+  "site_page_versions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    pageId: integer("pageId").notNull(),
+    version: integer("version").notNull(),
+    /** The HTML to paste: fonts link, one scoped style block and the page markup. */
+    html: text("html").notNull(),
+    /** What changed in this version, in a few words. */
+    note: text("note").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("site_page_versions_idx").on(t.pageId, t.version)]
+);
+export type SitePageVersion = typeof sitePageVersions.$inferSelect;
+
+/** Files given a public link (photos and images used on published pages). */
+export const publicFiles = sqliteTable(
+  "public_files",
+  {
+    token: text("token").primaryKey(),
+    organizationId: integer("organizationId").notNull(),
+    /** The stored file's key under the uploads folder. */
+    fileKey: text("fileKey").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("public_files_key_idx").on(t.fileKey)]
+);
+export type PublicFile = typeof publicFiles.$inferSelect;

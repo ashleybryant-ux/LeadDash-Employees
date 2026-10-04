@@ -41,6 +41,10 @@ import {
   handbookParts,
   handbookAdditions,
   handbookChanges,
+  sitePages,
+  sitePageVersions,
+  publicFiles,
+  type SitePage,
   type ReviewAccess,
   type HrStage,
   type InsertOpportunity,
@@ -1457,4 +1461,63 @@ export function logHandbookChange(data: { organizationId: number | null; partKey
 export function listHandbookChanges(organizationId: number | null, limit = 100) {
   const where = organizationId === null ? isNull(handbookChanges.organizationId) : eq(handbookChanges.organizationId, organizationId);
   return getDb().select().from(handbookChanges).where(where).orderBy(desc(handbookChanges.id)).limit(limit).all();
+}
+
+// ==========================================
+// Site pages (Jordan) and public file links
+// ==========================================
+
+export function createSitePage(data: typeof sitePages.$inferInsert) {
+  return getDb().insert(sitePages).values(data).returning().all()[0];
+}
+
+export function getSitePage(id: number, orgId: number) {
+  return getDb().select().from(sitePages).where(and(eq(sitePages.id, id), eq(sitePages.organizationId, orgId))).get() ?? null;
+}
+
+export function listSitePages(orgId: number) {
+  return getDb().select().from(sitePages).where(eq(sitePages.organizationId, orgId)).orderBy(desc(sitePages.updatedAt)).all();
+}
+
+export function updateSitePage(id: number, orgId: number, data: Partial<typeof sitePages.$inferInsert>) {
+  getDb().update(sitePages).set(data).where(and(eq(sitePages.id, id), eq(sitePages.organizationId, orgId))).run();
+  return getSitePage(id, orgId) as SitePage;
+}
+
+export function deleteSitePage(id: number, orgId: number) {
+  getDb().delete(sitePageVersions).where(and(eq(sitePageVersions.pageId, id), eq(sitePageVersions.organizationId, orgId))).run();
+  getDb().delete(sitePages).where(and(eq(sitePages.id, id), eq(sitePages.organizationId, orgId))).run();
+}
+
+export function addSitePageVersion(data: typeof sitePageVersions.$inferInsert) {
+  return getDb().insert(sitePageVersions).values(data).returning().all()[0];
+}
+
+export function listSitePageVersions(pageId: number, orgId: number) {
+  return getDb()
+    .select()
+    .from(sitePageVersions)
+    .where(and(eq(sitePageVersions.pageId, pageId), eq(sitePageVersions.organizationId, orgId)))
+    .orderBy(desc(sitePageVersions.version))
+    .all();
+}
+
+export function publicFileByKey(fileKey: string) {
+  return getDb().select().from(publicFiles).where(eq(publicFiles.fileKey, fileKey)).get() ?? null;
+}
+
+export function publicFileByToken(token: string) {
+  return getDb().select().from(publicFiles).where(eq(publicFiles.token, token)).get() ?? null;
+}
+
+export function createPublicFile(data: typeof publicFiles.$inferInsert) {
+  getDb().insert(publicFiles).values(data).onConflictDoNothing().run();
+  return publicFileByKey(data.fileKey);
+}
+
+/** Pages left "building" by a restart stop with a note, keeping any earlier version. */
+export function markStuckPages() {
+  for (const p of getDb().select().from(sitePages).where(eq(sitePages.status, "building")).all()) {
+    getDb().update(sitePages).set({ status: p.currentVersion ? "ready" : "failed", progress: "Stopped by a server restart. Ask again and I'll redo it." }).where(eq(sitePages.id, p.id)).run();
+  }
 }
