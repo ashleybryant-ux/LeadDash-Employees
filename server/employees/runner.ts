@@ -106,6 +106,8 @@ export async function tick(now = new Date()) {
 }
 
 export function startScheduler() {
+  // History imports that were running when the server restarted pick back up.
+  void import("./history").then((h) => h.resumeImports()).catch(() => null);
   let busy = false;
   const timer = setInterval(async () => {
     if (busy) return;
@@ -127,6 +129,8 @@ export function startScheduler() {
       await (await import("./bids")).bidsTick();
       // Elena's avatar videos: save each one fal.ai has finished.
       await (await import("./avatar")).avatarTicks();
+      // Kai: notice when Claude finishes a change.
+      await (await import("./dev")).devTicks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

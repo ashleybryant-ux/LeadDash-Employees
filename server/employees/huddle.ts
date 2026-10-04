@@ -44,6 +44,8 @@ export const VOICES: Record<string, string> = {
   video: "ballad",
   inbox: "fable",
   hiring: "ash",
+  developer: "echo",
+  onboarding: "shimmer",
   custom: "alloy",
 };
 
@@ -108,6 +110,8 @@ const VOICE_STYLE: Record<string, "female" | "male"> = {
   video: "female",
   inbox: "male",
   hiring: "female",
+  developer: "male",
+  onboarding: "female",
 };
 const KIND_ORDER = Object.keys(VOICE_STYLE);
 

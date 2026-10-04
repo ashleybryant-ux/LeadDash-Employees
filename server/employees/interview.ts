@@ -364,6 +364,8 @@ const HELLO: Record<EmployeeKind, string> = {
   video: "Before I plan a video, I'd like to learn who's on camera, what can't be filmed, and your style.",
   inbox: "Before I draft a reply, I'd like to learn who matters most, what's urgent, and how you write.",
   hiring: "Before I post a job or reach out to anyone, I'd like to learn who you hire and how interviews work.",
+  developer: "Before I touch any code, I'd like to learn what I can work on and what I should never change on my own.",
+  onboarding: "Before I onboard a customer, I'd like to learn your steps from signed to live and how you want them to feel.",
   custom: "Before I start, I'd like to learn what you need from me.",
 };
 
@@ -381,6 +383,8 @@ const ROLE: Record<EmployeeKind, string> = {
   video: "video producer",
   inbox: "inbox and calendar assistant",
   hiring: "recruiter",
+  developer: "developer",
+  onboarding: "onboarding specialist",
   custom: "",
 };
 

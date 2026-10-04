@@ -1,6 +1,6 @@
 /** Display facts about each employee job, shared by every screen. */
 
-export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "custom";
+export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "developer" | "onboarding" | "custom";
 
 export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Leadership" | "Revenue" | "Sales" | "Marketing" | "Operations" | "Other" }> = {
   coo: { color: "#334155", work: "Meetings", group: "Leadership" },
@@ -16,10 +16,12 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
   video: { color: "#8a2f3a", work: "Videos", group: "Marketing" },
   inbox: { color: "#3c4a8a", work: "Drafts", group: "Operations" },
   hiring: { color: "#0f6e74", work: "Hiring", group: "Operations" },
+  developer: { color: "#3b4a6b", work: "Changes", group: "Operations" },
+  onboarding: { color: "#7a3e6b", work: null, group: "Operations" },
   custom: { color: "#3d4c45", work: null, group: "Other" },
 };
 
-export const KIND_ORDER: Kind[] = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring", "custom"];
+export const KIND_ORDER: Kind[] = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring", "onboarding", "developer", "custom"];
 export const GROUP_ORDER = ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"] as const;
 
 /** Portraits live in client/public/avatars/<kind>.webp (256 px, cut from the LeadDash Employees team sheet). */
@@ -54,6 +56,8 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
   video: ["Find video ideas for this week", "Find trends for practice owners", "Plan a 30-second video"],
   inbox: ["Paste an email and I'll draft the reply", "Email someone to set a meeting", "Put a meeting on my calendar"],
   hiring: ["Find LPCs for outreach", "Check hiring status", "Write a job post", "What licenses expire soon?"],
+  developer: ["Something's broken", "What are you working on?", "What's ready for me to merge?"],
+  onboarding: ["Onboard a new customer", "Who's being onboarded?", "What's due this week?"],
   custom: ["What can you help with?"],
 };
 
@@ -68,6 +72,8 @@ export const GUIDELINE_LABELS: Record<Kind, { focus: string; avoid: string; sign
   video: { focus: "Formats", avoid: "Avoid", signAs: "On-camera name" },
   inbox: { focus: "How to reply", avoid: "Never", signAs: "Sign replies as" },
   hiring: { focus: "Roles to fill", avoid: "Never", signAs: "Sign messages as" },
+  developer: { focus: "What to work on", avoid: "Never change", signAs: "Sign changes as" },
+  onboarding: { focus: "Every onboarding includes", avoid: "Never promise", signAs: "Sign emails as" },
   prospecting: { focus: "Look for", avoid: "Skip", signAs: "Ideal fit" },
   outreach: { focus: "What to lead with", avoid: "Never say", signAs: "Sign emails as" },
   leads: { focus: "How to reply", avoid: "Never promise", signAs: "Sign replies as" },
@@ -115,6 +121,16 @@ export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
     "Replies wait for your approval before anything is sent.",
     "Clients are referred to by initials only.",
     "Decisions that belong to you become placeholders.",
+  ],
+  developer: [
+    "Claude only proposes changes. Nothing joins your code until you press Merge, and nothing goes live until you deploy.",
+    "Every change says what was fixed and how to check it.",
+    "No client data ever goes into a write-up.",
+  ],
+  onboarding: [
+    "Every email to a customer waits for your approval.",
+    "Plans are worked back from the go-live date, and Nora tracks every step.",
+    "No client data from a customer's practice goes into a plan or an email.",
   ],
   hiring: [
     "Scores count only your must-haves and nice-to-haves. Protected traits and gaps in work history are never considered.",

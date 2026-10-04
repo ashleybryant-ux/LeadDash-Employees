@@ -688,6 +688,53 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
     { label: "Write a test job post", prompt: "Write a job post for my most common opening." }
   ),
 
+  developer: build(
+    [],
+    [
+      job("What should I fix and build for you?", ["Fix bugs you find", "Small screen changes", "Keep the tests passing", "Explain what changed"], "code"),
+      {
+        key: "code",
+        title: "The code",
+        intro: "What I work on and how changes reach the live site.",
+        questions: [
+          { key: "repos", label: "Which code can I work on?", type: "multi", options: ["LeadDash Employees", "LeadDash EHR"], short: "Code", guide: "code" },
+          { key: "never", label: "Never change these without asking", type: "text", placeholder: "Billing, sign-in, anything with client records", short: "Ask first", guide: "rules" },
+          { key: "changeReport", label: "How should I tell you what changed?", type: "choice", options: ["Short: what's fixed and how to check", "Full: every file and why"], short: "Reports", guide: "code" },
+        ],
+      },
+    ],
+    [
+      { key: "code", title: "What code do I work on?" },
+      { key: "rules", title: "What should I never change on my own?" },
+    ],
+    { label: "Try a fix", prompt: "Here's something small to fix: describe how you'd write it up for Claude." },
+    "a short write-up of a fix"
+  ),
+  onboarding: build(
+    [],
+    [
+      job("What should I do for new customers?", ["Welcome emails", "Setup checklists", "Kickoff calls", "Training", "Check-ins after go-live"], "plan"),
+      {
+        key: "plan",
+        title: "Your onboarding",
+        intro: "How a new practice gets from signed to live.",
+        questions: [
+          { key: "steps", label: "The steps every new practice goes through", type: "text", placeholder: "Welcome email, kickoff call, practice setup, client import, staff training, go live", short: "Steps", guide: "plan" },
+          { key: "length", label: "How long from signed to live?", type: "choice", options: ["About 2 weeks", "About 30 days", "About 60 days"], short: "Time to live", guide: "plan" },
+          { key: "training", label: "Training you offer", type: "text", placeholder: "The training videos, then a live Q&A", short: "Training", guide: "plan" },
+          { key: "handoff", label: "Always hand these to me", type: "multi", options: ["Billing questions", "Unhappy customers", "Data imports", "Anything urgent"], short: "Hand to you", guide: "plan" },
+        ],
+      },
+      voice("voice"),
+    ],
+    [
+      { key: "plan", title: "How do new customers get set up?" },
+      { key: "voice", title: "How should my emails sound?" },
+      { key: "rules", title: "What should I never promise?" },
+    ],
+    { label: "Write a welcome", prompt: "Write a welcome email to a new practice that just signed up." },
+    "a welcome email to a new customer"
+  ),
   custom: build(
     [],
     [

@@ -47,6 +47,8 @@ export const ENV = {
   elevenLabsKey: process.env.ELEVENLABS_API_KEY || "",
   /** fal.ai: pay-per-second video models (Kling talking avatar) for Elena. */
   falKey: process.env.FAL_KEY || "",
+  /** GitHub fine-grained token for Kai: issues, pull requests and contents on the owner's repos. */
+  githubToken: process.env.GITHUB_TOKEN || "",
   elevenLabsModel: process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5",
   /** OpenAI key, used only for social and blog images. */
   openAiKey: process.env.OPENAI_API_KEY || "",

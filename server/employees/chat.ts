@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change";
   id: number;
   /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -66,6 +66,8 @@ const ACTIONS: Record<string, string[]> = {
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   outreach: ["none", "report", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -84,6 +86,10 @@ const ACTION_HELP: Record<string, string> = {
   clickup_find: "clickup_find: look something up in ClickUp: tasks by words (task, list, folder or Space name, like \"marketing\" or \"W-9\"), by person, or both. Put the words in `target` ('' for all), the person in `to` ('' for anyone), and \"all\" in `focus` to include finished tasks ('' for open only).",
   clickup_lists: "clickup_lists: the person asks what's in their ClickUp (Spaces, folders, lists) or where something lives.",
   clickup_add: "clickup_add: add a task to ClickUp. Put the task in `title`, any details in `notes`, the due date as YYYY-MM-DD in `date` ('' for none), who it's for (a name or email) in `to` ('' for no one), and the ClickUp list to put it in in `page` ('' for the LeadDash Employees tasks list).",
+  fix_code: "fix_code: have Claude fix a bug or make a change in the owner's code. Put which code in `target` (the code's name from your list), a short title in `title` (under 10 words), and in `notes` a clear write-up for Claude: what's wrong or wanted, where it shows up (screen, button, who sees it), what should happen instead, and how to check it's fixed. Never put client data in it. Do it as soon as you know which code and what's wrong; ask only if you can't tell.",
+  merge_change: "merge_change: merge a change Claude finished, when the owner says to (\"merge it\", \"looks good, merge\"). Words from its title in `target` ('' for the newest one ready).",
+  change_request: "change_request: send a finished change back to Claude with what to change. Words from its title in `target` ('' for the newest), what to change in `notes`.",
+  onboard_customer: "onboard_customer: start onboarding a new customer. The practice name in `title`, the contact's name in `to`, their email in `from` ('' if not given), the go-live date as YYYY-MM-DD in `date`, anything else in `notes`. If there's no go-live date, ask for it.",
   avatar_script: "avatar_script: write a video of the owner talking, made by AI from her photo and her own voice. Put a short title in `title` and the exact words she says in `message`, written the way she talks out loud (about 2.5 words a second, so 110 words is about 45 seconds; aim for the length she asked for, 30 to 60 seconds if she didn't say). No stage directions, no labels, only her words. Several scripts at once: write the first and offer the rest.",
   make_avatar: "make_avatar: make the video from a script you wrote (\"Make it\", \"make the video\", \"make the double entry one\"). Put words from its title in `target` ('' for the newest script).",
   clickup_bulk: "clickup_bulk: change MANY ClickUp tasks at once, like \"close everything overdue\" or \"push everything in Goals + Tactics to next Friday\". Put which tasks in `goal`: overdue (past due), all (every open task that matches), or a date YYYY-MM-DD for tasks due before it. Words to narrow by list, folder or task name in `target` ('' for every list), a person in `to` (''), the new status in `focus` (done, open... or ''), and a new due date YYYY-MM-DD in `date` (''). Do it when they say so; never ask first. Never use clickup_change for more than one task.",
@@ -259,6 +265,18 @@ async function connectedFacts(emp: AIEmployee) {
 }
 
 /** Simone and Nora see recent meetings, huddles and their action items (and Nora her projects), so they never say they have no notes. */
+/** Kai's code list and changes, Imani's customers. */
+async function teamFacts(emp: AIEmployee) {
+  if (emp.kind === "developer") {
+    const dev = await import("./dev");
+    const repos = dev.settingsOf(emp).repos;
+    const changes = db.listDevChanges(emp.organizationId, 10);
+    return `\nCode you work on (name: repo; deploy command after a merge):\n${repos.map((r) => `- ${r.label}: ${r.repo}; ${r.deploy}`).join("\n")}\nRecent changes:\n${changes.map((c) => `- ${c.title} (${c.label}): ${c.status}${c.prNumber ? `, change #${c.prNumber}` : ""}`).join("\n") || "- none yet"}`;
+  }
+  if (emp.kind === "onboarding") return (await import("./customers")).customersFacts(emp.organizationId);
+  return "";
+}
+
 async function leadershipFacts(emp: AIEmployee) {
   if (emp.kind !== "coo" && emp.kind !== "projects") return "";
   const parts = [await coo.recentMeetingsFacts(emp.organizationId).catch(() => "")];
@@ -284,6 +302,12 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 - An attached RFP or opportunity file: choose add_file.`,
 };
 TALK_BY_KIND.speaking = TALK_BY_KIND.grants;
+TALK_BY_KIND.developer = `- You never write or change code yourself. Claude does, from your write-up, and the owner merges. Say that plainly when it matters.
+- Nothing goes live until the owner merges the change and runs the deploy. After a merge, give her the deploy command for that code from your list.
+- Keep it plain: what's broken, what changed, how to check. No jargon unless she uses it.`;
+TALK_BY_KIND.onboarding = `- You onboard new customers (practices) onto LeadDash EHR, from signed to live. Not new hires.
+- Every email to a customer waits for the owner's approval. Never promise a date, price or feature the Brain doesn't state.
+- Nora tracks each onboarding plan as a project; you own the customer-facing steps.`;
 TALK_BY_KIND.video = `- The owner's photos are in the Brain under "Images on file". When she asks about her photos, name the ones there and how many. Never say you can't get to her photos when they're listed there. When none are, ask her to attach them right here with the paperclip (up to 10 at a time) and save them to the Brain with save_files.
 - You make videos of the owner from her photo and her own ElevenLabs voice yourself: choose avatar_script to write one, and make_avatar when she says to make it. Never recommend HeyGen, Synthesia or any other tool; this is how it's made.
 - One person talking straight to camera is what this makes. For scenes with several characters, write the script and say only the talking-to-camera parts can be made here for now.
@@ -586,6 +610,45 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         queries: [],
         choices: ["What's due this week?", "Add a task"],
       };
+    }
+    case "fix_code": {
+      const dev = await import("./dev");
+      try {
+        const ch = await dev.askClaude(org, { label: d.target, title: d.title, request: d.notes || d.message || d.reply });
+        return { text: `I wrote it up for Claude in ${ch.label} with what's broken, where to look and how to check the fix. Claude is working on it now. I'll tell you when the change is ready for you to look at.`, cards: [{ type: "dev_change", id: ch.id, title: ch.title }], queries: [] };
+      } catch (err) {
+        return { text: `I couldn't start it: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
+    }
+    case "merge_change":
+    case "change_request": {
+      const dev = await import("./dev");
+      const t = d.target.trim().toLowerCase();
+      const all = db.listDevChanges(org, 50);
+      const ch = (t ? all.find((x) => x.title.toLowerCase().includes(t) && x.status === "ready") : null) ?? all.find((x) => x.status === "ready");
+      if (!ch) return { text: "Nothing is ready yet. I'll tell you as soon as Claude finishes.", cards: [], queries: [] };
+      try {
+        if (d.action === "merge_change") {
+          await dev.merge(org, ch.id);
+          const r = dev.settingsOf(emp).repos.find((x) => x.repo === ch.repo);
+          return { text: `Merged "${ch.title}" into ${ch.label}. It goes live when you run the deploy:\n${r?.deploy || "your usual deploy command"}`, cards: [{ type: "dev_change", id: ch.id, title: ch.title }], queries: [] };
+        }
+        await dev.askForChanges(org, ch.id, d.notes || d.message);
+        return { text: `I sent it back to Claude with your changes. I'll tell you when it's ready again.`, cards: [{ type: "dev_change", id: ch.id, title: ch.title }], queries: [] };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [{ type: "dev_change", id: ch.id, title: ch.title }], queries: [] };
+      }
+    }
+    case "onboard_customer": {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { text: "When should they go live?", cards: [], queries: [] };
+      const cust = await import("./customers");
+      try {
+        const r = await cust.onboardCustomer(org, { practice: d.title, contact: d.to, email: d.from, goLive: d.date, notes: d.notes });
+        const text = `Here's their onboarding plan, worked back from ${fmtYmd(d.date)}: ${plural(r.counts.milestones, "step")} and ${plural(r.counts.tasks, "task")}. Nora will track every step${r.auto ? " and it's started" : " once you approve it"}.${r.email ? " The welcome email is waiting for your OK in Approvals." : " Send me their email and I'll write the welcome."}`;
+        return { text, cards: [projects.planCard(r.launch, r.counts) as ChatCard], queries: [] };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
     }
     case "avatar_script": {
       const av = await import("./avatar");
@@ -1027,7 +1090,7 @@ export async function sendChatMessage(opts: {
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
-Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}
+Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
 ${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}\n${REMEMBER}`}${opts.spoken ? `\n${ONE_ON_ONE}` : ""}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`

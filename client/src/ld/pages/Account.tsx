@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ErrorLine, Page, PersonAvatar } from "../ui";
 import { fmtDate, fmtTime } from "../meta";
+import { useTenant } from "@/contexts/TenantContext";
 import { currentSubscription, needsHomeScreen, pushSupported, subscribe, unsubscribeHere } from "../push";
 
 type Prefs = Record<string, { push: boolean; email: boolean }>;
@@ -29,6 +30,7 @@ export default function Account() {
           )}
           {a.staff && <ReviewCard />}
           <PushCard pushReady={a.pushReady} vapid={a.vapidPublicKey} devices={a.devices} />
+          <ConnectorCard />
           <PrefsCard prefs={a.prefs as Prefs} events={a.events} />
           <section className="ld-card ld-between" style={{ padding: "14px 18px" }}>
             <span className="ld-strong">Sign out of this device</span>
@@ -373,6 +375,51 @@ function ReviewCard() {
       )}
       <div style={{ padding: "0 18px 12px" }}>
         <ErrorLine error={save.error ?? newCode.error} />
+      </div>
+    </section>
+  );
+}
+
+/** The link that connects Claude and ChatGPT to this workspace. */
+function ConnectorCard() {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.account.connector.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const fresh = trpc.account.newConnector.useMutation({ onSuccess: (r) => utils.account.connector.setData({ organizationId: currentOrgId }, r) });
+  const [copied, setCopied] = React.useState(false);
+  const c = q.data;
+  const shown = c ? c.url.replace(/[^/]+$/, `${"•".repeat(12)}${c.last4}`) : "";
+  const copy = () => {
+    if (!c) return;
+    void navigator.clipboard?.writeText(c.url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <section className="ld-card ld-av-set">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+        <span className="ld-lbl">Connect Claude and ChatGPT</span>
+        {!c ? (
+          <span className="ld-small ld-muted">{q.isLoading ? "Loading..." : "Couldn't load your connector link."}</span>
+        ) : (
+          <div className="ld-av-kv">
+            <span className="ld-strong">Connector link</span>
+            <span style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 13, overflowWrap: "anywhere" }}>{shown}</span>
+            <span className="ld-strong">Claude</span>
+            <span>Customize, Connectors, Add custom connector. Paste the link.</span>
+            <span className="ld-strong">ChatGPT</span>
+            <span>Settings, Security and login, turn on Developer mode. Then Apps, Create, paste the link.</span>
+            <span className="ld-strong">Last used</span>
+            <span>{c.lastUsedAt ? `${c.lastClient ?? "A connector"}, ${fmtDate(c.lastUsedAt)} at ${fmtTime(c.lastUsedAt)}` : "Not yet"}</span>
+          </div>
+        )}
+        <span className="ld-small ld-muted">Anyone with this link can reach your workspace. Treat it like a password.</span>
+        <ErrorLine error={fresh.error} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <button type="button" className="ld-btn p" disabled={!c} onClick={copy}>{copied ? "Copied" : "Copy link"}</button>
+        <button type="button" className="ld-btn" disabled={fresh.isPending} onClick={() => fresh.mutate({ organizationId: currentOrgId })}>New link</button>
       </div>
     </section>
   );

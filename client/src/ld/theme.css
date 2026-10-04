@@ -354,3 +354,14 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
   .ld-av-kv { grid-template-columns: 1fr; gap: 4px; }
   .ld-av-kv > .ld-strong { margin-top: 8px; }
 }
+.ld-hi-bar { height: 8px; border-radius: 99px; background: #e3e9e6; overflow: hidden; }
+.ld-hi-bar > div { height: 100%; background: #1b6b4a; transition: width .4s; }
+
+/* Kai's Changes tab */
+.ld .ld-btn.ld-av-link-plain { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; color: #14221c; box-sizing: border-box; }
+.ld-dev-repos { display: grid; grid-template-columns: 200px minmax(0,1fr) 150px; gap: 10px 16px; font-size: 14px; align-items: center; }
+.ld-dev-edit { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.3fr) minmax(0,1.6fr) 96px; gap: 8px; align-items: center; }
+@media (max-width: 760px) {
+  .ld-dev-repos { grid-template-columns: 1fr; gap: 4px; }
+  .ld-dev-edit { grid-template-columns: 1fr; }
+}

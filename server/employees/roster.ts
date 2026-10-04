@@ -149,6 +149,26 @@ export const ROSTER: RosterEntry[] = [
     searches: true,
     minutesPerTask: 45,
   },
+  {
+    kind: "developer",
+    name: "Kai",
+    roleTitle: "Developer",
+    department: "Operations",
+    description: "Writes up bugs and changes for Claude to fix in your code, then brings you the finished change to merge.",
+    capabilities: ["Bug write-ups Claude can act on", "Fixes in LeadDash Employees and LeadDash EHR", "Changes waiting for your merge", "Plain summaries of what changed"],
+    searches: false,
+    minutesPerTask: 60,
+  },
+  {
+    kind: "onboarding",
+    name: "Imani",
+    roleTitle: "Onboarding Specialist",
+    department: "Operations",
+    description: "Gets new customers from signed to live: the onboarding plan, welcome email, kickoff, training and check-ins.",
+    capabilities: ["Onboarding plans worked back from go-live", "Welcome emails", "Kickoff and training steps", "Check-ins after go-live"],
+    searches: false,
+    minutesPerTask: 30,
+  },
 ];
 
 /** Earlier default titles. A workspace still showing one gets the new title; a title someone typed stays. */
@@ -202,6 +222,8 @@ export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: 
   leads: { focus: "How to reply", avoid: "Never promise", signAs: "Sign replies as" },
   coo: { focus: "What every agenda covers", avoid: "Never put on an agenda", signAs: "Sign invites as" },
   projects: { focus: "How you like plans", avoid: "Never schedule", signAs: "Sign reports as" },
+  developer: { focus: "What to work on", avoid: "Never change", signAs: "Sign changes as" },
+  onboarding: { focus: "Every onboarding includes", avoid: "Never promise", signAs: "Sign emails as" },
 };
 
 export type Guidelines = { focus: string; avoid: string; signAs: string };

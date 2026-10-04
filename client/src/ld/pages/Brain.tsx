@@ -2,6 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, FolderTabs, Page } from "../ui";
+import BrainImport from "./BrainImport";
 import { fmtDate } from "../meta";
 
 const CATEGORIES = [
@@ -19,7 +20,7 @@ type Category = (typeof CATEGORIES)[number]["value"];
 type EntryKind = "fact" | "webpage" | "image" | "document";
 const KIND_LABEL: Record<EntryKind, string> = { fact: "Fact", webpage: "Webpage", image: "Image", document: "Document" };
 
-type TabKey = "all" | EntryKind;
+type TabKey = "all" | EntryKind | "import";
 
 const IMAGE_MAX = 8 * 1024 * 1024;
 const DOC_MAX = 10 * 1024 * 1024;
@@ -95,16 +96,18 @@ export default function Brain() {
     <Page rail="brain">
       <div className="ld-between">
         <h1 className="ld-h1">Brain</h1>
-        <button
-          type="button"
-          className="ld-btn p"
-          onClick={() => {
-            setEditing(null);
-            setAdding(true);
-          }}
-        >
-          Add entry
-        </button>
+        {tab !== "import" && (
+          <button
+            type="button"
+            className="ld-btn p"
+            onClick={() => {
+              setEditing(null);
+              setAdding(true);
+            }}
+          >
+            Add entry
+          </button>
+        )}
       </div>
 
       <FolderTabs
@@ -116,8 +119,12 @@ export default function Brain() {
           { key: "image", label: `Images (${count("image")})` },
           { key: "document", label: `Documents (${count("document")})` },
           { key: "webpage", label: `Webpages (${count("webpage")})` },
+          { key: "import", label: "Import history" },
         ]}
       >
+        {tab === "import" ? (
+          <BrainImport />
+        ) : (
         <div style={{ padding: 18, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
           {adding && <AddEditor onDone={() => setAdding(false)} />}
           {shown.length === 0 && !adding && (
@@ -140,6 +147,7 @@ export default function Brain() {
             )
           )}
         </div>
+        )}
       </FolderTabs>
     </Page>
   );

@@ -127,6 +127,27 @@
       "when": 1791087158089,
       "tag": "0017_avatar_videos",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1791116987858,
+      "tag": "0018_history_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791117217942,
+      "tag": "0019_mcp_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1791117575705,
+      "tag": "0020_dev_changes",
+      "breakpoints": true
     }
   ]
 }

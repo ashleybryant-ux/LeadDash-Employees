@@ -20,6 +20,7 @@ import Outreach from "./work/Outreach";
 import Leads from "./work/Leads";
 import Launches from "./work/Launches";
 import Meetings from "./work/Meetings";
+import Changes, { DevChangeCard } from "./work/Changes";
 import { LaunchPlanCard, MeetingAgendaCard, MeetingNotesCard } from "./lead/Cards";
 import { OnboardingCard, OnboardingQuestionCard } from "./onboarding/ChatCards";
 import Onboarding from "./Onboarding";
@@ -44,6 +45,7 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   leads: Leads,
   projects: Launches,
   coo: Meetings,
+  developer: Changes,
 };
 
 /** /chats, /chats/:kind, /chats/:kind/work, /chats/:kind/guidelines, /chats/e/:id[...] */
@@ -93,7 +95,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change";
   id: number;
   title: string;
   subtitle?: string;
@@ -246,6 +248,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <LayoutChoiceCard key={`${c.type}-${c.id}`} options={c.options ?? []} onPick={pick} disabled={m.id !== lastId || pending !== null || send.isPending} />
                     ) : c.type === "avatar_video" ? (
                       <AvatarVideoCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "dev_change" ? (
+                      <DevChangeCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : (
                       <ResultCard key={`${c.type}-${c.id}`} card={c} emp={emp} />
                     )

@@ -56,6 +56,9 @@ import * as notetaker from "./employees/notetaker";
 import * as huddle from "./employees/huddle";
 import { endOneOnOne } from "./employees/oneonone";
 import * as avatar from "./employees/avatar";
+import * as history from "./employees/history";
+import { linkFor } from "./mcp";
+import * as dev from "./employees/dev";
 import { opsFor, saveOps, MEETING_MINUTES } from "./employees/ops";
 import { KPI_SOURCES } from "../drizzle/schema";
 import { postProblems, SOCIAL_CHANNELS, TIKTOK_PRIVACY, type SocialChannel } from "@shared/post-model";
@@ -1652,6 +1655,67 @@ export const appRouter = router({
   // ==========================================
   // Brain
   // ==========================================
+  // ==========================================
+  // Kai: code changes made by Claude
+  // ==========================================
+  dev: router({
+    repos: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return dev.repoStatus(input.organizationId);
+    }),
+    saveRepos: protectedProcedure
+      .input(orgInput.extend({ repos: z.array(z.object({ label: z.string().max(60), repo: z.string().max(140), deploy: z.string().max(300) })).max(6) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        await dev.saveSettings(input.organizationId, input.repos);
+        return dev.repoStatus(input.organizationId);
+      }),
+    connect: protectedProcedure.input(orgInput.extend({ repo: z.string().max(140) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return dev.connectRepo(input.organizationId, input.repo);
+    }),
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return db.listDevChanges(input.organizationId).map(dev.view);
+    }),
+    get: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const ch = db.getDevChange(input.id, input.organizationId);
+      return ch ? dev.view(ch) : null;
+    }),
+    merge: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const ch = await dev.merge(input.organizationId, input.id);
+      const emp = await db.getEmployeeByKind(input.organizationId, "developer");
+      const deploy = emp ? dev.settingsOf(emp).repos.find((r) => r.repo === ch.repo)?.deploy ?? "" : "";
+      if (emp) await db.createChatMessage({ organizationId: input.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `Merged "${ch.title}" into ${ch.label}. It goes live when you run the deploy:\n${deploy || "your usual deploy command"}` });
+      return { ...dev.view(ch), deploy };
+    }),
+    askForChanges: protectedProcedure.input(orgInput.extend({ id: z.number().int(), notes: z.string().min(1).max(4000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return dev.view(await dev.askForChanges(input.organizationId, input.id, input.notes));
+    }),
+  }),
+
+  // ==========================================
+  // Brain: company history from the owner's Claude and ChatGPT exports
+  // ==========================================
+  history: router({
+    latest: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const last = db.listHistoryImports(input.organizationId, 1)[0];
+      return last ? history.view(last) : null;
+    }),
+    stop: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return history.view(history.stop(input.organizationId, input.id));
+    }),
+    removeFact: protectedProcedure.input(orgInput.extend({ id: z.number().int(), knowledgeId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return history.view(await history.removeFact(input.organizationId, input.id, input.knowledgeId));
+    }),
+  }),
+
   knowledge: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
@@ -1859,6 +1923,15 @@ export const appRouter = router({
   // My account: name, push devices, "Tell me when"
   // ==========================================
   account: router({
+    /** The Claude and ChatGPT connector link for this workspace. */
+    connector: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return linkFor(ctx.user.id, input.organizationId);
+    }),
+    newConnector: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return linkFor(ctx.user.id, input.organizationId, true);
+    }),
     get: protectedProcedure.query(async ({ ctx }) => {
       const devices = await db.listPushSubscriptions([ctx.user.id]);
       const me = (await db.getUserById(ctx.user.id)) ?? ctx.user;

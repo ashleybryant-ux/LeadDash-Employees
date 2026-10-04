@@ -145,6 +145,8 @@ export const EMPLOYEE_KINDS = [
   "leads",
   "coo",
   "projects",
+  "developer",
+  "onboarding",
   "custom",
 ] as const;
 export type EmployeeKind = (typeof EMPLOYEE_KINDS)[number];
@@ -1462,3 +1464,82 @@ export const avatarVideos = sqliteTable(
   (t) => [index("avatar_videos_org_idx").on(t.organizationId)]
 );
 export type AvatarVideo = typeof avatarVideos.$inferSelect;
+
+/** Company history read from an export of the owner's Claude or ChatGPT chats into the Brain. */
+export const historyImports = sqliteTable(
+  "history_imports",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    userId: integer("userId"),
+    who: text("who").notNull(),
+    fileName: text("fileName").notNull(),
+    /** Where the uploaded export is kept until the import finishes. */
+    filePath: text("filePath").notNull(),
+    source: text("source", { enum: ["claude", "chatgpt", "unknown"] }).notNull().default("unknown"),
+    status: text("status", { enum: ["reading", "running", "done", "stopped", "failed"] }).notNull().default("reading"),
+    total: integer("total").notNull().default(0),
+    done: integer("done").notNull().default(0),
+    skippedClient: integer("skippedClient").notNull().default(0),
+    skippedOther: integer("skippedOther").notNull().default(0),
+    /** JSON [{id, topic, fact, from}]: Brain entries this import saved. */
+    items: text("items").notNull().default("[]"),
+    error: text("error"),
+    createdAt: createdAt(),
+    finishedAt: integer("finishedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("history_imports_org_idx").on(t.organizationId)]
+);
+export type HistoryImport = typeof historyImports.$inferSelect;
+
+/** A person's Claude / ChatGPT connector link for one workspace. The link holds a secret; New link replaces it. */
+export const mcpLinks = sqliteTable(
+  "mcp_links",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    userId: integer("userId").notNull(),
+    /** sha256 of the secret in the link, to look it up. */
+    tokenHash: text("tokenHash").notNull(),
+    /** The secret itself, encrypted, so Copy link works later. */
+    tokenEncrypted: text("tokenEncrypted").notNull(),
+    lastUsedAt: integer("lastUsedAt", { mode: "timestamp" }),
+    lastClient: text("lastClient"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("mcp_links_token_idx").on(t.tokenHash), index("mcp_links_user_idx").on(t.userId, t.organizationId)]
+);
+export type McpLink = typeof mcpLinks.$inferSelect;
+
+/** A fix or change Kai asked Claude for in one of the owner's GitHub repos. */
+export const devChanges = sqliteTable(
+  "dev_changes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    /** owner/name on GitHub, and the name the owner uses for it. */
+    repo: text("repo").notNull(),
+    label: text("label").notNull(),
+    title: text("title").notNull(),
+    /** What Kai asked Claude for. */
+    request: text("request").notNull(),
+    issueNumber: integer("issueNumber"),
+    issueUrl: text("issueUrl"),
+    branch: text("branch"),
+    prNumber: integer("prNumber"),
+    prUrl: text("prUrl"),
+    status: text("status", { enum: ["working", "ready", "merged", "closed", "failed"] }).notNull().default("working"),
+    /** JSON string[]: what changed, in plain words. */
+    summary: text("summary").notNull().default("[]"),
+    files: integer("files"),
+    checks: text("checks"),
+    error: text("error"),
+    /** Id of the last Claude comment read, so a new one is noticed. */
+    seenComment: integer("seenComment"),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("dev_changes_org_idx").on(t.organizationId)]
+);
+export type DevChange = typeof devChanges.$inferSelect;

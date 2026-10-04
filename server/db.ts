@@ -23,6 +23,9 @@ import {
   chatFiles,
   huddles,
   avatarVideos,
+  historyImports,
+  mcpLinks,
+  devChanges,
   chatReads,
   scheduledTasks,
   taskRuns,
@@ -1596,4 +1599,67 @@ export function updateAvatarVideo(id: number, orgId: number, data: Partial<typeo
 }
 export function deleteAvatarVideo(id: number, orgId: number) {
   getDb().delete(avatarVideos).where(and(eq(avatarVideos.id, id), eq(avatarVideos.organizationId, orgId))).run();
+}
+
+// ==========================================
+// History imports (Claude and ChatGPT exports into the Brain)
+// ==========================================
+
+export function createHistoryImport(row: typeof historyImports.$inferInsert) {
+  return getDb().insert(historyImports).values(row).returning().all()[0];
+}
+export function getHistoryImport(id: number, orgId: number) {
+  return getDb().select().from(historyImports).where(and(eq(historyImports.id, id), eq(historyImports.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export function listHistoryImports(orgId: number, limit = 20) {
+  return getDb().select().from(historyImports).where(eq(historyImports.organizationId, orgId)).orderBy(desc(historyImports.id)).limit(limit).all();
+}
+export function listRunningHistoryImports() {
+  return getDb().select().from(historyImports).where(inArray(historyImports.status, ["reading", "running"])).all();
+}
+export function updateHistoryImport(id: number, orgId: number, data: Partial<typeof historyImports.$inferInsert>) {
+  getDb().update(historyImports).set(data).where(and(eq(historyImports.id, id), eq(historyImports.organizationId, orgId))).run();
+  return getHistoryImport(id, orgId);
+}
+
+// ==========================================
+// Claude / ChatGPT connector links
+// ==========================================
+
+export function getMcpLink(userId: number, orgId: number) {
+  return getDb().select().from(mcpLinks).where(and(eq(mcpLinks.userId, userId), eq(mcpLinks.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export function mcpLinkByHash(tokenHash: string) {
+  return getDb().select().from(mcpLinks).where(eq(mcpLinks.tokenHash, tokenHash)).limit(1).all()[0] || null;
+}
+export function replaceMcpLink(row: typeof mcpLinks.$inferInsert) {
+  getDb().delete(mcpLinks).where(and(eq(mcpLinks.userId, row.userId), eq(mcpLinks.organizationId, row.organizationId))).run();
+  return getDb().insert(mcpLinks).values(row).returning().all()[0];
+}
+export function touchMcpLink(id: number, client: string | null) {
+  getDb().update(mcpLinks).set({ lastUsedAt: new Date(), ...(client ? { lastClient: client } : {}) }).where(eq(mcpLinks.id, id)).run();
+}
+export function deleteMcpLink(userId: number, orgId: number) {
+  getDb().delete(mcpLinks).where(and(eq(mcpLinks.userId, userId), eq(mcpLinks.organizationId, orgId))).run();
+}
+
+// ==========================================
+// Kai's code changes
+// ==========================================
+
+export function createDevChange(row: typeof devChanges.$inferInsert) {
+  return getDb().insert(devChanges).values(row).returning().all()[0];
+}
+export function getDevChange(id: number, orgId: number) {
+  return getDb().select().from(devChanges).where(and(eq(devChanges.id, id), eq(devChanges.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export function listDevChanges(orgId: number, limit = 100) {
+  return getDb().select().from(devChanges).where(eq(devChanges.organizationId, orgId)).orderBy(desc(devChanges.id)).limit(limit).all();
+}
+export function listOpenDevChanges() {
+  return getDb().select().from(devChanges).where(inArray(devChanges.status, ["working", "ready"])).all();
+}
+export function updateDevChange(id: number, orgId: number, data: Partial<typeof devChanges.$inferInsert>) {
+  getDb().update(devChanges).set({ ...data, updatedAt: new Date() }).where(and(eq(devChanges.id, id), eq(devChanges.organizationId, orgId))).run();
+  return getDevChange(id, orgId);
 }

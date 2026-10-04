@@ -24,6 +24,7 @@ const LIMITS: Record<string, number> = {
   resume: 20_000_000,
   post_media: 250_000_000,
   chat: 20_000_000,
+  history: 400_000_000,
 };
 
 const KNOWLEDGE_CATEGORY: Record<string, string> = {
@@ -78,6 +79,38 @@ export function registerUploads(app: Express) {
       const user = Number.isFinite(orgId) && orgId > 0 ? await access(req, orgId) : null;
       if (!user) return res.status(403).json({ error: "You cannot upload to this workspace." });
       const who = user.name?.trim() || user.email;
+
+      // A Claude or ChatGPT export for the Brain: kept outside the served files and read in the background.
+      if (slot === "history") {
+        if (user.role !== "admin") {
+          const m = await db.getOrganizationMembership(orgId, user.id);
+          if (!m || (m.role !== "owner" && m.role !== "admin")) return res.status(403).json({ error: "Only the workspace owner can import history." });
+        }
+        if (!/\.(zip|json)$/i.test(name)) return res.status(400).json({ error: "Upload the .zip that Claude or ChatGPT emailed you." });
+        const history = await import("./employees/history");
+        const dest = history.holdingPath(orgId);
+        const fs = await import("node:fs");
+        const declared = Number(req.headers["content-length"] || 0);
+        if (declared > max) return res.status(400).json({ error: `Files must be under ${Math.round(max / 1_000_000)} MB.` });
+        await new Promise<void>((resolve, reject) => {
+          const out = fs.createWriteStream(dest);
+          let size = 0;
+          req.on("data", (c: Buffer) => {
+            size += c.length;
+            if (size > max) {
+              reject(new Error(`Files must be under ${Math.round(max / 1_000_000)} MB.`));
+              req.destroy();
+            }
+          });
+          req.on("error", reject);
+          out.on("error", reject);
+          out.on("finish", () => resolve());
+          req.pipe(out);
+        });
+        const imp = await history.start(orgId, { id: user.id, name: who }, name, dest);
+        return res.json({ id: imp.id });
+      }
+
       const old = unsupportedNote(name);
       if (old && slot !== "video" && slot !== "post_media") return res.status(400).json({ error: old });
 

@@ -96,5 +96,7 @@ else
 fi
 echo "== company training (adds any section a workspace is missing; Brain edits are kept)"
 npx tsx deploy/load-training.ts --all || echo "training load skipped"
+echo "== portraits for new employees"
+npx tsx deploy/portraits.ts || echo "portraits skipped"
 echo "== checksums"
 md5sum server/routers.ts server/db.ts server/integrations.ts server/employees/bids.ts server/employees/browser.ts server/employees/sales.ts server/employees/projects.ts server/employees/coo.ts drizzle/schema.ts dist/index.js

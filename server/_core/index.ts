@@ -51,6 +51,8 @@ async function startServer() {
 
   app.use(express.json({ limit: "16mb" })); // Brain uploads arrive as base64
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
+  // The Claude and ChatGPT connector.
+  (await import("../mcp")).registerMcp(app);
 
   // Sign-in protection: at most 30 sign-in calls per 15 minutes per address, and
   // no batching of sign-in calls (one request cannot carry many code guesses).

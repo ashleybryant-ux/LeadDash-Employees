@@ -15,16 +15,16 @@ export const LEARNED = "Learned: ";
 
 /** Never kept: client names or health details, passwords and codes. */
 function unsafe(text: string) {
-  return /\b(password|passcode|pin code|sign-?in code|verification code|ssn|social security|diagnos|medication|dob|date of birth)\b/i.test(text);
+  return /\b(password|passcode|pin code|sign-?in code|verification code|ssn|social security|diagnos\w*|medications?|dob|date of birth)\b/i.test(text);
 }
 
-export async function learnFact(orgId: number, input: { topic: string; fact: string; category?: string; who: string; via: string }) {
+export async function learnFact(orgId: number, input: { topic: string; fact: string; category?: string; who: string; via: string; when?: string }) {
   const topic = input.topic.replace(/\s+/g, " ").trim().slice(0, 80);
   const fact = input.fact.replace(/\s+/g, " ").replace(/\s*[—–]\s*/g, ", ").trim().slice(0, 1000);
   if (!topic || !fact || unsafe(`${topic} ${fact}`)) return null;
   const category = ((KNOWLEDGE_CATEGORIES as readonly string[]).includes(input.category ?? "") ? input.category : "mission_profile") as KnowledgeCategory;
   const org = await db.getOrganizationById(orgId);
-  const day = new Date().toLocaleDateString("en-US", { timeZone: org?.timezone || "America/Chicago", month: "short", day: "numeric", year: "numeric" });
+  const day = input.when ?? new Date().toLocaleDateString("en-US", { timeZone: org?.timezone || "America/Chicago", month: "short", day: "numeric", year: "numeric" });
   const content = `${fact}\n(${input.who} told ${input.via} on ${day}.)`;
   const title = `${LEARNED}${topic}`;
   const have = (await db.listKnowledgeByOrg(orgId)).find((k) => k.employeeId == null && k.title.toLowerCase() === title.toLowerCase());
