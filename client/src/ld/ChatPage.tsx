@@ -21,6 +21,8 @@ import Leads from "./work/Leads";
 import Launches from "./work/Launches";
 import Meetings from "./work/Meetings";
 import Changes, { DevChangeCard } from "./work/Changes";
+import Workflows from "./work/Workflows";
+import { FindingsCard, PlatformPageCard, WebTaskCard } from "./chat/Platform";
 import { LaunchPlanCard, MeetingAgendaCard, MeetingNotesCard } from "./lead/Cards";
 import { OnboardingCard, OnboardingQuestionCard } from "./onboarding/ChatCards";
 import Onboarding from "./Onboarding";
@@ -46,6 +48,7 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   projects: Launches,
   coo: Meetings,
   developer: Changes,
+  platform: Workflows,
 };
 
 /** /chats, /chats/:kind, /chats/:kind/work, /chats/:kind/guidelines, /chats/e/:id[...] */
@@ -95,7 +98,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page";
   id: number;
   title: string;
   subtitle?: string;
@@ -250,6 +253,12 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <AvatarVideoCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "dev_change" ? (
                       <DevChangeCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "web_task" ? (
+                      <WebTaskCard key={`${c.type}-${c.id}`} id={c.id} empName={emp.name} />
+                    ) : c.type === "platform_findings" ? (
+                      <FindingsCard key={`${c.type}-${c.id}`} />
+                    ) : c.type === "platform_page" ? (
+                      <PlatformPageCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : (
                       <ResultCard key={`${c.type}-${c.id}`} card={c} emp={emp} />
                     )
@@ -493,7 +502,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   if (card.type === "meeting_notes") return <MeetingNotesCard id={card.id} />;
   if (card.type === "onboarding") return <OnboardingCard emp={emp} />;
   if (card.type === "onboarding_q") return <OnboardingQuestionCard emp={emp} qkey={card.title} />;
-  if (card.type === "bidprime_code" || card.type === "portal_code") return <CodeCard card={card} />;
+  if (card.type === "bidprime_code" || card.type === "portal_code" || card.type === "web_code") return <CodeCard card={card} />;
   if (card.type === "browser_live") return <BrowserCard card={card} />;
   if (card.type === "bidprime_screen" && card.imageUrl)
     return (
@@ -621,9 +630,11 @@ function CodeCard({ card }: { card: Card }) {
   const [code, setCode] = React.useState("");
   const bp = trpc.bidprime.code.useMutation();
   const portal = trpc.bidprime.portalCode.useMutation();
-  const m = card.type === "bidprime_code" ? bp : portal;
+  const web = trpc.web.code.useMutation();
+  const m = card.type === "bidprime_code" ? bp : card.type === "web_code" ? web : portal;
   const send = () => {
     if (card.type === "bidprime_code") bp.mutate({ organizationId: currentOrgId, code: code.trim() });
+    else if (card.type === "web_code") web.mutate({ organizationId: currentOrgId, id: card.id, code: code.trim() });
     else portal.mutate({ organizationId: currentOrgId, portalId: card.id, applicationId: Number(card.url), code: code.trim() });
   };
   const inputId = `code-${card.type}-${card.id}-${card.url ?? ""}`;

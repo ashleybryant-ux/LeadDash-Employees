@@ -147,6 +147,7 @@ export const EMPLOYEE_KINDS = [
   "projects",
   "developer",
   "onboarding",
+  "platform",
   "custom",
 ] as const;
 export type EmployeeKind = (typeof EMPLOYEE_KINDS)[number];
@@ -768,7 +769,7 @@ export const registrations = sqliteTable(
 
 export type Registration = typeof registrations.$inferSelect;
 
-/** Saved sign-ins for funders' own portals. Passwords are encrypted with SECRETS_KEY. */
+/** Website logins every employee can use in their browser (agency portals, the LeadDash platform...). Passwords and saved sessions are encrypted with SECRETS_KEY. */
 export const portalLogins = sqliteTable(
   "portal_logins",
   {
@@ -778,6 +779,12 @@ export const portalLogins = sqliteTable(
     url: text("url"),
     username: text("username").notNull(),
     secretEncrypted: text("secretEncrypted"),
+    /** The one sub-account this login may open (its name, for people). */
+    lockName: text("lockName"),
+    /** That sub-account's id from its web address. Every other sub-account is refused. */
+    lockId: text("lockId"),
+    /** Encrypted cookies from the last run, so a sign-in code is rarely needed. */
+    sessionEncrypted: text("sessionEncrypted"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1544,3 +1551,67 @@ export const devChanges = sqliteTable(
   (t) => [index("dev_changes_org_idx").on(t.organizationId)]
 );
 export type DevChange = typeof devChanges.$inferSelect;
+
+// ==========================================
+// Browser jobs and the LeadDash platform
+// ==========================================
+
+/** One job an employee does in their browser, started from chat. */
+export const webTasks = sqliteTable(
+  "web_tasks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    /** browse: anything asked in chat. audit, fix, page, publish: Zara's platform work. */
+    kind: text("kind", { enum: ["browse", "audit", "fix", "page", "publish"] }).notNull().default("browse"),
+    loginId: integer("loginId"),
+    title: text("title").notNull(),
+    goal: text("goal").notNull(),
+    startUrl: text("startUrl").notNull(),
+    /** True only after the person approved the save, submit or publish. */
+    allowSubmit: integer("allowSubmit", { mode: "boolean" }).notNull().default(false),
+    status: text("status", { enum: ["queued", "working", "done", "need_code", "failed"] }).notNull().default("queued"),
+    result: text("result"),
+    /** What the employee stopped short of (a Save or Submit button) and is waiting for approval to press. */
+    pending: text("pending"),
+    note: text("note"),
+    steps: integer("steps"),
+    lastUrl: text("lastUrl"),
+    screenshotUrl: text("screenshotUrl"),
+    liveId: text("liveId"),
+    /** JSON details for Zara's work: the finding id, page id, funnel and path. */
+    ref: text("ref").notNull().default("{}"),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("web_tasks_org_idx").on(t.organizationId)]
+);
+
+export type WebTask = typeof webTasks.$inferSelect;
+
+/** What Zara found wrong in a LeadDash platform workflow, and its fix. */
+export const platformFindings = sqliteTable(
+  "platform_findings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    workflow: text("workflow").notNull(),
+    workflowUrl: text("workflowUrl"),
+    /** One line: what's wrong. */
+    issue: text("issue").notNull(),
+    detail: text("detail").notNull().default(""),
+    severity: text("severity", { enum: ["fix_now", "should_fix"] }).notNull().default("should_fix"),
+    /** JSON string[]: the trigger and each step, as the workflow runs today. */
+    howItRuns: text("howItRuns").notNull().default("[]"),
+    fix: text("fix").notNull(),
+    status: text("status", { enum: ["open", "fixing", "fixed", "dismissed"] }).notNull().default("open"),
+    note: text("note"),
+    fixedAt: integer("fixedAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("platform_findings_org_idx").on(t.organizationId)]
+);
+
+export type PlatformFinding = typeof platformFindings.$inferSelect;

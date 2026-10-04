@@ -735,6 +735,28 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
     { label: "Write a welcome", prompt: "Write a welcome email to a new practice that just signed up." },
     "a welcome email to a new customer"
   ),
+  platform: build(
+    [],
+    [
+      job("What should I do in the LeadDash platform?", ["Audit workflows", "Fix workflows when you say so", "Build pages in funnels", "Check forms and calendars"], "platform"),
+      {
+        key: "platform",
+        title: "The platform",
+        intro: "Where I work and what I leave alone.",
+        questions: [
+          { key: "mattersMost", label: "Which workflows matter most?", type: "text", placeholder: "New lead follow-up, demo reminders, no-show follow-up", short: "Check first", guide: "platform" },
+          { key: "never", label: "Never change these", type: "text", placeholder: "Billing workflows, anything with Legacy in the name", short: "Never change", guide: "rules" },
+          { key: "pages", label: "Where should new pages go?", type: "text", placeholder: "The Speaking funnel", short: "Pages go in", guide: "platform" },
+        ],
+      },
+    ],
+    [
+      { key: "platform", title: "What should I check first?" },
+      { key: "rules", title: "What should I never change?" },
+    ],
+    { label: "Try an audit", prompt: "Tell me how you'd audit my workflows, step by step." },
+    "a short audit note about one workflow"
+  ),
   custom: build(
     [],
     [

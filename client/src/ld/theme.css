@@ -365,3 +365,9 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
   .ld-dev-repos { grid-template-columns: 1fr; gap: 4px; }
   .ld-dev-edit { grid-template-columns: 1fr; }
 }
+
+@media (max-width: 760px) {
+  .ld-logins { grid-template-columns: minmax(0, 1fr) 96px !important; }
+  .ld-logins > span { display: none; }
+  .ld-logins-form { grid-template-columns: minmax(0, 1fr) !important; gap: 6px !important; }
+}

@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page";
   id: number;
   /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -74,10 +74,17 @@ const ACTIONS: Record<string, string[]> = {
   leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
 };
+// Every employee has a browser.
+for (const list of Object.values(ACTIONS)) list.push("browse");
 
 const ACTION_HELP: Record<string, string> = {
+  browse: "browse: do something on a website in your own browser: read a page, look something up on a site, check a portal or account, fill in a form. Put the whole job in `goal`, with exactly what to bring back. Put the web address in `url` ('' when a saved Website login covers it), the saved login's name in `target` ('' for none), and a short title in `title`. You do everything up to a Save, Submit, Send or Publish button and the owner presses Finish it to approve it. Use it instead of saying you can't open a website.",
+  audit_workflows: "audit_workflows: open every workflow in the LeadDash platform, read the trigger and each step, change nothing, and list what needs fixing with one exact fix each.",
+  fix_workflow: "fix_workflow: make the fix for a finding you listed, only when the owner says to (\"fix it\", \"fix the first two\", \"fix the reminders one\"). Put words from the workflow's name in `target` ('' when they gave a count), and in `focus` put fix_now (every one marked Fix now), all (every open one), or how many from the top (\"2\"); '' for one.",
+  platform_page: "platform_page: put one of Jordan's pages into a funnel in the LeadDash platform, as a draft. Put the page's name in `page` ('' for Jordan's newest), the funnel's name in `target` (ask if they didn't say), and the path in `url` ('' to make one from the title). It's never published until the owner presses Publish.",
   save_files: "save_files: the person wants the files they attached in this chat kept in the Brain so every employee can use them.",
   add_file: "add_file: the person attached an RFP, call for proposals or opportunity document and wants you to look at it or add it. It is added to Opportunities and scored.",
   revise_answer: "revise_answer: change one answer on an application you wrote. Put words from the question (\"problem\", \"traction\") in `target`, the application's name in `title` ('' for the most recent), what to change in `notes`, and concise or detailed in `to` when they ask for shorter or longer ('' otherwise).",
@@ -275,7 +282,14 @@ async function teamFacts(emp: AIEmployee) {
     return `${linkOnly ? "\nGitHub isn't connected, by the owner's choice: you write each fix up and she posts it on GitHub from your link, then reviews and merges Claude's change there. You can't see progress on GitHub, so never say you'll tell her when it's ready; tell her to watch the issue on GitHub. Never ask her for a GitHub token." : ""}\nCode you work on (name: repo; deploy command after a merge):\n${repos.map((r) => `- ${r.label}: ${r.repo}; ${r.deploy}`).join("\n")}\nRecent changes:\n${changes.map((c) => `- ${c.title} (${c.label}): ${c.status}${c.prNumber ? `, change #${c.prNumber}` : ""}`).join("\n") || "- none yet"}`;
   }
   if (emp.kind === "onboarding") return (await import("./customers")).customersFacts(emp.organizationId);
+  if (emp.kind === "platform") return (await import("./platform")).platformFacts(emp.organizationId);
   return "";
+}
+
+/** Website logins every employee can use in their browser (names only; passwords never reach the AI). */
+async function webFacts(emp: AIEmployee) {
+  const logins = await db.listPortalLogins(emp.organizationId);
+  return `\nYou have your own web browser (the browse action). Website logins saved on Integrations that you can sign in with: ${logins.map((l) => `${l.name}${l.lockName ? ` (only the ${l.lockName} sub-account)` : ""}`).join("; ") || "none yet"}.`;
 }
 
 async function leadershipFacts(emp: AIEmployee) {
@@ -306,6 +320,10 @@ TALK_BY_KIND.speaking = TALK_BY_KIND.grants;
 TALK_BY_KIND.developer = `- You never write or change code yourself. Claude does, from your write-up, and the owner merges. Say that plainly when it matters.
 - Nothing goes live until the owner merges the change and runs the deploy. After a merge, give her the deploy command for that code from your list.
 - Keep it plain: what's broken, what changed, how to check. No jargon unless she uses it.`;
+TALK_BY_KIND.platform = `- You work in the LeadDash platform in your own browser, with a login locked to one sub-account. You can't open any other sub-account, and you never ask for the password in chat.
+- An audit only reads. You change a workflow only when the owner says to fix it (fix_workflow) or presses Fix. Never fix something on your own.
+- Pages go in as drafts. They go live only when the owner presses Publish on the page card.
+- Call it the LeadDash platform. Plain words: what's wrong, what you'll change, what stays the same.`;
 TALK_BY_KIND.onboarding = `- You onboard new customers (practices) onto LeadDash EHR, from signed to live. Not new hires.
 - Every email to a customer waits for the owner's approval. Never promise a date, price or feature the Brain doesn't state.
 - Nora tracks each onboarding plan as a project; you own the customer-facing steps.`;
@@ -644,6 +662,58 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         return { text: err instanceof Error ? err.message : String(err), cards: [{ type: "dev_change", id: ch.id, title: ch.title }], queries: [] };
       }
     }
+    case "browse": {
+      const web = await import("./web");
+      try {
+        const { task, login } = await web.startWebTask(emp, { goal: d.goal || d.notes || d.message, url: d.url, login: d.target, title: d.title });
+        return { text: `Opening ${login ? login.name : "it"} in my browser now. You can watch or take over.`, cards: [web.liveCard(task.liveId!, `${emp.name}'s browser`)], queries: [] };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+    }
+    case "audit_workflows": {
+      const pf = await import("./platform");
+      const web = await import("./web");
+      try {
+        const { task, already } = await pf.startAudit(org);
+        const text = already
+          ? "I'm already reading your workflows. Here's my browser."
+          : "Signing in to the LeadDash platform now. I'll open each workflow, read the trigger and every step, and change nothing. Watch here or take over any time.";
+        return { text, cards: [web.liveCard(task.liveId!, `${emp.name}'s browser`)], queries: [] };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+    }
+    case "fix_workflow": {
+      const pf = await import("./platform");
+      const web = await import("./web");
+      const list = pf.pickFindings(org, d.target, d.focus.trim().toLowerCase());
+      if (!list.length) return { text: "There's nothing open to fix. Ask me to audit your workflows and I'll list what needs fixing.", cards: [], queries: [] };
+      const started: string[] = [];
+      let liveId = "";
+      for (const f of list) {
+        try {
+          const r = await pf.startFix(org, f.id);
+          started.push(f.workflow);
+          liveId ||= r.task.liveId ?? "";
+        } catch {
+          /* one that's already fixing is skipped */
+        }
+      }
+      if (!started.length) return { text: "I'm already working on those.", cards: [], queries: [] };
+      return { text: `Fixing ${started.length === 1 ? `"${started[0]}"` : `${started.length} workflows, one at a time: ${started.map((n) => `"${n}"`).join(", ")}`}. I'll make only the change I described and save. I'll post here when ${started.length === 1 ? "it's" : "each one is"} done.`, cards: liveId ? [web.liveCard(liveId, `${emp.name}'s browser`)] : [], queries: [] };
+    }
+    case "platform_page": {
+      const pf = await import("./platform");
+      const web = await import("./web");
+      if (!d.target.trim()) return { text: "Which funnel should it go in?", cards: [], queries: [] };
+      try {
+        const { task, page } = await pf.startPage(org, { page: d.page, funnel: d.target, path: d.url });
+        return { text: `Putting Jordan's "${page.title}" page into your ${d.target.trim()} funnel now, as a draft. Nothing goes live until you press Publish.`, cards: [web.liveCard(task.liveId!, `${emp.name}'s browser`)], queries: [] };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+    }
     case "onboard_customer": {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { text: "When should they go live?", cards: [], queries: [] };
       const cust = await import("./customers");
@@ -794,6 +864,19 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       if (emp.kind === "projects") return { text: await projects.projectsStatus(org), cards: [], queries: [] };
       if (emp.kind === "coo") return { text: await coo.cooStatus(org), cards: [], queries: [] };
       if (emp.kind === "prospecting" || emp.kind === "outreach" || emp.kind === "leads") return { text: await sales.salesStatus(org, emp.kind), cards: [], queries: [] };
+      if (emp.kind === "platform") {
+        const o = await (await import("./platform")).overview(org);
+        const open = o.findings.filter((f) => f.status === "open");
+        const fixed = o.findings.filter((f) => f.status === "fixed");
+        const text = !o.login
+          ? "I can't get into the LeadDash platform yet. Add it on Integrations under Website logins, locked to the LeadDash sub-account."
+          : o.auditing
+            ? "I'm reading your workflows now. I'll post what I find when I'm done."
+            : o.auditedAt
+              ? `${plural(open.length, "workflow")} ${open.length === 1 ? "needs" : "need"} fixing and I've fixed ${fixed.length}. My last audit read ${plural(o.workflows.length, "workflow")}.`
+              : "I haven't audited your workflows yet. Say the word and I'll start.";
+        return { text, cards: open.length ? [{ type: "platform_findings", id: 0, title: "Still to fix" }] : [], queries: [] };
+      }
       if (emp.kind === "hiring") {
         const facts = await hiring.hiringFacts(org);
         const fresh = (await db.listHrPeople(org, "applicant")).filter((p) => p.stage === "new").slice(0, 3);
@@ -1095,7 +1178,7 @@ export async function sendChatMessage(opts: {
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
-Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
+Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${await webFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
 ${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}\n${REMEMBER}`}${opts.spoken ? `\n${ONE_ON_ONE}` : ""}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`

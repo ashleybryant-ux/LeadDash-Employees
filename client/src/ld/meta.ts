@@ -1,6 +1,6 @@
 /** Display facts about each employee job, shared by every screen. */
 
-export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "developer" | "onboarding" | "custom";
+export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "developer" | "onboarding" | "platform" | "custom";
 
 export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Leadership" | "Revenue" | "Sales" | "Marketing" | "Operations" | "Other" }> = {
   coo: { color: "#334155", work: "Meetings", group: "Leadership" },
@@ -18,10 +18,11 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
   hiring: { color: "#0f6e74", work: "Hiring", group: "Operations" },
   developer: { color: "#3b4a6b", work: "Changes", group: "Operations" },
   onboarding: { color: "#7a3e6b", work: null, group: "Operations" },
+  platform: { color: "#2f6f8a", work: "Workflows", group: "Operations" },
   custom: { color: "#3d4c45", work: null, group: "Other" },
 };
 
-export const KIND_ORDER: Kind[] = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring", "onboarding", "developer", "custom"];
+export const KIND_ORDER: Kind[] = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring", "onboarding", "developer", "platform", "custom"];
 export const GROUP_ORDER = ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"] as const;
 
 /** Portraits live in client/public/avatars/<kind>.webp (256 px, cut from the LeadDash Employees team sheet). */
@@ -58,6 +59,7 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
   hiring: ["Find LPCs for outreach", "Check hiring status", "Write a job post", "What licenses expire soon?"],
   developer: ["Something's broken", "What are you working on?", "What's ready for me to merge?"],
   onboarding: ["Onboard a new customer", "Who's being onboarded?", "What's due this week?"],
+  platform: ["Audit my workflows", "Put Jordan's page in a funnel", "What needs fixing?"],
   custom: ["What can you help with?"],
 };
 
@@ -74,6 +76,7 @@ export const GUIDELINE_LABELS: Record<Kind, { focus: string; avoid: string; sign
   hiring: { focus: "Roles to fill", avoid: "Never", signAs: "Sign messages as" },
   developer: { focus: "What to work on", avoid: "Never change", signAs: "Sign changes as" },
   onboarding: { focus: "Every onboarding includes", avoid: "Never promise", signAs: "Sign emails as" },
+  platform: { focus: "What to check first", avoid: "Never change", signAs: "Name pages as" },
   prospecting: { focus: "Look for", avoid: "Skip", signAs: "Ideal fit" },
   outreach: { focus: "What to lead with", avoid: "Never say", signAs: "Sign emails as" },
   leads: { focus: "How to reply", avoid: "Never promise", signAs: "Sign replies as" },
@@ -126,6 +129,12 @@ export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
     "Claude only proposes changes. Nothing joins your code until you press Merge, and nothing goes live until you deploy.",
     "Every change says what was fixed and how to check it.",
     "No client data ever goes into a write-up.",
+  ],
+  platform: [
+    "Audits only read. Nothing in the platform changes until you press Fix or Publish.",
+    "The login is locked to one sub-account. Every other sub-account is out of reach.",
+    "Pages go in as drafts. Nothing goes live until you press Publish.",
+    "Passwords are typed into the page directly and never shown to the AI.",
   ],
   onboarding: [
     "Every email to a customer waits for your approval.",

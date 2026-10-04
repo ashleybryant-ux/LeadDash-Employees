@@ -326,7 +326,7 @@ export async function readiness(orgId: number, app: Application) {
   let route: { how: "email" | "portal" | "manual"; label: string; ready: boolean; detail: string };
   if (app.channel === "email") route = { how: "email", label: to ? `Sends by email to ${to}` : "Goes in by email", ready: Boolean(to && google), detail: !to ? "No email address found for submissions" : google ? "From your connected Google account" : "Connect Google on Integrations to send it" };
   else if (app.channel === "grants_gov") route = { how: "manual", label: "Goes in through Grants.gov", ready: false, detail: "Grants.gov needs your authorized representative to submit" };
-  else route = { how: "portal", label: login ? `${login.name} sign-in saved` : `No saved sign-in for ${app.channelDetail || opp?.host || "this portal"}`, ready: Boolean(login), detail: login ? "Morgan signs in, uploads every file and submits" : "Add it on Integrations, Applying, Agency portals" };
+  else route = { how: "portal", label: login ? `${login.name} sign-in saved` : `No saved sign-in for ${app.channelDetail || opp?.host || "this portal"}`, ready: Boolean(login), detail: login ? "Morgan signs in, uploads every file and submits" : "Add it on Integrations under Website logins" };
   return { route, portalId: login?.id ?? null };
 }
 

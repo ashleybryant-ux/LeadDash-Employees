@@ -46,6 +46,7 @@ export const VOICES: Record<string, string> = {
   hiring: "ash",
   developer: "echo",
   onboarding: "shimmer",
+  platform: "sage",
   custom: "alloy",
 };
 
@@ -112,6 +113,7 @@ const VOICE_STYLE: Record<string, "female" | "male"> = {
   hiring: "female",
   developer: "male",
   onboarding: "female",
+  platform: "female",
 };
 const KIND_ORDER = Object.keys(VOICE_STYLE);
 

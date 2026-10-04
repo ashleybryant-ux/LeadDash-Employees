@@ -14,7 +14,8 @@ import { storagePut } from "../storage";
  * refused unless the task was approved for submitting.
  */
 
-export type Secrets = { email?: string; password?: string; code?: string };
+/** content: a long block (a page's HTML) the browser pastes, so the AI never has to type it out. */
+export type Secrets = { email?: string; password?: string; code?: string; content?: string };
 export type BrowserFile = { path: string; name: string };
 export type Download = { name: string; buf: Buffer; mime: string; url: string };
 export type StepLog = { step: number; action: string; detail: string; url: string };
@@ -29,6 +30,8 @@ export type BrowserResult = {
   screenshotUrl: string | null;
   /** What the person did while they had control, to remember for next time. */
   helped: string[];
+  /** The page the browser ended on. */
+  url: string;
 };
 
 export type BrowserTask = {
@@ -44,8 +47,16 @@ export type BrowserTask = {
   maxSteps?: number;
   /** Who is doing the work, for the AI's instructions. */
   actor?: string;
+  /** Buttons refused until the task is approved (default: final submits). */
+  submitWords?: RegExp;
+  /** Buttons refused even after approval (deleting, for example). */
+  neverWords?: RegExp;
+  /** Only these pages may be opened. Anything else is closed and the browser goes back to startUrl. */
+  allowUrl?: (url: string) => boolean;
+  /** Extra rules for the AI, added to the usual ones. */
+  rules?: string;
   /** Lets the person watch in chat and take over. onStuck posts the "waiting for you" card. */
-  live?: { id: string; onStuck?: (reason: string) => Promise<void>; holdMs?: number };
+  live?: { id: string; onStuck?: (reason: string) => Promise<void>; holdMs?: number; label?: string };
   /** For tests: replaces the AI's choice of action. */
   decide?: (view: PageView, history: StepLog[]) => Promise<Action>;
 };
@@ -58,7 +69,7 @@ export type Action = {
   action: "click" | "type" | "select" | "upload" | "press_enter" | "goto" | "wait" | "download" | "need_code" | "done" | "fail";
   index: number;
   value: string;
-  secret: "" | "email" | "password" | "code";
+  secret: "" | "email" | "password" | "code" | "content";
   fileIndex: number;
   result: string;
 };
@@ -72,7 +83,7 @@ const ACTION_SCHEMA: JsonSchema = {
     action: { type: "string", enum: ["click", "type", "select", "upload", "press_enter", "goto", "wait", "download", "need_code", "done", "fail"] },
     index: { type: "integer", description: "The element number for click, type, select, upload or download; -1 otherwise" },
     value: { type: "string", description: "Text to type, the option to select, or the URL for goto; '' otherwise" },
-    secret: { type: "string", enum: ["", "email", "password", "code"], description: "For type: fill a saved value instead of value" },
+    secret: { type: "string", enum: ["", "email", "password", "code", "content"], description: "For type: fill a saved value instead of value" },
     fileIndex: { type: "integer", description: "For upload: which file from the file list; -1 otherwise" },
     result: { type: "string", description: "For done: the answer the goal asks for (JSON when asked); for fail: why; '' otherwise" },
   },
@@ -321,7 +332,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         live.step = status === "done" ? "Finished" : note.slice(0, 200);
         live.page = null;
       }
-      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl, helped: live?.helped ?? [] };
+      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl, helped: live?.helped ?? [], url: page.url() };
     };
 
     let lastSig = "";
@@ -376,7 +387,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         repeats = 0;
         continue;
       }
-      if (live) live.step = `Step ${step}: ${act.thought || describe(act, view)}`.slice(0, 220);
+      if (live) live.step = `${task.live?.label ? `${task.live.label} ` : ""}Step ${step}: ${act.thought || describe(act, view)}`.slice(0, 220);
       try {
         await perform(page, task, view, act);
         entry(describe(act, view));
@@ -384,6 +395,11 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         entry(`Could not ${act.action}: ${(err as Error).message.split("\n")[0]}`);
       }
       await page.waitForTimeout(600);
+      // A click that lands outside the allowed pages is undone right away.
+      if (task.allowUrl && !task.allowUrl(page.url())) {
+        log.push({ step, action: "blocked", detail: `That page is outside what this login may open, so I went back. Stay inside it.`, url: hideSecrets({ url: page.url(), title: "", text: "", elements: [] }, task.secrets).url });
+        await page.goto(task.startUrl, { waitUntil: "domcontentloaded" }).catch(() => null);
+      }
     }
     const lastSteps = log.slice(-5).map((l) => `${l.action} (${l.detail})`).join("; then ");
     const why = `Stopped after ${max} steps without finishing. Last page: ${page.url()}. Last steps: ${lastSteps}`.slice(0, 900);
@@ -426,13 +442,25 @@ async function perform(page: import("playwright-core").Page, task: BrowserTask, 
   switch (act.action) {
     case "click": {
       const words = `${el?.text ?? ""} ${el?.label ?? ""}`;
-      if (!task.allowSubmit && SUBMIT_WORDS.test(words)) throw new Error("submitting is not allowed in this task");
+      if (task.neverWords?.test(words)) throw new Error("that button is never pressed in this task");
+      if (!task.allowSubmit && (task.submitWords ?? SUBMIT_WORDS).test(words)) throw new Error("pressing that is not allowed until the person approves it; use done and say it's ready");
+      if (el?.href && task.allowUrl && /^https?:/i.test(el.href) && !task.allowUrl(el.href)) throw new Error("that link is outside what this login may open");
       await loc().click();
       return;
     }
     case "type": {
       const value = act.secret ? task.secrets?.[act.secret] ?? "" : act.value;
       if (act.secret && !value) throw new Error(`no saved ${act.secret}`);
+      if (act.secret === "content") {
+        // Code editors (the kind a custom HTML box uses) ignore fill, so the block is pasted where the cursor is.
+        const ok = await loc().fill(value, { timeout: 5000 }).then(() => true, () => false);
+        if (!ok) {
+          await loc().click();
+          await page.keyboard.press("Control+A");
+          await page.keyboard.insertText(value);
+        }
+        return;
+      }
       await loc().fill(value);
       return;
     }
@@ -450,6 +478,7 @@ async function perform(page: import("playwright-core").Page, task: BrowserTask, 
       return;
     case "goto":
       if (!/^https?:\/\//i.test(act.value)) throw new Error("not a web address");
+      if (task.allowUrl && !task.allowUrl(act.value)) throw new Error("that address is outside what this login may open");
       await page.goto(act.value, { waitUntil: "domcontentloaded" });
       return;
     case "download": {
@@ -534,19 +563,19 @@ export async function snapshot(page: import("playwright-core").Page): Promise<Pa
 
 async function decide(task: BrowserTask, view: PageView, history: StepLog[]): Promise<Action> {
   const files = (task.files ?? []).map((f, i) => `${i}. ${f.name}`).join("\n") || "(none)";
-  const saved = (["email", "password", "code"] as const).filter((k) => task.secrets?.[k]).join(", ") || "none";
+  const saved = (["email", "password", "code", "content"] as const).filter((k) => task.secrets?.[k]).join(", ") || "none";
   const els = view.elements.map((e) => `[${e.i}] ${e.tag}${e.type ? `(${e.type})` : ""} ${e.label ? `label="${e.label}" ` : ""}${e.text ? `"${e.text}"` : ""}${e.href && e.tag === "a" ? ` -> ${e.href}` : ""}`).join("\n");
   const past = history.slice(-12).map((h) => `${h.step}. ${h.action}: ${h.detail}`).join("\n") || "(first step)";
   return generateJson<Action>({
     system: `You are ${task.actor ?? "an assistant"} operating a web browser for the person you work for. Pick exactly one next action toward the goal.
 Rules:
 - Use only elements from the numbered list. Never invent an element number.
-- To fill a saved sign-in value, use action "type" with secret "email", "password" or "code" and leave value empty. Saved values available: ${saved}.
+- To fill a saved value, use action "type" with secret "email", "password", "code" or "content" and leave value empty ("content" pastes the whole block you were given, like a page's HTML). Saved values available: ${saved}.
 - If the site asks for a one-time sign-in or verification code and no code is saved, use "need_code".
-- ${task.allowSubmit ? "You are approved to submit this one response. Submit only after every required file is uploaded and every required field is filled, then capture the confirmation number or message." : "Never press a button that submits, places or finalizes a bid, application or form. If the goal would need that, use done and say what is ready."}
+- ${task.allowSubmit ? "You are approved to press the final button this goal needs (submit, save or publish). Press it only after every required file is uploaded and every required field is filled, then capture the confirmation number or message." : "Never press a button that submits, places or finalizes a bid, application or form. If the goal would need that, use done and say what is ready."}
 - Never accept terms, pay fees, change account settings, or delete anything unless the goal says to.
 - If you are stuck, blocked by a CAPTCHA, or the page is not what the goal expects, use "fail" and say why in result.
-- When the goal is reached, use "done" and put the requested answer in result.`,
+- When the goal is reached, use "done" and put the requested answer in result.${task.rules ? `\n${task.rules}` : ""}`,
     prompt: `GOAL:\n${task.goal}\n\nFILES YOU CAN UPLOAD:\n${files}\n\nSTEPS SO FAR:\n${past}\n\nCURRENT PAGE: ${view.title}\n${view.url}\n\nELEMENTS:\n${els}\n\nPAGE TEXT:\n${view.text}`,
     schemaName: "browser_action",
     schema: ACTION_SCHEMA,

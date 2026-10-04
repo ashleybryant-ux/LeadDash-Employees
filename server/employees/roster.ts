@@ -169,6 +169,16 @@ export const ROSTER: RosterEntry[] = [
     searches: false,
     minutesPerTask: 30,
   },
+  {
+    kind: "platform",
+    name: "Zara",
+    roleTitle: "Platform Specialist",
+    department: "Operations",
+    description: "Works in the LeadDash platform in her own browser: audits your workflows, fixes them when you say so, and builds pages in your funnels.",
+    capabilities: ["Workflow audits with one exact fix each", "Fixes made only when you press Fix", "Jordan's pages built into your funnels as drafts", "Locked to one sub-account"],
+    searches: false,
+    minutesPerTask: 45,
+  },
 ];
 
 /** Earlier default titles. A workspace still showing one gets the new title; a title someone typed stays. */
@@ -224,6 +234,7 @@ export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: 
   projects: { focus: "How you like plans", avoid: "Never schedule", signAs: "Sign reports as" },
   developer: { focus: "What to work on", avoid: "Never change", signAs: "Sign changes as" },
   onboarding: { focus: "Every onboarding includes", avoid: "Never promise", signAs: "Sign emails as" },
+  platform: { focus: "What to check first", avoid: "Never change", signAs: "Name pages as" },
 };
 
 export type Guidelines = { focus: string; avoid: string; signAs: string };

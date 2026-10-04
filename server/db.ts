@@ -36,6 +36,8 @@ import {
   employeeQuestions,
   registrations,
   portalLogins,
+  webTasks,
+  platformFindings,
   pushSubscriptions,
   hrRoles,
   hrPeople,
@@ -1662,4 +1664,44 @@ export function listOpenDevChanges() {
 export function updateDevChange(id: number, orgId: number, data: Partial<typeof devChanges.$inferInsert>) {
   getDb().update(devChanges).set({ ...data, updatedAt: new Date() }).where(and(eq(devChanges.id, id), eq(devChanges.organizationId, orgId))).run();
   return getDevChange(id, orgId);
+}
+
+// ==========================================
+// Browser jobs and Zara's platform findings
+// ==========================================
+
+export function createWebTask(row: typeof webTasks.$inferInsert) {
+  return getDb().insert(webTasks).values(row).returning().all()[0];
+}
+export function getWebTask(id: number, orgId: number) {
+  return getDb().select().from(webTasks).where(and(eq(webTasks.id, id), eq(webTasks.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export function listWebTasks(orgId: number, limit = 50) {
+  return getDb().select().from(webTasks).where(eq(webTasks.organizationId, orgId)).orderBy(desc(webTasks.id)).limit(limit).all();
+}
+export function updateWebTask(id: number, orgId: number, data: Partial<typeof webTasks.$inferInsert>) {
+  getDb().update(webTasks).set({ ...data, updatedAt: new Date() }).where(and(eq(webTasks.id, id), eq(webTasks.organizationId, orgId))).run();
+  return getWebTask(id, orgId);
+}
+/** Jobs a restart interrupted. */
+export function listUnfinishedWebTasks() {
+  return getDb().select().from(webTasks).where(inArray(webTasks.status, ["queued", "working"])).all();
+}
+
+export function createFinding(row: typeof platformFindings.$inferInsert) {
+  return getDb().insert(platformFindings).values(row).returning().all()[0];
+}
+export function getFinding(id: number, orgId: number) {
+  return getDb().select().from(platformFindings).where(and(eq(platformFindings.id, id), eq(platformFindings.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export function listFindings(orgId: number) {
+  return getDb().select().from(platformFindings).where(eq(platformFindings.organizationId, orgId)).orderBy(desc(platformFindings.id)).all();
+}
+export function updateFinding(id: number, orgId: number, data: Partial<typeof platformFindings.$inferInsert>) {
+  getDb().update(platformFindings).set({ ...data, updatedAt: new Date() }).where(and(eq(platformFindings.id, id), eq(platformFindings.organizationId, orgId))).run();
+  return getFinding(id, orgId);
+}
+/** A new audit replaces the open findings from the last one; fixed and dismissed ones stay as history. */
+export function clearOpenFindings(orgId: number) {
+  getDb().delete(platformFindings).where(and(eq(platformFindings.organizationId, orgId), eq(platformFindings.status, "open"))).run();
 }

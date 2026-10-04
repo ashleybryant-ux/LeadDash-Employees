@@ -866,27 +866,30 @@ export const appRouter = router({
       }),
   }),
 
+  // Website logins: every employee can sign in with these in their browser
   portals: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return (await db.listPortalLogins(input.organizationId)).map(({ secretEncrypted, ...p }) => ({ ...p, hasPassword: Boolean(secretEncrypted) }));
+      return (await import("./employees/logins")).listView(input.organizationId);
     }),
 
     save: protectedProcedure
-      .input(orgInput.extend({ id: z.number().optional(), name: z.string().trim().min(2).max(120), url: z.string().max(500).optional(), username: z.string().trim().min(1).max(200), password: z.string().max(500).optional() }))
+      .input(
+        orgInput.extend({
+          id: z.number().optional(),
+          name: z.string().trim().min(2).max(120),
+          url: z.string().trim().max(500).optional(),
+          username: z.string().trim().min(1).max(200),
+          password: z.string().max(500).optional(),
+          lockName: z.string().trim().max(120).optional(),
+          lockAddress: z.string().trim().max(800).optional(),
+        })
+      )
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "admin");
-        const existing = input.id ? (await db.listPortalLogins(input.organizationId)).find((p) => p.id === input.id) : null;
-        if (input.id && !existing) throw new TRPCError({ code: "NOT_FOUND", message: "That sign-in is not in this workspace." });
-        await db.savePortalLogin({
-          id: input.id,
-          organizationId: input.organizationId,
-          name: input.name,
-          url: input.url || null,
-          username: input.username,
-          secretEncrypted: input.password ? encryptJson({ password: input.password }) : existing?.secretEncrypted ?? null,
-        });
-        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved portal sign-in", details: input.name });
+        const { organizationId, ...rest } = input;
+        const saved = await (await import("./employees/logins")).save(organizationId, rest);
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved website login", details: `${input.name}${saved?.lockName ? ` (only the ${saved.lockName} sub-account)` : ""}` });
         return { success: true };
       }),
 
@@ -895,8 +898,61 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "admin");
         await db.deletePortalLogin(input.id, input.organizationId);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Removed website login", details: String(input.id) });
         return { success: true };
       }),
+  }),
+
+  // Jobs an employee does in their browser, from chat
+  web: router({
+    get: protectedProcedure.input(orgInput.extend({ id: z.number() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/web")).view(input.organizationId, input.id);
+    }),
+    approve: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const r = await (await import("./employees/web")).approve(input.organizationId, input.id);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Approved a browser step", details: String(input.id) });
+      return r;
+    }),
+    code: protectedProcedure.input(orgInput.extend({ id: z.number(), code: z.string().trim().min(4).max(20) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/web")).submitCode(input.organizationId, input.id, input.code);
+    }),
+  }),
+
+  // Zara: the LeadDash platform (workflows and pages)
+  platform: router({
+    overview: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/platform")).overview(input.organizationId);
+    }),
+    audit: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const r = await (await import("./employees/platform")).startAudit(input.organizationId);
+      return { liveId: r.task.liveId, already: r.already };
+    }),
+    fix: protectedProcedure.input(orgInput.extend({ findingId: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const r = await (await import("./employees/platform")).startFix(input.organizationId, input.findingId);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Approved a workflow fix", details: r.finding.workflow });
+      return { liveId: r.task.liveId };
+    }),
+    dismiss: protectedProcedure.input(orgInput.extend({ findingId: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./employees/platform")).dismiss(input.organizationId, input.findingId);
+      return { success: true };
+    }),
+    page: protectedProcedure.input(orgInput.extend({ id: z.number() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/platform")).pageView(input.organizationId, input.id);
+    }),
+    publish: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const r = await (await import("./employees/platform")).startPublish(input.organizationId, input.id);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Approved publishing a platform page", details: String(input.id) });
+      return r;
+    }),
   }),
 
   // ==========================================

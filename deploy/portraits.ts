@@ -16,6 +16,7 @@ const STYLE = "Warm professional headshot portrait, head and shoulders, softly s
 const PEOPLE: Record<string, string> = {
   developer: "A Black man in his early 30s with short twists and a neatly trimmed beard, thin black glasses.",
   onboarding: "A Black woman in her early 30s with long braids pulled back, small gold earrings, a friendly open expression.",
+  platform: "A South Asian woman in her late 20s with shoulder-length wavy dark hair, small silver hoop earrings, a focused, friendly expression.",
 };
 
 (async () => {

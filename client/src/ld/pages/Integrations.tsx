@@ -101,6 +101,7 @@ export default function Integrations() {
   return (
     <Page rail="integrations" maxWidth={1140}>
       <h1 className="ld-h1">Integrations</h1>
+      <WebsiteLogins />
       {notice && (
         <div role="status" className="ld-card" style={{ padding: "12px 16px", borderColor: notice.ok ? "#1b6b4a" : "#e2a7a1", background: notice.ok ? "#f1f8f4" : "#fdf3f2", fontSize: 14, fontWeight: 600, color: notice.ok ? "#155c3e" : "#b42318" }}>
           {notice.text}
@@ -122,7 +123,7 @@ export default function Integrations() {
         tabs={[
           { key: "all", label: `All (${main.length})` },
           { key: "connected", label: `Connected (${connectedCount})` },
-          { key: "applying", label: "Applying (6)" },
+          { key: "applying", label: "Applying (5)" },
         ]}
       >
         {tab === "applying" ? (
@@ -253,7 +254,7 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
 }
 
 // ==========================================
-// Applying: who signs, Grants.gov, portals, Gmail, Sessionize
+// Applying: who signs, Grants.gov, Gmail, Sessionize (portal sign-ins are Website logins)
 // ==========================================
 
 function StatusTile({ conn, isOpen, toggle }: { conn: Conn | undefined; isOpen: boolean; toggle: () => void }) {
@@ -289,10 +290,8 @@ function Applying({ conns, open, setOpen, ready }: { conns: Conn[]; open: string
       <BidPrime isOpen={open === "bidprime"} toggle={() => toggle("bidprime")} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, alignItems: "start" }}>
         <GrantsGov isOpen={open === "grantsgov"} toggle={() => toggle("grantsgov")} />
-        {[item("submittable"), { key: "portals" } as CatalogItem, gmail, item("sessionize")].map((c) =>
-          c.key === "portals" ? (
-            <Portals key="portals" isOpen={open === "portals"} toggle={() => toggle("portals")} />
-          ) : c.app ? (
+        {[item("submittable"), gmail, item("sessionize")].map((c) =>
+          c.app ? (
             <OneClick key={c.key} item={c} conn={connOf(c.provider)} ready={ready?.[c.app] ?? false} loading={!ready} />
           ) : (
             <div key={c.key} style={tileBox(open === c.key)}>
@@ -504,44 +503,104 @@ function BidPrime({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
   );
 }
 
-function Portals({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
+type LoginEdit = { id?: number; name: string; url: string; username: string; password: string; lockName: string; lockAddress: string; hasLock: boolean };
+
+function hostLabel(url: string | null) {
+  try {
+    return url ? new URL(url).host.replace(/^www\./, "") : "";
+  } catch {
+    return url ?? "";
+  }
+}
+
+const CLIP: React.CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 };
+
+/** Website logins: every employee can sign in with these in their browser. */
+function WebsiteLogins() {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const list = trpc.portals.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [edit, setEdit] = React.useState<LoginEdit | null>(null);
   const save = trpc.portals.save.useMutation({ onSuccess: async () => { setEdit(null); await utils.portals.list.invalidate(); } });
-  const remove = trpc.portals.remove.useMutation({ onSuccess: () => utils.portals.list.invalidate() });
-  const [edit, setEdit] = React.useState<{ id?: number; name: string; url: string; username: string; password: string } | null>(null);
-  const n = list.data?.length ?? 0;
+  const remove = trpc.portals.remove.useMutation({ onSuccess: async () => { setEdit(null); await utils.portals.list.invalidate(); } });
+  const rows = list.data ?? [];
+  const field = (id: string, label: string, input: React.ReactNode) => (
+    <>
+      <label htmlFor={id} style={{ fontWeight: 700 }}>{label}</label>
+      {input}
+    </>
+  );
   return (
-    <div style={tileBox(isOpen)}>
-      <TileHead logo="P" color="#3d4c45" name="Agency and funder portals" desc="Saved sign-ins for Bonfire, BidNet, state portals and funders' own forms." right={<button type="button" className="ld-btn" onClick={toggle} aria-expanded={isOpen}>{n ? `${n} saved` : "Add"}</button>} />
-      {isOpen && (
-        <div style={{ borderTop: "1px solid #eef2f0", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-          {(list.data ?? []).map((p) => (
-            <div key={p.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px 96px", gap: 8, alignItems: "center", fontSize: 14 }}>
-              <span className="ld-clip"><strong>{p.name}</strong> <span className="ld-muted">{p.username}</span></span>
-              <button type="button" className="ld-btn sm" onClick={() => setEdit({ id: p.id, name: p.name, url: p.url ?? "", username: p.username, password: "" })}>Edit</button>
-              <button type="button" className="ld-btn sm danger" onClick={() => remove.mutate({ organizationId: currentOrgId, id: p.id })}>Remove</button>
-            </div>
-          ))}
-          {edit ? (
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8, paddingTop: 6 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><label className="ld-lbl" htmlFor="pt-name">Portal</label><input id="pt-name" className="ld-in" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><label className="ld-lbl" htmlFor="pt-url">Sign-in page</label><input id="pt-url" className="ld-in" value={edit.url} onChange={(e) => setEdit({ ...edit, url: e.target.value })} /></div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><label className="ld-lbl" htmlFor="pt-user">Username</label><input id="pt-user" className="ld-in" autoComplete="off" value={edit.username} onChange={(e) => setEdit({ ...edit, username: e.target.value })} /></div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><label className="ld-lbl" htmlFor="pt-pw">Password</label><input id="pt-pw" className="ld-in" type="password" autoComplete="new-password" placeholder={edit.id ? "Saved" : undefined} value={edit.password} onChange={(e) => setEdit({ ...edit, password: e.target.value })} /></div>
-              <div className="ld-row" style={{ gridColumn: "span 2", justifyContent: "flex-end" }}>
-                <button type="button" className="ld-btn sm" onClick={() => setEdit(null)}>Cancel</button>
-                <button type="button" className="ld-btn p sm" disabled={save.isPending} onClick={() => save.mutate({ organizationId: currentOrgId, id: edit.id, name: edit.name, url: edit.url || undefined, username: edit.username, password: edit.password || undefined })}>Save</button>
-              </div>
-              <div style={{ gridColumn: "span 2" }}><ErrorLine error={save.error} /></div>
+    <>
+      <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <span className="ld-lbl">Website logins</span>
+          {rows.length ? (
+            <div className="ld-logins" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr) minmax(0,1fr) 128px", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
+              {rows.map((l) => (
+                <React.Fragment key={l.id}>
+                  <b style={CLIP}>{l.name}</b>
+                  <span style={CLIP}>{hostLabel(l.url) || "No web address"}{l.lockName ? ` · ${l.lockName} sub-account only` : ""}</span>
+                  <span style={CLIP}>{l.username}</span>
+                  <button type="button" className="ld-btn" onClick={() => setEdit({ id: l.id, name: l.name, url: l.url ?? "", username: l.username, password: "", lockName: l.lockName ?? "", lockAddress: "", hasLock: Boolean(l.lockId) })}>Edit</button>
+                </React.Fragment>
+              ))}
             </div>
           ) : (
-            <button type="button" className="ld-btn sm" onClick={() => setEdit({ name: "", url: "", username: "", password: "" })}>Add</button>
+            <span style={{ fontSize: 14, color: "#3d4c45" }}>{list.isLoading ? "Loading..." : "No logins yet. Add the sites your employees should sign in to, like the LeadDash platform or an agency portal."}</span>
           )}
+          <span className="ld-small">Every employee can use these in their browser. Passwords are typed into the page directly and never shown to the AI.</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button type="button" className="ld-btn p" onClick={() => setEdit({ name: "", url: "", username: "", password: "", lockName: "", lockAddress: "", hasLock: false })}>Add login</button>
+        </div>
+      </div>
+      {edit && (
+        <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+            <span className="ld-lbl">{edit.id ? edit.name || "Edit login" : "New login"}</span>
+            <div className="ld-logins-form" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
+              {field("wl-name", "Name", <input id="wl-name" className="ld-in" value={edit.name} placeholder="LeadDash platform" onChange={(e) => setEdit({ ...edit, name: e.target.value })} />)}
+              {field("wl-url", "Web address", <input id="wl-url" className="ld-in" value={edit.url} placeholder="https://app.leaddash.io" onChange={(e) => setEdit({ ...edit, url: e.target.value })} />)}
+              {field("wl-user", "Email or username", <input id="wl-user" className="ld-in" autoComplete="off" value={edit.username} onChange={(e) => setEdit({ ...edit, username: e.target.value })} />)}
+              {field("wl-pw", "Password", <input id="wl-pw" className="ld-in" type="password" autoComplete="new-password" placeholder={edit.id ? "Saved. Type a new one to change it" : undefined} value={edit.password} onChange={(e) => setEdit({ ...edit, password: e.target.value })} />)}
+              {field(
+                "wl-lock",
+                "Only this sub-account",
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <input id="wl-lock" className="ld-in" value={edit.lockName} placeholder="LeadDash" style={{ maxWidth: 320 }} onChange={(e) => setEdit({ ...edit, lockName: e.target.value })} />
+                  <span className="ld-small">Employees can't open any other sub-account with this login, so client data in other sub-accounts stays out of reach. Leave it empty for sites without sub-accounts.</span>
+                </div>
+              )}
+              {edit.lockName.trim() &&
+                field(
+                  "wl-lockurl",
+                  "Its address",
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <input id="wl-lockurl" className="ld-in" value={edit.lockAddress} placeholder={edit.hasLock ? "Saved. Paste a new one to change it" : "https://app.leaddash.io/v2/location/..."} onChange={(e) => setEdit({ ...edit, lockAddress: e.target.value })} />
+                    <span className="ld-small">Open that sub-account in your own browser and copy the address from the top. It has /location/ in it.</span>
+                  </div>
+                )}
+            </div>
+            <ErrorLine error={save.error || remove.error} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button
+              type="button"
+              className="ld-btn p"
+              disabled={save.isPending || !edit.name.trim() || !edit.username.trim()}
+              onClick={() => save.mutate({ organizationId: currentOrgId, id: edit.id, name: edit.name, url: edit.url || undefined, username: edit.username, password: edit.password || undefined, lockName: edit.lockName, lockAddress: edit.lockAddress || undefined })}
+            >
+              {save.isPending ? "Saving..." : "Save"}
+            </button>
+            <button type="button" className="ld-btn" onClick={() => setEdit(null)}>Cancel</button>
+            {edit.id && (
+              <button type="button" className="ld-btn" disabled={remove.isPending} onClick={() => remove.mutate({ organizationId: currentOrgId, id: edit.id! })}>Remove</button>
+            )}
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

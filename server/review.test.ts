@@ -61,7 +61,7 @@ describe("app review access", () => {
     const demoId = orgs[0].id;
     // Sample work waiting in Approvals, and every employee.
     expect((await caller(reviewer).publishing.listApprovalQueue({ organizationId: demoId })).length).toBeGreaterThanOrEqual(3);
-    expect((await caller(reviewer).employees.list({ organizationId: demoId })).length).toBe(15);
+    expect((await caller(reviewer).employees.list({ organizationId: demoId })).length).toBe(16);
 
     // No other workspace, and no changing the team.
     const other = await makeWorkspace("rv-other");

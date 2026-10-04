@@ -67,6 +67,7 @@ export const TEMPLATES: Record<EmployeeKind, Template[]> = {
   outreach: [REPORT("sequences sending, replies, and demos booked from outreach this week.")],
   developer: [REPORT("changes Claude is working on, changes ready for me to merge, and anything stuck.")],
   onboarding: [REPORT("customers being onboarded, steps due this week, and anything waiting on me.")],
+  platform: [REPORT("workflows that need fixing, fixes made this week, and pages waiting to be published.")],
   leads: [REPORT("new leads, who I replied to, and meetings booked this week.")],
   coo: [REPORT("this week's scorecard, meetings coming up, and open action items.")],
   projects: [REPORT("launches behind, tasks due this week, and KPIs off pace.")],

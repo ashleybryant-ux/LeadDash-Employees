@@ -108,6 +108,7 @@ export async function tick(now = new Date()) {
 export function startScheduler() {
   // History imports that were running when the server restarted pick back up.
   void import("./history").then((h) => h.resumeImports()).catch(() => null);
+  void import("./web").then((w) => w.failInterrupted()).catch(() => null);
   let busy = false;
   const timer = setInterval(async () => {
     if (busy) return;
