@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
+import { StringDecoder } from "node:string_decoder";
+import { PassThrough } from "node:stream";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import { generateJson, type JsonSchema } from "../_core/llm";
@@ -22,7 +24,7 @@ export type Turn = { who: "owner" | "ai"; text: string };
 export type Convo = { title: string; at: Date | null; turns: Turn[] };
 export type Saved = { id: number; topic: string; fact: string; from: string };
 
-const MAX_CHATS = 800;
+const MAX_CHATS = 1500;
 const BATCH_CHARS = 24_000;
 const PER_CHAT_CHARS = 9_000;
 
@@ -81,7 +83,7 @@ function fromChatGpt(list: any[]): Convo[] {
 type Manifest = { data_files?: { export_url?: string; category?: string; filename?: string }[] };
 
 export function isManifest(buf: Buffer) {
-  if (buf.subarray(0, 2).toString() === "PK") return false;
+  if (buf.subarray(0, 2).toString() === "PK" || buf.length > 5_000_000) return false;
   try {
     const m = JSON.parse(buf.toString("utf8")) as Manifest;
     return !Array.isArray(m) && Array.isArray(m?.data_files);
@@ -152,64 +154,166 @@ export async function expandManifest(buf: Buffer) {
   return Buffer.from(JSON.stringify(chats), "utf8");
 }
 
+/** Long text (a memory, a project's documents) split into chats of about 8,000 characters, in turns the reader keeps whole. */
+function asChats(title: string, at: string | null, text: string) {
+  const pieces: string[] = [];
+  for (let i = 0; i < text.length; i += 2400) pieces.push(text.slice(i, i + 2400));
+  const out: { name: string; created_at: string | null; chat_messages: { sender: string; text: string }[] }[] = [];
+  for (let i = 0; i < pieces.length; i += 3) {
+    const n = Math.floor(i / 3) + 1;
+    out.push({ name: pieces.length > 3 ? `${title} (part ${n})` : title, created_at: at, chat_messages: pieces.slice(i, i + 3).map((t) => ({ sender: "human", text: t })) });
+  }
+  return out;
+}
+
 /** One part of Claude's newer export as a Claude conversations list. */
 export async function partToChats(part: Buffer, category: "conversations" | "projects" | "memories") {
   const chats: any[] = [];
   {
     const f = { category };
     if (f.category === "conversations") {
-      for (const j of await jsonFiles(part, /\.json$/i)) if (Array.isArray(j)) chats.push(...j.filter((c) => c && typeof c === "object" && "chat_messages" in c));
+      chats.push(...convosToClaude((await readExport(part)).convos));
     } else if (f.category === "projects") {
       for (const j of await jsonFiles(part, /\.json$/i)) {
         for (const p of Array.isArray(j) ? j : [j]) {
           if (!p || typeof p !== "object") continue;
           const o = p as Record<string, unknown>;
           const text = strings({ description: o.description, instructions: o.prompt_template ?? o.instructions, docs: o.docs }).join("\n\n").slice(0, 60_000);
-          if (text) chats.push({ name: `Project: ${String(o.name ?? "Untitled")}`, created_at: o.updated_at ?? o.created_at ?? null, chat_messages: [{ sender: "human", text }] });
+          if (text) chats.push(...asChats(`Project: ${String(o.name ?? "Untitled")}`, (o.updated_at ?? o.created_at ?? null) as string | null, text));
         }
       }
     } else {
-      const text = (await jsonFiles(part, /\.json$/i)).flatMap((j) => strings(j)).join("\n\n").slice(0, 60_000);
-      if (text) chats.push({ name: "Claude memory", created_at: new Date().toISOString(), chat_messages: [{ sender: "human", text }] });
+      const text = (await jsonFiles(part, /\.json$/i)).flatMap((j) => strings(j)).join("\n\n").slice(0, 400_000);
+      if (text) chats.push(...asChats("Claude memory", new Date().toISOString(), text));
     }
   }
   return Buffer.from(JSON.stringify(chats), "utf8");
 }
 
-/** Reads an export (zip or bare conversations.json) into chats, and says whose export it is. */
-export async function readExport(buf: Buffer): Promise<{ source: "claude" | "chatgpt"; convos: Convo[] }> {
-  let json = "";
-  if (buf.subarray(0, 2).toString() === "PK") {
-    const zip = await JSZip.loadAsync(buf);
-    const names = Object.values(zip.files).filter((f) => !f.dir).map((f) => f.name);
-    const convs = Object.values(zip.files).filter((f) => !f.dir && /(^|\/)conversations[^/]*\.json$/i.test(f.name));
-    if (convs.length === 1) json = await convs[0].async("string");
-    else if (convs.length > 1) {
-      // Claude's newer exports can split chats over several files: they're joined.
-      const all: unknown[] = [];
-      for (const f of convs) {
-        const v = JSON.parse(await f.async("string"));
-        if (Array.isArray(v)) all.push(...v);
+/**
+ * Calls onItem for each element of a top-level JSON array, read as a stream.
+ * A Claude export's conversations.json can be close to a gigabyte, more than
+ * one JavaScript string can hold, so it is never read whole.
+ */
+export async function eachArrayItem(stream: AsyncIterable<Buffer | string>, onItem: (v: unknown) => void) {
+  const dec = new StringDecoder("utf8");
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  let capturing = false;
+  let parts: string[] = [];
+  let sawArray = false;
+  const feed = (chunk: string) => {
+    let seg = capturing ? 0 : -1;
+    for (let i = 0; i < chunk.length; i++) {
+      const c = chunk.charCodeAt(i);
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === 92) esc = true;
+        else if (c === 34) inStr = false;
+        continue;
       }
-      json = JSON.stringify(all);
-    } else if (names.some((n) => /(^|\/)(projects|memories)[^/]*\.json$/i.test(n))) {
+      if (c === 34) inStr = true;
+      else if (c === 91 || c === 123) {
+        depth++;
+        if (depth === 1 && c === 91) sawArray = true;
+        if (depth === 2 && c === 123 && !capturing) {
+          capturing = true;
+          seg = i;
+          parts = [];
+        }
+      } else if (c === 93 || c === 125) {
+        if (depth === 2 && c === 125 && capturing) {
+          parts.push(chunk.slice(seg, i + 1));
+          onItem(JSON.parse(parts.join("")));
+          parts = [];
+          capturing = false;
+          seg = -1;
+        }
+        depth--;
+      }
+    }
+    if (capturing && seg >= 0) parts.push(chunk.slice(seg));
+  };
+  for await (const chunk of stream) feed(typeof chunk === "string" ? chunk : dec.write(chunk));
+  feed(dec.end());
+  return sawArray;
+}
+
+/** Only what's read later is kept for each chat: the owner's words (up to 2,500 characters a turn) and short AI answers, about 12,000 characters a chat. */
+function slim(c: Convo): Convo {
+  const turns: Turn[] = [];
+  let size = 0;
+  for (const t of c.turns) {
+    const text = t.text.slice(0, t.who === "owner" ? 2500 : 500);
+    if (size + text.length > 12_000) break;
+    turns.push({ who: t.who, text });
+    size += text.length;
+  }
+  return { title: c.title.slice(0, 200), at: c.at, turns };
+}
+
+/** Back to Claude's shape, so a slimmed history can be saved and read again. */
+export function convosToClaude(convos: Convo[]) {
+  return convos.map((c) => ({ name: c.title, created_at: c.at ? c.at.toISOString() : null, chat_messages: c.turns.map((t) => ({ sender: t.who === "owner" ? "human" : "assistant", text: t.text })) }));
+}
+
+/** Reads an export (a zip, a bare conversations.json, or a file on disk) into chats, and says whose export it is. */
+export async function readExport(input: Buffer | string): Promise<{ source: "claude" | "chatgpt"; convos: Convo[] }> {
+  const buf = typeof input === "string" ? null : input;
+  const head = buf ? buf.subarray(0, 2).toString() : await fs.promises.open(input as string, "r").then(async (fh) => {
+    const b = Buffer.alloc(2);
+    await fh.read(b, 0, 2, 0);
+    await fh.close();
+    return b.toString();
+  });
+  const streams: (() => AsyncIterable<Buffer | string>)[] = [];
+  const extra: Convo[] = [];
+  if (head === "PK") {
+    const zip = await JSZip.loadAsync(buf ?? (await fs.promises.readFile(input as string)));
+    const files = Object.values(zip.files).filter((f) => !f.dir);
+    const names = files.map((f) => f.name);
+    const convs = files.filter((f) => /(^|\/)conversations[^/]*\.json$/i.test(f.name));
+    if (convs.length) {
+      // Claude's newer exports can split chats over several files: they're all read.
+      // JSZip's stream is an old-style one; piping it through a PassThrough makes it async iterable.
+      for (const f of convs) streams.push(() => (f.nodeStream("nodebuffer") as unknown as NodeJS.ReadableStream).pipe(new PassThrough()));
+    } else if (names.some((n) => /(^|\/)(projects|memories)(\/[^/]+|[^/]*)\.json$/i.test(n))) {
       // A projects or memories part from Claude's newer export, uploaded on its own.
-      json = (await partToChats(buf, names.some((n) => /projects/i.test(n)) ? "projects" : "memories")).toString("utf8");
+      const raw = JSON.parse((await partToChats(buf ?? (await fs.promises.readFile(input as string)), names.some((n) => /projects/i.test(n)) ? "projects" : "memories")).toString("utf8"));
+      extra.push(...fromClaude(raw).map(slim));
     } else if (names.some((n) => /users\.json|login_history\.json/i.test(n))) {
       throw new Error("That's the account part of Claude's export (your name and sign-ins), with no chats in it. Upload the conversations part (conversations-000.zip) or the manifest .json.");
     } else throw new Error("That file has no conversations inside. Upload the .zip that Claude or ChatGPT sent you, or Claude's manifest .json.");
-  } else json = buf.toString("utf8");
-  let list: any[];
-  try {
-    list = JSON.parse(json);
-  } catch {
-    throw new Error("That file isn't a Claude or ChatGPT export.");
+  } else if (buf) streams.push(async function* () {
+    yield buf;
+  });
+  else streams.push(() => fs.createReadStream(input as string));
+
+  let source: "claude" | "chatgpt" | null = extra.length ? "claude" : null;
+  const convos: Convo[] = [...extra];
+  let bad = false;
+  for (const open of streams) {
+    let ok = false;
+    try {
+      ok = await eachArrayItem(open(), (item) => {
+        if (!item || typeof item !== "object") return;
+        const o = item as Record<string, unknown>;
+        if ("chat_messages" in o) {
+          source ??= "claude";
+          convos.push(slim(fromClaude([o])[0]));
+        } else if ("mapping" in o) {
+          source ??= "chatgpt";
+          convos.push(slim(fromChatGpt([o])[0]));
+        } else bad = true;
+      });
+    } catch {
+      ok = false;
+    }
+    if (!ok) bad = true;
   }
-  if (!Array.isArray(list)) throw new Error("That file isn't a Claude or ChatGPT export.");
-  const sample = list.find(Boolean) ?? {};
-  if ("chat_messages" in sample) return { source: "claude", convos: fromClaude(list) };
-  if ("mapping" in sample) return { source: "chatgpt", convos: fromChatGpt(list) };
-  throw new Error("That file isn't a Claude or ChatGPT export.");
+  if (!source || (bad && !convos.length)) throw new Error("That file isn't a Claude or ChatGPT export.");
+  return { source, convos };
 }
 
 /** The most recent chats worth reading, in the order they happened. */
@@ -273,7 +377,8 @@ export function run(imp: HistoryImport) {
 
 async function work(id: number, orgId: number) {
   let imp = db.getHistoryImport(id, orgId)!;
-  let buf = await fs.promises.readFile(imp.filePath);
+  const size = (await fs.promises.stat(imp.filePath)).size;
+  let buf = size <= 5_000_000 ? await fs.promises.readFile(imp.filePath) : Buffer.alloc(0);
   // A manifest's links work once and expire: everything is downloaded now and kept, so a restart reads the saved copy.
   // The same manifest uploaded to a second workspace reuses the first download, for 3 days.
   if (isManifest(buf)) {
@@ -292,7 +397,7 @@ async function work(id: number, orgId: number) {
     }
     await fs.promises.writeFile(imp.filePath, buf);
   }
-  const { source, convos } = await readExport(buf);
+  const { source, convos } = await readExport(buf.length ? buf : imp.filePath);
   const chats = pickChats(convos);
   imp = db.updateHistoryImport(id, orgId, { source, total: chats.length, status: "running" })!;
   const org = await db.getOrganizationById(orgId);

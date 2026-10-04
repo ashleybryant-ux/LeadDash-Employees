@@ -102,6 +102,17 @@ describe("company history from Claude and ChatGPT exports", () => {
     split.file("conversations-001.json", JSON.stringify(claudeExport.slice(2, 4)));
     expect((await history.readExport(await split.generateAsync({ type: "nodebuffer" }))).convos).toHaveLength(4);
     expect((await history.readExport(projBuf)).convos[0].title).toBe("Project: LeadDash EHR");
+    // A memories part kept in a folder, long enough to need several chats, is kept whole.
+    const mem2 = new JSZip();
+    mem2.file("memories/abc.json", JSON.stringify({ conversations_memory: "Ashley runs LeadDash. ".repeat(1500) }));
+    const memRead = await history.readExport(await mem2.generateAsync({ type: "nodebuffer" }));
+    expect(memRead.convos.length).toBeGreaterThan(3);
+    expect(memRead.convos.reduce((t, c) => t + c.turns.reduce((u, x) => u + x.text.length, 0), 0)).toBeGreaterThan(30_000);
+    // The streaming reader handles brackets and quotes inside text, split across chunks.
+    const items: unknown[] = [];
+    const tricky = JSON.stringify([{ a: "} ] { [ \" \\" }, { b: [1, { c: "x" }] }]);
+    await history.eachArrayItem((async function* () { for (let i = 0; i < tricky.length; i += 3) yield tricky.slice(i, i + 3); })(), (v) => items.push(v));
+    expect(items).toEqual(JSON.parse(tricky));
   });
 
   it("saves the business facts to the Brain, leaves client chats out, deletes the upload and lets a fact be removed", async () => {
