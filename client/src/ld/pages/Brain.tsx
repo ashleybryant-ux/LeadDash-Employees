@@ -256,9 +256,11 @@ function AddEditor({ onDone }: { onDone: () => void }) {
   const [category, setCategory] = React.useState<Category>("mission_profile");
   const [content, setContent] = React.useState("");
   const [url, setUrl] = React.useState("");
-  const [file, setFile] = React.useState<File | null>(null);
+  const [files, setFiles] = React.useState<File[]>([]);
+  const file = files[0] ?? null;
   const [localError, setLocalError] = React.useState<string | null>(null);
   const [reading, setReading] = React.useState(false);
+  const [progress, setProgress] = React.useState("");
 
   const done = async () => {
     await utils.knowledge.list.invalidate();
@@ -268,7 +270,7 @@ function AddEditor({ onDone }: { onDone: () => void }) {
   const addPage = trpc.knowledge.addWebpage.useMutation({ onSuccess: done });
   const upImage = trpc.knowledge.uploadImage.useMutation({ onSuccess: done });
   const upDoc = trpc.knowledge.uploadDocument.useMutation({ onSuccess: done });
-  const busy = reading || create.isPending || addPage.isPending || upImage.isPending || upDoc.isPending;
+  const busy = reading || Boolean(progress) || create.isPending || addPage.isPending || upImage.isPending || upDoc.isPending;
 
   const submit = async () => {
     setLocalError(null);
@@ -285,6 +287,27 @@ function AddEditor({ onDone }: { onDone: () => void }) {
       return;
     }
     const max = kind === "image" ? IMAGE_MAX : DOC_MAX;
+    // Several photos at once: each one is saved with its file name and described by the app.
+    if (kind === "image" && files.length > 1) {
+      const big = files.find((f) => f.size > max);
+      if (big) {
+        setLocalError(`${big.name} is over 8 MB.`);
+        return;
+      }
+      try {
+        for (let i = 0; i < files.length; i++) {
+          setProgress(`Saving ${i + 1} of ${files.length}...`);
+          const data = await readDataUrl(files[i]);
+          await upImage.mutateAsync({ organizationId: currentOrgId, title: files[i].name.replace(/\.[a-z0-9]+$/i, ""), note: content.trim(), data });
+        }
+        setProgress("");
+        await done();
+      } catch (err) {
+        setProgress("");
+        setLocalError((err as Error).message);
+      }
+      return;
+    }
     if (file.size > max) {
       setLocalError(kind === "image" ? "Images can be up to 8 MB." : "Documents can be up to 10 MB.");
       return;
@@ -329,7 +352,7 @@ function AddEditor({ onDone }: { onDone: () => void }) {
             aria-pressed={kind === k}
             onClick={() => {
               setKind(k);
-              setFile(null);
+              setFiles([]);
               setLocalError(null);
             }}
           >
@@ -365,7 +388,7 @@ function AddEditor({ onDone }: { onDone: () => void }) {
       {kind === "image" && (
         <>
           <label htmlFor={`${id}-note`} className="ld-lbl">Note</label>
-          <textarea id={`${id}-note`} className="ld-ta" rows={2} value={content} onChange={(e) => setContent(e.target.value)} />
+          <textarea id={`${id}-note`} className="ld-ta" rows={2} value={content} placeholder="Leave blank to have each photo described" onChange={(e) => setContent(e.target.value)} />
         </>
       )}
 
@@ -378,11 +401,13 @@ function AddEditor({ onDone }: { onDone: () => void }) {
             type="file"
             className="ld-small"
             accept={kind === "image" ? "image/png,image/jpeg,image/webp,image/gif" : ".pdf,.txt,.md,.csv"}
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            multiple={kind === "image"}
+            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
           />
         </>
       )}
 
+      {progress && <p className="ld-small ld-muted" style={{ margin: 0 }}>{progress}</p>}
       {localError && (
         <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>
           {localError}

@@ -268,6 +268,40 @@ export async function searchJson<T>(opts: {
   };
 }
 
+/**
+ * One or two sentences describing a photo for the team that picks images:
+ * setting, outfit, pose, expression, framing and what it suits (headshot,
+ * website banner, speaker one-sheet, social post). Empty when search is off.
+ */
+export async function describeImage(buf: Buffer, mime: string): Promise<string> {
+  if (!ENV.anthropicKey || process.env.NODE_ENV === "test") return "";
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: anthropicHeaders(),
+    body: JSON.stringify({
+      model: ENV.anthropicModel,
+      max_tokens: 300,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mime, data: buf.toString("base64") } },
+            {
+              type: "text",
+              text: "Describe this photo in one or two plain sentences for a marketing team choosing images: the setting, what the person is wearing, pose and expression, portrait or landscape framing, and what it suits best (headshot, website banner, speaker one-sheet, social post, video thumbnail). Refer to them as \"the person\". No em dashes.",
+            },
+          ],
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) return "";
+  const data: any = await res.json();
+  await recordTokens(ENV.anthropicModel, Number(data.usage?.input_tokens) || 0, Number(data.usage?.output_tokens) || 0);
+  return String((data.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join(" ")).trim().slice(0, 1000);
+}
+
 export function aiStatus() {
   return {
     writing: Boolean(ENV.assemblyAiKey),

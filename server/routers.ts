@@ -4,7 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import type { TrpcContext } from "./_core/context";
 import { requestCode, signOut, verifyCode } from "./_core/auth";
-import { aiStatus } from "./_core/llm";
+import { aiStatus, describeImage } from "./_core/llm";
 import { decryptJson, encryptJson, hasSecretsKey } from "./_core/crypto";
 import * as db from "./db";
 import {
@@ -100,6 +100,20 @@ async function empFor(ctx: { user: User } & Parameters<typeof requireMember>[0],
   const emp = await db.getEmployeeForOrg(employeeId, organizationId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
   return emp;
+}
+
+/** Writes a description for an uploaded image in the background. */
+async function describeSaved(orgId: number, itemId: number, dataUrl: string) {
+  try {
+    const m = dataUrl.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
+    if (!m) return;
+    const text = await describeImage(Buffer.from(m[2], "base64"), m[1]);
+    if (!text) return;
+    const item = await db.updateKnowledgeItem(itemId, orgId, { content: text });
+    if (item) indexKnowledge(item);
+  } catch (err) {
+    console.warn("[brain] describe image failed:", err instanceof Error ? err.message : err);
+  }
 }
 
 /** The person's real name for the audit trail and approvals. */
@@ -1552,6 +1566,8 @@ export const appRouter = router({
         });
         indexKnowledge(item);
         await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Added image to Brain", details: input.title });
+        // No note typed: describe the photo so employees can pick the right one later.
+        if (!input.note.trim()) void describeSaved(input.organizationId, item.id, input.data);
         return item;
       }),
 
