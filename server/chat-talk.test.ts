@@ -240,7 +240,7 @@ describe("every employee knows what's connected; Avery works in ClickUp", () => 
     vi.spyOn(integrations, "clickupMembers").mockResolvedValue([{ id: 42, email: "bj@legacy.test", name: "BJ Bryant" }]);
     decision = { ...blank, reply: "Yes, it's connected." };
     await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Do you have access to ClickUp?" });
-    expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (every employee can check what's due or overdue and add tasks there; Nora also tracks launches there)");
+    expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (every employee has full access: what's due, finding any task or list, adding tasks, marking done, changing dates and owners, commenting; Nora also tracks launches there)");
     expect(systems[0]).toContain("Never say a connected tool isn't connected");
 
     decision = { ...blank, action: "clickup_due", count: 7 };
@@ -296,5 +296,68 @@ describe("employees remember new facts for the whole team", () => {
     const pw = await caller(owner).chat.send({ organizationId: orgId, employeeId: riley.id, text: "the portal password is hunter2" });
     expect(pw.reply.content).toBe("Noted.");
     expect((await db.listKnowledgeByOrg(orgId)).some((k) => k.title === "Learned: Portal password")).toBe(false);
+  });
+});
+
+describe("full ClickUp access for every employee", () => {
+  beforeEach(async () => {
+    decision = null;
+    systems = [];
+    const llm = await import("./_core/llm");
+    (llm.generateJson as any).mockImplementation(async (opts: any) => {
+      if (opts.schemaName === "chat_decision") {
+        systems.push(opts.system);
+        return decision;
+      }
+      return {};
+    });
+  });
+
+  it("finds tasks anywhere, shows the lists, marks a task done, moves its date and comments", async () => {
+    const { orgId, owner } = await makeWorkspace("talk-cu-full");
+    await db.upsertExternalConnection({ organizationId: orgId, provider: "clickup", accountLabel: "ClickUp", status: "connected", settings: JSON.stringify({ teamId: "9", teamName: "LeadDash", userId: 7, spaces: [{ id: "s1", name: "Ops" }], spaceId: "s1", spaceName: "Ops" }), secretsEncrypted: (await import("./_core/crypto")).encryptJson({ accessToken: "t" }), connectedAt: new Date(), lastCheckedAt: new Date() });
+    const sienna = (await db.getEmployeeByKind(orgId, "social"))!;
+    const integrations = await import("./integrations");
+    const calls: { path: string; init: any }[] = [];
+    vi.spyOn(integrations, "clickupMembers").mockResolvedValue([{ id: 42, email: "bj@legacy.test", name: "BJ Bryant" }]);
+    vi.spyOn(integrations, "clickup").mockImplementation(async (_o: number, path: string, init: any = {}) => {
+      calls.push({ path, init });
+      if (path.startsWith("/team/9/task")) return { tasks: [
+        { id: "a1", name: "October newsletter", due_date: String(Date.now() + 86_400_000), status: { status: "in progress", type: "custom" }, list: { id: "L1", name: "Content calendar" }, folder: { name: "Marketing" }, space: { id: "s1" }, assignees: [{ username: "Caroline" }] },
+        { id: "a2", name: "Instagram reels plan", due_date: null, status: { status: "to do", type: "open" }, list: { id: "L1", name: "Content calendar" }, folder: { name: "Marketing" }, space: { id: "s1" }, assignees: [] },
+        { id: "a3", name: "Renew liability insurance", due_date: String(Date.now() + 5 * 86_400_000), status: { status: "to do", type: "open" }, list: { id: "L2", name: "Admin" }, folder: { hidden: true }, space: { id: "s1" }, assignees: [{ username: "BJ Bryant" }] },
+      ], last_page: true };
+      if (path === "/team/9/space?archived=false") return { spaces: [{ id: "s1", name: "Ops" }] };
+      if (path === "/space/s1/folder?archived=false") return { folders: [{ name: "Marketing", lists: [{ id: "L1", name: "Content calendar" }] }] };
+      if (path === "/space/s1/list?archived=false") return { lists: [{ id: "L2", name: "Admin" }] };
+      if (path === "/list/L1") return { statuses: [{ status: "to do", type: "open" }, { status: "in progress", type: "custom" }, { status: "complete", type: "closed" }] };
+      if (path === "/list/L1/task") return { id: "n1", url: "https://app.clickup.com/t/n1" };
+      return {};
+    });
+    const send = (text: string) => caller(owner).chat.send({ organizationId: orgId, employeeId: sienna.id, text });
+
+    decision = { ...blank, action: "clickup_find", target: "marketing" };
+    const found = await send("What's in the marketing folder in ClickUp?");
+    expect(found.reply.content).toMatch(/^2 open ClickUp tasks matching "marketing":/);
+    expect(found.reply.content).toMatch(/October newsletter \(Ops › Marketing › Content calendar; Caroline; in progress; due /);
+
+    decision = { ...blank, action: "clickup_lists" };
+    const lists = await send("What lists do I have?");
+    expect(lists.reply.content).toBe("Here's your ClickUp:\n- Ops: Marketing › Content calendar, Admin");
+
+    decision = { ...blank, action: "clickup_change", target: "October newsletter", focus: "done", date: "2026-10-09", notes: "Sent to the list." };
+    const done = await send("Mark the October newsletter done and note it went out");
+    expect(done.reply.content).toMatch(/^Updated "October newsletter" in ClickUp: status complete, due Fri, Oct 9, 2026, comment added\./);
+    const put = calls.find((c) => c.path === "/task/a1" && c.init.method === "PUT")!;
+    expect(put.init.body.status).toBe("complete");
+    expect(calls.find((c) => c.path === "/task/a1/comment")!.init.body.comment_text).toBe("Sent to the list. (from Sienna, LeadDash Employees)");
+
+    decision = { ...blank, action: "clickup_change", target: "content calendar", focus: "done" };
+    const many = await send("mark the content calendar task done");
+    expect(many.reply.content).toBe('More than one task fits "content calendar". Which one?');
+
+    decision = { ...blank, action: "clickup_add", title: "Holiday post ideas", page: "Content calendar" };
+    const add = await send("Add holiday post ideas to the content calendar");
+    expect(add.reply.content).toMatch(/Added "Holiday post ideas" to ClickUp \(Content calendar\)/);
   });
 });
