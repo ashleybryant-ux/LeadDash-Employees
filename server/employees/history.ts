@@ -147,6 +147,16 @@ export async function expandManifest(buf: Buffer) {
   const chats: any[] = [];
   for (const f of files) {
     const part = await downloadPart(f.export_url!);
+    chats.push(...JSON.parse((await partToChats(part, f.category as "conversations" | "projects" | "memories")).toString("utf8")));
+  }
+  return Buffer.from(JSON.stringify(chats), "utf8");
+}
+
+/** One part of Claude's newer export as a Claude conversations list. */
+export async function partToChats(part: Buffer, category: "conversations" | "projects" | "memories") {
+  const chats: any[] = [];
+  {
+    const f = { category };
     if (f.category === "conversations") {
       for (const j of await jsonFiles(part, /\.json$/i)) if (Array.isArray(j)) chats.push(...j.filter((c) => c && typeof c === "object" && "chat_messages" in c));
     } else if (f.category === "projects") {
@@ -171,9 +181,23 @@ export async function readExport(buf: Buffer): Promise<{ source: "claude" | "cha
   let json = "";
   if (buf.subarray(0, 2).toString() === "PK") {
     const zip = await JSZip.loadAsync(buf);
-    const entry = Object.values(zip.files).find((f) => !f.dir && /(^|\/)conversations\.json$/i.test(f.name));
-    if (!entry) throw new Error("That file has no conversations.json inside. Upload the .zip that Claude or ChatGPT emailed you.");
-    json = await entry.async("string");
+    const names = Object.values(zip.files).filter((f) => !f.dir).map((f) => f.name);
+    const convs = Object.values(zip.files).filter((f) => !f.dir && /(^|\/)conversations[^/]*\.json$/i.test(f.name));
+    if (convs.length === 1) json = await convs[0].async("string");
+    else if (convs.length > 1) {
+      // Claude's newer exports can split chats over several files: they're joined.
+      const all: unknown[] = [];
+      for (const f of convs) {
+        const v = JSON.parse(await f.async("string"));
+        if (Array.isArray(v)) all.push(...v);
+      }
+      json = JSON.stringify(all);
+    } else if (names.some((n) => /(^|\/)(projects|memories)[^/]*\.json$/i.test(n))) {
+      // A projects or memories part from Claude's newer export, uploaded on its own.
+      json = (await partToChats(buf, names.some((n) => /projects/i.test(n)) ? "projects" : "memories")).toString("utf8");
+    } else if (names.some((n) => /users\.json|login_history\.json/i.test(n))) {
+      throw new Error("That's the account part of Claude's export (your name and sign-ins), with no chats in it. Upload the conversations part (conversations-000.zip) or the manifest .json.");
+    } else throw new Error("That file has no conversations inside. Upload the .zip that Claude or ChatGPT sent you, or Claude's manifest .json.");
   } else json = buf.toString("utf8");
   let list: any[];
   try {

@@ -91,6 +91,17 @@ describe("company history from Claude and ChatGPT exports", () => {
     await expect(history.expandManifest(Buffer.from(JSON.stringify({ data_files: [{ category: "conversations", export_url: "https://claude.ai/export/x/download/old" }] })))).rejects.toThrow(/expire 24 hours/);
     await expect(history.expandManifest(Buffer.from(JSON.stringify({ data_files: [{ category: "conversations", export_url: "https://evil.example/conv" }] })))).rejects.toThrow(/isn't from Claude/);
     vi.unstubAllGlobals();
+
+    // Parts uploaded on their own: the account part says what it is; chats split over two files are joined.
+    const acct = new JSZip();
+    acct.file("users.json", "[]");
+    acct.file("login_history.json", "{}");
+    await expect(history.readExport(await acct.generateAsync({ type: "nodebuffer" }))).rejects.toThrow(/account part of Claude's export/);
+    const split = new JSZip();
+    split.file("conversations-000.json", JSON.stringify(claudeExport.slice(0, 2)));
+    split.file("conversations-001.json", JSON.stringify(claudeExport.slice(2, 4)));
+    expect((await history.readExport(await split.generateAsync({ type: "nodebuffer" }))).convos).toHaveLength(4);
+    expect((await history.readExport(projBuf)).convos[0].title).toBe("Project: LeadDash EHR");
   });
 
   it("saves the business facts to the Brain, leaves client chats out, deletes the upload and lets a fact be removed", async () => {
