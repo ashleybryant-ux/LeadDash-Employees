@@ -1,7 +1,7 @@
 import React from "react";
 import { trpc } from "@/lib/trpc";
 import { Avatar } from "../ui";
-import { SILENT, listen, type Listener } from "../voice";
+import { SILENT, listen, micErrorText, type Listener } from "../voice";
 
 /**
  * One-on-one meetings in an employee's chat. Press Talk and speak: each finished
@@ -152,7 +152,7 @@ export function useOneOnOne(opts: { orgId: number; emp: Emp; lastId: number | nu
       );
       setListening(true);
     } catch (err) {
-      setMicError(err instanceof Error ? (err.name === "NotAllowedError" ? "Allow the microphone for this site, then press Talk again." : err.message) : "The microphone didn't start.");
+      setMicError(micErrorText(err));
     }
   };
 
@@ -186,7 +186,7 @@ export function useOneOnOne(opts: { orgId: number; emp: Emp; lastId: number | nu
     setMuted,
     partial,
     talking,
-    micError: micError ?? (token.error?.message || null),
+    micError: micError ?? (token.error ? micErrorText(token.error) : null),
     voiceError,
     blocked,
     playBlocked,

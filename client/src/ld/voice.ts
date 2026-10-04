@@ -79,3 +79,11 @@ export async function listen(token: string, url: string, on: { partial: (t: stri
     },
   };
 }
+
+/** Plain words for the errors people actually see when the microphone or the app can't be reached. */
+export function micErrorText(err: unknown, again = "press Talk again") {
+  if (!(err instanceof Error)) return "The microphone didn't start.";
+  if (err.name === "NotAllowedError") return `Allow the microphone for this site, then ${again}.`;
+  if (/failed to fetch|networkerror|load failed/i.test(err.message)) return `Your browser couldn't reach LeadDash Employees. Check your internet connection, then ${again}.`;
+  return err.message;
+}

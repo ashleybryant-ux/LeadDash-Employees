@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { Avatar, BottomNav, ErrorLine, Rail, useEmployees } from "../ui";
-import { SILENT, listen, type Listener } from "../voice";
+import { SILENT, listen, micErrorText, type Listener } from "../voice";
 
 /**
  * Team huddle: you talk, the employees answer out loud in their own voices.
@@ -141,7 +141,7 @@ export default function Huddle() {
       );
       setListening(true);
     } catch (err) {
-      setMicError(err instanceof Error ? (err.name === "NotAllowedError" ? "Allow the microphone for this site, then press Start talking again." : err.message) : "The microphone didn't start.");
+      setMicError(micErrorText(err, "press Start talking again"));
     }
   };
   function unlockSound() {
