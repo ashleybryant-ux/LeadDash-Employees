@@ -1529,7 +1529,8 @@ export const devChanges = sqliteTable(
     branch: text("branch"),
     prNumber: integer("prNumber"),
     prUrl: text("prUrl"),
-    status: text("status", { enum: ["working", "ready", "merged", "closed", "failed"] }).notNull().default("working"),
+    /** handed_off: no GitHub token, so the owner posts the issue herself from the link and follows it on GitHub. */
+    status: text("status", { enum: ["working", "ready", "merged", "closed", "failed", "handed_off"] }).notNull().default("working"),
     /** JSON string[]: what changed, in plain words. */
     summary: text("summary").notNull().default("[]"),
     files: integer("files"),

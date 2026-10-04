@@ -271,7 +271,8 @@ async function teamFacts(emp: AIEmployee) {
     const dev = await import("./dev");
     const repos = dev.settingsOf(emp).repos;
     const changes = db.listDevChanges(emp.organizationId, 10);
-    return `\nCode you work on (name: repo; deploy command after a merge):\n${repos.map((r) => `- ${r.label}: ${r.repo}; ${r.deploy}`).join("\n")}\nRecent changes:\n${changes.map((c) => `- ${c.title} (${c.label}): ${c.status}${c.prNumber ? `, change #${c.prNumber}` : ""}`).join("\n") || "- none yet"}`;
+    const linkOnly = !(await import("../_core/env")).ENV.githubToken;
+    return `${linkOnly ? "\nGitHub isn't connected, by the owner's choice: you write each fix up and she posts it on GitHub from your link, then reviews and merges Claude's change there. You can't see progress on GitHub, so never say you'll tell her when it's ready; tell her to watch the issue on GitHub. Never ask her for a GitHub token." : ""}\nCode you work on (name: repo; deploy command after a merge):\n${repos.map((r) => `- ${r.label}: ${r.repo}; ${r.deploy}`).join("\n")}\nRecent changes:\n${changes.map((c) => `- ${c.title} (${c.label}): ${c.status}${c.prNumber ? `, change #${c.prNumber}` : ""}`).join("\n") || "- none yet"}`;
   }
   if (emp.kind === "onboarding") return (await import("./customers")).customersFacts(emp.organizationId);
   return "";
@@ -615,7 +616,11 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const dev = await import("./dev");
       try {
         const ch = await dev.askClaude(org, { label: d.target, title: d.title, request: d.notes || d.message || d.reply });
-        return { text: `I wrote it up for Claude in ${ch.label} with what's broken, where to look and how to check the fix. Claude is working on it now. I'll tell you when the change is ready for you to look at.`, cards: [{ type: "dev_change", id: ch.id, title: ch.title }], queries: [] };
+        const text =
+          ch.status === "handed_off"
+            ? `I wrote it up for Claude in ${ch.label} with what's broken, where to look and how to check the fix. Press Post on GitHub, then Submit new issue. Claude starts as soon as it's posted, and you'll review and merge the change on GitHub.`
+            : `I wrote it up for Claude in ${ch.label} with what's broken, where to look and how to check the fix. Claude is working on it now. I'll tell you when the change is ready for you to look at.`;
+        return { text, cards: [{ type: "dev_change", id: ch.id, title: ch.title }], queries: [] };
       } catch (err) {
         return { text: `I couldn't start it: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
       }

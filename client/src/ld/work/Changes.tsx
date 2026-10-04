@@ -17,7 +17,7 @@ type Change = {
   label: string;
   repo: string;
   request: string;
-  status: "working" | "ready" | "merged" | "closed" | "failed";
+  status: "working" | "ready" | "merged" | "closed" | "failed" | "handed_off";
   issueNumber: number | null;
   issueUrl: string | null;
   prNumber: number | null;
@@ -35,6 +35,7 @@ const PILL: Record<Change["status"], [string, string]> = {
   merged: ["gray", "Merged"],
   closed: ["gray", "Closed"],
   failed: ["red", "Didn't finish"],
+  handed_off: ["gray", "Ready to post"],
 };
 
 function useChangeActions() {
@@ -47,6 +48,13 @@ function useChangeActions() {
 function GitHubLink({ c }: { c: Change }) {
   const url = c.prUrl ?? c.issueUrl;
   if (!url) return null;
+  if (c.status === "handed_off") {
+    return (
+      <a className="ld-btn p ld-av-link" href={url} target="_blank" rel="noreferrer noopener">
+        Post on GitHub
+      </a>
+    );
+  }
   return (
     <a className="ld-btn ld-av-link-plain" href={url} target="_blank" rel="noreferrer noopener">
       On GitHub
@@ -150,6 +158,8 @@ function ReposCard() {
                 <span style={{ overflowWrap: "anywhere" }}>{r.repo}</span>
                 {r.connected ? (
                   <span className="ld-pill green">Claude connected</span>
+                ) : r.linkOnly ? (
+                  <a className="ld-btn ld-av-link-plain" href={r.addUrl} target="_blank" rel="noreferrer noopener">Add Claude</a>
                 ) : r.reason === "Claude's workflow isn't in this repo yet" ? (
                   <button type="button" className="ld-btn" disabled={connect.isPending} onClick={() => connect.mutate({ organizationId: currentOrgId, repo: r.repo })}>Connect</button>
                 ) : (
@@ -157,6 +167,9 @@ function ReposCard() {
                 )}
               </React.Fragment>
             ))}
+            {repos.some((r) => r.linkOnly) && (
+              <span className="ld-small ld-muted" style={{ gridColumn: "1 / -1" }}>Add Claude opens GitHub with Claude's workflow filled in. Press Commit changes once per repo (skip any repo that already has it).</span>
+            )}
             {repos.some((r) => !r.connected && r.reason && r.reason !== "Claude's workflow isn't in this repo yet") && (
               <span className="ld-small" style={{ gridColumn: "1 / -1", color: "#8a4510" }}>{repos.find((r) => !r.connected && r.reason)?.reason}</span>
             )}

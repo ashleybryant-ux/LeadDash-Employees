@@ -115,17 +115,29 @@ export async function gh(pathName: string, init: { method?: string; body?: unkno
 export async function repoStatus(orgId: number) {
   const emp = await kai(orgId);
   const repos = settingsOf(emp).repos;
-  if (!ENV.githubToken || process.env.NODE_ENV === "test") return repos.map((r) => ({ ...r, connected: false, reason: ENV.githubToken ? "" : "GITHUB_TOKEN is missing on the server" }));
+  // Without a token Kai can't look inside the repos: the owner adds Claude's workflow from a GitHub link.
+  if (!ENV.githubToken) return repos.map((r) => ({ ...r, connected: false, linkOnly: true, reason: "", addUrl: workflowUrl(r.repo) }));
+  if (process.env.NODE_ENV === "test") return repos.map((r) => ({ ...r, connected: false, linkOnly: false, reason: "", addUrl: workflowUrl(r.repo) }));
   return Promise.all(
     repos.map(async (r) => {
       try {
         await gh(`/repos/${r.repo}/contents/${WORKFLOW_PATH}`);
-        return { ...r, connected: true, reason: "" };
+        return { ...r, connected: true, linkOnly: false, reason: "", addUrl: workflowUrl(r.repo) };
       } catch (err: any) {
-        return { ...r, connected: false, reason: err?.status === 404 ? "Claude's workflow isn't in this repo yet" : (err?.message ?? "Couldn't reach GitHub") };
+        return { ...r, connected: false, linkOnly: false, addUrl: workflowUrl(r.repo), reason: err?.status === 404 ? "Claude's workflow isn't in this repo yet" : (err?.message ?? "Couldn't reach GitHub") };
       }
     })
   );
+}
+
+/** GitHub's "new file" page with Claude's workflow filled in: the owner presses Commit, signed in as herself. */
+export function workflowUrl(repo: string) {
+  return `https://github.com/${repo}/new/main?filename=${encodeURIComponent(WORKFLOW_PATH)}&value=${encodeURIComponent(WORKFLOW)}`;
+}
+
+/** GitHub's "new issue" page with Kai's write-up filled in. Posting it (as the owner) starts Claude. */
+export function newIssueUrl(repo: string, title: string, body: string) {
+  return `https://github.com/${repo}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
 }
 
 /** Adds Claude's workflow file to a repo (the token needs Workflows: write). */
@@ -158,6 +170,10 @@ export async function askClaude(orgId: number, input: { label: string; title: st
   if (!r) throw new TRPCError({ code: "BAD_REQUEST", message: `Which code is it in: ${repos.map((x) => x.label).join(" or ")}?` });
   const title = input.title.trim().slice(0, 120) || "Fix";
   const body = `@claude ${input.request.trim()}\n\n${RULES}\n\n_Written by ${emp.name} for the owner in LeadDash Employees._`;
+  // No token: the owner posts the issue from a link that has everything filled in, and follows it on GitHub.
+  if (!ENV.githubToken) {
+    return db.createDevChange({ organizationId: orgId, employeeId: emp.id, repo: r.repo, label: r.label, title, request: input.request.trim(), issueUrl: newIssueUrl(r.repo, title, body), status: "handed_off" });
+  }
   const issue = await gh(`/repos/${r.repo}/issues`, { method: "POST", body: { title, body } });
   return db.createDevChange({ organizationId: orgId, employeeId: emp.id, repo: r.repo, label: r.label, title, request: input.request.trim(), issueNumber: issue.number, issueUrl: issue.html_url, status: "working" });
 }

@@ -94,13 +94,37 @@ describe("Kai, the developer", () => {
     expect(JSON.parse(calls.find((c) => c.url.endsWith("/pulls/43/merge"))!.init.body).merge_method).toBe("squash");
   });
 
-  it("says plainly when GitHub isn't connected", async () => {
+  it("works without a GitHub token: the owner posts Kai's write-up from a filled-in link and adds Claude from one too", async () => {
     (ENV as any).githubToken = "";
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      calls.push(String(url));
+      return json({}, 500);
+    });
     const { orgId, owner } = await makeWorkspace("kai-off");
     const kai = (await db.getEmployeeByKind(orgId, "developer"))!;
-    await mockAi({ action: "fix_code", target: "LeadDash Employees", title: "Fix", notes: "Fix it." });
-    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: kai.id, text: "Fix the thing" });
-    expect(r.reply.content).toBe("I couldn't start it: Kai isn't connected to GitHub yet: GITHUB_TOKEN is missing on the server.");
+    const systems: string[] = [];
+    await mockAi({ action: "fix_code", target: "LeadDash EHR", title: "Late cancel fee shows $0", notes: "The late cancel fee shows $0 on the invoice. It should show the fee set on the service." }, systems);
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: kai.id, text: "The late cancel fee shows $0" });
+    expect(systems[0]).toContain("Never ask her for a GitHub token.");
+    expect(r.reply.content).toMatch(/Press Post on GitHub, then Submit new issue\. Claude starts as soon as it's posted/);
+    const ch = db.getDevChange(JSON.parse(r.reply.cards!)[0].id, orgId)!;
+    expect(ch.status).toBe("handed_off");
+    const link = new URL(ch.issueUrl!);
+    expect(link.origin + link.pathname).toBe("https://github.com/ashleybryant-ux/leaddash-ehr/issues/new");
+    expect(link.searchParams.get("title")).toBe("Late cancel fee shows $0");
+    expect(link.searchParams.get("body")!.startsWith("@claude The late cancel fee shows $0")).toBe(true);
+    // Nothing went to GitHub, and Kai doesn't watch it.
+    expect(calls.some((u) => u.includes("api.github.com"))).toBe(false);
+    await dev.devTicks();
+    expect(db.getDevChange(ch.id, orgId)!.status).toBe("handed_off");
+
+    const repos = await caller(owner).dev.repos({ organizationId: orgId });
+    expect(repos.every((x) => x.linkOnly)).toBe(true);
+    const add = new URL(repos[0].addUrl);
+    expect(add.pathname).toBe("/ashleybryant-ux/LeadDash-Employees/new/main");
+    expect(add.searchParams.get("filename")).toBe(".github/workflows/claude.yml");
+    expect(add.searchParams.get("value")).toContain("anthropics/claude-code-action@v1");
   });
 });
 
