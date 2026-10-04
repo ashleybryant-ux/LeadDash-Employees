@@ -5,6 +5,7 @@
  * workspace that hasn't picked a photo. Skips quietly when images aren't set up.
  *   npx tsx deploy/portraits.ts
  */
+import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import * as db from "../server/db";
