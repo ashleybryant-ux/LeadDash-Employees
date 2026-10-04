@@ -141,6 +141,75 @@ export async function addTask(orgId: number, input: { name: string; details?: st
   return { url: (t.url as string) ?? null, due: due ? new Date(due) : null, assignee: member?.name || member?.email || null, list: target.name };
 }
 
+type Status = { status: string; type: string };
+
+/** The list's status that matches what the person said ("done" is the list's closed status). */
+async function statusFor(orgId: number, listId: string, want: string, cache = new Map<string, Status[]>()) {
+  let statuses = cache.get(listId);
+  if (!statuses) {
+    statuses = ((await withRetry(() => integrations.clickup(orgId, `/list/${listId}`))).statuses ?? []) as Status[];
+    cache.set(listId, statuses);
+  }
+  const done = ["done", "complete", "completed", "finished", "closed", "close"].includes(want);
+  const open = ["open", "to do", "todo", "reopen"].includes(want);
+  return done ? statuses.find((s) => s.type === "closed") ?? statuses.find((s) => s.type === "done") : open ? statuses.find((s) => s.type === "open") : statuses.find((s) => s.status.toLowerCase() === want) ?? statuses.find((s) => has(s.status, want));
+}
+
+/** ClickUp allows about 100 requests a minute; wait and try again when it says slow down. */
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt >= 4 || !/429|rate limit|too many/i.test(msg)) throw err;
+      await new Promise((r) => setTimeout(r, process.env.NODE_ENV === "test" ? 1 : 20_000 * (attempt + 1)));
+    }
+  }
+}
+
+export type Pick = { overdue?: boolean; dueBefore?: string; words?: string; who?: string; ids?: string[] };
+
+/** The open tasks a bulk change is about: overdue, due before a date, by words or person, or exact ids (to undo). */
+export async function pickTasks(orgId: number, pick: Pick) {
+  if (pick.ids?.length) {
+    const want = new Set(pick.ids);
+    return (await allTasks(orgId, "&order_by=due_date", true)).filter((t) => want.has(t.id));
+  }
+  const now = Date.now();
+  const before = await dueMs(orgId, pick.dueBefore);
+  return (await findTasks(orgId, { words: pick.words, who: pick.who })).filter((t) => (!pick.overdue || (t.due && t.due.getTime() < now)) && (!before || (t.due && t.due.getTime() < before)));
+}
+
+/** Changes many tasks at once: a status (done, open...) and/or a new due date. Returns what changed and what didn't. */
+export async function changeMany(orgId: number, tasks: CuTask[], change: { status?: string; due?: string }) {
+  const cache = new Map<string, Status[]>();
+  const due = await dueMs(orgId, change.due);
+  const want = (change.status ?? "").trim().toLowerCase();
+  const changed: CuTask[] = [];
+  const failed: { task: CuTask; why: string }[] = [];
+  for (const t of tasks) {
+    try {
+      const body: Record<string, unknown> = {};
+      if (want) {
+        const st = await statusFor(orgId, t.listId, want, cache);
+        if (!st) throw new Error(`${t.list} has no status called "${change.status}"`);
+        body.status = st.status;
+      }
+      if (due) {
+        body.due_date = due;
+        body.due_date_time = false;
+      }
+      if (!Object.keys(body).length) continue;
+      await withRetry(() => integrations.clickup(orgId, `/task/${t.id}`, { method: "PUT", body }));
+      changed.push(t);
+    } catch (err) {
+      failed.push({ task: t, why: (err instanceof Error ? err.message : String(err)).slice(0, 160) });
+    }
+  }
+  return { changed, failed };
+}
+
 /**
  * Changes one task found by its words: mark done (or any status the list has),
  * new due date, add an assignee, and/or a comment. Returns the task and what changed,
@@ -155,11 +224,7 @@ export async function changeTask(orgId: number, input: { task: string; status?: 
   const body: Record<string, unknown> = {};
   const want = (input.status ?? "").trim().toLowerCase();
   if (want) {
-    const list = await integrations.clickup(orgId, `/list/${pick.listId}`);
-    const statuses: { status: string; type: string }[] = list.statuses ?? [];
-    const done = ["done", "complete", "completed", "finished", "closed"].includes(want);
-    const open = ["open", "to do", "todo", "reopen"].includes(want);
-    const st = done ? statuses.find((s) => s.type === "closed") ?? statuses.find((s) => s.type === "done") : open ? statuses.find((s) => s.type === "open") : statuses.find((s) => s.status.toLowerCase() === want) ?? statuses.find((s) => has(s.status, want));
+    const st = await statusFor(orgId, pick.listId, want);
     if (st) {
       body.status = st.status;
       changed.push(`status ${st.status}`);

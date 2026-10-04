@@ -28,6 +28,8 @@ import * as interview from "./interview";
 export type ChatCard = {
   type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice";
   id: number;
+  /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
+  undo?: string[];
   title: string;
   subtitle?: string;
   body?: string;
@@ -57,20 +59,20 @@ export const LAYOUTS = [
 ];
 
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  speaking: ["none", "report", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  outreach: ["none", "report", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
+  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  speaking: ["none", "report", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  outreach: ["none", "report", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
 };
 
 const ACTION_HELP: Record<string, string> = {
@@ -82,6 +84,8 @@ const ACTION_HELP: Record<string, string> = {
   clickup_find: "clickup_find: look something up in ClickUp: tasks by words (task, list, folder or Space name, like \"marketing\" or \"W-9\"), by person, or both. Put the words in `target` ('' for all), the person in `to` ('' for anyone), and \"all\" in `focus` to include finished tasks ('' for open only).",
   clickup_lists: "clickup_lists: the person asks what's in their ClickUp (Spaces, folders, lists) or where something lives.",
   clickup_add: "clickup_add: add a task to ClickUp. Put the task in `title`, any details in `notes`, the due date as YYYY-MM-DD in `date` ('' for none), who it's for (a name or email) in `to` ('' for no one), and the ClickUp list to put it in in `page` ('' for the LeadDash Employees tasks list).",
+  clickup_bulk: "clickup_bulk: change MANY ClickUp tasks at once, like \"close everything overdue\" or \"push everything in Goals + Tactics to next Friday\". Put which tasks in `goal`: overdue (past due), all (every open task that matches), or a date YYYY-MM-DD for tasks due before it. Words to narrow by list, folder or task name in `target` ('' for every list), a person in `to` (''), the new status in `focus` (done, open... or ''), and a new due date YYYY-MM-DD in `date` (''). Do it when they say so; never ask first. Never use clickup_change for more than one task.",
+  clickup_undo: "clickup_undo: reopen the tasks you just closed with clickup_bulk (\"Reopen them\", \"undo that\").",
   clickup_change: "clickup_change: change a ClickUp task: mark it done or another status, move its due date, assign it, or comment on it. Put words from the task's name in `target`, the new status in `focus` (done, open, in progress... or ''), the new due date as YYYY-MM-DD in `date` (''), who to assign in `to` (''), and a comment in `notes` ('').",
   set_deadlines: "set_deadlines: give every action item from a meeting or huddle a due date and make sure each one is a tracked task with its owner (\"assign deadlines from the last meeting\"). Put the meeting's name in `target` ('' for the most recent, huddles included) and any timing the person gave (\"by Friday\", \"next week\") in `notes`.",
   restore_page: "restore_page: the person wants the page you built put back to the version before (\"go back to the last version\"). Put the page's name in `target` ('' for the most recent page).",
@@ -267,7 +271,8 @@ const REMEMBER = `Remembering for the whole team:
 const TALK = `Talk with the person like a colleague, back and forth, not like a form.
 - When the request is unclear in a way that would waste real work if you guessed, choose "none", ask one short question in "reply", and put 2 to 4 short fixed answers in "choices".
 - Otherwise do the job. After you finish or answer, put up to 4 short next steps the person is likely to want in "choices" (each under 6 words, written as what they would say). Leave "choices" empty when nothing obvious comes next.
-- Questions about your work, a result or a score get a plain, specific answer from your facts.`;
+- Questions about your work, a result or a score get a plain, specific answer from your facts.
+- When the person tells you plainly what to do, do it now. Don't ask questions first unless a wrong guess would do something that can't be undone. Closing or moving tasks can be undone, so just do it.`;
 
 const TALK_BY_KIND: Partial<Record<string, string>> = {
   website: `- Before you build a NEW page, if the person has not picked a layout earlier in this conversation, choose ask_layout. When they answer, choose build_page with their layout in "focus" and where the button goes in "to". To change a page you built, choose change_page with exactly what to change.
@@ -279,6 +284,7 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 TALK_BY_KIND.speaking = TALK_BY_KIND.grants;
 
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+const fmtYmd = (ymd: string) => new Date(`${ymd}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" });
 
 function worth(n: number, total: number) {
   if (n === 0) return total === 1 ? "It scored under 60, so I marked it Skip. You can still apply from the card." : "None scored 60 or higher, so I marked them Skip. You can still apply to any of them.";
@@ -575,6 +581,40 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         choices: ["What's due this week?", "Add a task"],
       };
     }
+    case "clickup_bulk": {
+      const ck = await import("./clickup-tasks");
+      const g = d.goal.trim().toLowerCase();
+      const pick = { overdue: g === "overdue" || (!g && !d.target.trim() && !d.to.trim()), dueBefore: /^\d{4}-\d{2}-\d{2}$/.test(g) ? g : undefined, words: d.target, who: d.to };
+      const status = d.focus.trim();
+      if (!status && !d.date) return { text: "What should I change on them: mark them done, or move the due date?", cards: [], queries: [], choices: ["Mark them done", "Move to next Friday"] };
+      const list = (await ck.pickTasks(org, pick)).slice(0, 500);
+      if (!list.length) return { text: `I didn't find any open ClickUp tasks that fit${pick.overdue ? " and are past due" : ""}.`, cards: [], queries: [] };
+      const what = [status ? (/^(done|complete|completed|close|closed|finished)$/i.test(status) ? "closing" : `setting to ${status}`) : "", d.date ? `moving to ${fmtYmd(d.date)}` : ""].filter(Boolean).join(" and ");
+      // Many tasks take a few minutes (ClickUp limits how fast we can go), so this runs on and posts when it's done.
+      void tasks.working(emp, () => ck.changeMany(org, list, { status, due: d.date }))
+        .then(async (r) => {
+          const closing = /^(done|complete|completed|close|closed|finished)$/i.test(status);
+          const lines = [`Done. ${what.charAt(0).toUpperCase() + what.slice(1)} worked for ${plural(r.changed.length, "task")} in ClickUp.`];
+          if (r.failed.length) lines.push(`${plural(r.failed.length, "task")} didn't change:\n${r.failed.slice(0, 8).map((f) => `- ${f.task.name} (${f.why})`).join("\n")}`);
+          const cards: ChatCard[] = closing && r.changed.length ? [{ ...choicesCard(["Reopen them", "What's still open?"]), undo: r.changed.map((t) => t.id) }] : [choicesCard(["What's still open?"])];
+          await db.createChatMessage({ organizationId: org, employeeId: emp.id, role: "employee", authorName: emp.name, content: lines.join("\n\n"), cards: JSON.stringify(cards) });
+        })
+        .catch(async (err) => {
+          await db.createChatMessage({ organizationId: org, employeeId: emp.id, role: "employee", authorName: emp.name, content: `ClickUp stopped me partway: ${err instanceof Error ? err.message : String(err)}. Ask me again and I'll pick up what's left.` });
+        });
+      return { text: `On it: ${what} ${plural(list.length, `${pick.overdue ? "overdue " : ""}task`)} in ClickUp. ClickUp only lets me go so fast, so it can take a few minutes. I'll post here when it's done.`, cards: [], queries: [] };
+    }
+    case "clickup_undo": {
+      const ck = await import("./clickup-tasks");
+      const last = (await db.listChatMessages(org, emp.id, 40)).reverse().find((m) => m.role === "employee" && parseList<ChatCard>(m.cards).some((c) => c.undo?.length));
+      const ids = last ? parseList<ChatCard>(last.cards).find((c) => c.undo?.length)!.undo! : [];
+      if (!ids.length) return { text: "I don't have a recent batch of closed tasks to reopen.", cards: [], queries: [] };
+      const list = await ck.pickTasks(org, { ids });
+      void tasks.working(emp, () => ck.changeMany(org, list, { status: "open" })).then((r) =>
+        db.createChatMessage({ organizationId: org, employeeId: emp.id, role: "employee", authorName: emp.name, content: `Reopened ${plural(r.changed.length, "task")} in ClickUp.${r.failed.length ? ` ${plural(r.failed.length, "task")} didn't reopen.` : ""}` })
+      );
+      return { text: `Reopening ${plural(list.length, "task")} in ClickUp now. I'll post here when it's done.`, cards: [], queries: [] };
+    }
     case "clickup_change": {
       if (!d.target.trim()) return { text: "Which task? Tell me words from its name.", cards: [], queries: [] };
       const ck = await import("./clickup-tasks");
@@ -787,7 +827,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
 }
 
 /** Actions that only talk about the work; a project task needs one that does it. */
-const NOT_WORK = new Set(["clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
+const NOT_WORK = new Set(["clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "clickup_bulk", "clickup_undo", "none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
 
 /**
  * An employee does a project task Nora assigned, with the same actions their

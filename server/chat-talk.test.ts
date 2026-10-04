@@ -360,4 +360,49 @@ describe("full ClickUp access for every employee", () => {
     const add = await send("Add holiday post ideas to the content calendar");
     expect(add.reply.content).toMatch(/Added "Holiday post ideas" to ClickUp \(Content calendar\)/);
   });
+  it("closes every overdue task in one go without asking first, posts when done, and reopens them on request", async () => {
+    const { orgId, owner } = await makeWorkspace("talk-cu-bulk");
+    await db.upsertExternalConnection({ organizationId: orgId, provider: "clickup", accountLabel: "ClickUp", status: "connected", settings: JSON.stringify({ teamId: "9", teamName: "LeadDash", userId: 7, spaces: [{ id: "s1", name: "Ops" }], spaceId: "s1", spaceName: "Ops" }), secretsEncrypted: (await import("./_core/crypto")).encryptJson({ accessToken: "t" }), connectedAt: new Date(), lastCheckedAt: new Date() });
+    const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
+    const integrations = await import("./integrations");
+    const puts: { path: string; body: any }[] = [];
+    let limited = false;
+    const day = 86_400_000;
+    const task = (id: string, name: string, due: number | null, list = "L1") => ({ id, name, due_date: due ? String(due) : null, status: { status: "to do", type: "open" }, list: { id: list, name: list === "L1" ? "Goals + Tactics" : "PR + Publicity" }, folder: { hidden: true }, space: { id: "s1" }, assignees: [] });
+    vi.spyOn(integrations, "clickup").mockImplementation(async (_o: number, path: string, init: any = {}) => {
+      if (path.startsWith("/team/9/task")) return { tasks: [task("o1", "Claim Seat", Date.now() - 30 * day), task("o2", "Pitch Documents", Date.now() - 20 * day, "L2"), task("f1", "Next week's post", Date.now() + 5 * day), task("n1", "No date", null)], last_page: true };
+      if (path.startsWith("/list/")) return { statuses: [{ status: "to do", type: "open" }, { status: "complete", type: "closed" }] };
+      if (init.method === "PUT") {
+        // ClickUp says slow down once; the change still goes through on the retry.
+        if (!limited) {
+          limited = true;
+          throw new Error("ClickUp error 429: Rate limit reached");
+        }
+        puts.push({ path, body: init.body });
+        return {};
+      }
+      return {};
+    });
+    const send = (text: string) => caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text });
+    const until = async (fn: () => Promise<boolean>) => {
+      for (let i = 0; i < 200 && !(await fn()); i++) await new Promise((r) => setTimeout(r, 5));
+    };
+
+    decision = { ...blank, action: "clickup_bulk", goal: "overdue", focus: "done" };
+    const r = await send("Close everything overdue");
+    expect(systems[0]).toContain("Don't ask questions first");
+    expect(r.reply.content).toMatch(/^On it: closing 2 overdue tasks in ClickUp\./);
+    await until(async () => (await db.listChatMessages(orgId, avery.id)).length >= 3);
+    const posted = (await db.listChatMessages(orgId, avery.id)).at(-1)!;
+    expect(posted.content).toBe("Done. Closing worked for 2 tasks in ClickUp.");
+    expect(puts.map((p) => `${p.path} ${p.body.status}`)).toEqual(["/task/o1 complete", "/task/o2 complete"]);
+    expect(JSON.parse(posted.cards!)[0]).toMatchObject({ type: "choices", options: ["Reopen them", "What's still open?"], undo: ["o1", "o2"] });
+
+    puts.length = 0;
+    decision = { ...blank, action: "clickup_undo" };
+    const undo = await send("Reopen them");
+    expect(undo.reply.content).toBe("Reopening 2 tasks in ClickUp now. I'll post here when it's done.");
+    await until(async () => (await db.listChatMessages(orgId, avery.id)).at(-1)!.content.startsWith("Reopened"));
+    expect(puts.map((p) => `${p.path} ${p.body.status}`)).toEqual(["/task/o1 to do", "/task/o2 to do"]);
+  });
 });
