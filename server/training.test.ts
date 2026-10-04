@@ -32,3 +32,19 @@ describe("company training", () => {
     expect(brain.text).toContain("Never call it an \"AI receptionist\"");
   });
 });
+
+describe("training on every deploy", () => {
+  it("only adds missing sections, so Brain edits are kept", async () => {
+    const { loadTraining } = await import("../deploy/load-training");
+    const { makeWorkspace } = await import("./test/helpers");
+    const db = await import("./db");
+    const { orgId } = await makeWorkspace("train-addonly");
+    const text = "## [services_offers] Who buys and why\nSolo and group practices.\n\n## [voice_tone] How we sound\nPlain.";
+    expect((await loadTraining(orgId, text, { addOnly: true })).created).toBe(2);
+    const who = (await db.listKnowledgeByOrg(orgId)).find((k) => k.title === "Company training: Who buys and why")!;
+    await db.updateKnowledgeItem(who.id, orgId, { content: "Edited on the Brain page." });
+    const again = await loadTraining(orgId, text, { addOnly: true });
+    expect(again.created).toBe(0);
+    expect((await db.listKnowledgeByOrg(orgId)).find((k) => k.id === who.id)!.content).toBe("Edited on the Brain page.");
+  });
+});

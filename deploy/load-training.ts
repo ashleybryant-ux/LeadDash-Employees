@@ -4,8 +4,11 @@
  * Running it again updates those entries in place (nothing is duplicated).
  *
  *   npx tsx deploy/load-training.ts "LeadDash" deploy/training/leaddash.md
+ *   npx tsx deploy/load-training.ts --all          (every file in deploy/training/workspaces.json)
  *
  * The first argument is the workspace name exactly as it shows in the app.
+ * --all only adds sections a workspace doesn't have yet, so edits made on the
+ * Brain page are never overwritten; deploy.sh runs it on every deploy.
  */
 import "dotenv/config";
 import fs from "node:fs";
@@ -29,13 +32,14 @@ export function parseTraining(text: string) {
   return out;
 }
 
-export async function loadTraining(orgId: number, text: string) {
+export async function loadTraining(orgId: number, text: string, opts: { addOnly?: boolean } = {}) {
   const sections = parseTraining(text);
   const existing = (await db.listKnowledgeByOrg(orgId)).filter((k) => k.employeeId == null);
   let created = 0;
   let updated = 0;
   for (const s of sections) {
     const have = existing.find((k) => k.title === s.title);
+    if (have && opts.addOnly) continue;
     const item = have
       ? await db.updateKnowledgeItem(have.id, orgId, { content: s.content, category: s.category, kind: "fact" })
       : await db.createKnowledgeItem({ organizationId: orgId, title: s.title, category: s.category, kind: "fact", content: s.content });
@@ -46,7 +50,25 @@ export async function loadTraining(orgId: number, text: string) {
   return { created, updated, titles: sections.map((s) => s.title) };
 }
 
+/** Every training file into the workspaces named for it, adding only what's missing. */
+async function loadAll() {
+  const map = JSON.parse(fs.readFileSync("deploy/training/workspaces.json", "utf8")) as Record<string, string[]>;
+  const orgs = await db.listOrganizations();
+  for (const [file, names] of Object.entries(map)) {
+    for (const name of names) {
+      const org = orgs.find((o) => o.name.trim().toLowerCase() === name.trim().toLowerCase());
+      if (!org) {
+        console.log(`  ${file}: no workspace named "${name}" (skipped)`);
+        continue;
+      }
+      const r = await loadTraining(org.id, fs.readFileSync(`deploy/training/${file}`, "utf8"), { addOnly: true });
+      console.log(`  ${org.name} <- ${file}: ${r.created ? `${r.created} section${r.created === 1 ? "" : "s"} added` : "already loaded"}`);
+    }
+  }
+}
+
 async function main() {
+  if (process.argv[2] === "--all") return loadAll();
   const [name, file] = process.argv.slice(2);
   if (!name || !file) {
     console.log('Usage: npx tsx deploy/load-training.ts "<workspace name>" <training file>');
