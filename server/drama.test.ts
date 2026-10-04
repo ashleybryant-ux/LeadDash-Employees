@@ -7,9 +7,18 @@ import { createRequire } from "node:module";
 
 let decision: any = null;
 let season: any = null;
+let directions: any = null;
+let campaignPlan: any = null;
+const prompts: Record<string, string> = {};
 vi.mock("./_core/llm", async (orig) => {
   const actual: any = await orig();
-  return { ...actual, generateJson: vi.fn(async (opts: any) => (opts.schemaName === "chat_decision" ? decision : opts.schemaName === "drama_season" ? season : {})) };
+  return {
+    ...actual,
+    generateJson: vi.fn(async (opts: any) => {
+      prompts[opts.schemaName] = `${opts.system}\n${opts.prompt}`;
+      return opts.schemaName === "chat_decision" ? decision : opts.schemaName === "drama_season" ? season : opts.schemaName === "campaign_directions" ? directions : opts.schemaName === "campaign_plan" ? campaignPlan : {};
+    }),
+  };
 });
 
 import { caller, makeWorkspace } from "./test/helpers";
@@ -69,7 +78,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
     const u = String(url);
     calls.push({ url: u, init });
-    if (u.includes("api.elevenlabs.io/v1/text-to-speech/")) return new Response(Buffer.alloc(32_000), { status: 200 }); // 2 seconds
+    if (u.includes("api.elevenlabs.io/v1/text-to-speech/")) return new Response(mp3, { status: 200 }); // a real MP3
     if (u.startsWith("https://api.elevenlabs.io/v1/music")) return new Response(mp3, { status: 200 });
     if (u.startsWith("https://queue.fal.run/") && init.method === "POST") {
       const id = `r${++n}`;
@@ -129,12 +138,20 @@ describe("Elena's mini drama studio", () => {
 
     decision = { ...blank, action: "make_episode", count: 1 };
     const m = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make episode 1" });
-    expect(m.reply.content).toMatch(/^Making episode 1, "The New Clinician\." That's 4 shots, about \$/);
+    expect(m.reply.content).toMatch(/^Making the keyframes for episode 1, "The New Clinician": one still for each of the 4 shots\. You'll approve them before anything is animated\./);
+    await waitFor(() => db.getDramaEpisode(ep.id, orgId)!.status !== "making");
+    // Keyframes only: nothing animated until the owner approves.
+    expect(db.getDramaEpisode(ep.id, orgId)!.status).toBe("keyframes");
+    expect(posts(drama.MODELS.video)).toHaveLength(0);
+    const kmsg = (await db.listChatMessages(orgId, elena.id, 10)).pop()!;
+    expect(kmsg.content).toMatch(/^The keyframes for Episode 1 are ready/);
+    expect(JSON.parse(kmsg.cards!)[0].type).toBe("drama_keyframes");
+    await c.drama.approveKeyframes({ organizationId: orgId, id: ep.id });
     await waitFor(() => db.getDramaEpisode(ep.id, orgId)!.status !== "making");
     const done = (await c.drama.episode({ organizationId: orgId, id: ep.id }))!;
     expect(done.error).toBeNull();
     expect(done.status).toBe("ready");
-    expect(done.videoUrl).toMatch(/^\/files\/org-\d+\/drama\/episode-1-/);
+    expect(done.videoUrl).toMatch(/^\/files\/org-\d+\/drama\/drama-\d+-9x16-/);
 
     // Renee got a portrait once; her shot and the owner's are matched to their faces.
     expect(posts(drama.MODELS.portrait).filter((b) => /Cinematic portrait photograph of Renee Cole/.test(b.prompt))).toHaveLength(1);
@@ -181,9 +198,91 @@ describe("Elena's mini drama studio", () => {
     season = { ...SEASON, episodes: [{ ...SEASON.episodes[0], shots: [shot({ action: "Renee Cole speaks.", cast: ["Renee Cole"], line_who: "Renee Cole", line_text: "Who wrote this?" })] }] };
     const w = await drama.writeEpisodes(orgId, { brief: "", count: 1, ownerName: "Ashley" });
     void elena;
-    await expect(c.drama.make({ organizationId: orgId, id: w.episodes[0].id })).rejects.toThrow(/Renee Cole doesn't have a voice yet/);
+    const id = w.episodes[0].id;
+    // Keyframes don't need voices; animating does.
+    await c.drama.make({ organizationId: orgId, id });
+    await waitFor(() => db.getDramaEpisode(id, orgId)!.status === "keyframes");
+    await expect(c.drama.approveKeyframes({ organizationId: orgId, id })).rejects.toThrow(/Renee Cole doesn't have a voice yet/);
     db.updateDramaCast(w.cast.find((x) => x.name === "Renee Cole")!.id, orgId, { voiceId: "v", voiceName: "Jessa" });
+    expect(db.getDramaEpisode(id, orgId)!.status).toBe("keyframes");
     await c.avatar.saveSettings({ organizationId: orgId, imageId: img.id, voiceId: "voice-ashley", voiceName: "Ashley", quality: "standard", limitCents: 10 });
-    await expect(c.drama.make({ organizationId: orgId, id: w.episodes[0].id })).rejects.toThrow(/would go over your \$0 monthly limit/);
+    await expect(c.drama.approveKeyframes({ organizationId: orgId, id })).rejects.toThrow(/would go over your \$0 monthly limit/);
   });
+
+  it("plans a branded campaign: three directions, then the shot list with the owner, a team member and the logo, keyframes for approval, then voice-over, captions and three versions", async () => {
+    const { orgId, owner } = await makeWorkspace("campaign");
+    const c = caller(owner);
+    const elena = (await db.getEmployeeByKind(orgId, "video"))!;
+    const pic = await storagePut(`org-${orgId}/brain/front.jpg`, Buffer.from("jpeg-bytes"), "image/jpeg");
+    const img = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "Ashley headshot", content: "Front", fileUrl: pic.url });
+    const logo = await storagePut(`org-${orgId}/brain/logo.png`, Buffer.from("logo-bytes"), "image/png");
+    await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "LeadDash logo", content: "", fileUrl: logo.url });
+    await c.avatar.saveSettings({ organizationId: orgId, imageId: img.id, voiceId: "voice-ashley", voiceName: "Ashley", quality: "standard", limitCents: 5000 });
+    await c.drama.saveStyleRef({ organizationId: orgId, name: "Founder walk-in", link: "https://www.tiktok.com/@x/video/1", likes: ["Camera", "Lighting"], words: "the slow walk toward camera" });
+    const malik = (await db.getEmployeeByKind(orgId, "leads"))!;
+    const ownerName = (await db.getOrganizationById(orgId))?.signerName || owner.name!;
+
+    // Character plates from her photos (the logo isn't a photo of her).
+    const plates = await c.drama.makePlates({ organizationId: orgId });
+    expect(plates).toHaveLength(9);
+    expect(posts(drama.MODELS.still).every((b) => b.image_urls.length === 1)).toBe(true);
+
+    const dir = (t: string) => ({ title: t, hook: "A phone buzzes at 9:47 PM.", story: "Late nights, then one screen.", metaphor: "Two screens become one", location: "Home office", wardrobe: "Green blazer", lighting: "Desk lamp", camera: "Slow push-ins", ending: "One login. Everything." });
+    directions = { title: "Double entry ad", goal: "Practice owners feel seen and book a demo.", directions: [dir("The 9:47 PM Desk"), dir("Two Front Doors"), dir("Monday")] };
+    decision = { ...blank, action: "write_campaign", notes: "A 30-second LeadDash ad about double entry" };
+    const r1 = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make a 30-second LeadDash ad about double entry" });
+    expect(JSON.parse(r1.reply.cards!)[0].type).toBe("campaign_directions");
+    // Her style references are in every plan.
+    expect(prompts.campaign_directions).toContain("Founder walk-in (Camera, Lighting): the slow walk toward camera");
+    expect(posts(drama.MODELS.video)).toHaveLength(0);
+
+    const shot = (o: any) => ({ framing: "Close-up", move: "Slow dolly-in of a few inches", action: "", setting: "Home office at night", cast: [], plate: "", props: [], vo: "", caption: "", seconds: 3, sound: "Room tone", ...o });
+    campaignPlan = {
+      title: "The 9:47 PM Desk",
+      script: "It's 9:47. Same client. Second system. One login. Everything.",
+      music: "Soft piano, builds into the reveal",
+      cta: "Book a demo",
+      cast: [ownerName, malik.name],
+      shots: [
+        shot({ action: `${ownerName} types at a laptop, tired.`, cast: [ownerName], plate: "Seated at a desk", vo: "It's 9:47.", caption: "It's 9:47." }),
+        shot({ framing: "Medium", action: `${malik.name} answers a new lead on a headset.`, cast: [malik.name], caption: "Leads answered" }),
+        shot({ framing: "Insert", action: "The LeadDash logo on a laptop lid.", props: ["LeadDash logo", "Made-up interface"], vo: "One login. Everything." }),
+      ],
+    };
+    decision = { ...blank, action: "pick_direction", count: 1 };
+    const r2 = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "Use the first one" });
+    expect(r2.reply.content).toMatch(/^"The 9:47 PM Desk" is planned: 3 shots/);
+    const camp = (await c.drama.studio({ organizationId: orgId })).campaigns[0];
+    await waitFor(() => db.getDramaEpisode(camp.id, orgId)!.status !== "making");
+    expect(db.getDramaEpisode(camp.id, orgId)!.status).toBe("keyframes");
+    const v = drama.episodeView(db.getDramaEpisode(camp.id, orgId)!);
+    // The owner's shot uses her plate first, then her photo; the logo only where named; an invented interface is dropped.
+    expect(v.shots[2].props).toEqual(["LeadDash logo"]);
+    const stills = posts(drama.MODELS.still).slice(9);
+    expect(stills).toHaveLength(3);
+    expect(stills[0].image_urls).toHaveLength(2);
+    expect(stills[1].image_urls).toHaveLength(1); // Malik's own portrait
+    expect(stills[2].prompt).toContain("reference image 1 is LeadDash logo");
+    expect((await c.drama.studio({ organizationId: orgId })).cast.find((x) => x.name === malik.name)).toMatchObject({ kind: "team" });
+
+    await c.drama.approveKeyframes({ organizationId: orgId, id: camp.id });
+    await waitFor(() => db.getDramaEpisode(camp.id, orgId)!.status !== "making");
+    const done = drama.episodeView(db.getDramaEpisode(camp.id, orgId)!);
+    expect(done.error).toBeNull();
+    expect(done.status).toBe("ready");
+    expect(Object.keys(done.versions).sort()).toEqual(["16:9", "1:1", "9:16"]);
+    // Voice-over in her voice for the two shots that have it; no lip sync (nobody speaks on camera).
+    expect(calls.filter((x) => x.url.includes("text-to-speech/voice-ashley"))).toHaveLength(2);
+    expect(posts(drama.MODELS.lipsync)).toHaveLength(0);
+    expect(posts(drama.MODELS.video).slice(-3).every((b) => b.generate_audio === true)).toBe(true);
+    expect((await db.listChatMessages(orgId, elena.id, 10)).pop()!.content).toMatch(/three versions: vertical/);
+
+    // Editing a caption needs only a new cut; nothing is animated again.
+    const before = posts(drama.MODELS.video).length;
+    await c.drama.saveScript({ organizationId: orgId, id: camp.id, cta: "Book your demo", shots: done.shots.map((x) => ({ n: x.n, vo: x.vo ?? "", caption: x.n === 2 ? "Every lead answered" : x.caption ?? "" })) });
+    await c.drama.make({ organizationId: orgId, id: camp.id });
+    await waitFor(() => db.getDramaEpisode(camp.id, orgId)!.status !== "making");
+    expect(db.getDramaEpisode(camp.id, orgId)!.status).toBe("ready");
+    expect(posts(drama.MODELS.video).length).toBe(before);
+  }, 90_000);
 });

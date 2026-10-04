@@ -1688,7 +1688,7 @@ export const dramaCast = sqliteTable(
     name: text("name").notNull(),
     role: text("role").notNull().default(""),
     /** owner: played by the owner from her photos. made_up: a fictional character. */
-    kind: text("kind", { enum: ["owner", "made_up"] }).notNull().default("made_up"),
+    kind: text("kind", { enum: ["owner", "made_up", "team"] }).notNull().default("made_up"),
     /** How they look, for every shot they're in. */
     look: text("look").notNull().default(""),
     /** The portrait every shot is matched to (the owner's photo, or one made for a made-up character). */
@@ -1715,7 +1715,14 @@ export const dramaEpisodes = sqliteTable(
     shots: text("shots").notNull().default("[]"),
     /** The score under the episode: mood, tempo and where it builds. */
     music: text("music").notNull().default(""),
-    status: text("status", { enum: ["script", "making", "ready", "failed"] }).notNull().default("script"),
+    /** drama: an episode of the series. campaign: a branded video (directions, voice-over, captions, call to action). */
+    kind: text("kind", { enum: ["drama", "campaign"] }).notNull().default("drama"),
+    /** JSON plan: campaign goal, the three directions, the chosen one, script, call to action; keyframes approved. */
+    plan: text("plan").notNull().default("{}"),
+    /** JSON finished versions: {"9:16": url, "1:1": url, "16:9": url}. */
+    versions: text("versions").notNull().default("{}"),
+    /** keyframes: the stills are made and wait for the owner's approval before anything is animated. */
+    status: text("status", { enum: ["script", "making", "keyframes", "ready", "failed"] }).notNull().default("script"),
     progress: text("progress"),
     videoUrl: text("videoUrl"),
     /** What it cost (or is estimated to cost), in cents. */

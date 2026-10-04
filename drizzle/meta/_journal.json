@@ -176,6 +176,13 @@
       "when": 1791133038417,
       "tag": "0024_drama_music",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791133411183,
+      "tag": "0025_drama_campaigns",
+      "breakpoints": true
     }
   ]
 }

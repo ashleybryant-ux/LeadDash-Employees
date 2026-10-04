@@ -5,7 +5,7 @@ import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine, UnderlineTabs } from "../ui";
 import { fmtDate, parseJson } from "../meta";
 import { AvatarVideosTab } from "../chat/Avatar";
-import { DramaCastTab, DramaEpisodesTab } from "../chat/Drama";
+import { CampaignsTab, DramaCastTab, DramaEpisodesTab, StyleTab } from "../chat/Drama";
 
 type Shot = { time: string; shot: string; say: string };
 type VideoData = {
@@ -23,7 +23,7 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const studio = trpc.drama.studio.useQuery({ organizationId: currentOrgId });
-  const [tab, setTab] = React.useState<"episodes" | "cast" | "plans" | "trends" | "avatar">("episodes");
+  const [tab, setTab] = React.useState<"episodes" | "campaigns" | "cast" | "style" | "plans" | "trends" | "avatar">("episodes");
   const avatarCount = trpc.avatar.list.useQuery({ organizationId: currentOrgId }).data?.length ?? 0;
   const [selected, setSelected] = React.useState<number | null>(null);
 
@@ -58,7 +58,9 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
         onChange={setTab}
         tabs={[
           { key: "episodes", label: `Episodes (${studio.data?.episodes.length ?? 0})` },
+          { key: "campaigns", label: `Campaigns (${studio.data?.campaigns.length ?? 0})` },
           { key: "cast", label: `Cast (${studio.data?.cast.length ?? 0})` },
+          { key: "style", label: `Style (${studio.data?.styleRefs.length ?? 0})` },
           { key: "plans", label: `Video plans (${list.length})` },
           { key: "trends", label: `Trends (${list.length})` },
           { key: "avatar", label: `Your videos (${avatarCount})` },
@@ -67,8 +69,12 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
 
       {tab === "episodes" ? (
         <DramaEpisodesTab empName={emp.name} />
+      ) : tab === "campaigns" ? (
+        <CampaignsTab empName={emp.name} />
       ) : tab === "cast" ? (
         <DramaCastTab />
+      ) : tab === "style" ? (
+        <StyleTab />
       ) : tab === "avatar" ? (
         <AvatarVideosTab empName={emp.name} />
       ) : list.length === 0 ? (

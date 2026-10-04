@@ -925,6 +925,45 @@ export const appRouter = router({
       const dr = await import("./employees/drama");
       return dr.episodeView(await dr.remakeShot(input.organizationId, input.id, input.n));
     }),
+    pickDirection: protectedProcedure.input(orgInput.extend({ id: z.number(), pick: z.number().int().min(1).max(3) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const dr = await import("./employees/drama");
+      const planned = await (await import("./employees/campaign")).planCampaign(input.organizationId, input.id, input.pick, personName(ctx.user));
+      return dr.episodeView(await dr.startEpisode(input.organizationId, planned.id));
+    }),
+    approveKeyframes: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const dr = await import("./employees/drama");
+      return dr.episodeView(await dr.approveKeyframes(input.organizationId, input.id));
+    }),
+    saveScript: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), cta: z.string().max(80), shots: z.array(z.object({ n: z.number().int(), vo: z.string().max(300), caption: z.string().max(120) })).max(20) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const dr = await import("./employees/drama");
+        return dr.episodeView(dr.saveScript(input.organizationId, input.id, input));
+      }),
+    makePlates: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/drama")).makePlates(input.organizationId);
+    }),
+    savePack: protectedProcedure.input(orgInput.extend({ ids: z.array(z.number()).max(40) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await (await import("./employees/drama")).savePack(input.organizationId, input.ids);
+      return { success: true };
+    }),
+    saveStyleRef: protectedProcedure
+      .input(orgInput.extend({ id: z.string().max(20).optional(), name: z.string().trim().min(1).max(100), link: z.string().max(500), likes: z.array(z.string().max(30)).max(8), words: z.string().max(300) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, ...rest } = input;
+        return (await import("./employees/drama")).saveStyleRef(organizationId, rest);
+      }),
+    removeStyleRef: protectedProcedure.input(orgInput.extend({ id: z.string().max(20) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./employees/drama")).removeStyleRef(input.organizationId, input.id);
+      return { success: true };
+    }),
     saveCast: protectedProcedure
       .input(orgInput.extend({ id: z.number(), name: z.string().trim().min(1).max(80), role: z.string().max(120), look: z.string().max(500), voiceId: z.string().max(80).nullable(), voiceName: z.string().max(120).nullable() }))
       .mutation(async ({ ctx, input }) => {
