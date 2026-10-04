@@ -82,9 +82,19 @@ function keepAudio(buf: Buffer) {
   return id;
 }
 
+/** Why the last answer had no voice, shown on the Huddle screen so it can be fixed. */
+let speechError: string | null = null;
+export function lastSpeechError() {
+  return speechError;
+}
+
 /** One answer in the employee's voice, as MP3. Returns null when speech is not set up, so the words still show. */
 export async function speak(kind: string, text: string): Promise<string | null> {
-  if (!ENV.openAiKey || process.env.NODE_ENV === "test") return null;
+  if (process.env.NODE_ENV === "test") return null;
+  if (!ENV.openAiKey) {
+    speechError = "Voices are not set up: OPENAI_API_KEY is missing on the server.";
+    return null;
+  }
   try {
     const res = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
@@ -99,11 +109,21 @@ export async function speak(kind: string, text: string): Promise<string | null> 
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
-      console.warn("[huddle] speech failed:", res.status, (await res.text()).slice(0, 200));
+      const body = (await res.text()).slice(0, 300);
+      let msg = body;
+      try {
+        msg = JSON.parse(body)?.error?.message ?? body;
+      } catch {
+        /* not JSON */
+      }
+      speechError = `OpenAI didn't make the voice (${res.status}): ${msg}`.slice(0, 300);
+      console.warn("[huddle] speech failed:", res.status, body);
       return null;
     }
+    speechError = null;
     return keepAudio(Buffer.from(await res.arrayBuffer()));
   } catch (err) {
+    speechError = `The voice didn't come back in time: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300);
     console.warn("[huddle] speech failed:", err instanceof Error ? err.message : err);
     return null;
   }

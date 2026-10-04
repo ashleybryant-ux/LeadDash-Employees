@@ -16,6 +16,9 @@ import { Avatar, BottomNav, ErrorLine, Rail, useEmployees } from "../ui";
 type Line = { who: string; kind: string | null; text: string; at: number };
 type Reply = { kind: string; name: string; text: string; audioUrl: string | null };
 
+/** A tiny silent sound. Playing it during the tap unlocks sound for the rest of the huddle (Safari and iPhone need this). */
+const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+
 // ==========================================
 // The microphone
 // ==========================================
@@ -116,6 +119,8 @@ export default function Huddle() {
   const [listening, setListening] = React.useState(false);
   const [muted, setMuted] = React.useState(false);
   const [micError, setMicError] = React.useState<string | null>(null);
+  const [voiceError, setVoiceError] = React.useState<string | null>(null);
+  const [blocked, setBlocked] = React.useState<Reply | null>(null);
   const [link, setLink] = React.useState("");
   const [whoOpen, setWhoOpen] = React.useState(false);
   const [now, setNow] = React.useState(Date.now());
@@ -176,12 +181,17 @@ export default function Huddle() {
     a.src = r.audioUrl;
     a.onended = done;
     a.onerror = done;
-    a.play().catch(done);
+    a.play().catch((err: Error) => {
+      // The browser blocked sound: offer a button to play it.
+      if (err?.name === "NotAllowedError") setBlocked(r);
+      done();
+    });
   }, []);
 
   const say = trpc.huddle.say.useMutation({
     onSuccess: (r) => {
       utils.huddle.current.setData({ organizationId: currentOrgId }, (old) => (old ? { ...old, live: r.huddle } : old));
+      setVoiceError(r.voiceError ?? null);
       queue.current.push(...r.replies);
       playNext();
     },
@@ -192,9 +202,9 @@ export default function Huddle() {
   const startListening = async () => {
     setMicError(null);
     if (!huddleId.current) return;
+    // Unlock sound now, during the tap, before anything waits.
+    unlockSound();
     try {
-      // Unlocks audio playback on browsers that need a tap first.
-      audio.current = audio.current ?? new Audio();
       const t = await token.mutateAsync({ organizationId: currentOrgId });
       listener.current = await listen(
         t.token,
@@ -211,6 +221,21 @@ export default function Huddle() {
       setListening(true);
     } catch (err) {
       setMicError(err instanceof Error ? (err.name === "NotAllowedError" ? "Allow the microphone for this site, then press Start talking again." : err.message) : "The microphone didn't start.");
+    }
+  };
+  function unlockSound() {
+    const a = audio.current ?? new Audio();
+    audio.current = a;
+    a.src = SILENT;
+    a.play().then(() => a.pause()).catch(() => null);
+  }
+  const playBlocked = () => {
+    const r = blocked;
+    setBlocked(null);
+    unlockSound();
+    if (r) {
+      queue.current.unshift(r);
+      setTimeout(playNext, 150);
     }
   };
   const stopListening = () => {
@@ -326,6 +351,13 @@ export default function Huddle() {
                 <span style={{ fontSize: 14, color: "#3d4c45", minWidth: 0 }}>{partial || (live.inMeeting ? "The team is in your meeting and answers there. Talk in the meeting." : listening ? (muted ? "You're muted." : "Talk normally. Say a name to ask someone directly.") : "Press Start talking and allow the microphone.")}</span>
               </div>
               {micError && <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>{micError}</p>}
+              {voiceError && <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>{`The answer showed but had no voice. ${voiceError}`}</p>}
+              {blocked && (
+                <div className="ld-card" style={{ padding: "12px 16px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 14, flex: 1, minWidth: 0 }}>{`Your browser blocked ${blocked.name}'s voice.`}</span>
+                  <button type="button" className="ld-btn p" onClick={playBlocked}>Play sound</button>
+                </div>
+              )}
               <ErrorLine error={say.error || bring.error || takeOut.error || members.error} />
             </div>
             <aside className="ld-hud-side">

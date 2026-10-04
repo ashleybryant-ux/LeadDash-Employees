@@ -1465,7 +1465,8 @@ export const appRouter = router({
     say: protectedProcedure.input(orgInput.extend({ id: z.number(), text: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       const r = await huddle.say(input.organizationId, input.id, personName(ctx.user), input.text);
-      return { huddle: huddle.huddleView(r.huddle), replies: r.replies.map((x) => ({ ...x, audioUrl: x.audioId ? `/api/voice/audio/${x.audioId}` : null })) };
+      const silent = r.replies.some((x) => !x.audioId);
+      return { huddle: huddle.huddleView(r.huddle), replies: r.replies.map((x) => ({ ...x, audioUrl: x.audioId ? `/api/voice/audio/${x.audioId}` : null })), voiceError: silent ? huddle.lastSpeechError() : null };
     }),
     bring: protectedProcedure.input(orgInput.extend({ id: z.number(), url: z.string().trim().min(10).max(1000) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
