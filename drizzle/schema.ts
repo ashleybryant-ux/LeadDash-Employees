@@ -483,6 +483,8 @@ export const chatMessages = sqliteTable(
     searchQueries: text("searchQueries"),
     /** JSON [{id, name, size, kind, url}]: files the person attached (chat_files). */
     attachments: text("attachments"),
+    /** Said out loud in a one-on-one: the person spoke it, or the employee's answer was played. */
+    spoken: integer("spoken", { mode: "boolean" }).notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [index("chat_messages_org_emp_idx").on(t.organizationId, t.employeeId)]

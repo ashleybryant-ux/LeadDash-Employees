@@ -863,6 +863,34 @@ async function nowIn(orgId: number) {
   return `${local} (${iso}, ${tz})`;
 }
 
+/** A live one-on-one: the person talks and the reply is read out loud. */
+export const ONE_ON_ONE = `This is a live one-on-one meeting: the person is talking to you out loud and your "reply" is read aloud in your voice.
+- Keep "reply" to 1 to 3 short spoken sentences, like a colleague across the table. No lists, headings, markdown, links, emojis or em dashes.
+- Their words come from speech-to-text, so read past small transcription mistakes and odd spellings of names.
+- You can still take actions: say the headline out loud and let the card under your message hold the details.
+- If they agree to something or ask you to do something later, say so plainly ("I'll have it to you Wednesday"); the meeting notes turn it into a task.`;
+
+/** Chat words made easy to listen to: no markdown, links or lists, and not too long. */
+export function spokenText(content: string) {
+  let t = content
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/^\s*#+\s*/gm, "")
+    .replace(/^\s*(?:[-*•]|\d+[.)])\s+/gm, "")
+    .replace(/[*_`>#]/g, "")
+    .replace(/\s*[—–]\s*/g, ", ")
+    .replace(/([.!?:,;])?[ \t]*\n+\s*/g, (_m, p: string | undefined) => (p ? `${p} ` : ". "))
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (t.length > 700) {
+    const cut = t.slice(0, 700);
+    const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
+    t = `${end > 200 ? cut.slice(0, end + 1) : cut} The rest is in the chat.`;
+  }
+  return t;
+}
+
 export async function sendChatMessage(opts: {
   organizationId: number;
   employeeId: number;
@@ -870,6 +898,8 @@ export async function sendChatMessage(opts: {
   authorName: string;
   userId: number | null;
   attachmentIds?: number[];
+  /** Said out loud in a one-on-one: the reply is kept short and conversational, and is played. */
+  spoken?: boolean;
 }) {
   const emp = await db.getEmployeeForOrg(opts.employeeId, opts.organizationId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
@@ -884,6 +914,7 @@ export async function sendChatMessage(opts: {
     authorName: opts.authorName,
     userId: opts.userId,
     content: opts.text,
+    spoken: !!opts.spoken,
     attachments: sent.length ? JSON.stringify(sent.map((f) => ({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl }))) : null,
   });
   db.attachChatFiles(opts.organizationId, sent.map((f) => f.id), userMsg.id);
@@ -895,6 +926,7 @@ export async function sendChatMessage(opts: {
       role: "employee",
       authorName: emp.name,
       content,
+      spoken: !!opts.spoken,
       cards: cards.length ? JSON.stringify(cards) : null,
       searchQueries: queries.length ? JSON.stringify(queries) : null,
     });
@@ -919,7 +951,7 @@ Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "t
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
 Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}
-${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}\n${REMEMBER}`}${filesText(files)}
+${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}\n${REMEMBER}`}${opts.spoken ? `\n${ONE_ON_ONE}` : ""}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     );

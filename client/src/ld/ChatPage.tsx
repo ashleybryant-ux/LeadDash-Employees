@@ -24,6 +24,7 @@ import { LaunchPlanCard, MeetingAgendaCard, MeetingNotesCard } from "./lead/Card
 import { OnboardingCard, OnboardingQuestionCard } from "./onboarding/ChatCards";
 import Onboarding from "./Onboarding";
 import type { Outputs } from "./types";
+import { SpokenTag, TalkButton, VoiceBar, useOneOnOne } from "./chat/OneOnOne";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 
 export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
@@ -125,12 +126,29 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   const [pendingFiles, setPendingFiles] = React.useState<{ id: number; name: string; size: number; kind: "image" | "document"; url: string }[]>([]);
   const files = useAttachments(currentOrgId, emp.id);
   const send = trpc.chat.send.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (r, v) => {
       setPending(null);
       setPendingFiles([]);
+      // In a one-on-one, the answer is also played out loud.
+      if (v.spoken) talk.heard(r);
       await Promise.all([utils.chat.list.invalidate(), utils.chat.summaries.invalidate(), utils.publishing.listApprovalQueue.invalidate()]);
     },
     onError: () => { setPending(null); setPendingFiles([]); },
+  });
+  const lastMsgId = messages.data?.length ? messages.data[messages.data.length - 1].id : null;
+  const talk = useOneOnOne({
+    orgId: currentOrgId,
+    emp,
+    lastId: lastMsgId,
+    sending: send.isPending,
+    say: (value) => {
+      setPending(value);
+      send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: value, attachmentIds: [], spoken: true });
+    },
+    onEnded: () => {
+      void utils.chat.list.invalidate();
+      void utils.coo.invalidate();
+    },
   });
   const bottom = React.useRef<HTMLDivElement>(null);
   const composer = React.useRef<HTMLDivElement>(null);
@@ -164,13 +182,13 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
     setPendingFiles(attached);
     setText("");
     files.clear();
-    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: v, attachmentIds: attached.map((f) => f.id) });
+    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: v, attachmentIds: attached.map((f) => f.id), spoken: talk.active });
   };
   /** A tapped quick reply goes out as the person's message, without touching files waiting in the box. */
   const pick = (value: string) => {
     if (send.isPending) return;
     setPending(value);
-    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: value, attachmentIds: [] });
+    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: value, attachmentIds: [], spoken: talk.active });
   };
 
   const list = messages.data ?? [];
@@ -220,6 +238,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                     </div>
                     {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.content}</div>}
                     {m.role === "user" && <MessageAttachments raw={m.attachments} />}
+                    {m.spoken && <SpokenTag role={m.role} />}
                   </div>
                   {cards.map((c) =>
                     c.type === "layout_choice" ? (
@@ -285,7 +304,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
       </div>
 
       <div ref={composer} className="ld-composer" style={{ padding: "0 32px 24px 32px", display: "flex", flexDirection: "column", gap: 12, maxWidth: 900, boxSizing: "border-box", width: "100%", position: "sticky", bottom: 0, background: "#f8fafb", paddingTop: 12 }}>
-        {!lastHasReplies && <div className="ld-sugs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <VoiceBar o={talk} emp={emp} thinking={send.isPending} />
+        {!lastHasReplies && !talk.active && <div className="ld-sugs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(SUGGESTIONS[emp.kind as Kind] ?? []).map((s) => (
             <button key={s} type="button" className="ld-sug" onClick={() => (s.startsWith("Paste") ? setText("") : submit(s))} disabled={send.isPending}>
               {s}
@@ -323,6 +343,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             }}
             style={{ flex: 1, border: 0, outline: "none", resize: "none", font: "inherit", fontSize: 15, background: "transparent", color: "#14221c" }}
           />
+          <TalkButton o={talk} name={emp.name} />
           <button type="submit" className="ld-btn p sm" disabled={send.isPending || files.uploading || (!text.trim() && !files.ready.length)}>
             Send
           </button>

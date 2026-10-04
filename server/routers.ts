@@ -18,7 +18,7 @@ import {
 import { ROSTER } from "./employees/roster";
 import { ensureRoster } from "./employees/roster-sync";
 import * as tasks from "./employees/tasks";
-import { sendChatMessage, workingOn } from "./employees/chat";
+import { sendChatMessage, spokenText, workingOn } from "./employees/chat";
 import * as apply from "./employees/apply";
 import * as exportsFor from "./employees/exports";
 import { indexKnowledge } from "./employees/kb";
@@ -54,6 +54,7 @@ import * as projects from "./employees/projects";
 import * as coo from "./employees/coo";
 import * as notetaker from "./employees/notetaker";
 import * as huddle from "./employees/huddle";
+import { endOneOnOne } from "./employees/oneonone";
 import { opsFor, saveOps, MEETING_MINUTES } from "./employees/ops";
 import { KPI_SOURCES } from "../drizzle/schema";
 import { postProblems, SOCIAL_CHANNELS, TIKTOK_PRIVACY, type SocialChannel } from "@shared/post-model";
@@ -1423,7 +1424,7 @@ export const appRouter = router({
       }),
 
     send: protectedProcedure
-      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().max(20_000), attachmentIds: z.array(z.number().int()).max(10).default([]) }))
+      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().max(20_000), attachmentIds: z.array(z.number().int()).max(10).default([]), spoken: z.boolean().default(false) }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
         const result = await sendChatMessage({
@@ -1433,9 +1434,27 @@ export const appRouter = router({
           authorName: personName(ctx.user),
           userId: ctx.user.id,
           attachmentIds: input.attachmentIds,
+          spoken: input.spoken,
         });
         await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id);
-        return result;
+        // In a one-on-one the answer is also said out loud in the employee's voice.
+        let audioUrl: string | null = null;
+        let voiceError: string | null = null;
+        if (input.spoken && result.reply?.content) {
+          const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+          const id = emp ? await huddle.speak(emp.kind, spokenText(result.reply.content)) : null;
+          audioUrl = id ? `/api/voice/audio/${id}` : null;
+          voiceError = id ? null : huddle.lastSpeechError();
+        }
+        return { ...result, audioUrl, voiceError };
+      }),
+
+    /** Ends a one-on-one: notes and action items from the chat since it started, posted back in the chat. */
+    endMeeting: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), sinceId: z.number().int().min(0), startedAt: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return endOneOnOne(input.organizationId, input.employeeId, { id: ctx.user.id, name: personName(ctx.user) }, { sinceId: input.sinceId, startedAt: new Date(input.startedAt) });
       }),
   }),
 

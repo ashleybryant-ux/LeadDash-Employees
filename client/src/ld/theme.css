@@ -309,3 +309,28 @@ html.ld-review .ld-emphead { top: 34px !important; }
   .ld-hud-ctl > button { height: 44px !important; padding: 0 14px !important; font-size: 14px; }
   .ld-hud-side { padding-bottom: 140px; }
 }
+
+/* One-on-one in a chat */
+.ld-talk { height: 34px; padding: 0 14px; border-radius: 9px; border: 0; background: #1b6b4a; color: #fff; font: inherit; font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.ld-talk:hover:not(:disabled) { background: #155c3e; }
+.ld-talk:disabled { opacity: .6; cursor: default; }
+.ld-1on1 { background: #fff; border: 1px solid #cfe6da; border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 0 0 3px #eef6f1; }
+div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9e6; }
+.ld-1on1-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.ld-1on1-btns { display: flex; gap: 8px; flex-shrink: 0; }
+.ld-btn.ld-1on1-end { width: auto; height: 34px; padding: 0 14px; color: #9b1c1c; border-color: #e7b7b7; white-space: nowrap; }
+.ld-1on1-wave { display: flex; gap: 3px; align-items: center; height: 22px; flex-shrink: 0; }
+.ld-1on1-wave i { display: block; width: 4px; height: 8px; border-radius: 2px; background: #1b6b4a; animation: ld-wave 1s ease-in-out infinite; }
+.ld-1on1-wave i:nth-child(2) { animation-delay: .15s; }
+.ld-1on1-wave i:nth-child(3) { animation-delay: .3s; }
+.ld-1on1-wave i:nth-child(4) { animation-delay: .45s; }
+.ld-1on1-wave i:nth-child(5) { animation-delay: .6s; }
+@keyframes ld-wave { 0%, 100% { height: 6px; } 50% { height: 20px; } }
+@media (prefers-reduced-motion: reduce) { .ld-1on1-wave i { animation: none; height: 12px; } }
+.ld-spoken { display: inline-flex; align-items: center; margin-top: 6px; font-size: 12px; font-weight: 700; color: #155c3e; background: #e6f2ec; border-radius: 999px; padding: 2px 10px; }
+@media (max-width: 760px) {
+  .ld-1on1-row { flex-wrap: wrap; }
+  .ld-1on1-btns { width: 100%; }
+  .ld-1on1-btns .ld-btn { flex: 1; }
+  .ld-1on1-wave { display: none; }
+}
