@@ -734,6 +734,8 @@ export async function book(orgId: number, input: { at: string; name: string; ema
     await stopSequence(orgId, prospect.id);
     await db.updateProspect(prospect.id, orgId, { stage: "booked" });
   }
+  // A therapist from Jada's cold email list: the pre-call report runs.
+  await (await import("./coldreply")).onBooked(orgId, email, at).catch((err) => console.warn("[cold] pre-call on booking failed:", err instanceof Error ? err.message : err));
   const malik = await db.getEmployeeByKind(orgId, "leads");
   const when = whenText(at, tz);
   await logActivity(malik, "sent", `${name}${input.company || prospect ? ` (${input.company?.trim() || prospect?.name})` : ""} booked ${when}. It's on your Google Calendar.`, workLink("leads"), orgId);

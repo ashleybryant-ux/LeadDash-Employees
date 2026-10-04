@@ -137,6 +137,8 @@ export function startScheduler() {
       await (await import("./press")).pressTicks();
       // Taylor's newsroom: Monday scout and briefing, follow-ups, seasonal alerts.
       await (await import("./newsroom")).newsroomTicks();
+      // Jada's cold email: replies every 5 minutes, inboxes hourly, the day's batch, Monday review.
+      await (await import("./cold")).coldTicks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

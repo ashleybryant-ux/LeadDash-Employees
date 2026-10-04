@@ -1968,3 +1968,260 @@ export const pressSettings = sqliteTable("press_settings", {
   updatedAt: integer("updatedAt", { mode: "timestamp" }),
 });
 export type PressSettings = typeof pressSettings.$inferSelect;
+
+// ==========================================
+// Jada's cold email: the owner's lead list, sent through Instantly.
+// The list lives here; Instantly only holds the batch being emailed.
+// ==========================================
+
+export const COLD_STAGES = ["new", "queued", "in_campaign", "replied", "booked", "finished", "not_fit", "dnc"] as const;
+export const COLD_REPLY_KINDS = ["hot", "interested", "demo", "objection", "question", "wrong_person", "referral", "not_now", "negative", "unsubscribe", "ooo", "other"] as const;
+
+export const coldSettings = sqliteTable("cold_settings", {
+  organizationId: integer("organizationId").primaryKey(),
+  /** The Instantly API key, encrypted. Never sent to the AI or the browser. */
+  keyEncrypted: text("keyEncrypted"),
+  keyCheckedAt: integer("keyCheckedAt", { mode: "timestamp" }),
+  keyError: text("keyError"),
+  /** growth, hypergrowth, lightspeed or custom: sets the contact and monthly email limits. */
+  plan: text("plan").notNull().default("growth"),
+  contactsLimit: integer("contactsLimit").notNull().default(1000),
+  emailsLimit: integer("emailsLimit").notNull().default(5000),
+  /** Last "remaining in plan" Instantly reported when leads were added. */
+  remainingInPlan: integer("remainingInPlan"),
+  /** 1: owner approves every reply. 2: routine replies send. 3: playbook objections send and volume shifts. 4: runs cold email. */
+  level: integer("level").notNull().default(1),
+  perInbox: integer("perInbox").notNull().default(20),
+  rampPct: integer("rampPct").notNull().default(10),
+  bounceRest: integer("bounceRest").notNull().default(3),
+  signature: text("signature").notNull().default(""),
+  address: text("address").notNull().default(""),
+  optOut: text("optOut").notNull().default("Not the right fit? Reply stop and I won't email again."),
+  alwaysNeedsYou: text("alwaysNeedsYou").notNull().default("Security, HIPAA or legal questions, groups over 20 clinicians, contract terms, anything about a client"),
+  /** The website pricing and address are read from. */
+  website: text("website").notNull().default("https://leaddash.io"),
+  /** JSON {plans: [{name, price, seats, includes}], address, notes, url}: read from the website. */
+  site: text("site").notNull().default("{}"),
+  siteCheckedAt: integer("siteCheckedAt", { mode: "timestamp" }),
+  siteError: text("siteError"),
+  /** New emails a day Jada allowed yesterday (the ramp starts from it). */
+  dailyNew: integer("dailyNew").notNull().default(0),
+  /** JSON {date, added}: new leads sent to Instantly today. */
+  today: text("today").notNull().default("{}"),
+  paused: integer("paused", { mode: "boolean" }).notNull().default(false),
+  /** Token in the webhook address. */
+  hookToken: text("hookToken"),
+  lastReplyCheckAt: integer("lastReplyCheckAt", { mode: "timestamp" }),
+  lastInboxCheckAt: integer("lastInboxCheckAt", { mode: "timestamp" }),
+  lastFeedAt: integer("lastFeedAt", { mode: "timestamp" }),
+  lastReviewAt: integer("lastReviewAt", { mode: "timestamp" }),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }),
+});
+export type ColdSettings = typeof coldSettings.$inferSelect;
+
+/** One therapist on the list. Up to the whole 90,000. */
+export const coldLeads = sqliteTable(
+  "cold_leads",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    email: text("email").notNull(),
+    firstName: text("firstName").notNull().default(""),
+    lastName: text("lastName").notNull().default(""),
+    license: text("license").notNull().default(""),
+    licenseNumber: text("licenseNumber").notNull().default(""),
+    licenseStatus: text("licenseStatus").notNull().default(""),
+    state: text("state").notNull().default(""),
+    city: text("city").notNull().default(""),
+    phone: text("phone").notNull().default(""),
+    practice: text("practice").notNull().default(""),
+    website: text("website").notNull().default(""),
+    /** Where the lead came from ("Texas license list.csv", "Instantly", "Referral from ..."). */
+    source: text("source").notNull().default(""),
+    /** JSON string[]: group_owner, solo_owner, size_3_15, hiring, ehr_simplepractice, telehealth, ... */
+    segments: text("segments").notNull().default("[]"),
+    /** 0-100, null until scored. */
+    fit: integer("fit"),
+    /** JSON [{label, points}]. */
+    fitWhy: text("fitWhy").notNull().default("[]"),
+    /** basic (list only), researched (website or search), moderate (after interest), full (pre-call report). */
+    depth: text("depth", { enum: ["list", "researched", "moderate", "full"] }).notNull().default("list"),
+    /** JSON research: practice facts, signals with evidence and sources. */
+    research: text("research").notNull().default("{}"),
+    researchedAt: integer("researchedAt", { mode: "timestamp" }),
+    stage: text("stage", { enum: COLD_STAGES }).notNull().default("new"),
+    notFitReason: text("notFitReason"),
+    campaignId: integer("campaignId"),
+    instantlyLeadId: text("instantlyLeadId"),
+    addedAt: integer("addedAt", { mode: "timestamp" }),
+    finishedAt: integer("finishedAt", { mode: "timestamp" }),
+    lastReplyKind: text("lastReplyKind"),
+    followUpAt: integer("followUpAt", { mode: "timestamp" }),
+    followUpNote: text("followUpNote"),
+    bookedFor: integer("bookedFor", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [
+    uniqueIndex("cold_leads_org_email_unique").on(t.organizationId, t.email),
+    index("cold_leads_org_stage_fit_idx").on(t.organizationId, t.stage, t.fit),
+    index("cold_leads_org_campaign_idx").on(t.organizationId, t.campaignId),
+  ]
+);
+export type ColdLead = typeof coldLeads.$inferSelect;
+
+export const coldCampaigns = sqliteTable(
+  "cold_campaigns",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    /** One of the angle keys (switcher, missed_calls, too_many, group_ops, growing, owner_time). */
+    angle: text("angle").notNull(),
+    /** JSON {segments: string[], minFit, states: string[], licenses: string[]}. */
+    who: text("who").notNull().default("{}"),
+    offer: text("offer").notNull().default(""),
+    ask: text("ask").notNull().default(""),
+    /** JSON [{day, subject, subjectB, body}]: the 4 emails. subjectB is the subject line test. */
+    steps: text("steps").notNull().default("[]"),
+    /** JSON {variable: "subject", a, b, winner}. */
+    test: text("test").notNull().default("{}"),
+    /** Percent of each day's new emails. */
+    share: integer("share").notNull().default(25),
+    status: text("status", { enum: ["draft", "sending", "paused", "done"] }).notNull().default("draft"),
+    instantlyId: text("instantlyId"),
+    /** JSON {added, sent, replies, positive, demos, bounced, unsubscribed, a: {replies, positive, demos}, b: {...}, at}. */
+    stats: text("stats").notNull().default("{}"),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("cold_campaigns_org_idx").on(t.organizationId)]
+);
+export type ColdCampaign = typeof coldCampaigns.$inferSelect;
+
+export const coldReplies = sqliteTable(
+  "cold_replies",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    leadId: integer("leadId").notNull(),
+    campaignId: integer("campaignId"),
+    /** The Instantly email id (to answer on the same thread) and the inbox it came to. */
+    emailId: text("emailId").notNull(),
+    inbox: text("inbox").notNull().default(""),
+    subject: text("subject").notNull().default(""),
+    text: text("text").notNull().default(""),
+    kind: text("kind", { enum: COLD_REPLY_KINDS }).notNull().default("other"),
+    /** "price", "competitor"... for objections; the topic for questions. */
+    topic: text("topic").notNull().default(""),
+    /** Which subject line version it answered (a or b). */
+    variant: text("variant"),
+    draft: text("draft"),
+    /** What Jada did on her own, in words ("Closed the loop and added to do not contact"). */
+    handled: text("handled"),
+    status: text("status", { enum: ["open", "sent", "done"] }).notNull().default("open"),
+    receivedAt: integer("receivedAt", { mode: "timestamp" }),
+    sentAt: integer("sentAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("cold_replies_org_email_unique").on(t.organizationId, t.emailId), index("cold_replies_org_idx").on(t.organizationId)]
+);
+export type ColdReply = typeof coldReplies.$inferSelect;
+
+/** Objections, battle cards, approved facts, never say, and real examples from the owner's own answers. */
+export const coldPlaybook = sqliteTable(
+  "cold_playbook",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    kind: text("kind", { enum: ["objection", "battle", "fact", "never", "example"] }).notNull(),
+    /** What they say (objection), the competitor (battle), the topic (fact), the phrase (never). */
+    title: text("title").notNull(),
+    /** JSON: objection {meaning, goal, facts, never, escalate, example}; battle {doesWell, differs, dontClaim, whySwitch, questions}; example {said, draft, better, tag}. */
+    body: text("body").notNull().default("{}"),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("cold_playbook_org_idx").on(t.organizationId)]
+);
+export type ColdPlay = typeof coldPlaybook.$inferSelect;
+
+export const coldInboxes = sqliteTable(
+  "cold_inboxes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    email: text("email").notNull(),
+    /** Instantly's account status number (1 active) and warmup score. */
+    accountStatus: integer("accountStatus").notNull().default(1),
+    warmupScore: integer("warmupScore"),
+    sentToday: integer("sentToday").notNull().default(0),
+    sent7: integer("sent7").notNull().default(0),
+    bounced7: integer("bounced7").notNull().default(0),
+    replies7: integer("replies7").notNull().default(0),
+    status: text("status", { enum: ["healthy", "resting", "error"] }).notNull().default("healthy"),
+    reason: text("reason"),
+    restedAt: integer("restedAt", { mode: "timestamp" }),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [uniqueIndex("cold_inboxes_org_email_unique").on(t.organizationId, t.email)]
+);
+export type ColdInbox = typeof coldInboxes.$inferSelect;
+
+export const coldReviews = sqliteTable(
+  "cold_reviews",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    /** JSON string[]. */
+    points: text("points").notNull().default("[]"),
+    /** JSON [{kind: share|pause|winner, campaignId, share?, version?, why}]. */
+    changes: text("changes").notNull().default("[]"),
+    status: text("status", { enum: ["waiting", "applied", "dismissed"] }).notNull().default("waiting"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("cold_reviews_org_idx").on(t.organizationId)]
+);
+export type ColdReview = typeof coldReviews.$inferSelect;
+
+/** Never emailed: unsubscribed, bounced, asked to stop, existing clients. Every campaign and inbox. */
+export const coldSuppress = sqliteTable(
+  "cold_suppress",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    email: text("email").notNull(),
+    reason: text("reason").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("cold_suppress_org_email_unique").on(t.organizationId, t.email)]
+);
+export type ColdSuppress = typeof coldSuppress.$inferSelect;
+
+/** The Pre-call report: a skill any employee can run before a meeting. */
+export const precallReports = sqliteTable(
+  "precall_reports",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    leadId: integer("leadId"),
+    person: text("person").notNull().default(""),
+    practice: text("practice").notNull().default(""),
+    email: text("email").notNull().default(""),
+    website: text("website").notNull().default(""),
+    meetingAt: integer("meetingAt", { mode: "timestamp" }),
+    /** Who ran it ("Jada, when he booked", "You, from Simone's chat"). */
+    runBy: text("runBy").notNull().default(""),
+    /** JSON report (brief, tech, journey, growth, pains, demo, objections, committee, risks, sources). */
+    report: text("report").notNull().default("{}"),
+    /** JSON {changes: [{what, before, after}], nextStep, notesFrom}. */
+    after: text("after"),
+    status: text("status", { enum: ["running", "ready", "failed", "done"] }).notNull().default("running"),
+    error: text("error"),
+    refreshedAt: integer("refreshedAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("precall_org_idx").on(t.organizationId)]
+);
+export type PrecallReport = typeof precallReports.$inferSelect;

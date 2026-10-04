@@ -26,6 +26,7 @@ const LIMITS: Record<string, number> = {
   chat: 20_000_000,
   history: 400_000_000,
   take: 200_000_000,
+  leads: 80_000_000,
 };
 
 const KNOWLEDGE_CATEGORY: Record<string, string> = {
@@ -143,6 +144,19 @@ export function registerUploads(app: Express) {
 
       const buf = await readBody(req, max);
       if (buf.length === 0) return res.status(400).json({ error: "The file was empty." });
+
+      // Jada's cold email lead list: a CSV (a state license list, a LeadDash platform export).
+      if (slot === "leads") {
+        if (!/\.(csv|txt)$/i.test(name)) return res.status(400).json({ error: "Upload a .csv file. In Excel or Google Sheets, save or download it as CSV first." });
+        const cold = await import("./employees/cold");
+        try {
+          const r = cold.importCsv(orgId, name, buf.toString("utf8"));
+          await db.logAction({ organizationId: orgId, actorType: "human_user", actorName: who, action: "Added cold email leads", details: `${r.added} added from ${name}` });
+          return res.json(r);
+        } catch (err) {
+          return res.status(400).json({ error: err instanceof Error ? err.message : "That file couldn't be read." });
+        }
+      }
 
       // The owner's own take for one of Elena's shots: her performance and voice.
       if (slot === "take") {

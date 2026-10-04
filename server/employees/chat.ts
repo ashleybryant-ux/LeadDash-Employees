@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall";
   id: number;
   /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -72,17 +72,22 @@ const ACTIONS: Record<string, string[]> = {
   onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  outreach: ["none", "report", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
 };
-// Every employee has a browser.
-for (const list of Object.values(ACTIONS)) list.push("browse");
+// Every employee has a browser, and can run the Pre-call report skill.
+for (const list of Object.values(ACTIONS)) list.push("browse", "precall_report");
 
 const ACTION_HELP: Record<string, string> = {
+  precall_report: "precall_report: run the Pre-call report skill before a meeting with a practice or person (\"run a pre-call report on Bayou Family Therapy\", \"brief me before my call with Dr. Tran\"). Put the person's name in `target`, the practice in `title`, a website in `url` and the meeting date in `date` (YYYY-MM-DD) and `time` (HH:MM) when given. Public business information only; it posts here when ready.",
+  cold_campaign: "cold_campaign: write a new cold email campaign for the lead list. Put the angle key in `focus` (switcher, missed_calls, too_many, group_ops, growing or owner_time; pick the closest) and anything else she wants in `notes`. It's a draft until she presses Start.",
+  cold_research: "cold_research: research the next best leads on the list (progressive enrichment). Put how many in `count` (default 100, at most 1000) and a state in `target` if she named one.",
+  cold_review: "cold_review: she asks how cold email is doing, what's working, or for the weekly review now.",
+  cold_replies: "cold_replies: check Instantly for new replies now.",
   browse: "browse: do something on a website in your own browser: read a page, look something up on a site, check a portal or account, fill in a form. Put the whole job in `goal`, with exactly what to bring back. Put the web address in `url` ('' when a saved Website login covers it), the saved login's name in `target` ('' for none), and a short title in `title`. You do everything up to a Save, Submit, Send or Publish button and the owner presses Finish it to approve it. Use it instead of saying you can't open a website.",
   audit_workflows: "audit_workflows: open every workflow in the LeadDash platform, read the trigger and each step, change nothing, and list what needs fixing with one exact fix each.",
   fix_workflow: "fix_workflow: make the fix for a finding you listed, only when the owner says to (\"fix it\", \"fix the first two\", \"fix the reminders one\"). Put words from the workflow's name in `target` ('' when they gave a count), and in `focus` put fix_now (every one marked Fix now), all (every open one), or how many from the top (\"2\"); '' for one.",
@@ -296,6 +301,7 @@ async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "onboarding") return (await import("./customers")).customersFacts(emp.organizationId);
   if (emp.kind === "platform") return (await import("./platform")).platformFacts(emp.organizationId);
   if (emp.kind === "video") return (await import("./drama")).dramaFacts(emp.organizationId);
+  if (emp.kind === "outreach") return (await import("./cold")).coldFacts(emp.organizationId);
   if (emp.kind === "speaking") return `${(await import("./press")).pressFacts(emp.organizationId)}${await (await import("./newsroom")).newsroomFacts(emp.organizationId)}`;
   if (emp.kind === "inbox") {
     const cals = db.listAccountLinks(emp.organizationId, "calendar");
@@ -337,6 +343,9 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 TALK_BY_KIND.speaking = `${TALK_BY_KIND.grants}
 - You are also the publicist, running this workspace's press desk in a newsroom the owner may share across her workspaces. A media campaign or media list for a story is press_campaign; finding reporters and stories now is press_scout; "what's happening with press" is press_brief. Speaking events stay find_events.
 - Never invent a reporter, an article, an email, a quote or a statistic. Every pitch waits for her approval (unless she raised the sending level), and a reporter another desk pitched in the cooling period is left alone.`;
+TALK_BY_KIND.outreach = `- You run two kinds of outreach: warm sequences for prospects Riley finds (from Gmail), and cold email to the owner's lead list through Instantly. Cold email work is cold_campaign, cold_research, cold_review and cold_replies.
+- Cold email rules: business facts only, never personal details. Never claim a price, offer, migration, result or statistic that isn't in the playbook, the Brain or the website pricing. Opt-outs are honored at once. Every email carries the mailing address and an opt-out line.
+- Any employee can run the Pre-call report (precall_report) before a meeting; you run it on your own when a lead books.`;
 TALK_BY_KIND.developer = `- You never write or change code yourself. Claude does, from your write-up, and the owner merges. Say that plainly when it matters.
 - Nothing goes live until the owner merges the change and runs the deploy. After a merge, give her the deploy command for that code from your list.
 - Keep it plain: what's broken, what changed, how to check. No jargon unless she uses it.`;
@@ -372,6 +381,35 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
   const files = ctx.files ?? [];
   const docText = files.filter((f) => f.kind === "document").map((f) => `${f.name}:\n${f.text.slice(0, 6000)}`).join("\n\n");
   switch (d.action) {
+    case "precall_report": {
+      const precall = await import("./precall");
+      const at = d.date ? new Date(`${d.date}T${/^\d{2}:\d{2}$/.test(d.time) ? d.time : "12:00"}:00`) : null;
+      const r = await precall.startPrecall(org, { person: d.target || undefined, practice: d.title || undefined, website: /^https?:/.test(d.url) ? d.url : undefined, meetingAt: at && !Number.isNaN(at.getTime()) ? at : null, runBy: `${emp.name}, from chat`, employeeKind: emp.kind });
+      return { text: `I'm putting together the pre-call report on ${r.person || r.practice} from public business information. It takes a few minutes; I'll post it here when it's ready.`, cards: [], queries: [] };
+    }
+    case "cold_campaign": {
+      const cold = await import("./cold");
+      const key = (cold.ANGLES.find((a) => a.key === d.focus.trim()) ?? cold.ANGLES[0]).key;
+      const c = await cold.writeCampaign(org, key, { guidance: d.notes || undefined });
+      const v = cold.campaignView(c);
+      return { text: `I wrote "${v.name}": 4 short emails for ${v.whoText}, with a second subject line to test on email 1. It's a draft on my Campaigns tab. Read it there and press Start when it looks right; it sends from your Instantly inboxes.`, cards: [], queries: [] };
+    }
+    case "cold_research": {
+      const cold = await import("./cold");
+      const n = Math.min(1000, Math.max(1, d.count || 100));
+      cold.job(`research-${org}`, () => cold.research(org, n, { state: d.target || undefined }));
+      return { text: `I'm researching the next ${n} best leads${d.target ? ` in ${d.target}` : ""}: their practice website first, a web search when there isn't one. Scores update on my Lead list tab as I go.`, cards: [], queries: [] };
+    }
+    case "cold_review": {
+      const cold = await import("./cold");
+      const r = await cold.weeklyReview(org);
+      if (!r) return { text: "Nothing has gone out yet, so there's nothing to review. Start a campaign on my Campaigns tab first.", cards: [], queries: [] };
+      return { text: "Here's the review.", cards: [], queries: [] };
+    }
+    case "cold_replies": {
+      const r = await (await import("./coldreply")).checkReplies(org);
+      return { text: r.read ? `I read ${plural(r.read, "new reply", "new replies")}. They're sorted on my Replies tab.` : "No new replies right now.", cards: [], queries: [] };
+    }
     case "press_campaign": {
       const pitching = await import("./pitching");
       if (!db.press.getSettings(org)) db.press.saveSettings(org, {});

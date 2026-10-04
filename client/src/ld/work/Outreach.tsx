@@ -39,7 +39,7 @@ function KV({ label, children }: { label: string; children: React.ReactNode }) {
 }
 
 /** Jada's Work tab: one row per prospect, with the 3-email sequence inside. */
-export default function Outreach({ emp }: { emp: EmployeeRow }) {
+export default function Outreach({ emp, embedded = false }: { emp: EmployeeRow; embedded?: boolean }) {
   const { currentOrgId, currentOrg } = useTenant();
   const tz = currentOrg?.timezone || "America/Chicago";
   const utils = trpc.useUtils();
@@ -99,8 +99,9 @@ export default function Outreach({ emp }: { emp: EmployeeRow }) {
     }
   };
 
+  const Shell = embedded ? "div" : "main";
   return (
-    <main className="ld-main" style={{ padding: "20px 32px" }}>
+    <Shell className={embedded ? undefined : "ld-main"} style={embedded ? undefined : { padding: "20px 32px" }}>
       <FolderTabs value={tab} onChange={(k) => { setTab(k); setOpen(null); setEditing(null); }} tabs={TABS.map((t) => ({ key: t.key, label: `${t.label} (${t.key === "linkedin" ? liRows.length : all.filter((s) => s.tab === t.key).length})` }))}>
         {tab === "linkedin" ? (
           <>
@@ -271,6 +272,6 @@ export default function Outreach({ emp }: { emp: EmployeeRow }) {
         </>
         )}
       </FolderTabs>
-    </main>
+    </Shell>
   );
 }

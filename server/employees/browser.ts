@@ -234,6 +234,18 @@ export async function browserReady() {
   }
 }
 
+/** The visible text of a page after its scripts run (for sites built with JavaScript). */
+export async function renderText(url: string) {
+  const b = await launch();
+  try {
+    const page = await b.newPage({ userAgent: DESKTOP_UA });
+    await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 }).catch(() => page.goto(url, { waitUntil: "load", timeout: 30_000 }));
+    return ((await page.evaluate(() => document.body?.innerText ?? "")) as string).slice(0, 200_000);
+  } finally {
+    await b.close();
+  }
+}
+
 async function launch() {
   const { chromium } = await import("playwright-core");
   const executablePath = process.env.CHROMIUM_PATH || undefined;

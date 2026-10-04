@@ -110,6 +110,23 @@ export function registerSalesPages(app: Express) {
     res.json({ ok: true, id: lead?.id ?? null });
   });
 
+  // Instantly webhook (Hypergrowth and up): a reply, booking or inbox error is handled right away.
+  app.post("/hooks/instantly/:token", async (req, res) => {
+    const db = await import("./db");
+    const s = db.cold.settingsByHook(String(req.params.token));
+    if (!s) return res.status(404).json({ error: "Not found" });
+    if (limited(req, 600)) return res.status(429).json({ error: "Too many requests" });
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const event = String(b.event_type ?? b.event ?? "");
+    const email = String(b.lead_email ?? b.email ?? "").toLowerCase();
+    const cold = await import("./employees/cold");
+    const orgId = s.organizationId;
+    if (/meeting_booked/i.test(event) && email) cold.job(`booked-${orgId}-${email}`, async () => (await import("./employees/coldreply")).onBooked(orgId, email, null));
+    if (/account_error|bounce/i.test(event)) cold.job(`inboxes-${orgId}`, () => cold.syncInboxes(orgId));
+    cold.job(`replies-${orgId}`, async () => (await import("./employees/coldreply")).checkReplies(orgId));
+    res.json({ ok: true });
+  });
+
   // Booking page
   app.get("/book/:token", async (req, res) => {
     const org = await orgFor(req.params.token);

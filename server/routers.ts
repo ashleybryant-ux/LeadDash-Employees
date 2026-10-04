@@ -57,6 +57,9 @@ import * as huddle from "./employees/huddle";
 import { endOneOnOne } from "./employees/oneonone";
 import * as avatar from "./employees/avatar";
 import * as newsroom from "./employees/newsroom";
+import * as cold from "./employees/cold";
+import * as coldreply from "./employees/coldreply";
+import * as precall from "./employees/precall";
 import * as pitching from "./employees/pitching";
 import * as presslib from "./employees/presslib";
 import * as history from "./employees/history";
@@ -1004,6 +1007,247 @@ export const appRouter = router({
 
   // Calendars Avery checks, and sending addresses (extra Google accounts)
   // Taylor's newsroom: shared reporters, stories, campaigns, pitches, replies, interviews, coverage, library.
+  // Jada's cold email: the lead list, campaigns through Instantly, replies, playbook and pre-call reports.
+  cold: router({
+    overview: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return cold.overview(input.organizationId);
+    }),
+    connect: protectedProcedure.input(orgInput.extend({ key: z.string().min(1).max(500) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const r = await cold.connect(input.organizationId, input.key);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Connected Instantly", details: "" });
+      return r;
+    }),
+    disconnect: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      cold.disconnect(input.organizationId);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Disconnected Instantly", details: "" });
+      return { success: true };
+    }),
+    saveSettings: protectedProcedure
+      .input(orgInput.extend({ level: z.number().int().min(1).max(4), perInbox: z.number().int().min(1).max(50), rampPct: z.number().int().min(0).max(50), bounceRest: z.number().int().min(1).max(20), signature: z.string().max(200), address: z.string().max(300), optOut: z.string().max(300), alwaysNeedsYou: z.string().max(500), plan: z.enum(["growth", "hypergrowth", "lightspeed", "custom"]), contactsLimit: z.number().int().min(100).max(10_000_000).optional(), emailsLimit: z.number().int().min(500).max(100_000_000).optional(), website: z.string().max(300) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const { organizationId, ...rest } = input;
+        const s = cold.saveSettings(organizationId, rest);
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Changed cold email settings", details: `Level ${s.level}, ${s.perInbox} per inbox` });
+        return { success: true };
+      }),
+    pause: protectedProcedure.input(orgInput.extend({ paused: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      cold.setPaused(input.organizationId, input.paused);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: input.paused ? "Paused cold email" : "Resumed cold email", details: "" });
+      return { success: true };
+    }),
+    checkSite: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const site = await cold.refreshSite(input.organizationId);
+      return { found: site?.plans.length ?? 0 };
+    }),
+    syncInboxes: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await cold.syncInboxes(input.organizationId);
+      return { success: true };
+    }),
+    restInbox: protectedProcedure.input(orgInput.extend({ id: z.number().int(), rest: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      if (input.rest) await cold.restInbox(input.organizationId, input.id);
+      else await cold.resumeInbox(input.organizationId, input.id);
+      return { success: true };
+    }),
+
+    leads: protectedProcedure
+      .input(orgInput.extend({ q: z.string().max(100).optional(), segment: z.string().max(40).optional(), state: z.string().max(30).optional(), license: z.string().max(30).optional(), stage: z.enum(["new", "queued", "in_campaign", "replied", "booked", "finished", "not_fit", "dnc"]).optional(), tier: z.enum(["top", "mid", "test", "low"]).optional(), page: z.number().int().min(0).max(5000).default(0) }))
+      .query(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const { organizationId, page, ...f } = input;
+        return cold.leadsView(organizationId, f, page);
+      }),
+    importInstantly: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return cold.importFromInstantly(input.organizationId);
+    }),
+    research: protectedProcedure.input(orgInput.extend({ count: z.number().int().min(1).max(1000), state: z.string().max(30).optional(), license: z.string().max(30).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      if (cold.isResearching(input.organizationId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Jada is already researching leads." });
+      cold.job(`research-${input.organizationId}`, () => cold.research(input.organizationId, input.count, { state: input.state, license: input.license }));
+      return { started: true };
+    }),
+    stopLead: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await cold.stopLead(input.organizationId, input.id);
+      return { success: true };
+    }),
+    doNotContact: protectedProcedure.input(orgInput.extend({ emails: z.array(z.string().max(200)).min(1).max(500), reason: z.string().max(200).default("Added by you") })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      for (const e of input.emails) await cold.doNotContact(input.organizationId, e, input.reason);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Added to cold email do not contact", details: `${input.emails.length} ${input.emails.length === 1 ? "person" : "people"}` });
+      return { success: true };
+    }),
+    suppressList: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const rows = db.cold.suppressList(input.organizationId);
+      const csv = ["email,reason,added", ...rows.map((r) => `${r.email},"${r.reason.replace(/"/g, '""')}",${r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : ""}`)].join("\n");
+      const { storagePut } = await import("./storage");
+      const saved = await storagePut(`org-${input.organizationId}/downloads/Do not contact.csv`, Buffer.from(csv, "utf8"));
+      return { url: saved.url, name: "Do not contact.csv" };
+    }),
+
+    campaigns: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return { list: cold.campaignsView(input.organizationId), angles: cold.ANGLES.map((a) => ({ key: a.key, name: a.name, idea: a.idea })), segments: Object.entries(cold.SEGMENT_LABEL).map(([key, label]) => ({ key, label })) };
+    }),
+    newCampaign: protectedProcedure.input(orgInput.extend({ angle: z.enum(["switcher", "missed_calls", "too_many", "group_ops", "growing", "owner_time"]), guidance: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const c = await cold.writeCampaign(input.organizationId, input.angle, { guidance: input.guidance });
+      return cold.campaignView(c);
+    }),
+    saveCampaign: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), name: z.string().max(120), offer: z.string().max(500), ask: z.string().max(300), share: z.number().int().min(0).max(100), who: z.object({ segments: z.array(z.string().max(40)).max(6), minFit: z.number().int().min(0).max(100), states: z.array(z.string().max(30)).max(20), licenses: z.array(z.string().max(30)).max(10) }), steps: z.array(z.object({ day: z.number().int(), subject: z.string().max(200), subjectB: z.string().max(200), body: z.string().max(4000) })).length(4) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, id, ...rest } = input;
+        return cold.campaignView(await cold.saveCampaign(organizationId, id, rest));
+      }),
+    startCampaign: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const c = await cold.startCampaign(input.organizationId, input.id);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Started a cold email campaign", details: c.name });
+      return cold.campaignView(c);
+    }),
+    pauseCampaign: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return cold.campaignView(await cold.pauseCampaign(input.organizationId, input.id));
+    }),
+    removeCampaign: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      cold.removeCampaign(input.organizationId, input.id);
+      return { success: true };
+    }),
+    pickWinner: protectedProcedure.input(orgInput.extend({ id: z.number().int(), version: z.enum(["a", "b"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return cold.campaignView(await cold.pickWinner(input.organizationId, input.id, input.version));
+    }),
+    applyReview: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await cold.applyReview(input.organizationId, input.id);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Approved Jada's weekly changes", details: "" });
+      return { success: true };
+    }),
+    dismissReview: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      cold.dismissReview(input.organizationId, input.id);
+      return { success: true };
+    }),
+    review: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const r = db.cold.reviews.get(input.id, input.organizationId);
+      if (!r) return null;
+      return { id: r.id, at: r.createdAt, status: r.status, points: cold.parse<string[]>(r.points, []), changes: cold.parse<cold.Change[]>(r.changes, []).map((c) => ({ ...c, campaign: db.cold.campaigns.get(c.campaignId, input.organizationId)?.name ?? "" })) };
+    }),
+
+    replies: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return coldreply.repliesView(input.organizationId);
+    }),
+    reply: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const r = db.cold.replies.get(input.id, input.organizationId);
+      return r ? coldreply.replyView(input.organizationId, r) : null;
+    }),
+    checkReplies: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return coldreply.checkReplies(input.organizationId);
+    }),
+    saveDraft: protectedProcedure.input(orgInput.extend({ id: z.number().int(), text: z.string().max(6000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      coldreply.saveDraft(input.organizationId, input.id, input.text);
+      return { success: true };
+    }),
+    sendReply: protectedProcedure.input(orgInput.extend({ id: z.number().int(), text: z.string().max(6000).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await coldreply.send(input.organizationId, input.id, input.text ?? null, personName(ctx.user));
+      return { success: true };
+    }),
+    takeOver: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      coldreply.takeOver(input.organizationId, input.id);
+      return { success: true };
+    }),
+
+    playbook: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return cold.playbookView(input.organizationId);
+    }),
+    savePlay: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), kind: z.enum(["objection", "battle", "fact", "never", "example"]), title: z.string().max(300), body: z.record(z.string(), z.string().max(4000)) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const { organizationId, ...rest } = input;
+      return cold.savePlay(organizationId, rest);
+    }),
+    removePlay: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      cold.removePlay(input.organizationId, input.id);
+      return { success: true };
+    }),
+  }),
+
+  // The Pre-call report: a skill any employee can run before a meeting.
+  precall: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return precall.precallsView(input.organizationId);
+    }),
+    get: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const r = db.cold.precall.get(input.id, input.organizationId);
+      return r ? precall.precallView(input.organizationId, r) : null;
+    }),
+    run: protectedProcedure.input(orgInput.extend({ person: z.string().max(160).optional(), practice: z.string().max(200).optional(), website: z.string().max(300).optional(), email: z.string().max(200).optional(), meetingAt: z.string().max(60).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const at = input.meetingAt ? new Date(input.meetingAt) : null;
+      const r = await precall.startPrecall(input.organizationId, { person: input.person, practice: input.practice, website: input.website, email: input.email, meetingAt: at && !Number.isNaN(at.getTime()) ? at : null, runBy: `${personName(ctx.user)}, from the Pre-call tab` });
+      return { id: r.id };
+    }),
+    forLead: protectedProcedure.input(orgInput.extend({ leadId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const r = await precall.startPrecall(input.organizationId, { leadId: input.leadId, runBy: `${personName(ctx.user)}, from the Lead list` });
+      return { id: r.id };
+    }),
+    refresh: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const r = db.cold.precall.get(input.id, input.organizationId);
+      if (!r) throw new TRPCError({ code: "NOT_FOUND", message: "That report isn't here." });
+      db.cold.precall.update(r.id, input.organizationId, { status: "running" });
+      void precall.runPrecall(input.organizationId, r.id, "outreach", true);
+      return { success: true };
+    }),
+    afterCall: protectedProcedure.input(orgInput.extend({ id: z.number().int(), notes: z.string().max(30000).default("") })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await precall.afterCall(input.organizationId, input.id, input.notes);
+      return { success: true };
+    }),
+    saveAfter: protectedProcedure.input(orgInput.extend({ id: z.number().int(), changes: z.array(z.object({ what: z.string().max(200), before: z.string().max(500), after: z.string().max(500) })).max(20), nextStep: z.string().max(1000), notesFrom: z.string().max(100) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      precall.saveAfter(input.organizationId, input.id, { changes: input.changes, nextStep: input.nextStep, notesFrom: input.notesFrom });
+      return { success: true };
+    }),
+    approveAfter: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      precall.approveAfter(input.organizationId, input.id);
+      return { success: true };
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      precall.removePrecall(input.organizationId, input.id);
+      return { success: true };
+    }),
+    docx: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return precall.precallDocx(input.organizationId, input.id);
+    }),
+  }),
+
   newsroom: router({
     view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

@@ -1836,3 +1836,196 @@ export const press = {
     return getDb().select().from(pressPitches).where(and(eq(pressPitches.contactId, contactId), inArray(pressPitches.organizationId, orgIds), gt(pressPitches.sentAt, since))).all();
   },
 };
+
+// ==========================================
+// Jada's cold email
+// ==========================================
+
+type ColdLeadRow = typeof schema.coldLeads.$inferSelect;
+type ColdLeadIns = typeof schema.coldLeads.$inferInsert;
+export type ColdLeadFilter = { q?: string; segment?: string; state?: string; license?: string; stage?: string; tier?: "top" | "mid" | "test" | "low" };
+
+function sqliteDb() {
+  getDb();
+  return _sqlite!;
+}
+
+/** WHERE clause and parameters for a lead list filter. */
+function coldWhere(orgId: number, f: ColdLeadFilter) {
+  const parts = ["organizationId = ?"];
+  const args: unknown[] = [orgId];
+  if (f.q?.trim()) {
+    const like = `%${f.q.trim().toLowerCase()}%`;
+    parts.push("(lower(firstName || ' ' || lastName) LIKE ? OR lower(practice) LIKE ? OR lower(city) LIKE ? OR lower(email) LIKE ?)");
+    args.push(like, like, like, like);
+  }
+  if (f.segment) {
+    parts.push("segments LIKE ?");
+    args.push(`%"${f.segment}"%`);
+  }
+  if (f.state) {
+    parts.push("upper(state) = ?");
+    args.push(f.state.toUpperCase());
+  }
+  if (f.license) {
+    parts.push("upper(license) LIKE ?");
+    args.push(`%${f.license.toUpperCase()}%`);
+  }
+  if (f.stage) {
+    parts.push("stage = ?");
+    args.push(f.stage);
+  }
+  if (f.tier === "top") parts.push("fit >= 80");
+  if (f.tier === "mid") parts.push("fit >= 60 AND fit < 80");
+  if (f.tier === "test") parts.push("fit >= 40 AND fit < 60");
+  if (f.tier === "low") parts.push("(fit IS NULL OR fit < 40)");
+  return { where: parts.join(" AND "), args };
+}
+
+const LEAD_TS = ["researchedAt", "addedAt", "finishedAt", "followUpAt", "bookedFor", "createdAt", "updatedAt"] as const;
+function leadFromRaw(r: Record<string, unknown>): ColdLeadRow {
+  const out: Record<string, unknown> = { ...r };
+  for (const k of LEAD_TS) out[k] = r[k] == null ? null : new Date(Number(r[k]) * 1000);
+  return out as ColdLeadRow;
+}
+
+export const cold = {
+  campaigns: orgCrud<typeof schema.coldCampaigns>(schema.coldCampaigns),
+  replies: orgCrud<typeof schema.coldReplies>(schema.coldReplies),
+  playbook: orgCrud<typeof schema.coldPlaybook>(schema.coldPlaybook),
+  inboxes: orgCrud<typeof schema.coldInboxes>(schema.coldInboxes),
+  reviews: orgCrud<typeof schema.coldReviews>(schema.coldReviews),
+  precall: orgCrud<typeof schema.precallReports>(schema.precallReports),
+
+  getSettings(orgId: number) {
+    return getDb().select().from(schema.coldSettings).where(eq(schema.coldSettings.organizationId, orgId)).limit(1).all()[0] ?? null;
+  },
+  saveSettings(orgId: number, data: Partial<typeof schema.coldSettings.$inferInsert>) {
+    const now = new Date();
+    if (cold.getSettings(orgId)) getDb().update(schema.coldSettings).set({ ...data, updatedAt: now }).where(eq(schema.coldSettings.organizationId, orgId)).run();
+    else getDb().insert(schema.coldSettings).values({ organizationId: orgId, ...data, updatedAt: now }).run();
+    return cold.getSettings(orgId)!;
+  },
+  settingsByHook(token: string) {
+    return getDb().select().from(schema.coldSettings).where(eq(schema.coldSettings.hookToken, token)).limit(1).all()[0] ?? null;
+  },
+  orgsWithKey() {
+    return getDb().select({ organizationId: schema.coldSettings.organizationId, keyEncrypted: schema.coldSettings.keyEncrypted }).from(schema.coldSettings).all().filter((r) => !!r.keyEncrypted).map((r) => r.organizationId);
+  },
+
+  // ---- Leads (the list can be 90,000 rows, so these never load it whole) ----
+
+  /** Adds leads in one transaction; an email already on the list is skipped. */
+  insertLeads(rows: ColdLeadIns[]) {
+    if (!rows.length) return 0;
+    const sqlite = sqliteDb();
+    const cols = ["organizationId", "email", "firstName", "lastName", "license", "licenseNumber", "licenseStatus", "state", "city", "phone", "practice", "website", "source", "segments", "fit", "fitWhy", "stage", "notFitReason", "createdAt"] as const;
+    const stmt = sqlite.prepare(`INSERT OR IGNORE INTO cold_leads (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`);
+    const now = Math.floor(Date.now() / 1000);
+    let added = 0;
+    sqlite.transaction(() => {
+      for (const r of rows) {
+        const v = { segments: "[]", fitWhy: "[]", stage: "new", firstName: "", lastName: "", license: "", licenseNumber: "", licenseStatus: "", state: "", city: "", phone: "", practice: "", website: "", source: "", fit: null, notFitReason: null, ...r } as Record<string, unknown>;
+        const res = stmt.run(...cols.map((c) => (c === "createdAt" ? now : (v[c] ?? null))));
+        added += res.changes;
+      }
+    })();
+    return added;
+  },
+  countLeads(orgId: number, f: ColdLeadFilter = {}) {
+    const { where, args } = coldWhere(orgId, f);
+    return (sqliteDb().prepare(`SELECT count(*) AS n FROM cold_leads WHERE ${where}`).get(...args) as { n: number }).n;
+  },
+  pageLeads(orgId: number, f: ColdLeadFilter, limit: number, offset: number) {
+    const { where, args } = coldWhere(orgId, f);
+    const rows = sqliteDb().prepare(`SELECT * FROM cold_leads WHERE ${where} ORDER BY (fit IS NULL), fit DESC, id ASC LIMIT ? OFFSET ?`).all(...args, limit, offset) as Record<string, unknown>[];
+    return rows.map(leadFromRaw);
+  },
+  /** Counts by fit tier and stage, for the top of the Lead list. */
+  leadCounts(orgId: number) {
+    const r = sqliteDb()
+      .prepare(
+        `SELECT count(*) AS total,
+          sum(CASE WHEN fit >= 80 AND stage NOT IN ('dnc','not_fit') THEN 1 ELSE 0 END) AS top,
+          sum(CASE WHEN fit >= 60 AND fit < 80 AND stage NOT IN ('dnc','not_fit') THEN 1 ELSE 0 END) AS mid,
+          sum(CASE WHEN fit >= 40 AND fit < 60 AND stage NOT IN ('dnc','not_fit') THEN 1 ELSE 0 END) AS test,
+          sum(CASE WHEN (fit IS NULL OR fit < 40) AND stage NOT IN ('dnc','not_fit') THEN 1 ELSE 0 END) AS low,
+          sum(CASE WHEN stage = 'dnc' THEN 1 ELSE 0 END) AS dnc,
+          sum(CASE WHEN stage IN ('queued','in_campaign') THEN 1 ELSE 0 END) AS inInstantly,
+          sum(CASE WHEN depth = 'list' THEN 1 ELSE 0 END) AS unresearched
+         FROM cold_leads WHERE organizationId = ?`
+      )
+      .get(orgId) as Record<string, number | null>;
+    const n = (k: string) => Number(r[k] ?? 0);
+    return { total: n("total"), top: n("top"), mid: n("mid"), test: n("test"), low: n("low"), dnc: n("dnc"), inInstantly: n("inInstantly"), unresearched: n("unresearched") };
+  },
+  getLead(id: number, orgId: number) {
+    return getDb().select().from(schema.coldLeads).where(and(eq(schema.coldLeads.id, id), eq(schema.coldLeads.organizationId, orgId))).limit(1).all()[0] ?? null;
+  },
+  leadByEmail(orgId: number, email: string) {
+    return getDb().select().from(schema.coldLeads).where(and(eq(schema.coldLeads.organizationId, orgId), eq(schema.coldLeads.email, email.toLowerCase()))).limit(1).all()[0] ?? null;
+  },
+  updateLead(id: number, orgId: number, data: Partial<ColdLeadIns>) {
+    getDb().update(schema.coldLeads).set({ ...data, updatedAt: new Date() }).where(and(eq(schema.coldLeads.id, id), eq(schema.coldLeads.organizationId, orgId))).run();
+    return cold.getLead(id, orgId);
+  },
+  /** Leads to research next: on the list only, best first (a practice or website known beats a bare name). */
+  toResearch(orgId: number, limit: number, f: ColdLeadFilter = {}) {
+    const { where, args } = coldWhere(orgId, f);
+    const rows = sqliteDb()
+      .prepare(`SELECT * FROM cold_leads WHERE ${where} AND depth = 'list' AND stage = 'new' ORDER BY (website = '') ASC, (practice = '') ASC, (fit IS NULL), fit DESC, id ASC LIMIT ?`)
+      .all(...args, limit) as Record<string, unknown>[];
+    return rows.map(leadFromRaw);
+  },
+  /** Researched leads ready for a campaign: new, scored at least minFit, best first. */
+  readyFor(orgId: number, minFit: number, f: ColdLeadFilter, limit: number) {
+    const { where, args } = coldWhere(orgId, f);
+    const rows = sqliteDb()
+      .prepare(`SELECT * FROM cold_leads WHERE ${where} AND stage = 'new' AND fit >= ? AND email LIKE '%@%' ORDER BY fit DESC, id ASC LIMIT ?`)
+      .all(...args, minFit, limit) as Record<string, unknown>[];
+    return rows.map(leadFromRaw);
+  },
+  /** Leads in Instantly whose sequence ended (added more than `days` ago and never replied). */
+  finishedInInstantly(orgId: number, before: Date) {
+    return getDb().select().from(schema.coldLeads).where(and(eq(schema.coldLeads.organizationId, orgId), eq(schema.coldLeads.stage, "in_campaign"), lt(schema.coldLeads.addedAt, before))).limit(1000).all();
+  },
+  leadsByStage(orgId: number, stage: (typeof schema.COLD_STAGES)[number], limit = 500) {
+    return getDb().select().from(schema.coldLeads).where(and(eq(schema.coldLeads.organizationId, orgId), eq(schema.coldLeads.stage, stage))).limit(limit).all();
+  },
+  followUpsDue(orgId: number, now: Date) {
+    return getDb().select().from(schema.coldLeads).where(and(eq(schema.coldLeads.organizationId, orgId), lt(schema.coldLeads.followUpAt, now))).limit(100).all();
+  },
+  campaignLeadCounts(orgId: number) {
+    return sqliteDb().prepare(`SELECT campaignId, count(*) AS n FROM cold_leads WHERE organizationId = ? AND campaignId IS NOT NULL GROUP BY campaignId`).all(orgId) as { campaignId: number; n: number }[];
+  },
+  /** Leads added to Instantly per segment, for the weekly review. */
+  segmentCounts(orgId: number) {
+    return sqliteDb().prepare(`SELECT segments, stage, lastReplyKind FROM cold_leads WHERE organizationId = ? AND addedAt IS NOT NULL`).all(orgId) as { segments: string; stage: string; lastReplyKind: string | null }[];
+  },
+
+  // ---- Do not contact ----
+  suppress(orgId: number, email: string, reason: string) {
+    const e = email.trim().toLowerCase();
+    if (!e) return;
+    sqliteDb().prepare(`INSERT OR IGNORE INTO cold_suppress (organizationId, email, reason, createdAt) VALUES (?, ?, ?, ?)`).run(orgId, e, reason.slice(0, 200), Math.floor(Date.now() / 1000));
+    sqliteDb().prepare(`UPDATE cold_leads SET stage = 'dnc', updatedAt = ? WHERE organizationId = ? AND email = ?`).run(Math.floor(Date.now() / 1000), orgId, e);
+  },
+  isSuppressed(orgId: number, email: string) {
+    return !!sqliteDb().prepare(`SELECT 1 FROM cold_suppress WHERE organizationId = ? AND email = ?`).get(orgId, email.trim().toLowerCase());
+  },
+  suppressedSet(orgId: number) {
+    return new Set((sqliteDb().prepare(`SELECT email FROM cold_suppress WHERE organizationId = ?`).all(orgId) as { email: string }[]).map((r) => r.email));
+  },
+  suppressCount(orgId: number) {
+    return (sqliteDb().prepare(`SELECT count(*) AS n FROM cold_suppress WHERE organizationId = ?`).get(orgId) as { n: number }).n;
+  },
+  suppressList(orgId: number) {
+    return getDb().select().from(schema.coldSuppress).where(eq(schema.coldSuppress.organizationId, orgId)).orderBy(desc(schema.coldSuppress.id)).all();
+  },
+  replyByEmailId(orgId: number, emailId: string) {
+    return getDb().select().from(schema.coldReplies).where(and(eq(schema.coldReplies.organizationId, orgId), eq(schema.coldReplies.emailId, emailId))).limit(1).all()[0] ?? null;
+  },
+  inboxByEmail(orgId: number, email: string) {
+    return getDb().select().from(schema.coldInboxes).where(and(eq(schema.coldInboxes.organizationId, orgId), eq(schema.coldInboxes.email, email.toLowerCase()))).limit(1).all()[0] ?? null;
+  },
+};

@@ -9,6 +9,8 @@ import Guidelines from "./work/Guidelines";
 import ApplyWork from "./apply/ApplyWork";
 import PressWork from "./press/PressWork";
 import { PressBriefCard, PressCampaignCard, PressStoryCard } from "./chat/Press";
+import { ColdHotCard, ColdReviewCard, PrecallCard } from "./chat/Cold";
+import ColdWork from "./cold/ColdWork";
 import ApplicationPage from "./apply/ApplicationPage";
 import Knowledge from "./apply/Knowledge";
 import Drafts from "./work/Drafts";
@@ -46,7 +48,7 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   video: Videos,
   hiring: HiringWork,
   prospecting: Prospects,
-  outreach: Outreach,
+  outreach: ColdWork,
   leads: Leads,
   projects: Launches,
   coo: Meetings,
@@ -101,7 +103,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall";
   id: number;
   title: string;
   subtitle?: string;
@@ -271,6 +273,12 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <PressBriefCard key={`${c.type}-${c.id}`} />
                     ) : c.type === "press_story" ? (
                       <PressStoryCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "cold_hot" ? (
+                      <ColdHotCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "cold_review" ? (
+                      <ColdReviewCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "precall" ? (
+                      <PrecallCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "press_campaign" ? (
                       <PressCampaignCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "drama_episode" ? (
