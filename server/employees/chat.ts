@@ -175,6 +175,7 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       let text = r.created.length
         ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, `new ${thing}`)}. ${worth(r.created.filter((o) => o.fitCall === "apply").length, r.created.length)}`
         : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find new ones beyond what's already on Opportunities.`;
+      if (r.more) text += " There's more out there, so I'm still searching. New finds will show up here as I go.";
       if (d.action === "find_and_apply") {
         const best = r.created.filter((o) => o.fitCall === "apply" && o.fitScore >= 75).sort((a, b) => b.fitScore - a.fitScore).slice(0, 2);
         for (const o of best) await apply.startApplication(org, o.id, null);
@@ -482,6 +483,8 @@ export async function workingOn(orgId: number, emp: AIEmployee): Promise<{ busy:
   }
   const kinds = apply.KINDS_FOR[emp.kind === "speaking" ? "speaking" : "grants"];
   if (emp.kind === "grants" || emp.kind === "speaking") {
+    const looking = apply.stillLooking(orgId, emp.kind === "speaking" ? "speaking" : "grants");
+    if (looking) return { busy: true, what: looking };
     const writing = (await db.listApplications(orgId)).find((a) => a.employeeId === emp.id && a.status === "writing");
     if (writing) return { busy: true, what: `${writing.progress || "Writing"}: ${writing.title}` };
     const fetching = (await db.listOpps(orgId, kinds)).find((o) => o.packageStatus === "fetching");

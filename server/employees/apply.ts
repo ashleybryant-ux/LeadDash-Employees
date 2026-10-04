@@ -392,7 +392,15 @@ export function googleQueries(kind: OppKind, state: string, focus?: string) {
   return f ? [f + ` ${kind === "speaking" ? "call for speakers" : kind === "media" ? "media" : kind} ${y}`, ...list].slice(0, 9) : list;
 }
 
-export async function findOpportunities(orgId: number, empKind: "grants" | "speaking", opts: { kind?: OppKind; focus?: string } = {}) {
+type FindOpts = { kind?: OppKind; focus?: string; round?: number; priorQueries?: string[]; keepLooking?: boolean };
+
+/** Searches in progress after the first round, for the "working" line in chat. */
+const lookingNow = new Map<string, string>();
+export function stillLooking(orgId: number, empKind: string) {
+  return lookingNow.get(`${orgId}:${empKind}`) ?? "";
+}
+
+export async function findOpportunities(orgId: number, empKind: "grants" | "speaking", opts: FindOpts = {}) {
   const emp = await employeeFor(orgId, empKind);
   const kind: OppKind = opts.kind && KINDS_FOR[empKind].includes(opts.kind) ? opts.kind : KINDS_FOR[empKind][0];
   return working(emp, async () => {
@@ -408,13 +416,19 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
     );
     const federal =
       kind === "grant" ? await grantsGovListings(opts.focus || brain.org?.focusAreas?.split(/[,;\n]/)[0] || brain.org?.description?.slice(0, 60) || "behavioral health") : [];
-    const prompt = `Find open ${KIND_WORDS[kind].thing}s for ${brain.org?.name ?? "this workspace"}.${opts.focus ? `\nFocus on: ${opts.focus}` : ""}${
+    const round = opts.round ?? 1;
+    const known = (await db.listOpps(orgId, [kind])).map((o) => o.title).slice(0, 120);
+    const already =
+      round > 1
+        ? `\n\nThis is search round ${round}. Find ones not found before, using different angles, places and words than these earlier searches: ${(opts.priorQueries ?? []).slice(-40).join("; ")}.\nAlready on the list (do not return these): ${known.join("; ")}`
+        : "";
+    const prompt = `Find open ${KIND_WORDS[kind].thing}s for ${brain.org?.name ?? "this workspace"}.${opts.focus ? `\nFocus on: ${opts.focus}` : ""}${already}${
       federal.length
         ? `\n\nOpen federal listings from Grants.gov to check (include any that fit, with this URL as the source):\n${federal.map((f) => `- ${f.title} (${f.agency}, ${f.number}, closes ${f.closeDate || "not listed"}): ${f.url}`).join("\n")}`
         : ""
     }`;
     // Google results widen the net; the employee checks each one.
-    const google = await googleSearch(googleQueries(kind, brain.org?.state ?? "", opts.focus));
+    const google = round === 1 ? await googleSearch(googleQueries(kind, brain.org?.state ?? "", opts.focus)) : [];
     const googleList = google.length
       ? `\n\nGoogle results to check (open the promising ones, keep only real opportunities that are open now; use the result's URL as sourceUrl or foundOn):\n${google.slice(0, 60).map((g) => `- ${g.title}: ${g.url}${g.snippet ? ` (${g.snippet})` : ""}`).join("\n")}`
       : "";
@@ -463,8 +477,50 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
       action: `Searched for ${KIND_WORDS[kind].thing}s`,
       details: `Ran ${result.queries.length} searches and added ${created.length} new.`,
     });
-    return { created, queries: result.queries, kind };
+    const cost = result.costUsd ?? 0;
+    // A first round that keeps finding new ones means there is more out there: keep looking in the
+    // background, round by round, until a round finds little that is new or the spending ceiling is near.
+    const more = round === 1 && created.length >= 4 && (opts.keepLooking ?? process.env.NODE_ENV !== "test");
+    if (more) void keepLooking(orgId, empKind, kind, opts.focus, cost, result.queries);
+    return { created, queries: result.queries, kind, cost, more };
   });
+}
+
+const MAX_ROUNDS = 5;
+
+async function keepLooking(orgId: number, empKind: "grants" | "speaking", kind: OppKind, focus: string | undefined, spent: number, queries: string[]) {
+  const key = `${orgId}:${empKind}`;
+  if (lookingNow.has(key)) return;
+  const emp = await employeeFor(orgId, empKind);
+  const budget = ENV.searchBudgetUsd;
+  const perRound = Math.max(spent, 0.2);
+  let total = 0;
+  let rounds = 1;
+  const all = [...queries];
+  try {
+    for (let round = 2; round <= MAX_ROUNDS; round++) {
+      if (spent + perRound > budget) break;
+      lookingNow.set(key, `Searching for more ${KIND_WORDS[kind].thing}s (round ${round})`);
+      const r = await findOpportunities(orgId, empKind, { kind, focus, round, priorQueries: all, keepLooking: false });
+      rounds = round;
+      spent += r.cost;
+      all.push(...r.queries);
+      total += r.created.length;
+      if (r.created.length) {
+        const worth = r.created.filter((o) => o.fitCall === "apply").length;
+        await postToChat(emp, `Round ${round}: I found ${r.created.length} more ${KIND_WORDS[kind].thing}${r.created.length === 1 ? "" : "s"}${worth ? `, ${worth} worth applying to` : ""}.`, r.created.map(oppCardFor));
+      }
+      if (r.created.length < 3) break;
+    }
+    await postToChat(
+      emp,
+      `Done looking: ${rounds} search rounds, ${total ? `${total} more found after the first round` : "nothing new after the first round"}. That covers what I could find for now; I'll keep checking on my weekly search. (Cost about $${spent.toFixed(2)}.)`
+    );
+  } catch (err) {
+    console.warn("[apply] keep looking stopped:", err instanceof Error ? err.message : err);
+  } finally {
+    lookingNow.delete(key);
+  }
 }
 
 /** Adds an opportunity the person found: from its page link or the RFP file. */

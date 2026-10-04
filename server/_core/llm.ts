@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
-import { recordSearch, recordTokens } from "../usage";
+import { SEARCH_PRICE, recordSearch, recordTokens, tokenCost } from "../usage";
 
 /**
  * Two routes to the model:
@@ -153,6 +153,8 @@ export type SearchResult<T> = {
   queries: string[];
   /** Every page the search returned or the answer cited. */
   sources: { url: string; title: string }[];
+  /** What this search cost in dollars (searches plus reading), estimated from the published prices. */
+  costUsd: number;
 };
 
 /**
@@ -262,6 +264,7 @@ export async function searchJson<T>(opts: {
     data: parsed as T,
     queries,
     sources: Array.from(sources, ([url, title]) => ({ url, title })),
+    costUsd: tokenCost(ENV.anthropicModel, used.input, used.output, used.cacheRead) + used.searches * SEARCH_PRICE,
   };
 }
 
