@@ -23,7 +23,9 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const studio = trpc.drama.studio.useQuery({ organizationId: currentOrgId });
-  const [tab, setTab] = React.useState<"episodes" | "campaigns" | "cast" | "style" | "plans" | "trends" | "avatar">("episodes");
+  type VTab = "episodes" | "campaigns" | "cast" | "style" | "plans" | "trends" | "avatar";
+  const fromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+  const [tab, setTab] = React.useState<VTab>(fromUrl && ["episodes", "campaigns", "cast", "style", "plans", "trends", "avatar"].includes(fromUrl) ? (fromUrl as VTab) : "episodes");
   const avatarCount = trpc.avatar.list.useQuery({ organizationId: currentOrgId }).data?.length ?? 0;
   const [selected, setSelected] = React.useState<number | null>(null);
 

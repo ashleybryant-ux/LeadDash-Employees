@@ -181,9 +181,19 @@ describe("Elena's mini drama studio", () => {
     const msgs = await db.listChatMessages(orgId, elena.id, 10);
     expect(msgs[msgs.length - 1].content).toMatch(/^Episode 1, "The New Clinician," is cut\. 4 shots/);
 
-    // Remake one shot: only that shot is made again, then it's cut again.
+    // Remake one shot: its new keyframe goes back to the owner first, then only that shot is animated and it's cut again.
     calls = [];
     await c.drama.remakeShot({ organizationId: orgId, id: ep.id, n: 2 });
+    await waitFor(() => db.getDramaEpisode(ep.id, orgId)!.status !== "making");
+    expect(db.getDramaEpisode(ep.id, orgId)!.status).toBe("keyframes");
+    expect(posts(drama.MODELS.video)).toHaveLength(0);
+    // Asking to see them never approves them.
+    decision = { ...blank, action: "approve_keyframes" };
+    const look = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "show me the images" });
+    expect(look.reply.content).toMatch(/^Here are the keyframes for episode 1/);
+    expect(db.getDramaEpisode(ep.id, orgId)!.status).toBe("keyframes");
+    const yes = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "Approved, animate it" });
+    expect(yes.reply.content).toMatch(/^Animating/);
     await waitFor(() => db.getDramaEpisode(ep.id, orgId)!.status !== "making");
     expect(posts(drama.MODELS.video)).toHaveLength(1);
     expect(db.getDramaEpisode(ep.id, orgId)!.status).toBe("ready");
@@ -348,4 +358,38 @@ describe("Elena's mini drama studio", () => {
     expect(drama.shotsOf(db.getDramaEpisode(id, orgId)!)[1]).toMatchObject({ takeUrl: null, clipUrl: null });
     expect(db.getDramaEpisode(id, orgId)!.status).toBe("failed");
   }, 400_000);
+
+  it("casts the owner as herself under any name she's written as, gives her lines and voice-over, and keeps her photos", async () => {
+    const { orgId, owner } = await makeWorkspace("drama9");
+    const c = caller(owner);
+    const elena = (await db.getEmployeeByKind(orgId, "video"))!;
+    const pic = await storagePut(`org-${orgId}/brain/desk.jpg`, Buffer.from("jpeg-bytes"), "image/jpeg");
+    // Her photo's description mentions a screen behind her: it's still her.
+    const img = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "At my desk", content: "A woman smiling at her desk with a laptop screen behind her", fileUrl: pic.url });
+    const logo = await storagePut(`org-${orgId}/brain/logo.png`, Buffer.from("png"), "image/png");
+    await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "LeadDash logo", content: "Logo", fileUrl: logo.url });
+    expect((await drama.ownerPack(orgId)).map((p) => p.id)).toEqual([img.id]);
+    // An owner character already exists under another name.
+    db.createDramaCast({ organizationId: orgId, name: "Ashley", role: "Therapist", kind: "owner", look: "", photoUrl: pic.url, voiceId: "voice-ashley", voiceName: "Ashley" });
+    season = {
+      ...SEASON,
+      cast: [{ name: "Dr. Ashley Bryant", role: "Therapist", owner: true, look: "", voice: "" }],
+      episodes: [{ ...SEASON.episodes[0], title: "Already Done", shots: [
+        shot({ action: "Ashley closes her laptop.", cast: [], voice_over: "Another night of notes I shouldn't have to write." }),
+        shot({ action: "Dr. Ashley Bryant looks up.", cast: ["Dr. Ashley Bryant"], line_who: "Dr. Ashley Bryant", line_text: "It's already done." }),
+      ] }],
+    };
+    const r = await drama.writeEpisodes(orgId, { brief: "I'm the therapist and I talk", count: 1, ownerName: "Dr. Ashley Bryant" });
+    expect(prompts.drama_season).toMatch(/she is never played by anyone else/);
+    const shots = drama.shotsOf(r.episodes[0]);
+    expect(shots[0]).toMatchObject({ cast: ["Ashley"], vo: "Another night of notes I shouldn't have to write." });
+    expect(shots[1]).toMatchObject({ cast: ["Ashley"], line: { who: "Ashley", text: "It's already done." } });
+    expect(db.listDramaCast(orgId).filter((x) => x.kind === "owner")).toHaveLength(1);
+
+    // Rewrite in place from chat: same episode number, new shots, approval cleared.
+    decision = { ...blank, action: "rewrite_episode", count: 1, notes: "Use me as the therapist and I should be talking" };
+    const rw = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "use me as the therapist and I should be talking" });
+    expect(rw.reply.content).toMatch(/^I rewrote episode 1, "Already Done\." You play Ashley in 2 of the 2 shots, from your photos, and you speak in your own voice: 1 spoken line lip synced to your face and 1 voice-over line\./);
+    expect(db.listDramaEpisodes(orgId).filter((e) => e.kind === "drama")).toHaveLength(1);
+  });
 });

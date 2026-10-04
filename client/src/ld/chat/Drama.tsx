@@ -284,7 +284,7 @@ export function DramaKeyframesCard({ id }: { id: number }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {waiting && <button type="button" className="ld-btn p" disabled={a.approve.isPending} onClick={() => a.approve.mutate({ organizationId: a.orgId, id: e.id })}>{a.approve.isPending ? "Starting..." : "Animate it"}</button>}
-        <Link href={workTab} className="ld-btn ld-av-link-plain">{e.kind === "campaign" ? "Edit script" : "Open"}</Link>
+        <Link href={`${workTab}?tab=${e.kind === "campaign" ? "campaigns" : "episodes"}`} className="ld-btn ld-av-link-plain">{e.kind === "campaign" ? "Edit script" : "Open"}</Link>
       </div>
     </div>
   );

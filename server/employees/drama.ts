@@ -200,7 +200,7 @@ const SEASON_SCHEMA: JsonSchema = {
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["framing", "move", "action", "setting", "cast", "line_who", "line_text", "seconds", "sound"],
+              required: ["framing", "move", "action", "setting", "cast", "line_who", "line_text", "voice_over", "seconds", "sound"],
               properties: {
                 framing: { type: "string", enum: ["Wide", "Medium", "Two-shot", "Over the shoulder", "Close-up", "Extreme close-up", "Insert", "Reaction"] },
                 move: { type: "string", description: "The camera move: slow push-in, handheld, dolly left, static, rack focus..." },
@@ -209,6 +209,7 @@ const SEASON_SCHEMA: JsonSchema = {
                 cast: { type: "array", items: { type: "string" }, description: "Names of the characters on screen" },
                 line_who: { type: "string", description: "Who speaks in this shot, or ''" },
                 line_text: { type: "string", description: "The one line spoken, 12 words at most, or ''" },
+                voice_over: { type: "string", description: "The owner's character's inner voice over this shot, in her own voice, 15 words at most, or ''. Never in a shot that has a spoken line" },
                 seconds: { type: "integer", description: "3 to 7" },
                 sound: { type: "string", description: "Room tone and the sounds this shot makes (footsteps, a door latch, a phone buzzing), or a silent beat" },
               },
@@ -220,10 +221,10 @@ const SEASON_SCHEMA: JsonSchema = {
   },
 };
 
-type Written = { title: string; premise: string; look: string; cast: { name: string; role: string; owner: boolean; look: string; voice: string }[]; episodes: { title: string; logline: string; music: string; beats: Beat[]; shots: { framing: string; move: string; action: string; setting: string; cast: string[]; line_who: string; line_text: string; seconds: number; sound: string }[] }[] };
+type Written = { title: string; premise: string; look: string; cast: { name: string; role: string; owner: boolean; look: string; voice: string }[]; episodes: { title: string; logline: string; music: string; beats: Beat[]; shots: { framing: string; move: string; action: string; setting: string; cast: string[]; line_who: string; line_text: string; voice_over?: string; seconds: number; sound: string }[] }[] };
 
 /** Writes episodes (and the series and cast the first time). New episodes continue from the last one. */
-export async function writeEpisodes(orgId: number, input: { brief: string; count: number; ownerName: string }) {
+export async function writeEpisodes(orgId: number, input: { brief: string; count: number; ownerName: string; replace?: DramaEpisode }) {
   const emp = await elena(orgId);
   const row = db.getDramaSeries(orgId);
   // A row made only to hold studio settings isn't a series yet.
@@ -231,13 +232,14 @@ export async function writeEpisodes(orgId: number, input: { brief: string; count
   const cast = db.listDramaCast(orgId);
   const eps = db.listDramaEpisodes(orgId).filter((e) => e.kind === "drama");
   const voiceList = await avatar.voices();
-  const count = Math.max(1, Math.min(10, input.count || 3));
+  const count = input.replace ? 1 : Math.max(1, Math.min(10, input.count || 3));
   const sys = await (await import("./tasks")).systemPromptAbout(emp, input.brief, `You are ${emp.name}, the owner's video producer and showrunner. You write cinematic micro dramas.\n${STYLE}`);
   const out = await generateJson<Written>({
     system: sys.system,
     prompt: `${series ? `The series: ${series.title}. ${series.premise}\nLook: ${series.look}\nCast:\n${cast.map((c) => `- ${c.name} (${c.kind === "owner" ? "played by the owner" : "made up"}): ${c.role}. ${c.look}`).join("\n")}\nEpisodes so far:\n${eps.map((e) => `${e.number}. ${e.title}: ${e.logline}`).join("\n") || "none"}\nKeep the same title, premise, look and cast (add a character only if the story needs one).` : `This is a new series. The owner plays one character herself (${input.ownerName}): mark that character owner. Make up the rest of the cast (2 to 4 characters), all fictional.`}
 What the owner asked for: ${input.brief || "the next episodes"}
-Write ${count} new episode${count === 1 ? "" : "s"}${eps.length ? `, starting at episode ${eps.length + 1}` : ""}, each 60 to 90 seconds. Each one works on its own and ends on a cliffhanger that leads into the next.
+${input.replace ? `Rewrite episode ${input.replace.number}, "${input.replace.title}" (${input.replace.logline}), as one episode, 60 to 90 seconds, following what she asked for.` : `Write ${count} new episode${count === 1 ? "" : "s"}${eps.length ? `, starting at episode ${eps.length + 1}` : ""}, each 60 to 90 seconds.`} Each one works on its own and ends on a cliffhanger that leads into the next.
+The owner's character is the lead and she talks, in her own cloned voice: she speaks a line (lip synced to her face) in about half of the shots she is in, and when she's alone, give her a few short voice_over lines (her thoughts, in her voice). An episode is never silent, and she is never played by anyone else. Every shot she appears in lists her name in cast, spelled exactly as her character's name.
 Voices you can cast (ElevenLabs): ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(0, 60).join(", ") || "none listed; leave voice ''"}. The owner's character always uses her own voice: leave voice '' for her.`,
     schemaName: "drama_season",
     schema: SEASON_SCHEMA,
@@ -255,6 +257,9 @@ Voices you can cast (ElevenLabs): ${voiceList.filter((v) => !v.own).map((v) => v
     db.createDramaCast({ organizationId: orgId, name, role: c.role.slice(0, 120), kind: c.owner ? "owner" : "made_up", look: c.look.slice(0, 500), photoUrl: c.owner ? ownerPhoto : null, voiceId: c.owner ? ownerVoice.voiceId : v?.id ?? null, voiceName: c.owner ? ownerVoice.voiceName : v?.name ?? null });
   }
   const names = new Set(db.listDramaCast(orgId).map((c) => c.name.toLowerCase()));
+  const ownerRow = db.listDramaCast(orgId).find((c) => c.kind === "owner") ?? null;
+  const aliases = ownerAliases(ownerRow?.name ?? "", input.ownerName, (out.cast ?? []).filter((c) => c.owner).map((c) => c.name));
+  const fix = (n: string) => (ownerRow && aliases.has(n.trim().toLowerCase()) ? ownerRow.name : n);
   const made: DramaEpisode[] = [];
   let n = eps.length;
   for (const e of (out.episodes ?? []).slice(0, count)) {
@@ -264,17 +269,45 @@ Voices you can cast (ElevenLabs): ${voiceList.filter((v) => !v.own).map((v) => v
       move: x.move.slice(0, 120),
       action: x.action.slice(0, 600),
       setting: x.setting.slice(0, 300),
-      cast: (x.cast ?? []).filter((c) => names.has(c.toLowerCase())).slice(0, 3),
-      line: x.line_text?.trim() && names.has((x.line_who || "").toLowerCase()) ? { who: x.line_who, text: x.line_text.trim().slice(0, 140) } : null,
+      cast: withOwner(Array.from(new Set((x.cast ?? []).map(fix))).filter((c) => names.has(c.toLowerCase())), x.action, ownerRow?.name ?? null, aliases).slice(0, 3),
+      line: x.line_text?.trim() && names.has(fix(x.line_who || "").toLowerCase()) ? { who: fix(x.line_who), text: x.line_text.trim().slice(0, 140) } : null,
+      vo: ownerRow && x.voice_over?.trim() && !x.line_text?.trim() ? x.voice_over.trim().slice(0, 160) : undefined,
       seconds: Math.max(3, Math.min(7, Math.round(x.seconds || 5))),
       sound: (x.sound ?? "").slice(0, 200),
       status: "todo",
     }));
     if (!shots.length) continue;
+    if (input.replace) {
+      made.push(db.updateDramaEpisode(input.replace.id, orgId, { title: e.title.slice(0, 120), logline: e.logline.slice(0, 400), beats: JSON.stringify((e.beats ?? []).slice(0, 6)), shots: JSON.stringify(shots), music: (e.music ?? "").slice(0, 500), costCents: estimateEpisode(shots), status: "script", plan: "{}", error: null, progress: null, videoUrl: null })!);
+      break;
+    }
     n++;
     made.push(db.createDramaEpisode({ organizationId: orgId, number: n, title: e.title.slice(0, 120), logline: e.logline.slice(0, 400), beats: JSON.stringify((e.beats ?? []).slice(0, 6)), shots: JSON.stringify(shots), music: (e.music ?? "").slice(0, 500), costCents: estimateEpisode(shots) }));
   }
   return { series: s, episodes: made, cast: db.listDramaCast(orgId) };
+}
+
+/** Every name the owner's character might be written under: her character's name, her own name, her first name. */
+export function ownerAliases(character: string, ownerName: string, marked: string[]) {
+  const out = new Set<string>();
+  for (const raw of [character, ownerName, ...marked]) {
+    const n = (raw || "").trim().toLowerCase();
+    if (!n) continue;
+    out.add(n);
+    const bare = n.replace(/^(dr\.?|doctor|ms\.?|mrs\.?)\s+/, "").replace(/,.*$/, "").trim();
+    out.add(bare);
+    const first = bare.split(/\s+/)[0];
+    if (first && first.length > 2) out.add(first);
+  }
+  return out;
+}
+
+/** A shot whose action names the owner (or her first name) includes her, even when the writer left her out of cast. */
+export function withOwner(cast: string[], action: string, owner: string | null, aliases: Set<string>) {
+  if (!owner || cast.some((c) => c.toLowerCase() === owner.toLowerCase())) return cast;
+  const a = action.toLowerCase();
+  const named = Array.from(aliases).some((x) => new RegExp(`\\b${x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(a));
+  return named ? [owner, ...cast] : cast;
 }
 
 export type Plate = { label: string; url: string };
@@ -291,6 +324,7 @@ export function saveSettings(orgId: number, patch: Partial<StudioSettings>) {
 }
 
 const NOT_A_FACE = /logo|screen ?shot|screen|product|interface|ui\b|dashboard|banner|flyer|graphic/i;
+const PERSON = /\b(woman|women|man|person|people|she|her|portrait|headshot|face|smil|posing|wearing|ashley|dr\.)/i;
 
 /** The owner's character pack: the Brain photos she picked as photos of her (or every photo that isn't a logo or screenshot). */
 export async function ownerPack(orgId: number) {
@@ -298,7 +332,9 @@ export async function ownerPack(orgId: number) {
   const s = avatar.settingsOf(emp);
   const pics = await avatar.photos(orgId);
   const chosen = settingsOf(orgId).ownerPhotoIds;
-  const mine = chosen?.length ? pics.filter((p) => chosen.includes(p.id)) : pics.filter((p) => !NOT_A_FACE.test(`${p.title} ${p.note}`));
+  // A photo of a person is hers even when its description mentions a screen or a laptop behind her.
+  const isFace = (p: (typeof pics)[number]) => (s.imageId != null && p.id === s.imageId) || (!NOT_A_FACE.test(p.title) && (PERSON.test(`${p.title} ${p.note}`) || !NOT_A_FACE.test(p.note)));
+  const mine = chosen?.length ? pics.filter((p) => chosen.includes(p.id) || p.id === s.imageId) : pics.filter(isFace);
   return [...mine.filter((p) => p.id === s.imageId), ...mine.filter((p) => p.id !== s.imageId)];
 }
 
@@ -476,9 +512,29 @@ export async function startEpisode(orgId: number, id: number) {
   const plan = planOf(ep);
   const cast = db.listDramaCast(orgId);
   const emp = await elena(orgId);
+  const ownerRow = cast.find((c) => c.kind === "owner");
+  if (ep.kind === "drama" && ownerRow) {
+    const org = await db.getOrganizationById(orgId);
+    const aliases = ownerAliases(ownerRow.name, org?.signerName ?? "", []);
+    let changed = false;
+    for (const s of shots) {
+      const fixed = withOwner(s.cast.map((n) => (aliases.has(n.toLowerCase()) ? ownerRow.name : n)), s.action, ownerRow.name, aliases);
+      if (fixed.join("|") !== s.cast.join("|")) {
+        s.cast = Array.from(new Set(fixed)).slice(0, 3);
+        if (!s.clipUrl) s.stillUrl = null;
+        changed = true;
+      }
+      if (s.line && aliases.has(s.line.who.toLowerCase()) && s.line.who !== ownerRow.name) {
+        s.line = { ...s.line, who: ownerRow.name };
+        changed = true;
+      }
+    }
+    if (changed) db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots), plan: JSON.stringify({ ...plan, approved: false }) });
+    if (changed) plan.approved = false;
+  }
   const animating = Boolean(plan.approved);
   if (animating && shots.some((s) => !s.takeUrl && !s.clipUrl && (s.line || s.vo)) && !ENV.elevenLabsKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Voices aren't connected yet: ELEVENLABS_API_KEY is missing on the server." });
-  const needsOwner = shots.some((s) => s.vo || s.cast.some((n) => cast.find((c) => c.name.toLowerCase() === n.toLowerCase())?.kind === "owner"));
+  const needsOwner = shots.some((s) => s.vo || s.cast.some((n) => cast.find((c) => c.name.toLowerCase() === n.toLowerCase())?.kind === "owner")) || (ep.kind === "drama" && cast.some((c) => c.kind === "owner"));
   const owner = cast.find((c) => c.kind === "owner");
   if (needsOwner) {
     const pic = await ownerPortrait(orgId);
@@ -544,8 +600,10 @@ export async function makeEpisode(orgId: number, id: number) {
   const props = await propImages(orgId);
 
   // 1. Keyframes: a still for every shot (the image model decides who is in it and how it looks).
+  let newStills = 0;
   for (const s of shots) {
     if (s.stillUrl) continue;
+    newStills++;
     s.status = "making";
     s.error = null;
     save(`Keyframe ${s.n} of ${shots.length}: ${s.framing.toLowerCase()}, ${s.action.slice(0, 80)}`);
@@ -563,9 +621,10 @@ export async function makeEpisode(orgId: number, id: number) {
     save(`Keyframe ${s.n} of ${shots.length} done`);
   }
 
-  // 2. Human approval: nothing is animated until the owner approves the keyframes.
-  if (!plan.approved) {
-    ep = db.updateDramaEpisode(id, orgId, { status: "keyframes", progress: null })!;
+  // 2. Human approval: nothing is animated until the owner approves the keyframes,
+  // and any keyframe made after an approval goes back to her before it moves.
+  if (!plan.approved || newStills > 0) {
+    ep = db.updateDramaEpisode(id, orgId, { status: "keyframes", progress: null, plan: JSON.stringify({ ...planOf(ep), approved: false }) })!;
     const est = estimateEpisode(shots);
     await db.createChatMessage({
       organizationId: orgId,

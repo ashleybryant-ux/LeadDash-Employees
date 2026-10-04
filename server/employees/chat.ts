@@ -63,7 +63,7 @@ export const LAYOUTS = [
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   speaking: ["none", "report", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -106,7 +106,8 @@ const ACTION_HELP: Record<string, string> = {
   onboard_customer: "onboard_customer: start onboarding a new customer. The practice name in `title`, the contact's name in `to`, their email in `from` ('' if not given), the go-live date as YYYY-MM-DD in `date`, anything else in `notes`. If there's no go-live date, ask for it.",
   write_campaign: "write_campaign: a branded video or ad (a commercial, a campaign, a promo, a brand film, a video about LeadDash or one of the AI employees). Put everything she said about it in `notes`. You write the campaign goal and three creative directions first; nothing is generated yet.",
   pick_direction: "pick_direction: she picked one of the three directions (\"use the second one\", \"go with The 9:47 PM Desk\"). Put its number (1, 2 or 3) in `count` and words from the campaign's title in `target` ('' for the newest). You then write the script, storyboard and shot list and make the keyframes for her approval.",
-  approve_keyframes: "approve_keyframes: she approves the keyframes (\"animate it\", \"looks good, go\"). Put words from the title in `target` ('' for the newest one waiting).",
+  approve_keyframes: "approve_keyframes: she approves the keyframes in so many words (\"animate it\", \"approved\", \"looks good, go\"), or asks to see them (\"show me the images\"). Put words from the title in `target` ('' for the newest one waiting). Seeing them never approves them.",
+  rewrite_episode: "rewrite_episode: she wants an episode you already wrote changed (\"use me as the therapist\", \"I should be talking\", \"rewrite episode 1\"). Put the episode number in `count` (0 for the newest) and everything she wants changed in `notes`. The old keyframes are cleared and new ones wait for her approval.",
   make_plates: "make_plates: make the owner's character plates (standard images of her: front, walking, seated, profile, waist-up, full body, green blazer, black suit, evening attire) from her photos, so her face holds across campaigns.",
   write_episodes: "write_episodes: write episodes of the owner's cinematic micro drama series (a drama, micro drama, mini drama, series, season or more episodes). Put everything she said about the story, characters, setting and tone in `notes`, and how many episodes in `count` (default 3, at most 10). The first time, you also create the series and its cast; she plays herself.",
   make_episode: "make_episode: make an episode you wrote into a finished video (\"make episode 1\", \"make it\"). Put the episode number in `count` (0 for the next one not made yet).",
@@ -358,8 +359,16 @@ TALK_BY_KIND.onboarding = `- You onboard new customers (practices) onto LeadDash
 - Nora tracks each onboarding plan as a project; you own the customer-facing steps.`;
 TALK_BY_KIND.video = `- The owner's photos are in the Brain under "Images on file". When she asks about her photos, name the ones there and how many. Never say you can't get to her photos when they're listed there. When none are, ask her to attach them right here with the paperclip (up to 10 at a time) and save them to the Brain with save_files.
 - You make videos of the owner from her photo and her own ElevenLabs voice yourself: choose avatar_script to write one, and make_avatar when she says to make it. Never recommend HeyGen, Synthesia or any other tool; this is how it's made.
-- Three kinds of video. A branded campaign or ad is write_campaign (three directions first), then pick_direction, then she approves the keyframes (approve_keyframes) before anything is animated. A micro drama (story, scenes, characters, cinematic, episodes, a series) is write_episodes, then make_episode: a cinematic episode cut from 10 to 16 shots with camera moves, the cast's faces matched in every shot, and each line spoken in that character's voice. A video of the owner talking to camera (a tip, an announcement) is avatar_script, then make_avatar. When she asks for a drama, never write a talking-to-camera script. For a shot where she speaks on camera, the most believable result is her own take: she presses Add take on that keyframe (in chat or on the Campaigns tab) and records herself saying the line on her phone, and her movement, expressions and real voice go onto the polished keyframe. Shots with one person are animated with Kling; shots with two or more people with Seedance, which holds several faces better. After a shot is animated she can press Redo with Seedance or Redo with Kling to try the other model on the same keyframe.
+- Three kinds of video. A branded campaign or ad is write_campaign (three directions first), then pick_direction, then she approves the keyframes (approve_keyframes) before anything is animated. A micro drama (story, scenes, characters, cinematic, episodes, a series) is write_episodes, then make_episode: a cinematic episode cut from 10 to 16 shots with camera moves, the cast's faces matched in every shot, and each line spoken in that character's voice. A video of the owner talking to camera (a tip, an announcement) is avatar_script, then make_avatar. When she asks for a drama, never write a talking-to-camera script, but she is the lead and she talks: her character is always played from her own photos and speaks in her own ElevenLabs voice (spoken lines lip synced to her face, and voice-over). Never cast anyone else as her. If she says she isn't in it or isn't talking, that's rewrite_episode.
+- Nothing is animated without her clear approval. Asking to see the keyframes is never approval. Drama episodes are on the Episodes tab of your Videos tab; campaigns are on the Campaigns tab. Never send her to the wrong tab. For a shot where she speaks on camera, the most believable result is her own take: she presses Add take on that keyframe (in chat or on the Campaigns tab) and records herself saying the line on her phone, and her movement, expressions and real voice go onto the polished keyframe. Shots with one person are animated with Kling; shots with two or more people with Seedance, which holds several faces better. After a shot is animated she can press Redo with Seedance or Redo with Kling to try the other model on the same keyframe.
 - No markdown symbols like ** or #. Plain sentences, and number options as 1., 2., 3.`;
+
+/** The owner's own message says yes to animating, not just "show me". */
+export function approves(said: string) {
+  const t = said.toLowerCase();
+  if (/\b(don'?t|do not|not yet|wait|hold|stop|no)\b/.test(t)) return false;
+  return /\b(approve[ds]?|animate|go ahead|looks? good|go for it|make (the|it a) video|yes)\b/.test(t);
+}
 
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 const fmtYmd = (ymd: string) => new Date(`${ymd}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" });
@@ -373,7 +382,7 @@ function worth(n: number, total: number) {
 /** Where an action's output lives, so Nora can follow a task's work until it is approved. */
 type Ref = projects.WorkRef;
 type ActionResult = { text: string; cards: ChatCard[]; queries: string[]; refs?: Ref[]; choices?: string[] };
-type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[] };
+type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[]; said?: string };
 
 async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promise<ActionResult> {
   const org = emp.organizationId;
@@ -848,11 +857,35 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const waiting = db.listDramaEpisodes(org).filter((e) => e.status === "keyframes");
       const ep = (w ? waiting.find((e) => e.title.toLowerCase().includes(w)) : null) ?? waiting[waiting.length - 1];
       if (!ep) return { text: "Nothing is waiting for approval right now.", cards: [], queries: [] };
+      // Only her own words approve: asking to see them, or anything less than a clear yes, just shows them.
+      if (!approves(ctx.said ?? "")) {
+        return { text: `Here are the keyframes for ${ep.kind === "campaign" ? `"${ep.title}"` : `episode ${ep.number}, "${ep.title}"`}. Press Redo on any that aren't right. Nothing is animated until you press Animate it or tell me it's approved.`, cards: [{ type: "drama_keyframes", id: ep.id, title: ep.title }], queries: [] };
+      }
       try {
         const v = dr.episodeView(await dr.approveKeyframes(org, ep.id));
         return { text: `Animating "${v.title}" now: ${v.shots.length} shots, ${v.animateCost}. I'll post it here when it's cut.`, cards: [{ type: "drama_episode", id: v.id, title: v.title }], queries: [] };
       } catch (err) {
         return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+    }
+    case "rewrite_episode": {
+      const dr = await import("./drama");
+      const eps = db.listDramaEpisodes(org).filter((e) => e.kind === "drama");
+      const ep = (d.count ? eps.find((e) => e.number === d.count) : null) ?? eps[eps.length - 1];
+      if (!ep) return { text: "There are no episodes yet. Tell me about the story and I'll write them.", cards: [], queries: [] };
+      if (ep.status === "making") return { text: `Episode ${ep.number} is being made right now. Once it finishes I can rewrite it.`, cards: [], queries: [] };
+      try {
+        const org0 = await db.getOrganizationById(org);
+        const r = await dr.writeEpisodes(org, { brief: d.notes || d.message || ctx.said || "", count: 1, ownerName: org0?.signerName || who, replace: ep });
+        const e = r.episodes[0];
+        if (!e) return { text: "I couldn't rewrite it. Tell me a little more about what to change.", cards: [], queries: [] };
+        const shots = dr.shotsOf(e);
+        const owner = r.cast.find((c) => c.kind === "owner");
+        const talks = shots.filter((x) => x.line && owner && x.line.who === owner.name).length;
+        const thinks = shots.filter((x) => x.vo).length;
+        return { text: `I rewrote episode ${e.number}, "${e.title}." ${owner ? `You play ${owner.name} in ${shots.filter((x) => x.cast.includes(owner.name)).length} of the ${shots.length} shots, from your photos, and you speak in your own voice: ${talks} spoken ${talks === 1 ? "line" : "lines"} lip synced to your face and ${thinks} voice-over ${thinks === 1 ? "line" : "lines"}. ` : ""}Say make episode ${e.number} and I'll make the keyframes. You approve them before anything is animated.`, cards: [{ type: "drama_season", id: e.id, title: r.series.title }], queries: [], choices: [`Make episode ${e.number}`, "Change a line"] };
+      } catch (err) {
+        return { text: `I couldn't rewrite it: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
       }
     }
     case "make_plates": {
@@ -1390,7 +1423,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
       return { user: userMsg, reply: await reply(`${decision.reply || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
     }
-    const result = await runAction(emp, decision, { who: opts.authorName, files: sent.length ? sent : files, history });
+    const result = await runAction(emp, decision, { who: opts.authorName, files: sent.length ? sent : files, history, said: opts.text });
     const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];
     return { user: userMsg, reply: await reply(`${result.text || decision.reply}${learned}`, cards, result.queries) };
   } catch (err) {
