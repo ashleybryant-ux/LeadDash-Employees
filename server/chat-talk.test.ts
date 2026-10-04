@@ -204,3 +204,54 @@ describe("Simone works from her meeting notes", () => {
     expect((await db.listChatMessages(orgId, morgan.id, 10)).some((x) => x.role === "handoff" && /^Due .*Send the OCAST letter/.test(x.content))).toBe(true);
   });
 });
+
+describe("every employee knows what's connected; Avery works in ClickUp", () => {
+  beforeEach(async () => {
+    decision = null;
+    systems = [];
+    // An earlier test swapped the AI stub; put the standard one back.
+    const llm = await import("./_core/llm");
+    (llm.generateJson as any).mockImplementation(async (opts: any) => {
+      if (opts.schemaName === "chat_decision") {
+        systems.push(opts.system);
+        return decision;
+      }
+      return {};
+    });
+  });
+
+  it("tells every employee which tools are connected, and Avery lists what's due and adds tasks in ClickUp", async () => {
+    const { orgId, owner } = await makeWorkspace("talk-avery");
+    await db.upsertExternalConnection({ organizationId: orgId, provider: "clickup", accountLabel: "ClickUp", status: "connected", settings: JSON.stringify({ teamId: "9", teamName: "LeadDash", userId: 7, spaces: [{ id: "s1", name: "Ops" }], spaceId: "s1", spaceName: "Ops" }), secretsEncrypted: (await import("./_core/crypto")).encryptJson({ accessToken: "t" }), connectedAt: new Date(), lastCheckedAt: new Date() });
+    const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
+    const integrations = await import("./integrations");
+    const calls: string[] = [];
+    const soon = Date.now() + 2 * 86_400_000;
+    vi.spyOn(integrations, "clickup").mockImplementation(async (_o: number, path: string, init: any = {}) => {
+      calls.push(`${init.method ?? "GET"} ${path}`);
+      if (path.startsWith("/team/9/task")) return { tasks: [{ name: "Send W-9 to funder", due_date: String(soon), status: { status: "to do" }, list: { name: "Admin" }, assignees: [{ username: "BJ Bryant" }] }, { name: "Late invoice", due_date: String(Date.now() - 86_400_000), status: { status: "to do" }, list: { name: "Admin" }, assignees: [] }], last_page: true };
+      if (path === "/team") return { teams: [{ id: "9", members: [{ user: { id: 42, email: "bj@legacy.test", username: "BJ Bryant" } }] }] };
+      if (path.startsWith("/space/s1/list?")) return { lists: [] };
+      if (path === "/space/s1/list") return { id: "L9" };
+      if (path === "/list/L9/task") return { id: "T1", url: "https://app.clickup.com/t/T1" };
+      return {};
+    });
+
+    vi.spyOn(integrations, "clickupMembers").mockResolvedValue([{ id: 42, email: "bj@legacy.test", name: "BJ Bryant" }]);
+    decision = { ...blank, reply: "Yes, it's connected." };
+    await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Do you have access to ClickUp?" });
+    expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (Nora tracks launches there and Avery checks what's due and adds tasks)");
+    expect(systems[0]).toContain("Never say a connected tool isn't connected");
+
+    decision = { ...blank, action: "clickup_due", count: 7 };
+    const due = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "What's due this week in ClickUp?" });
+    expect(due.reply.content).toMatch(/2 open ClickUp tasks due in the next 7 days, 1 overdue/);
+    expect(due.reply.content.indexOf("Late invoice")).toBeLessThan(due.reply.content.indexOf("Send W-9"));
+
+    decision = { ...blank, action: "clickup_add", title: "Book the venue", notes: "For the March workshop", date: "2026-11-02", to: "BJ" };
+    const add = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Add a task for BJ to book the venue by Nov 2" });
+    expect(add.reply.content).toMatch(/Added "Book the venue" to ClickUp \(LeadDash Employees tasks\) for BJ Bryant, due Mon, Nov 2, 2026/);
+    expect(calls).toContain("POST /space/s1/list");
+    expect(calls).toContain("POST /list/L9/task");
+  });
+});

@@ -62,7 +62,7 @@ const ACTIONS: Record<string, string[]> = {
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "clickup_due", "clickup_add", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -77,6 +77,8 @@ const ACTION_HELP: Record<string, string> = {
   add_file: "add_file: the person attached an RFP, call for proposals or opportunity document and wants you to look at it or add it. It is added to Opportunities and scored.",
   revise_answer: "revise_answer: change one answer on an application you wrote. Put words from the question (\"problem\", \"traction\") in `target`, the application's name in `title` ('' for the most recent), what to change in `notes`, and concise or detailed in `to` when they ask for shorter or longer ('' otherwise).",
   restore_answer: "restore_answer: the person wants the answer you just rewrote put back the way it was (\"go back to the old one\").",
+  clickup_due: "clickup_due: the person asks what's due or overdue in ClickUp (for everyone, or for one person). Put the person's name in `target` ('' for everyone) and how many days ahead to look in `count` (default 7).",
+  clickup_add: "clickup_add: add a task to ClickUp. Put the task in `title`, any details in `notes`, the due date as YYYY-MM-DD in `date` ('' for none), and who it's for (a name or email) in `to` ('' for no one).",
   set_deadlines: "set_deadlines: give every action item from a meeting or huddle a due date and make sure each one is a tracked task with its owner (\"assign deadlines from the last meeting\"). Put the meeting's name in `target` ('' for the most recent, huddles included) and any timing the person gave (\"by Friday\", \"next week\") in `notes`.",
   restore_page: "restore_page: the person wants the page you built put back to the version before (\"go back to the last version\"). Put the page's name in `target` ('' for the most recent page).",
   ask_layout: "ask_layout: before building a NEW page, ask the person to pick a layout and where the button goes. In `reply`, say in one or two sentences what you took from what they gave you (attachments included), then ask them to pick a layout.",
@@ -227,6 +229,16 @@ async function applyFacts(emp: AIEmployee) {
   const lines = opps.map((o) => `- ${o.title} (${o.host ?? "host"}): fit ${o.fitScore}, ${o.fitCall}; ${o.amount ?? ""}; due ${o.deadline ?? "not posted"}. Why: ${(o.fitReason ?? o.summary ?? "").slice(0, 300)}${o.eligibility ? ` Eligibility: ${o.eligibility.slice(0, 200)}` : ""}`);
   const appLines = apps.map((a) => `- ${a.title} (${a.status}): questions: ${apply.parse<{ text: string }[]>(a.questions, []).map((q) => q.text.slice(0, 80)).join(" | ")}`);
   return `${lines.length ? `\nOpen opportunities you found (explain a score from these facts only):\n${lines.join("\n")}` : ""}${appLines.length ? `\nApplications in progress:\n${appLines.join("\n")}` : ""}`;
+}
+
+const TOOL_NAMES: Record<string, string> = { google_workspace: "Google (Gmail and Calendar)", clickup: "ClickUp", zoom: "Zoom", recall: "Recall.ai (meeting bot)", linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", threads: "Threads", x: "X", tiktok: "TikTok", wordpress: "WordPress", google_business: "Google Business Profile", submittable: "Submittable", sessionize: "Sessionize" };
+const TOOL_USERS: Record<string, string> = { clickup: "Nora tracks launches there and Avery checks what's due and adds tasks", recall: "Simone sits in on meetings and the team joins huddles", zoom: "Simone uses it for meeting links", google_workspace: "Avery, Simone and Nora use it for email and calendar" };
+
+/** Which tools are connected on Integrations, so no employee ever says a connected tool isn't there. */
+async function connectedFacts(emp: AIEmployee) {
+  const on = (await db.listConnectionsByOrg(emp.organizationId)).filter((c) => c.status === "connected").map((c) => c.provider);
+  if (!on.length) return "\nConnected tools on Integrations: none yet.";
+  return `\nConnected tools on Integrations: ${on.map((p) => `${TOOL_NAMES[p] ?? p}${TOOL_USERS[p] ? ` (${TOOL_USERS[p]})` : ""}`).join("; ")}. Never say a connected tool isn't connected. If none of your actions use it, say it's connected and which teammate works in it.`;
 }
 
 /** Simone and Nora see recent meetings, huddles and their action items (and Nora her projects), so they never say they have no notes. */
@@ -498,6 +510,26 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const items = JSON.parse(r.actionItems || "[]") as coo.ActionItem[];
       const sent = items.some((i) => i.status === "in_clickup" || i.status === "task");
       return { text: `I found ${plural(items.length, "action item")} in your notes from ${m.title}${items.length ? `: ${items.map((i) => `${i.text} (${i.owner})`).join("; ")}` : ""}.${sent ? (emp.kind === "projects" ? " I added them to the launch plan and I'll track each one." : " Nora added them to the launch plan.") : ""}`, cards: [], queries: [] };
+    }
+    case "clickup_due": {
+      const ck = await import("./clickup-tasks");
+      const zone = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
+      const list = await ck.dueSoon(org, Number(d.count) || 7, d.target);
+      if (!list.length) return { text: `Nothing is due in ClickUp${d.target ? ` for ${d.target}` : ""} in the next ${Number(d.count) || 7} days.`, cards: [], queries: [] };
+      const late = list.filter((t) => t.due && t.due.getTime() < Date.now());
+      return {
+        text: `${list.length} open ClickUp task${list.length === 1 ? "" : "s"}${d.target ? ` for ${d.target}` : ""} due in the next ${Number(d.count) || 7} days${late.length ? `, ${late.length} overdue` : ""}:\n${list.slice(0, 15).map((t) => `- ${t.name} (${t.assignees.join(", ") || "no one assigned"}, ${t.due && t.due.getTime() < Date.now() ? "overdue since " : "due "}${ck.fmtDue(t.due, zone)}, ${t.list})`).join("\n")}${list.length > 15 ? `\nand ${list.length - 15} more in ClickUp.` : ""}`,
+        cards: [],
+        queries: [],
+        choices: late.length ? ["Remind them", "Add a task", "Just the overdue ones"] : ["Add a task", "Look 2 weeks ahead"],
+      };
+    }
+    case "clickup_add": {
+      if (!d.title.trim()) return { text: "What should the task say?", cards: [], queries: [] };
+      const ck = await import("./clickup-tasks");
+      const zone = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
+      const t = await ck.addTask(org, { name: d.title, details: d.notes, due: d.date, assignee: d.to });
+      return { text: `Added "${d.title}" to ClickUp (${t.list})${t.assignee ? ` for ${t.assignee}` : ""}${t.due ? `, due ${ck.fmtDue(t.due, zone)}` : ""}.${d.to && !t.assignee ? ` I couldn't find ${d.to} in your ClickUp workspace, so it's unassigned.` : ""}${t.url ? `\n${t.url}` : ""}`, cards: [], queries: [] };
     }
     case "set_deadlines": {
       const m = await coo.lastMeetingFor(org, d.target, emp.kind === "projects" ? "project" : "all");
@@ -835,7 +867,7 @@ export async function sendChatMessage(opts: {
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
-Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}
+Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}
 ${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}`}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
