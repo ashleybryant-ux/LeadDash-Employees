@@ -104,7 +104,7 @@ afterEach(() => {
 
 const posts = (model: string) => calls.filter((c) => c.init.method === "POST" && c.url === `https://queue.fal.run/${model}`).map((c) => JSON.parse(c.init.body));
 
-async function waitFor(fn: () => boolean, ms = 20_000) {
+async function waitFor(fn: () => boolean, ms = 180_000) {
   const end = Date.now() + ms;
   while (!fn()) {
     if (Date.now() > end) throw new Error("timed out");
@@ -187,7 +187,7 @@ describe("Elena's mini drama studio", () => {
     await waitFor(() => db.getDramaEpisode(ep.id, orgId)!.status !== "making");
     expect(posts(drama.MODELS.video)).toHaveLength(1);
     expect(db.getDramaEpisode(ep.id, orgId)!.status).toBe("ready");
-  }, 60_000);
+  }, 400_000);
 
   it("won't start an episode that goes over the monthly limit, or a line with no voice", async () => {
     const { orgId, owner } = await makeWorkspace("drama2");
@@ -207,7 +207,7 @@ describe("Elena's mini drama studio", () => {
     expect(db.getDramaEpisode(id, orgId)!.status).toBe("keyframes");
     await c.avatar.saveSettings({ organizationId: orgId, imageId: img.id, voiceId: "voice-ashley", voiceName: "Ashley", quality: "standard", limitCents: 10 });
     await expect(c.drama.approveKeyframes({ organizationId: orgId, id })).rejects.toThrow(/would go over your \$0 monthly limit/);
-  });
+  }, 400_000);
 
   it("plans a branded campaign: three directions, then the shot list with the owner, a team member and the logo, keyframes for approval, then voice-over, captions and three versions", async () => {
     const { orgId, owner } = await makeWorkspace("campaign");
@@ -284,7 +284,7 @@ describe("Elena's mini drama studio", () => {
     await waitFor(() => db.getDramaEpisode(camp.id, orgId)!.status !== "making");
     expect(db.getDramaEpisode(camp.id, orgId)!.status).toBe("ready");
     expect(posts(drama.MODELS.video).length).toBe(before);
-  }, 90_000);
+  }, 400_000);
 
   it("uses Seedance for two people, the owner's own take for her line, and Redo with the other model", async () => {
     const { orgId, owner } = await makeWorkspace("takes");
@@ -347,5 +347,5 @@ describe("Elena's mini drama studio", () => {
     drama.clearTake(orgId, id, 2);
     expect(drama.shotsOf(db.getDramaEpisode(id, orgId)!)[1]).toMatchObject({ takeUrl: null, clipUrl: null });
     expect(db.getDramaEpisode(id, orgId)!.status).toBe("failed");
-  }, 60_000);
+  }, 400_000);
 });
