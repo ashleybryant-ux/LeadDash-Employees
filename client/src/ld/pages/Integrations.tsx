@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
-import { ErrorLine, FolderTabs, Page } from "../ui";
+import { ErrorLine, FolderTabs, Page, useEmployees } from "../ui";
 import { fmtDate, fmtTime, parseJson } from "../meta";
 
 type Provider = "google_workspace" | "linkedin" | "facebook" | "instagram" | "wordpress" | "x" | "google_business" | "submittable" | "sessionize" | "threads" | "tiktok" | "clickup" | "zoom" | "recall";
@@ -81,6 +81,8 @@ export default function Integrations() {
   const [notice] = React.useState<{ ok: boolean; text: string } | null>(() => {
     const c = params.get("connected");
     const e = params.get("error");
+    if (c === "calendar") return { ok: true, text: "The calendar is connected. Pick which of its calendars Avery checks with Edit." };
+    if (c === "sending") return { ok: true, text: "The sending address is connected." };
     if (c) return { ok: true, text: `${CATALOG.find((x) => x.app === c)?.name ?? "Account"} is connected.` };
     if (e) return { ok: false, text: e };
     return null;
@@ -102,6 +104,8 @@ export default function Integrations() {
     <Page rail="integrations" maxWidth={1140}>
       <h1 className="ld-h1">Integrations</h1>
       <WebsiteLogins />
+      <Calendars />
+      <SendingAddresses />
       {notice && (
         <div role="status" className="ld-card" style={{ padding: "12px 16px", borderColor: notice.ok ? "#1b6b4a" : "#e2a7a1", background: notice.ok ? "#f1f8f4" : "#fdf3f2", fontSize: 14, fontWeight: 600, color: notice.ok ? "#155c3e" : "#b42318" }}>
           {notice.text}
@@ -597,6 +601,277 @@ function WebsiteLogins() {
             {edit.id && (
               <button type="button" className="ld-btn" disabled={remove.isPending} onClick={() => remove.mutate({ organizationId: currentOrgId, id: edit.id! })}>Remove</button>
             )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+type CalRow = { id: number; kind: "google" | "link"; name: string; color: string; email: string | null; calendars: { id: string; name: string; primary: boolean; include: boolean }[]; detail: "full" | "busy"; holds: "default" | "yes" | "no"; status: "connected" | "error"; error: string | null };
+type CalEdit = { id: number; name: string; include: string[]; detail: "full" | "busy"; holds: "default" | "yes" | "no"; url: string };
+
+function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; label: string }) {
+  return (
+    <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", alignSelf: "flex-start", justifySelf: "start" }}>
+      {options.map((o) => (
+        <button key={o.key} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, background: value === o.key ? "#e6f2ec" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "#155c3e" : "#3d4c45", cursor: "pointer", whiteSpace: "nowrap" }}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function linkStart(orgId: number, purpose: "calendar" | "send", name: string, id?: number) {
+  const q = new URLSearchParams({ organizationId: String(orgId), purpose, name });
+  if (id) q.set("id", String(id));
+  window.location.href = `/api/oauth/link/start?${q.toString()}`;
+}
+
+/** Calendars Avery checks: Google accounts and Outlook or iCloud calendars by link. */
+function Calendars() {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.accounts.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [edit, setEdit] = React.useState<CalEdit | null>(null);
+  const [adding, setAdding] = React.useState<{ name: string; where: "google" | "link"; url: string } | null>(null);
+  const done = async () => { setEdit(null); setAdding(null); await utils.accounts.list.invalidate(); };
+  const save = trpc.accounts.saveCalendar.useMutation();
+  const saveLink = trpc.accounts.saveLink.useMutation();
+  const remove = trpc.accounts.remove.useMutation({ onSuccess: done });
+  const rows = (q.data?.calendars ?? []) as CalRow[];
+  const editing = edit ? rows.find((r) => r.id === edit.id) : null;
+  const summary = (r: CalRow) => {
+    const n = r.calendars.filter((c) => c.include).length;
+    return `${n === 1 ? "1 calendar" : `${n} calendars`} · ${r.detail === "busy" ? "busy times only" : "full details"}`;
+  };
+  const submitEdit = async () => {
+    if (!edit || !editing) return;
+    if (editing.kind === "link") await saveLink.mutateAsync({ organizationId: currentOrgId, id: edit.id, name: edit.name, url: edit.url || undefined });
+    await save.mutateAsync({ organizationId: currentOrgId, id: edit.id, name: edit.name, include: edit.include, detail: edit.detail, holds: edit.holds });
+    await done();
+  };
+  return (
+    <>
+      <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <span className="ld-lbl">Calendars</span>
+          {rows.length ? (
+            <div className="ld-cals" style={{ display: "grid", gridTemplateColumns: "190px minmax(0,1fr) minmax(0,1.15fr) 120px 128px", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
+              {rows.map((r) => (
+                <React.Fragment key={r.id}>
+                  <b style={{ ...CLIP, display: "flex", alignItems: "center", gap: 8 }}><span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 999, background: r.color, flexShrink: 0 }} />{r.name}</b>
+                  <span style={CLIP} title={r.email ?? undefined}>{r.kind === "link" ? "Outlook or iCloud link" : r.email ?? "Google"}</span>
+                  <span style={{ ...CLIP, color: r.status === "error" ? "#b42318" : undefined }}>{r.status === "error" ? "Reconnect needed" : summary(r)}</span>
+                  {r.holds === "default" ? <span className="ld-pill green" style={{ justifySelf: "start" }}>Holds go here</span> : <span />}
+                  <button type="button" className="ld-btn" onClick={() => { setAdding(null); setEdit({ id: r.id, name: r.name, include: r.calendars.filter((c) => c.include).map((c) => c.id), detail: r.detail, holds: r.holds, url: "" }); }}>Edit</button>
+                </React.Fragment>
+              ))}
+            </div>
+          ) : (
+            <span style={{ fontSize: 14, color: "#3d4c45" }}>{q.isLoading ? "Loading..." : "No calendars yet. Avery uses your main Google calendar until you add them here."}</span>
+          )}
+          {rows.length > 0 && <span className="ld-small">Avery checks all of these when you ask about your schedule, and warns you when two calendars overlap.</span>}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button type="button" className="ld-btn p" onClick={() => { setEdit(null); setAdding({ name: "", where: "google", url: "" }); }}>Add calendar</button>
+        </div>
+      </div>
+
+      {edit && editing && (
+        <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+            <span className="ld-lbl">{editing.name}</span>
+            <div className="ld-logins-form" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
+              <label htmlFor="cal-name" style={{ fontWeight: 700 }}>Name</label>
+              <input id="cal-name" className="ld-in" style={{ maxWidth: 360 }} value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
+              <b>Account</b>
+              {editing.kind === "google" ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <span>{editing.email ?? "Google"} · Google</span>
+                  <button type="button" className="ld-btn sm" onClick={() => linkStart(currentOrgId, "calendar", editing.name, editing.id)}>Reconnect</button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <input className="ld-in" aria-label="Calendar link" placeholder="Saved. Paste a new link to change it" value={edit.url} onChange={(e) => setEdit({ ...edit, url: e.target.value })} />
+                  <span className="ld-small">Avery can read this calendar but can't add holds to it.</span>
+                </div>
+              )}
+              {editing.kind === "google" && (
+                <>
+                  <b style={{ alignSelf: "start", paddingTop: 8 }}>Calendars Avery checks</b>
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    {editing.calendars.map((c, i) => (
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 200px", gap: 12, alignItems: "center", padding: "8px 0", borderBottom: i < editing.calendars.length - 1 ? "1px solid #eef2f0" : 0 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input type="checkbox" checked={edit.include.includes(c.id)} style={{ width: 16, height: 16, margin: 0, accentColor: "#1b6b4a" }} onChange={(e) => setEdit({ ...edit, include: e.target.checked ? [...edit.include, c.id] : edit.include.filter((x) => x !== c.id) })} />
+                          {c.name}
+                        </label>
+                        <span className="ld-small">{c.primary ? "Your main calendar" : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <b style={{ alignSelf: "start", paddingTop: 6 }}>What Avery sees</b>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <Seg label="What Avery sees" value={edit.detail} onChange={(v) => setEdit({ ...edit, detail: v })} options={[{ key: "full", label: "Full details" }, { key: "busy", label: "Busy times only" }]} />
+                {edit.detail === "busy" && <span className="ld-small">Avery sees when you're booked, never the event names, so client names on this calendar stay out of the AI.</span>}
+              </div>
+              {editing.kind === "google" && (
+                <>
+                  <b style={{ alignSelf: "start", paddingTop: 6 }}>New holds</b>
+                  <Seg label="New holds" value={edit.holds} onChange={(v) => setEdit({ ...edit, holds: v })} options={[{ key: "default", label: "Go here" }, { key: "yes", label: "When I name it" }, { key: "no", label: "Never here" }]} />
+                </>
+              )}
+            </div>
+            <ErrorLine error={save.error || saveLink.error || remove.error} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" className="ld-btn p" disabled={save.isPending || saveLink.isPending || !edit.name.trim()} onClick={submitEdit}>{save.isPending || saveLink.isPending ? "Saving..." : "Save"}</button>
+            <button type="button" className="ld-btn" onClick={() => setEdit(null)}>Cancel</button>
+            <button type="button" className="ld-btn" disabled={remove.isPending} onClick={() => remove.mutate({ organizationId: currentOrgId, id: edit.id })}>Remove</button>
+          </div>
+        </div>
+      )}
+
+      {adding && (
+        <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+            <span className="ld-lbl">Add calendar</span>
+            <div className="ld-logins-form" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
+              <label htmlFor="cal-new-name" style={{ fontWeight: 700 }}>Name</label>
+              <input id="cal-new-name" className="ld-in" style={{ maxWidth: 360 }} placeholder="Legacy Family Services" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} />
+              <b style={{ alignSelf: "start", paddingTop: 6 }}>Where it lives</b>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Seg label="Where it lives" value={adding.where} onChange={(v) => setAdding({ ...adding, where: v })} options={[{ key: "google", label: "Google" }, { key: "link", label: "Outlook or iCloud" }]} />
+                {adding.where === "google" ? (
+                  <span className="ld-small">Sign in with that Google account. Each one you add can be a different account.</span>
+                ) : (
+                  <>
+                    <input className="ld-in" aria-label="Calendar link" placeholder="https://... or webcal://..." value={adding.url} onChange={(e) => setAdding({ ...adding, url: e.target.value })} />
+                    <span className="ld-small">In Outlook or iCloud, share or publish the calendar and copy its private link. Avery can read it but can't add holds.</span>
+                  </>
+                )}
+              </div>
+            </div>
+            <ErrorLine error={saveLink.error} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {adding.where === "google" ? (
+              <button type="button" className="ld-btn p" disabled={!adding.name.trim()} onClick={() => linkStart(currentOrgId, "calendar", adding.name.trim())}>Connect Google</button>
+            ) : (
+              <button type="button" className="ld-btn p" disabled={saveLink.isPending || !adding.name.trim() || !adding.url.trim()} onClick={async () => { await saveLink.mutateAsync({ organizationId: currentOrgId, name: adding.name, url: adding.url }); await done(); }}>{saveLink.isPending ? "Checking..." : "Save"}</button>
+            )}
+            <button type="button" className="ld-btn" onClick={() => setAdding(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+const SENDERS: { kind: string; name: string }[] = [
+  { kind: "outreach", name: "Jada" },
+  { kind: "leads", name: "Malik" },
+  { kind: "inbox", name: "Avery" },
+  { kind: "hiring", name: "Quinn" },
+  { kind: "speaking", name: "Taylor" },
+  { kind: "onboarding", name: "Imani" },
+];
+
+/** Sending addresses: a second Gmail some employees send from. */
+function SendingAddresses() {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.accounts.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const emps = useEmployees().list;
+  const nameOf = (k: string) => emps.find((e) => e.kind === k)?.name ?? SENDERS.find((x) => x.kind === k)?.name ?? k;
+  const [edit, setEdit] = React.useState<{ id: number; name: string; sendsFor: string[] } | null>(null);
+  const [adding, setAdding] = React.useState<string | null>(null);
+  const done = async () => { setEdit(null); await utils.accounts.list.invalidate(); };
+  const save = trpc.accounts.saveSender.useMutation({ onSuccess: done });
+  const remove = trpc.accounts.remove.useMutation({ onSuccess: done });
+  const rows = q.data?.senders ?? [];
+  const editing = edit ? rows.find((r) => r.id === edit.id) : null;
+  return (
+    <>
+      <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <span className="ld-lbl">Sending addresses</span>
+          {rows.length ? (
+            <div className="ld-logins" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr) minmax(0,1fr) 128px", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
+              {rows.map((r) => (
+                <React.Fragment key={r.id}>
+                  <b style={CLIP}>{r.name}</b>
+                  <span style={{ ...CLIP, color: r.status === "error" ? "#b42318" : undefined }}>{r.status === "error" ? "Reconnect needed" : r.email ?? ""}</span>
+                  <span style={CLIP}>{r.sendsFor.length ? `Used by ${r.sendsFor.map(nameOf).join(", ")}` : "No one sends from it yet"}</span>
+                  <button type="button" className="ld-btn" onClick={() => { setAdding(null); setEdit({ id: r.id, name: r.name, sendsFor: r.sendsFor }); }}>Edit</button>
+                </React.Fragment>
+              ))}
+            </div>
+          ) : (
+            <span style={{ fontSize: 14, color: "#3d4c45" }}>{q.isLoading ? "Loading..." : "Everyone sends from your main Google account. Add an address on its own domain for outreach so cold email never affects your main one."}</span>
+          )}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button type="button" className="ld-btn p" onClick={() => { setEdit(null); setAdding(""); }}>Add address</button>
+        </div>
+      </div>
+
+      {edit && editing && (
+        <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+            <span className="ld-lbl">{editing.email ?? editing.name}</span>
+            <div className="ld-logins-form" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
+              <label htmlFor="snd-name" style={{ fontWeight: 700 }}>Name</label>
+              <input id="snd-name" className="ld-in" style={{ maxWidth: 360 }} value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
+              <b>Account</b>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span>{editing.email ?? "Google"} · Google</span>
+                <button type="button" className="ld-btn sm" onClick={() => linkStart(currentOrgId, "send", editing.name, editing.id)}>Reconnect</button>
+              </div>
+              <b style={{ alignSelf: "start", paddingTop: 6 }}>Who sends from it</b>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {SENDERS.map((x) => {
+                    const on = edit.sendsFor.includes(x.kind);
+                    return (
+                      <button key={x.kind} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "#e6f2ec" : "#fff", borderColor: on ? "#1b6b4a" : undefined, color: on ? "#155c3e" : "#14221c" }} onClick={() => setEdit({ ...edit, sendsFor: on ? edit.sendsFor.filter((k) => k !== x.kind) : [...edit.sendsFor, x.kind] })}>
+                        {nameOf(x.kind)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span className="ld-small">Everyone else keeps sending from your main Google account.</span>
+              </div>
+            </div>
+            <ErrorLine error={save.error || remove.error} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" className="ld-btn p" disabled={save.isPending} onClick={() => save.mutate({ organizationId: currentOrgId, id: edit.id, name: edit.name, sendsFor: edit.sendsFor as never })}>{save.isPending ? "Saving..." : "Save"}</button>
+            <button type="button" className="ld-btn" onClick={() => setEdit(null)}>Cancel</button>
+            <button type="button" className="ld-btn" disabled={remove.isPending} onClick={() => remove.mutate({ organizationId: currentOrgId, id: edit.id })}>Remove</button>
+          </div>
+        </div>
+      )}
+
+      {adding !== null && (
+        <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+            <span className="ld-lbl">Add address</span>
+            <div className="ld-logins-form" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
+              <label htmlFor="snd-new" style={{ fontWeight: 700 }}>Name</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <input id="snd-new" className="ld-in" style={{ maxWidth: 360 }} placeholder="Outreach" value={adding} onChange={(e) => setAdding(e.target.value)} />
+                <span className="ld-small">Sign in with the Google account for that address. Jada and Malik send from it to start; change that with Edit.</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" className="ld-btn p" disabled={!adding.trim()} onClick={() => linkStart(currentOrgId, "send", adding.trim())}>Connect Google</button>
+            <button type="button" className="ld-btn" onClick={() => setAdding(null)}>Cancel</button>
           </div>
         </div>
       )}

@@ -1615,3 +1615,43 @@ export const platformFindings = sqliteTable(
 );
 
 export type PlatformFinding = typeof platformFindings.$inferSelect;
+
+// ==========================================
+// Extra Google accounts and calendar links
+// ==========================================
+
+/**
+ * Accounts connected beyond the workspace's main Google connection.
+ * purpose calendar: a calendar source Avery checks (a Google account, or an
+ * Outlook or iCloud calendar's private link). purpose send: a Gmail account
+ * certain employees send from (outreach on its own domain).
+ */
+export const accountLinks = sqliteTable(
+  "account_links",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    purpose: text("purpose", { enum: ["calendar", "send"] }).notNull(),
+    kind: text("kind", { enum: ["google", "link"] }).notNull(),
+    name: text("name").notNull(),
+    color: text("color").notNull().default("#1b6b4a"),
+    email: text("email"),
+    /** Encrypted: Google tokens, or the calendar link (it works like a password). */
+    secretsEncrypted: text("secretsEncrypted"),
+    /** JSON [{id, name, primary, include}]: the calendars in this account and which ones Avery checks. */
+    calendars: text("calendars").notNull().default("[]"),
+    /** full: event names; busy: only when you're booked, never what the event is. */
+    detail: text("detail", { enum: ["full", "busy"] }).notNull().default("full"),
+    /** default: holds go here unless another calendar is named. yes: can go here. no: never. */
+    holds: text("holds", { enum: ["default", "yes", "no"] }).notNull().default("no"),
+    /** JSON string[]: the employee kinds that send from this account (purpose send). */
+    sendsFor: text("sendsFor").notNull().default("[]"),
+    status: text("status", { enum: ["connected", "error"] }).notNull().default("connected"),
+    error: text("error"),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("account_links_org_idx").on(t.organizationId)]
+);
+
+export type AccountLink = typeof accountLinks.$inferSelect;

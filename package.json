@@ -61,6 +61,7 @@
     "lucide-react": "^0.453.0",
     "nanoid": "^5.1.5",
     "next-themes": "^0.4.6",
+    "node-ical": "^0.27.3",
     "playwright-core": "1.56.0",
     "pptxgenjs": "^4.0.1",
     "react": "^19.2.1",

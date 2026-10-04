@@ -37,6 +37,7 @@ import {
   registrations,
   portalLogins,
   webTasks,
+  accountLinks,
   platformFindings,
   pushSubscriptions,
   hrRoles,
@@ -1704,4 +1705,26 @@ export function updateFinding(id: number, orgId: number, data: Partial<typeof pl
 /** A new audit replaces the open findings from the last one; fixed and dismissed ones stay as history. */
 export function clearOpenFindings(orgId: number) {
   getDb().delete(platformFindings).where(and(eq(platformFindings.organizationId, orgId), eq(platformFindings.status, "open"))).run();
+}
+
+// ==========================================
+// Extra Google accounts and calendar links
+// ==========================================
+
+export function listAccountLinks(orgId: number, purpose?: "calendar" | "send") {
+  const all = getDb().select().from(accountLinks).where(eq(accountLinks.organizationId, orgId)).orderBy(accountLinks.id).all();
+  return purpose ? all.filter((l) => l.purpose === purpose) : all;
+}
+export function getAccountLink(id: number, orgId: number) {
+  return getDb().select().from(accountLinks).where(and(eq(accountLinks.id, id), eq(accountLinks.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export function createAccountLink(row: typeof accountLinks.$inferInsert) {
+  return getDb().insert(accountLinks).values(row).returning().all()[0];
+}
+export function updateAccountLink(id: number, orgId: number, data: Partial<typeof accountLinks.$inferInsert>) {
+  getDb().update(accountLinks).set({ ...data, updatedAt: new Date() }).where(and(eq(accountLinks.id, id), eq(accountLinks.organizationId, orgId))).run();
+  return getAccountLink(id, orgId);
+}
+export function deleteAccountLink(id: number, orgId: number) {
+  getDb().delete(accountLinks).where(and(eq(accountLinks.id, id), eq(accountLinks.organizationId, orgId))).run();
 }

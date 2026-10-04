@@ -39,7 +39,7 @@ async function liveCall<T>(fn: () => T | Promise<T>) {
 }
 import { sendEmail } from "./_core/email";
 import { ENV } from "./_core/env";
-import { REPEATS, HR_STAGES } from "../drizzle/schema";
+import { REPEATS, HR_STAGES, EMPLOYEE_KINDS } from "../drizzle/schema";
 import * as hiring from "./employees/hiring";
 import { TEMPLATES, progress as onboardingProgress, writeDayToDay } from "./employees/onboarding";
 import * as interview from "./employees/interview";
@@ -901,6 +901,43 @@ export const appRouter = router({
         await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Removed website login", details: String(input.id) });
         return { success: true };
       }),
+  }),
+
+  // Calendars Avery checks, and sending addresses (extra Google accounts)
+  accounts: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/calendars")).view(input.organizationId);
+    }),
+    saveCalendar: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), name: z.string().trim().min(1).max(80), include: z.array(z.string().max(300)).max(100), detail: z.enum(["full", "busy"]), holds: z.enum(["default", "yes", "no"]) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const { organizationId, id, ...rest } = input;
+        (await import("./employees/calendars")).saveCalendar(organizationId, id, rest);
+        return { success: true };
+      }),
+    saveLink: protectedProcedure
+      .input(orgInput.extend({ id: z.number().optional(), name: z.string().trim().min(1).max(80), url: z.string().trim().max(2000).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const row = await (await import("./employees/calendars")).saveLink(input.organizationId, input);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved a calendar link", details: row.name });
+        return { success: true };
+      }),
+    saveSender: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), name: z.string().trim().min(1).max(80), sendsFor: z.array(z.enum(EMPLOYEE_KINDS)).max(20) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        (await import("./employees/calendars")).saveSender(input.organizationId, input.id, input);
+        return { success: true };
+      }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      (await import("./employees/calendars")).remove(input.organizationId, input.id);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Removed a calendar or sending address", details: String(input.id) });
+      return { success: true };
+    }),
   }),
 
   // Jobs an employee does in their browser, from chat

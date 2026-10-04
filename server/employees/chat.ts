@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule";
   id: number;
   /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -44,6 +44,8 @@ export type ChatCard = {
   version?: number;
   /** An answer card: the answer before the rewrite, so "Go back to the old one" can restore it. */
   before?: string;
+  /** A schedule card: each event, already worded for the workspace's time zone. */
+  events?: { when: string; day?: string; title: string; calendar: string; color: string; clash?: boolean }[];
 };
 
 /** Quick replies under an employee's message: fixed answers the person taps instead of typing. */
@@ -65,7 +67,7 @@ const ACTIONS: Record<string, string[]> = {
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -126,7 +128,8 @@ const ACTION_HELP: Record<string, string> = {
   rewrite_outreach: "rewrite_outreach: rewrite every email sequence still waiting for approval (when the owner says they sound off, robotic, like AI, or asks for a rewrite). Put what to change in `notes` ('' if they didn't say).",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
   write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
-  calendar_hold: "calendar_hold: the person wants a meeting or hold on their calendar. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, and the agenda in `notes`. It waits for their approval, then goes on their connected Google Calendar.",
+  calendar_hold: "calendar_hold: the person wants a meeting or hold on their calendar. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, the agenda in `notes`, and the calendar's name in `target` when they name one ('' for the usual one). It waits for their approval, then goes on that calendar.",
+  check_schedule: "check_schedule: the person asks what's on their calendar or schedule (today, tomorrow, a day, this week, \"am I free Friday at 2\"). Put the first day as YYYY-MM-DD in `date` and how many days in `count` (1 for a day, 7 for a week). You check every calendar connected on Integrations.",
   report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
   find_people: "find_people: search the web for professionals to reach out to for an open role. Put the role or any focus (city, license, specialty) in `focus`.",
   write_job_post: "write_job_post: write or rewrite the job post for a role. Put the role title in `target` ('' for the newest open role).",
@@ -159,7 +162,7 @@ function decisionSchema(kind: string): JsonSchema {
       focus: str,
       topic: str,
       platforms: { type: "array", items: { type: "string", enum: ["linkedin", "instagram", "facebook", "x", "threads"] } },
-      count: { type: "integer", description: "How many posts, for schedule_posts. 0 otherwise." },
+      count: { type: "integer", description: "A number the action asks for (posts for schedule_posts, days for check_schedule and clickup_due). 0 otherwise." },
       title: str,
       notes: str,
       page: str,
@@ -283,6 +286,10 @@ async function teamFacts(emp: AIEmployee) {
   }
   if (emp.kind === "onboarding") return (await import("./customers")).customersFacts(emp.organizationId);
   if (emp.kind === "platform") return (await import("./platform")).platformFacts(emp.organizationId);
+  if (emp.kind === "inbox") {
+    const cals = db.listAccountLinks(emp.organizationId, "calendar");
+    return cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : "";
+  }
   return "";
 }
 
@@ -983,13 +990,50 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         queries: [],
       };
     }
+    case "check_schedule": {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { text: "Which day should I check?", cards: [], queries: [] };
+      const cal = await import("./calendars");
+      const days = Math.max(1, Math.min(14, d.count || 1));
+      try {
+        const r = await cal.scheduleReply(org, d.date, days);
+        if (!r.events.length) return { text: r.text, cards: [], queries: [] };
+        const clashing = new Set((r.clash ?? []).flat());
+        const events = r.events.slice(0, 40).map((e) => ({ when: cal.whenText(e, r.tz), day: days > 1 ? e.start.toLocaleDateString("en-US", { timeZone: r.tz, weekday: "short", month: "short", day: "numeric", year: "numeric" }) : undefined, title: e.title, calendar: e.calendar, color: e.color, clash: clashing.has(e) }));
+        return { text: r.text, cards: [{ type: "schedule", id: Date.now(), title: "Schedule", events }], queries: [] };
+      } catch (err) {
+        return { text: `I couldn't read your calendars: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
+    }
     case "calendar_hold": {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { text: "What day should it go on? Tell me the date and time.", cards: [], queries: [] };
-      const h = await tasks.createCalendarHold(org, { title: d.title || "Meeting", date: d.date, time: d.time || "9:00 AM", attendees: d.attendees || "", agenda: d.notes || "" });
+      const cal = await import("./calendars");
+      const pick = cal.holdCalendarFor(org, d.target || "");
+      if (pick.refused) return { text: pick.refused.kind === "link" ? `I can read ${pick.refused.name} but can't add to it. Want it on another calendar?` : `${pick.refused.name} is set to never take holds. Want it on another calendar, or change that on Integrations?`, cards: [], queries: [] };
+      const time = d.time || "9:00 AM";
+      const h = await tasks.createCalendarHold(org, { title: d.title || "Meeting", date: d.date, time, attendees: d.attendees || "", agenda: d.notes || "", linkId: pick.link?.id ?? null });
       const when = new Date(`${d.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+      // Is that hour open on every calendar?
+      let check = "";
+      try {
+        const orgRow = await db.getOrganizationById(org);
+        const tz = orgRow?.timezone || "America/Chicago";
+        const local = (await import("../integrations")).toLocalDateTime(d.date, time);
+        if (local) {
+          const [Y, M, D] = local.slice(0, 10).split("-").map(Number);
+          const [hh, mm] = local.slice(11, 16).split(":").map(Number);
+          const start = (await import("./schedule")).zonedToUtc(Y, M, D, hh, mm, tz);
+          const f = await cal.freeAt(org, start);
+          if (f.sources > 1 && f.open) check = `${when} at ${time} is open on all your calendars. `;
+          else if (f.sources && f.open) check = `${when} at ${time} is open. `;
+          else if (f.busy.length) check = `Heads up: ${when} at ${time} overlaps ${f.busy[0].title === "Busy" ? "a busy block" : f.busy[0].title} on ${f.busy[0].calendar}. `;
+        }
+      } catch {
+        /* the hold still goes to Approvals */
+      }
+      const where = pick.link?.name ?? "your Google Calendar";
       return {
-        text: `The hold is ready for ${when} at ${d.time || "9:00 AM"}. Press Add in Approvals and it goes on your Google Calendar.`,
-        cards: [{ type: "reply", id: h.id, title: h.title, subtitle: `${when} at ${d.time || "9:00 AM"}`, body: d.attendees ? `With ${d.attendees}` : "" }],
+        text: `${check}The hold for ${where} is waiting for your OK in Approvals.`,
+        cards: [{ type: "reply", id: h.id, title: h.title, subtitle: `${when} at ${time} · ${where}`, body: d.attendees ? `With ${d.attendees}` : "" }],
         queries: [],
       };
     }

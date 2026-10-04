@@ -98,7 +98,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule";
   id: number;
   title: string;
   subtitle?: string;
@@ -112,6 +112,7 @@ type Card = {
   plan?: Plan;
   version?: number;
   before?: string;
+  events?: { when: string; day?: string; title: string; calendar: string; color: string; clash?: boolean }[];
 };
 
 type Plan = Outputs["social"]["schedulePlan"];
@@ -504,6 +505,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   if (card.type === "onboarding_q") return <OnboardingQuestionCard emp={emp} qkey={card.title} />;
   if (card.type === "bidprime_code" || card.type === "portal_code" || card.type === "web_code") return <CodeCard card={card} />;
   if (card.type === "browser_live") return <BrowserCard card={card} />;
+  if (card.type === "schedule") return <ScheduleCard events={card.events ?? []} />;
   if (card.type === "bidprime_screen" && card.imageUrl)
     return (
       <div className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -620,6 +622,32 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
         <ErrorLine error={err} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{actions}</div>
+    </div>
+  );
+}
+
+/** Avery's schedule: every calendar together, each event tagged by its calendar; overlaps shaded. */
+function ScheduleCard({ events }: { events: NonNullable<Card["events"]> }) {
+  let lastDay = "";
+  return (
+    <div className="ld-card" style={{ padding: 0, overflow: "hidden" }}>
+      {events.map((e, i) => {
+        const header = e.day && e.day !== lastDay ? e.day : "";
+        if (e.day) lastDay = e.day;
+        return (
+          <React.Fragment key={i}>
+            {header && <div style={{ padding: "10px 16px 6px", fontSize: 12, fontWeight: 700, color: "#5b6b64", textTransform: "uppercase", letterSpacing: "0.06em", borderTop: i ? "1px solid #e3e9e6" : 0 }}>{header}</div>}
+            <div className="ld-sched" style={{ display: "grid", gridTemplateColumns: "170px minmax(0,1fr) 200px", gap: 14, padding: "11px 16px", borderBottom: i < events.length - 1 ? "1px solid #eef2f0" : 0, fontSize: 14, alignItems: "center", background: e.clash ? "#fdf6ee" : undefined }}>
+              <b>{e.when}</b>
+              <span style={{ overflowWrap: "anywhere" }}>{e.title}{e.clash ? <span className="ld-small" style={{ color: "#8a4510", marginLeft: 8, fontWeight: 700 }}>Overlaps</span> : null}</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#3d4c45", fontWeight: 600, minWidth: 0 }}>
+                <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 999, background: e.color, flexShrink: 0 }} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.calendar}</span>
+              </span>
+            </div>
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }

@@ -558,10 +558,12 @@ export async function updateLinkedInNote(orgId: number, prospectId: number, note
 export async function openTimes(orgId: number, limit = 40) {
   const { settings, tz } = await salesSettings(orgId);
   const google = await db.getConnectionByProvider(orgId, "google_workspace");
-  if (google?.status !== "connected") return { ready: false as const, times: [] as Date[] };
+  const linked = db.listAccountLinks(orgId, "calendar").length > 0;
+  if (google?.status !== "connected" && !linked) return { ready: false as const, times: [] as Date[] };
   const now = new Date();
   const end = new Date(now.getTime() + 14 * 86400_000);
-  const busy = await integrations.calendarBusy(orgId, now, end).catch(() => null);
+  // With several calendars, a time is offered only when it's open on all of them.
+  const busy = linked ? await (await import("./calendars")).busyAll(orgId, now, end).catch(() => null) : await integrations.calendarBusy(orgId, now, end).catch(() => null);
   if (!busy) return { ready: false as const, times: [] as Date[] };
   const len = settings.meetingMinutes * 60_000;
   const [fh, fm] = settings.hoursFrom.split(":").map(Number);

@@ -179,7 +179,7 @@ function providerError(data: any, status: number) {
   return `${status}${msg ? `: ${msg}` : ""}`;
 }
 
-async function api(url: string, init: RequestInit & { token: string; headers?: Record<string, string> }) {
+export async function api(url: string, init: RequestInit & { token: string; headers?: Record<string, string> }) {
   const { token, headers, ...rest } = init;
   const res = await fetch(url, { ...rest, headers: { authorization: `Bearer ${token}`, accept: "application/json", ...(headers ?? {}) }, signal: AbortSignal.timeout(60_000) });
   const text = await res.text();
@@ -194,6 +194,36 @@ async function api(url: string, init: RequestInit & { token: string; headers?: R
 }
 
 class NotConnected extends Error {}
+
+/** The main Google connection's token (null when it isn't connected). */
+export async function mainGoogleToken(orgId: number) {
+  try {
+    return (await accessToken(orgId, "google_workspace")).token;
+  } catch {
+    return null;
+  }
+}
+
+/** A fresh access token for an extra Google account, refreshing it when needed. */
+export async function linkToken(link: { id: number; organizationId: number; name: string; secretsEncrypted: string | null }) {
+  const t = readTokens(link.secretsEncrypted);
+  if (!t?.accessToken) throw new Error(`Reconnect ${link.name}`);
+  if (!t.expiresAt || t.expiresAt > Date.now() + 90_000) return t.accessToken;
+  if (!t.refreshToken) {
+    db.updateAccountLink(link.id, link.organizationId, { status: "error", error: "The sign-in expired" });
+    throw new Error(`Reconnect ${link.name}, the sign-in expired`);
+  }
+  const a = APPS.google;
+  try {
+    const d = await postForm(a.tokenUrl, { grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: a.clientId(), client_secret: a.clientSecret() });
+    const next: Tokens = { ...t, accessToken: d.access_token, refreshToken: d.refresh_token || t.refreshToken, expiresAt: d.expires_in ? Date.now() + Number(d.expires_in) * 1000 : null };
+    db.updateAccountLink(link.id, link.organizationId, { secretsEncrypted: encryptJson(next), status: "connected", error: null });
+    return next.accessToken;
+  } catch {
+    db.updateAccountLink(link.id, link.organizationId, { status: "error", error: "The sign-in expired" });
+    throw new Error(`Reconnect ${link.name}, the sign-in expired`);
+  }
+}
 
 /** A fresh access token for a workspace's connection, refreshing it when it is about to expire. */
 async function accessToken(orgId: number, provider: Provider) {
@@ -265,7 +295,9 @@ const LABEL: Record<string, string> = {
 // Connect: start and callback
 // ==========================================
 
-type Pending = { orgId: number; userId: number; app: AppKey; verifier?: string; exp: number };
+/** link: an extra Google account (a calendar Avery checks, or a Gmail some employees send from), not the main connection. */
+export type LinkStart = { purpose: "calendar" | "send"; name: string; id?: number };
+type Pending = { orgId: number; userId: number; app: AppKey; verifier?: string; exp: number; link?: LinkStart };
 const pending = new Map<string, Pending>();
 
 function sweep() {
@@ -285,8 +317,14 @@ function back(res: Response, params: Record<string, string>) {
   res.redirect(`/integrations?${new URLSearchParams(params).toString()}`);
 }
 
-export function authorizeUrl(key: AppKey, state: string, verifier?: string) {
-  const a = APPS[key];
+/** Extra Google accounts ask only for what their job needs. */
+export const LINK_SCOPES: Record<LinkStart["purpose"], string[]> = {
+  calendar: ["openid", "email", "profile", "https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.calendarlist.readonly"],
+  send: ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.send"],
+};
+
+export function authorizeUrl(key: AppKey, state: string, verifier?: string, scopes?: string[]) {
+  const a = { ...APPS[key], scopes: scopes ?? APPS[key].scopes };
   const q = new URLSearchParams({ [key === "tiktok" ? "client_key" : "client_id"]: a.clientId(), redirect_uri: redirectUri(key), response_type: "code", state });
   if (key === "clickup") return `${a.authUrl}?${new URLSearchParams({ client_id: a.clientId(), redirect_uri: redirectUri(key), state }).toString()}`;
   if (key === "meta" || key === "threads" || key === "tiktok") q.set("scope", a.scopes.join(","));
@@ -320,6 +358,23 @@ export function registerOAuth(app: Express) {
     res.redirect(authorizeUrl(key, state, verifier));
   });
 
+  // An extra Google account: same Google app and callback, its own scopes.
+  app.get("/api/oauth/link/start", async (req, res) => {
+    const orgId = Number(req.query.organizationId);
+    const purpose = req.query.purpose === "send" ? "send" : "calendar";
+    if (!appReady("google")) return back(res, { error: "Google is not set up on this server yet." });
+    const { user: signedIn } = await authenticateRequest(req);
+    if (!signedIn) return res.redirect("/signin");
+    const user = Number.isFinite(orgId) && orgId > 0 ? await canManage(req, orgId) : null;
+    if (!user) return back(res, { error: "Only a workspace owner or admin can connect accounts." });
+    sweep();
+    const state = crypto.randomBytes(24).toString("base64url");
+    const id = Number(req.query.id) || undefined;
+    const name = String(req.query.name || "").trim().slice(0, 80);
+    pending.set(state, { orgId, userId: user.id, app: "google", exp: Date.now() + 10 * 60_000, link: { purpose, name, id } });
+    res.redirect(authorizeUrl("google", state, undefined, LINK_SCOPES[purpose]));
+  });
+
   app.get("/api/oauth/:app/callback", async (req, res) => {
     const key = String(req.params.app) as AppKey;
     const state = String(req.query.state || "");
@@ -331,6 +386,18 @@ export function registerOAuth(app: Express) {
     if (req.query.error) return back(res, { error: `${LABEL[APPS[key].provider]} sign-in was cancelled.` });
     const code = String(req.query.code || "").replace(/#_$/, "");
     if (!code) return back(res, { error: "No sign-in code came back. Press Connect again." });
+    if (p.link) {
+      try {
+        const { finishLink } = await import("./employees/calendars");
+        const row = await finishLink(p.orgId, code, p.link);
+        await db.logAction({ organizationId: p.orgId, actorType: "human_user", actorName: user.name?.trim() || user.email, action: p.link.purpose === "send" ? "Connected a sending address" : "Connected a calendar", details: `${row.name}: ${row.email ?? ""}` });
+        return back(res, { connected: p.link.purpose === "send" ? "sending" : "calendar" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("[oauth] link failed:", message);
+        return back(res, { error: `Google did not connect (${message.slice(0, 160)}).` });
+      }
+    }
     try {
       const label = await finishConnect(p.orgId, key, code, p.verifier);
       await db.logAction({ organizationId: p.orgId, actorType: "human_user", actorName: user.name?.trim() || user.email, action: "Connected account", details: `${LABEL[APPS[key].provider]}: ${label}` });
@@ -377,7 +444,7 @@ export function publicMediaUrl(fileUrl: string) {
   return `${ENV.appUrl}/media/${signMedia(rel, exp)}/${exp}/${rel}`;
 }
 
-async function exchange(key: AppKey, code: string, verifier?: string) {
+export async function exchange(key: AppKey, code: string, verifier?: string) {
   const a = APPS[key];
   if (key === "x") {
     return postForm(a.tokenUrl, { code, grant_type: "authorization_code", client_id: a.clientId(), redirect_uri: redirectUri(key), code_verifier: verifier ?? "" }, { authorization: `Basic ${Buffer.from(`${a.clientId()}:${a.clientSecret()}`).toString("base64")}` });
@@ -558,8 +625,8 @@ export async function channelState(orgId: number) {
     threads: !!by("threads"),
     tiktok: !!by("tiktok"),
     google_business: !!by("google_business"),
-    gmail: !!by("google_workspace"),
-    calendar: !!by("google_workspace"),
+    gmail: !!by("google_workspace") || db.listAccountLinks(orgId, "send").some((l) => l.status === "connected"),
+    calendar: !!by("google_workspace") || db.listAccountLinks(orgId, "calendar").some((l) => l.kind === "google" && l.holds !== "no"),
   } as Record<string, boolean>;
 }
 
@@ -1006,8 +1073,8 @@ function encodeHeader(v: string) {
 }
 
 /** Sends a plain-text email from the connected Gmail account. */
-export async function sendGmail(orgId: number, to: string, subject: string, body: string) {
-  const { token } = await accessToken(orgId, "google_workspace");
+export async function sendGmail(orgId: number, to: string, subject: string, body: string, fromKind?: string | null) {
+  const token = (await sendToken(orgId, fromKind)) ?? (await accessToken(orgId, "google_workspace")).token;
   const raw = [`To: ${to}`, `Subject: ${encodeHeader(subject)}`, "MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: 8bit", "", body].join("\r\n");
   const { data } = await api("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST", token, headers: { "content-type": "application/json" }, body: JSON.stringify({ raw: Buffer.from(raw, "utf8").toString("base64url") }) });
   return data.id ? `https://mail.google.com/mail/u/0/#sent/${data.threadId ?? data.id}` : null;
@@ -1039,20 +1106,38 @@ export async function sendGmailWithFiles(orgId: number, to: string, subject: str
   return data.id ? `https://mail.google.com/mail/u/0/#sent/${data.threadId ?? data.id}` : null;
 }
 
+/** The token of the sending address set up for this employee's job, if there is one. */
+async function sendToken(orgId: number, kind?: string | null) {
+  if (!kind) return null;
+  const link = db.listAccountLinks(orgId, "send").find((l) => parseList(l.sendsFor).includes(kind));
+  return link ? linkToken(link) : null;
+}
+function parseList(raw: string | null | undefined): string[] {
+  try {
+    const v = JSON.parse(raw || "[]");
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 function emailIn(s: string | undefined | null) {
   return (s ?? "").match(/[^\s<>"',;]+@[^\s<>"',;]+\.[a-z]{2,}/i)?.[0] ?? null;
 }
 
 async function addToCalendar(orgId: number, item: OutboundItem) {
-  const { token } = await accessToken(orgId, "google_workspace");
   const meta = JSON.parse(item.metadata || "{}");
+  const { holdTarget } = await import("./employees/calendars");
+  const target = await holdTarget(orgId, meta.linkId ?? null);
+  const token = target ? target.token : (await accessToken(orgId, "google_workspace")).token;
+  const calendarId = target ? target.calendarId : "primary";
   const org = await db.getOrganizationById(orgId);
   const tz = org?.timezone || "America/Chicago";
   const start = toLocalDateTime(meta.date, meta.time);
   if (!start) throw new Error("The hold has no date and time Google can read. Edit it with a date like 10/05/2026 and a time like 2:00 PM.");
   const end = new Date(new Date(`${start}Z`).getTime() + 60 * 60_000).toISOString().slice(0, 19);
   const attendees = (meta.attendees ?? []).map((a: string) => emailIn(a)).filter(Boolean).map((email: string) => ({ email }));
-  const { data } = await api("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none", {
+  const { data } = await api(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=none`, {
     method: "POST",
     token,
     headers: { "content-type": "application/json" },
@@ -1165,7 +1250,9 @@ export async function dispatch(item: OutboundItem): Promise<{ status: OutboundIt
         const to = emailIn(meta.email) || emailIn(meta.recipient) || emailIn(meta.to);
         if (!to) throw new Error("There is no email address for the recipient");
         const subject = item.kind === "hiring_email" ? await hiringSubject(item, meta.purpose) : item.title;
-        url = await sendGmail(item.organizationId, to, subject, item.body ?? "");
+        const emp = item.employeeId ? await db.getEmployeeForOrg(item.employeeId, item.organizationId) : null;
+        const kind = emp?.kind ?? (item.kind === "outreach_email" ? "outreach" : item.kind === "lead_reply" ? "leads" : null);
+        url = await sendGmail(item.organizationId, to, subject, item.body ?? "", kind);
       } else if (ch === "calendar") url = await addToCalendar(item.organizationId, item);
       else url = await SOCIAL[ch as SocialChannel](item.organizationId, payloadFor(item, ch as SocialChannel));
       results.push({ channel: ch, ok: true, url, at: new Date().toISOString() });
