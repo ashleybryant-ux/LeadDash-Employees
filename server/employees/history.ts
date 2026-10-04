@@ -107,6 +107,26 @@ export function pickChats(convos: Convo[]) {
     .reverse();
 }
 
+/**
+ * Chats that look like they hold a real client's details never leave the
+ * server, not even to be sorted by the AI: they're counted as client chats and
+ * skipped. This is a first screen; the AI's own check still runs on the rest.
+ */
+const CLINICAL = [
+  /\b(DOB|D\.O\.B\.?|date of birth)\b/i,
+  /\b[FZ]\d{2}\.\d{1,2}\b/, // ICD-10 codes like F41.1
+  /\b(mental status exam|MSE\b|chief complaint|presenting problem|biopsychosocial|history of present illness)/i,
+  /\b(suicid\w*|homicid\w*|SI\/HI|self[- ]harm)\b/i,
+  /\b(Medicaid|member|subscriber|policy) (ID|number|#)\s*[:#]?\s*[A-Z0-9]{5,}/i,
+  /\b(my|the|this|a) (client|patient)('s)? (name is|named|who|with|reported|presents|presented|stated|disclosed|was diagnosed)\b/i,
+  /\b(session|progress|intake|psychotherapy) note (for|about) (my|a|the|this) (client|patient)\b/i,
+  /\b(clinical evaluation|psychological evaluation|diagnostic assessment) (for|of) [A-Z][a-z]+/,
+];
+export function looksClinical(c: Convo) {
+  const text = `${c.title}\n${c.turns.filter((t) => t.who === "owner").map((t) => t.text).join("\n")}`;
+  return CLINICAL.some((re) => re.test(text));
+}
+
 /** One chat as text: the owner's words in full (they're the source), the AI's answers shortened. */
 export function chatText(c: Convo) {
   let out = `### ${c.title}${c.at ? ` (${fmtDay(c.at)})` : ""}\n`;
@@ -154,11 +174,22 @@ async function work(id: number, orgId: number) {
     // Several short chats go in one read; a long one goes alone.
     const batch: { c: Convo; n: number }[] = [];
     let size = 0;
+    let screened = 0;
     while (i < chats.length && (batch.length === 0 || size + chatText(chats[i]).length <= BATCH_CHARS) && batch.length < 12) {
+      if (looksClinical(chats[i])) {
+        screened++;
+        i++;
+        continue;
+      }
       const t = chatText(chats[i]);
       batch.push({ c: chats[i], n: batch.length + 1 });
       size += t.length;
       i++;
+    }
+    if (!batch.length) {
+      const cur = db.getHistoryImport(id, orgId)!;
+      db.updateHistoryImport(id, orgId, { done: i, skippedClient: cur.skippedClient + screened });
+      continue;
     }
     const known = (await db.listKnowledgeByOrg(orgId)).filter((k) => k.title.startsWith("Learned: ")).map((k) => k.title.slice(9)).slice(-200).join("; ");
     const out = await generateJson<{ chats: { n: number; about_business: boolean; client_details: boolean; facts: { topic: string; fact: string; category: string }[] }[] }>({
@@ -174,7 +205,7 @@ Known topics: ${known || "none yet"}.`,
       maxTokens: 3000,
     });
     const items = parse<Saved[]>(db.getHistoryImport(id, orgId)!.items, []);
-    let client = 0;
+    let client = screened;
     let other = 0;
     for (const b of batch) {
       const r = (out.chats ?? []).find((x) => x.n === b.n);

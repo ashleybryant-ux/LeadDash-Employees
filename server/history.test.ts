@@ -8,14 +8,17 @@ vi.mock("./_core/llm", async (orig) => {
     generateJson: vi.fn(async (opts: any) => {
       if (opts.schemaName !== "history_facts") return {};
       prompts.push(opts.prompt);
-      // Chat 1 is about pricing, chat 2 is about a client, chat 3 is personal.
-      return {
-        chats: [
-          { n: 1, about_business: true, client_details: false, facts: [{ topic: "Founding member pricing", fact: "Founding member pricing closes December 31, 2026.", category: "services_offers" }] },
-          { n: 2, about_business: false, client_details: true, facts: [{ topic: "Client", fact: "A client's treatment plan.", category: "mission_profile" }] },
-          { n: 3, about_business: false, client_details: false, facts: [] },
-        ],
-      };
+      // Each chat is judged by what it says: pricing is business, a client chat is client details, anything else is personal.
+      const chats = opts.prompt.split(/## Chat (\d+)\n/).slice(1);
+      const out = [];
+      for (let k = 0; k < chats.length; k += 2) {
+        const n = Number(chats[k]);
+        const text = chats[k + 1];
+        if (/pricing/i.test(text)) out.push({ n, about_business: true, client_details: false, facts: [{ topic: "Founding member pricing", fact: "Founding member pricing closes December 31, 2026.", category: "services_offers" }] });
+        else if (/client/i.test(text)) out.push({ n, about_business: false, client_details: true, facts: [{ topic: "Client", fact: "A client's treatment plan.", category: "mission_profile" }] });
+        else out.push({ n, about_business: false, client_details: false, facts: [] });
+      }
+      return { chats: out };
     }),
   };
 });
@@ -30,7 +33,9 @@ const claudeExport = [
   { name: "Pricing", created_at: "2026-09-14T15:00:00Z", chat_messages: [{ sender: "human", text: "Founding member pricing closes December 31, 2026. Remember that." }, { sender: "assistant", text: "Got it." }] },
   { name: "Session note help", created_at: "2026-09-15T15:00:00Z", chat_messages: [{ sender: "human", text: "Help me write a progress note for a client with anxiety." }] },
   { name: "Dinner", created_at: "2026-09-16T15:00:00Z", chat_messages: [{ sender: "human", text: "What should I cook for dinner tonight with chicken?" }] },
+  { name: "Hard talk", created_at: "2026-09-16T16:00:00Z", chat_messages: [{ sender: "human", text: "How do I bring up a late payment with a client kindly?" }] },
   { name: "Hi", created_at: "2026-09-17T15:00:00Z", chat_messages: [{ sender: "human", text: "hi" }] },
+  { name: "Eval write-up", created_at: "2026-09-13T15:00:00Z", chat_messages: [{ sender: "human", text: "Write up the evaluation. DOB 03/12/1988, presenting problem is panic, diagnosis F41.0." }] },
 ];
 
 describe("company history from Claude and ChatGPT exports", () => {
@@ -39,7 +44,8 @@ describe("company history from Claude and ChatGPT exports", () => {
     zip.file("conversations.json", JSON.stringify(claudeExport));
     const c = await history.readExport(await zip.generateAsync({ type: "nodebuffer" }));
     expect(c.source).toBe("claude");
-    expect(history.pickChats(c.convos).map((x) => x.title)).toEqual(["Pricing", "Session note help", "Dinner"]);
+    expect(history.pickChats(c.convos).map((x) => x.title)).toEqual(["Eval write-up", "Pricing", "Session note help", "Dinner", "Hard talk"]);
+    expect(history.pickChats(c.convos).map((x) => history.looksClinical(x))).toEqual([true, false, true, false, false]);
 
     const gpt = [{ title: "Brand", create_time: 1717300000, current_node: "b", mapping: { a: { message: { author: { role: "user" }, content: { parts: ["Our brand green is #1b6b4a and the background is #F8FAFB."] } }, parent: null }, b: { message: { author: { role: "assistant" }, content: { parts: ["Noted."] } }, parent: "a" } } }];
     const g = await history.readExport(Buffer.from(JSON.stringify(gpt)));
@@ -58,7 +64,10 @@ describe("company history from Claude and ChatGPT exports", () => {
     const imp = await history.start(orgId, { id: owner.id, name: "Ashley" }, "claude-data.zip", dest);
     for (let i = 0; i < 200 && db.getHistoryImport(imp.id, orgId)!.status !== "done"; i++) await new Promise((r) => setTimeout(r, 10));
     const done = (await caller(owner).history.latest({ organizationId: orgId }))!;
-    expect(done).toMatchObject({ status: "done", source: "claude", total: 3, done: 3, skippedClient: 1, skippedOther: 1 });
+    expect(done).toMatchObject({ status: "done", source: "claude", total: 5, done: 5, skippedClient: 3, skippedOther: 1 });
+    // A chat with a client's details never reaches the AI at all.
+    expect(prompts.join("")).not.toContain("03/12/1988");
+    expect(prompts.join("")).not.toContain("progress note for a client");
     expect(done.items).toEqual([expect.objectContaining({ topic: "Founding member pricing", from: "Claude, Sep 14, 2026" })]);
     // The owner's words go in; the three chats were read in one batch.
     expect(prompts).toHaveLength(1);
