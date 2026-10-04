@@ -78,7 +78,7 @@ export default function BrainImport() {
           ) : (
             <div className="ld-av-kv">
               <span className="ld-strong">Claude</span>
-              <span>Settings, Privacy, Export data. Claude emails you a .zip.</span>
+              <span>Settings, Privacy, Export data. Upload the .zip or the manifest .json Claude sends, within 24 hours.</span>
               <span className="ld-strong">ChatGPT</span>
               <span>Settings, Data controls, Export data. ChatGPT emails you a .zip.</span>
             </div>

@@ -54,6 +54,45 @@ describe("company history from Claude and ChatGPT exports", () => {
     await expect(history.readExport(Buffer.from("{}"))).rejects.toThrow(/isn't a Claude or ChatGPT export/);
   });
 
+  it("reads Claude's manifest export: downloads every part once, joins the chats, projects and memories, and refuses links that aren't Claude's", async () => {
+    const convZip = new JSZip();
+    convZip.file("conversations.json", JSON.stringify(claudeExport.slice(0, 2)));
+    const convBuf = await convZip.generateAsync({ type: "nodebuffer" });
+    const projZip = new JSZip();
+    projZip.file("projects.json", JSON.stringify([{ uuid: "p1", name: "LeadDash EHR", description: "Our EHR for group practices", prompt_template: "Always say LeadDash EHR and use American English.", docs: [{ filename: "pricing.md", content: "Core is $99 per month for one clinician." }] }]));
+    const projBuf = await projZip.generateAsync({ type: "nodebuffer" });
+    const memZip = new JSZip();
+    memZip.file("memories.json", JSON.stringify([{ conversations_memory: "Ashley owns Legacy Family Services in Oklahoma City." }]));
+    const memBuf = await memZip.generateAsync({ type: "nodebuffer" });
+    const got: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      got.push(String(url));
+      if (url.endsWith("/conv")) return new Response(convBuf);
+      if (url.endsWith("/proj")) return new Response(projBuf);
+      if (url.endsWith("/mem")) return new Response(memBuf);
+      return new Response("gone", { status: 410 });
+    });
+    const manifest = Buffer.from(JSON.stringify({ total_files: 4, data_files: [
+      { category: "conversations", export_url: "https://claude.ai/export/x/download/conv" },
+      { category: "projects", export_url: "https://claude.ai/export/x/download/proj" },
+      { category: "memories", export_url: "https://claude.ai/export/x/download/mem" },
+      { category: "frames", export_url: "https://claude.ai/export/x/download/frames" },
+    ] }));
+    expect(history.isManifest(manifest)).toBe(true);
+    const merged = await history.expandManifest(manifest);
+    // Frames and design chats aren't downloaded.
+    expect(got.some((u) => u.endsWith("/frames"))).toBe(false);
+    const c = await history.readExport(merged);
+    expect(c.source).toBe("claude");
+    expect(c.convos.map((x) => x.title)).toEqual(["Pricing", "Session note help", "Project: LeadDash EHR", "Claude memory"]);
+    expect(c.convos[2].turns[0].text).toContain("Core is $99 per month");
+    expect(c.convos[3].turns[0].text).toContain("Legacy Family Services");
+    // An expired link says so plainly.
+    await expect(history.expandManifest(Buffer.from(JSON.stringify({ data_files: [{ category: "conversations", export_url: "https://claude.ai/export/x/download/old" }] })))).rejects.toThrow(/expire 24 hours/);
+    await expect(history.expandManifest(Buffer.from(JSON.stringify({ data_files: [{ category: "conversations", export_url: "https://evil.example/conv" }] })))).rejects.toThrow(/isn't from Claude/);
+    vi.unstubAllGlobals();
+  });
+
   it("saves the business facts to the Brain, leaves client chats out, deletes the upload and lets a fact be removed", async () => {
     prompts = [];
     const { orgId, owner } = await makeWorkspace("history");

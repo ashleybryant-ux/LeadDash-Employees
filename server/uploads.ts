@@ -88,7 +88,7 @@ export function registerUploads(app: Express) {
           const m = await db.getOrganizationMembership(orgId, user.id);
           if (!m || (m.role !== "owner" && m.role !== "admin")) return res.status(403).json({ error: "Only the workspace owner can import history." });
         }
-        if (!/\.(zip|json)$/i.test(name)) return res.status(400).json({ error: "Upload the .zip that Claude or ChatGPT emailed you." });
+        if (!/\.(zip|json)$/i.test(name)) return res.status(400).json({ error: "Upload the .zip or manifest .json that Claude or ChatGPT sent you." });
         const history = await import("./employees/history");
         const dest = history.holdingPath(orgId);
         const fs = await import("node:fs");

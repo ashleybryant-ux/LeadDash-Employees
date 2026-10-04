@@ -10,7 +10,8 @@ import { learnFact } from "./learn";
 
 /**
  * Company history from the owner's own Claude or ChatGPT chats. She downloads
- * her data export (a .zip with conversations.json) and uploads it on the Brain.
+ * her data export (a .zip with conversations.json, or the manifest .json that
+ * Claude's newer exports send, whose links the server downloads) and uploads it on the Brain.
  * Each chat is read in order, oldest first so newer statements win, and the
  * lasting facts about this workspace's business are saved to the Brain as
  * "Learned: <topic>". Chats about clients are left out entirely: no client name
@@ -74,6 +75,95 @@ function fromChatGpt(list: any[]): Convo[] {
     }
     return { title: String(c.title || "Untitled chat"), at: c.create_time ? new Date(Number(c.create_time) * 1000) : null, turns };
   });
+}
+
+/** Claude's newer export: a manifest .json with a download link for each part (conversations, projects, memories). */
+type Manifest = { data_files?: { export_url?: string; category?: string; filename?: string }[] };
+
+export function isManifest(buf: Buffer) {
+  if (buf.subarray(0, 2).toString() === "PK") return false;
+  try {
+    const m = JSON.parse(buf.toString("utf8")) as Manifest;
+    return !Array.isArray(m) && Array.isArray(m?.data_files);
+  } catch {
+    return false;
+  }
+}
+
+const MAX_PART = 400_000_000;
+
+async function downloadPart(url: string) {
+  const u = new URL(url);
+  if (u.protocol !== "https:" || !/(^|\.)claude\.ai$|(^|\.)anthropic\.com$/.test(u.hostname)) throw new Error("That manifest has a link that isn't from Claude.");
+  const res = await fetch(url, { signal: AbortSignal.timeout(10 * 60_000) });
+  if (!res.ok) throw new Error(`Claude's export link didn't open (${res.status}). The links expire 24 hours after the export is made and may work only once, so request a new export from Claude and upload the new manifest.`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > MAX_PART) throw new Error("One part of that export is too large to read.");
+  return buf;
+}
+
+/** Every JSON file in a zip (or the buffer itself, if it's JSON), parsed. */
+async function jsonFiles(buf: Buffer, match: RegExp) {
+  const out: unknown[] = [];
+  if (buf.subarray(0, 2).toString() === "PK") {
+    const zip = await JSZip.loadAsync(buf);
+    for (const f of Object.values(zip.files)) {
+      if (f.dir || !match.test(f.name)) continue;
+      try {
+        out.push(JSON.parse(await f.async("string")));
+      } catch {
+        // Not JSON: skipped.
+      }
+    }
+  } else {
+    try {
+      out.push(JSON.parse(buf.toString("utf8")));
+    } catch {
+      // Not JSON: skipped.
+    }
+  }
+  return out;
+}
+
+/** Strings worth reading inside any JSON value (memory text, project instructions and documents). */
+function strings(v: unknown, out: string[] = [], depth = 0): string[] {
+  if (depth > 8 || out.join("").length > 200_000) return out;
+  if (typeof v === "string") {
+    if (v.trim().length >= 20 && !/^[\w-]{8,}$/.test(v.trim()) && !/^\d{4}-\d{2}-\d{2}T/.test(v)) out.push(v.trim());
+  } else if (Array.isArray(v)) v.forEach((x) => strings(x, out, depth + 1));
+  else if (v && typeof v === "object") for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (!/uuid|id$|_at$|url|account/i.test(k)) strings(x, out, depth + 1);
+  return out;
+}
+
+/**
+ * Downloads every part a manifest links to and turns it into one Claude
+ * conversations list: the chats, plus each project's instructions and
+ * documents and the saved memories as chats of the owner's own words.
+ */
+export async function expandManifest(buf: Buffer) {
+  const m = JSON.parse(buf.toString("utf8")) as Manifest;
+  const files = (m.data_files ?? []).filter((f) => f.export_url && ["conversations", "projects", "memories"].includes(String(f.category)));
+  if (!files.some((f) => f.category === "conversations")) throw new Error("That manifest has no conversations part.");
+  const chats: any[] = [];
+  for (const f of files) {
+    const part = await downloadPart(f.export_url!);
+    if (f.category === "conversations") {
+      for (const j of await jsonFiles(part, /\.json$/i)) if (Array.isArray(j)) chats.push(...j.filter((c) => c && typeof c === "object" && "chat_messages" in c));
+    } else if (f.category === "projects") {
+      for (const j of await jsonFiles(part, /\.json$/i)) {
+        for (const p of Array.isArray(j) ? j : [j]) {
+          if (!p || typeof p !== "object") continue;
+          const o = p as Record<string, unknown>;
+          const text = strings({ description: o.description, instructions: o.prompt_template ?? o.instructions, docs: o.docs }).join("\n\n").slice(0, 60_000);
+          if (text) chats.push({ name: `Project: ${String(o.name ?? "Untitled")}`, created_at: o.updated_at ?? o.created_at ?? null, chat_messages: [{ sender: "human", text }] });
+        }
+      }
+    } else {
+      const text = (await jsonFiles(part, /\.json$/i)).flatMap((j) => strings(j)).join("\n\n").slice(0, 60_000);
+      if (text) chats.push({ name: "Claude memory", created_at: new Date().toISOString(), chat_messages: [{ sender: "human", text }] });
+    }
+  }
+  return Buffer.from(JSON.stringify(chats), "utf8");
 }
 
 /** Reads an export (zip or bare conversations.json) into chats, and says whose export it is. */
@@ -159,7 +249,25 @@ export function run(imp: HistoryImport) {
 
 async function work(id: number, orgId: number) {
   let imp = db.getHistoryImport(id, orgId)!;
-  const buf = await fs.promises.readFile(imp.filePath);
+  let buf = await fs.promises.readFile(imp.filePath);
+  // A manifest's links work once and expire: everything is downloaded now and kept, so a restart reads the saved copy.
+  // The same manifest uploaded to a second workspace reuses the first download, for 3 days.
+  if (isManifest(buf)) {
+    const crypto = await import("node:crypto");
+    const dir = path.dirname(imp.filePath);
+    const cache = path.join(dir, `manifest-${crypto.createHash("sha256").update(buf).digest("hex").slice(0, 32)}.json`);
+    for (const f of await fs.promises.readdir(dir).catch(() => [] as string[])) {
+      if (!f.startsWith("manifest-")) continue;
+      const st = await fs.promises.stat(path.join(dir, f)).catch(() => null);
+      if (st && Date.now() - st.mtimeMs > 3 * 86_400_000) await fs.promises.unlink(path.join(dir, f)).catch(() => null);
+    }
+    if (fs.existsSync(cache)) buf = await fs.promises.readFile(cache);
+    else {
+      buf = await expandManifest(buf);
+      await fs.promises.writeFile(cache, buf);
+    }
+    await fs.promises.writeFile(imp.filePath, buf);
+  }
   const { source, convos } = await readExport(buf);
   const chats = pickChats(convos);
   imp = db.updateHistoryImport(id, orgId, { source, total: chats.length, status: "running" })!;
