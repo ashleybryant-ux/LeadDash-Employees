@@ -56,20 +56,20 @@ export const LAYOUTS = [
 ];
 
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  speaking: ["none", "report", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "clickup_due", "clickup_add", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  speaking: ["none", "report", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
+  custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_add", "start_onboarding"],
 };
 
 const ACTION_HELP: Record<string, string> = {
@@ -232,7 +232,7 @@ async function applyFacts(emp: AIEmployee) {
 }
 
 const TOOL_NAMES: Record<string, string> = { google_workspace: "Google (Gmail and Calendar)", clickup: "ClickUp", zoom: "Zoom", recall: "Recall.ai (meeting bot)", linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", threads: "Threads", x: "X", tiktok: "TikTok", wordpress: "WordPress", google_business: "Google Business Profile", submittable: "Submittable", sessionize: "Sessionize" };
-const TOOL_USERS: Record<string, string> = { clickup: "Nora tracks launches there and Avery checks what's due and adds tasks", recall: "Simone sits in on meetings and the team joins huddles", zoom: "Simone uses it for meeting links", google_workspace: "Avery, Simone and Nora use it for email and calendar" };
+const TOOL_USERS: Record<string, string> = { clickup: "every employee can check what's due or overdue and add tasks there; Nora also tracks launches there", recall: "Simone sits in on meetings and the team joins huddles", zoom: "Simone uses it for meeting links", google_workspace: "Avery, Simone and Nora use it for email and calendar" };
 
 /** Which tools are connected on Integrations, so no employee ever says a connected tool isn't there. */
 async function connectedFacts(emp: AIEmployee) {
@@ -731,7 +731,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
 }
 
 /** Actions that only talk about the work; a project task needs one that does it. */
-const NOT_WORK = new Set(["none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
+const NOT_WORK = new Set(["clickup_due", "clickup_add", "none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
 
 /**
  * An employee does a project task Nora assigned, with the same actions their

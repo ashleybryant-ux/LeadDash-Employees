@@ -240,7 +240,7 @@ describe("every employee knows what's connected; Avery works in ClickUp", () => 
     vi.spyOn(integrations, "clickupMembers").mockResolvedValue([{ id: 42, email: "bj@legacy.test", name: "BJ Bryant" }]);
     decision = { ...blank, reply: "Yes, it's connected." };
     await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Do you have access to ClickUp?" });
-    expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (Nora tracks launches there and Avery checks what's due and adds tasks)");
+    expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (every employee can check what's due or overdue and add tasks there; Nora also tracks launches there)");
     expect(systems[0]).toContain("Never say a connected tool isn't connected");
 
     decision = { ...blank, action: "clickup_due", count: 7 };
@@ -253,5 +253,11 @@ describe("every employee knows what's connected; Avery works in ClickUp", () => 
     expect(add.reply.content).toMatch(/Added "Book the venue" to ClickUp \(LeadDash Employees tasks\) for BJ Bryant, due Mon, Nov 2, 2026/);
     expect(calls).toContain("POST /space/s1/list");
     expect(calls).toContain("POST /list/L9/task");
+
+    // Every employee has the same ClickUp actions.
+    const theo = (await db.getEmployeeByKind(orgId, "blog"))!;
+    decision = { ...blank, action: "clickup_due", count: 7, target: "BJ" };
+    const theoDue = await caller(owner).chat.send({ organizationId: orgId, employeeId: theo.id, text: "What does BJ have due in ClickUp?" });
+    expect(theoDue.reply.content).toMatch(/1 open ClickUp task for BJ due in the next 7 days/);
   });
 });
