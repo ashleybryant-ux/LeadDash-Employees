@@ -66,7 +66,7 @@ const ACTIONS: Record<string, string[]> = {
   inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
-  outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
+  outreach: ["none", "report", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
   leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
   projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
   coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "start_onboarding"],
@@ -104,6 +104,7 @@ const ACTION_HELP: Record<string, string> = {
   start_onboarding: "start_onboarding: the person wants to start, continue or redo your onboarding interview.",
   ask_teammate: "ask_teammate: the person asks you to check with another employee (\"ask Theo what he published\", \"how many demos does Malik have\"). Put that employee's name or job in `teammate` and the question in `message`.",
   find_prospects: "find_prospects: search the web now for businesses (or referral partners) that fit. Put any area, type or size the person gave in `focus`.",
+  rewrite_outreach: "rewrite_outreach: rewrite every email sequence still waiting for approval (when the owner says they sound off, robotic, like AI, or asks for a rewrite). Put what to change in `notes` ('' if they didn't say).",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
   write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
   calendar_hold: "calendar_hold: the person wants a meeting or hold on their calendar. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, and the agenda in `notes`. It waits for their approval, then goes on their connected Google Calendar.",
@@ -472,6 +473,10 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       if (!withEmail.length) return { text: pick.length ? "Riley didn't find an email for those. Add one on Prospects and I'll start." : "There are no new prospects to start. Ask Riley to find some.", cards: [], queries: [] };
       await sales.passToOutreach(org, withEmail.map((p) => p.id));
       return { text: `Starting email sequences for ${plural(withEmail.length, "prospect")}. They'll be on the Outreach tab in a minute.`, cards: [], queries: [] };
+    }
+    case "rewrite_outreach": {
+      const n = await sales.rewriteWaiting(org, d.notes || undefined);
+      return { text: n ? `I rewrote ${plural(n, "waiting sequence")} so they sound like you typed them. They're on my Outreach tab for you to look over.` : "There's nothing waiting for approval to rewrite.", cards: [], queries: [] };
     }
     case "plan_launch": {
       const r = await projects.planLaunch(org, { name: d.title || undefined, date: d.date, brief: [d.notes, d.message].filter(Boolean).join("\n") || d.reply });

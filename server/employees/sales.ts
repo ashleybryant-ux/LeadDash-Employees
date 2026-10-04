@@ -8,6 +8,7 @@ import * as integrations from "../integrations";
 import { notify } from "../notify";
 import { afterSent, localParts, postNow } from "../social";
 import { partsIn, zonedToUtc } from "./schedule";
+import { HUMAN_EMAIL, findTells } from "./human";
 import { actor, employeeFor, systemPromptAbout, systemPromptFor, withRealSource, working } from "./tasks";
 import { gate, handoff, logActivity, workLink } from "./team";
 import { NPI_HOST, npiKinds, npiPractices, parseArea, type NpiPractice } from "./npi";
@@ -296,6 +297,84 @@ async function findLinkedIn(jada: AIEmployee, p: SalesProspect): Promise<{ url: 
   }
 }
 
+type Jada = Awaited<ReturnType<typeof employeeFor>>;
+
+/** Writes the 3 emails (and the LinkedIn note) for one prospect, then fixes anything that still reads like AI. */
+async function writeSequence(jada: Jada, p: SalesProspect, o: { booking: string; signer: string; noteWanted: boolean; guidance?: string }): Promise<Seq> {
+  return working(jada, async () => {
+    const { system } = await systemPromptAbout(
+      jada,
+      `${p.kind === "referral" ? "referral partner" : "prospect"} offer outreach email sequence follow up`,
+      `Your job: write a 3-email sequence to one ${p.kind === "referral" ? "possible referral partner" : "prospect"}, from the owner.
+- Email 1: 3 to 5 short sentences. Say why you're writing to them using one real thing from the research, say in one sentence what ${p.kind === "referral" ? "the practice offers the people they see" : "the workspace offers"} that fits it, then ask for ${p.kind === "referral" ? "a short call or a time to drop off information" : "a short call"} and give the booking link. Sign with the signer given.
+- Email 2 (3 business days later, only if no reply): 2 or 3 sentences that add one new, specific fact and the link.
+- Email 3 (5 business days after that): 1 or 2 sentences that close politely and leave the link open.
+- A subject line under 6 words. Plain text, no bullet points, no markdown.${o.noteWanted ? `
+- linkedinNote: a LinkedIn connection note from the owner, under 190 characters, first name greeting, one real reason to connect in a full sentence, no link, no pitch, no "happy to connect", signed with the owner's first name.` : ""}
+
+${HUMAN_EMAIL}`
+    );
+    const schema = o.noteWanted ? obj({ subject: str, email1: str, email2: str, email3: str, linkedinNote: str }) : obj({ subject: str, email1: str, email2: str, email3: str });
+    const prompt = `To: ${p.contactName ?? "the owner"}${p.contactTitle ? `, ${p.contactTitle}` : ""} at ${p.name}${p.city ? `, ${p.city}` : ""}
+Research: ${p.fitReason ?? ""}
+Found on: ${p.foundOn ?? p.sourceUrl ?? ""}
+Booking link: ${o.booking}
+Signer:
+${o.signer}${o.guidance ? `\nThe owner asked for this change: ${o.guidance}` : ""}`;
+    let seq = await generateJson<Seq>({ system, prompt, schemaName: "outreach_sequence", schema, maxTokens: 1500 });
+    // The signature (with its street address) is the owner's own; only the writing is checked.
+    const body = (t: string) => (t ?? "").replace(o.signer, "");
+    const tells = findTells(seq.subject, body(seq.email1), body(seq.email2), body(seq.email3), seq.linkedinNote ?? "");
+    if (tells.length) {
+      const fixed = await generateJson<Seq>({
+        system,
+        prompt: `${prompt}
+
+Your draft:
+${JSON.stringify(seq)}
+
+These parts read like AI wrote them: ${tells.join("; ")}. Rewrite every field so it sounds like the owner typed it herself. Keep the facts, the booking link and the signature exactly.`,
+        schemaName: "outreach_sequence",
+        schema,
+        maxTokens: 1500,
+      }).catch(() => null);
+      if (fixed?.email1) seq = fixed;
+    }
+    return seq;
+  });
+}
+
+/** Rewrites every sequence still waiting for approval with the current writing rules. Returns how many. */
+export async function rewriteWaiting(orgId: number, guidance?: string) {
+  const jada = await employeeFor(orgId, "outreach");
+  const { settings, org } = await salesSettings(orgId);
+  const links = salesLinks(settings.token);
+  const signer = [org.signerName, org.name].filter(Boolean).join("\n") || "[YOUR NAME]";
+  const items = (await db.listOutboundItemsByOrg(orgId, "outreach_email")).filter((m) => m.status === "pending_approval" || m.status === "changes_requested");
+  const bySeq = new Map<string, OutboundItem[]>();
+  for (const m of items) {
+    const key = JSON.parse(m.metadata || "{}").sequence as string | undefined;
+    if (key) bySeq.set(key, [...(bySeq.get(key) ?? []), m]);
+  }
+  let done = 0;
+  for (const [sequence, steps] of Array.from(bySeq.entries())) {
+    const p = await db.getProspect(JSON.parse(steps[0].metadata || "{}").prospectId, orgId);
+    if (!p) continue;
+    const step = details(p).linkedin as LinkedInStep | undefined;
+    const noteWanted = settings.linkedin.on && settings.linkedin.note && step?.sequence === sequence && step.status === "waiting";
+    const seq = await writeSequence(jada, p, { booking: links.booking, signer, noteWanted, guidance });
+    for (const m of steps) {
+      const n = JSON.parse(m.metadata || "{}").step as number;
+      const body = n === 1 ? seq.email1 : n === 2 ? seq.email2 : seq.email3;
+      await db.updateOutboundItem(m.id, orgId, { title: (n === 1 ? seq.subject : `Re: ${seq.subject}`).slice(0, 255), body, status: "pending_approval" });
+    }
+    if (noteWanted && seq.linkedinNote) await setStep(orgId, p, { note: fitNote(seq.linkedinNote) });
+    done++;
+  }
+  if (done) await logActivity(jada, "done", `Rewrote ${done} waiting email sequence${done === 1 ? "" : "s"}.`);
+  return done;
+}
+
 export async function startOutreach(orgId: number, ids: number[]) {
   const jada = await employeeFor(orgId, "outreach");
   const { settings, org, tz } = await salesSettings(orgId);
@@ -311,31 +390,7 @@ export async function startOutreach(orgId: number, ids: number[]) {
     const already = (await db.listOutboundItemsByOrg(orgId, "outreach_email")).some((m) => JSON.parse(m.metadata || "{}").prospectId === p.id && m.status !== "cancelled");
     if (already) continue;
     const noteWanted = settings.linkedin.on && settings.linkedin.note;
-    const seq = await working(jada, async () => {
-      const { system } = await systemPromptAbout(
-        jada,
-        `${p.kind === "referral" ? "referral partner" : "prospect"} offer outreach email sequence follow up`,
-        `Your job: write a 3-email sequence to one ${p.kind === "referral" ? "possible referral partner" : "prospect"}, from the owner.
-- Email 1: 4 to 6 short lines. Open with one real thing from the research, say what ${p.kind === "referral" ? "the practice offers the people they see" : "the workspace offers"} in one sentence, then ask for ${p.kind === "referral" ? "a short call or a time to drop off information" : "a short meeting"} and give the booking link. Sign with the signer given.
-- Email 2 (3 business days later, only if no reply): 1 or 2 sentences that add one new useful fact and the link.
-- Email 3 (5 business days after that): 1 or 2 sentences that close politely and leave the link open.
-- A plain subject line under 8 words, no clickbait. Plain text, no bullet points, no markdown.
-- Never say you came across their profile or that you were impressed.${noteWanted ? `
-- linkedinNote: a LinkedIn connection note from the owner, under 190 characters, first name greeting, one real reason to connect, no link, no pitch, signed with the owner's first name.` : ""}`
-      );
-      return generateJson<Seq>({
-        system,
-        prompt: `To: ${p.contactName ?? "the owner"}${p.contactTitle ? `, ${p.contactTitle}` : ""} at ${p.name}${p.city ? `, ${p.city}` : ""}
-Research: ${p.fitReason ?? ""}
-Found on: ${p.foundOn ?? p.sourceUrl ?? ""}
-Booking link: ${links.booking}
-Signer:
-${signer}`,
-        schemaName: "outreach_sequence",
-        schema: noteWanted ? obj({ subject: str, email1: str, email2: str, email3: str, linkedinNote: str }) : obj({ subject: str, email1: str, email2: str, email3: str }),
-        maxTokens: 1500,
-      });
-    });
+    const seq = await writeSequence(jada, p, { booking: links.booking, signer, noteWanted });
     const send1 = new Date(first.getTime() + i * 3 * 60_000);
     const send2 = addWeekdays(tz, send1, 3);
     const send3 = addWeekdays(tz, send2, 5);
