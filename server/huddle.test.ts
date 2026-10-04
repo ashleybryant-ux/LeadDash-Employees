@@ -104,6 +104,19 @@ describe("team huddle", () => {
     expect(remove).toHaveBeenCalledWith(orgId, "bot-1");
   });
 
+  it("matches ElevenLabs voices to each employee, women's voices for women and men's for men, never the same voice twice", () => {
+    const v = (id: string, gender: string, accent = "american") => ({ voice_id: id, name: id, category: "premade", labels: { gender, accent } });
+    const voices = [v("f1", "female"), v("f2", "female", "british"), v("f3", "female"), v("m1", "male"), v("m2", "male"), v("f4", "female"), v("f5", "female"), v("f6", "female"), v("f7", "female"), v("f8", "female"), v("m3", "male"), v("m4", "male"), v("m5", "male"), v("m6", "male")];
+    const map = huddle.assignVoices(voices, { coo: "m6" });
+    expect(map.coo).toBe("m6");
+    expect(["f1", "f3", "f4", "f5", "f6", "f7", "f8"]).toContain(map.projects);
+    expect(map.speaking.startsWith("m")).toBe(true);
+    const kinds = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring"];
+    expect(new Set(kinds.map((k) => map[k])).size).toBe(kinds.length);
+    // American accents come first.
+    expect(Object.values(map).slice(0, 8)).not.toContain("f2");
+  });
+
   it("each employee has their own stock voice", () => {
     const voices = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring"].map((k) => huddle.VOICES[k]);
     expect(new Set(voices).size).toBe(voices.length);

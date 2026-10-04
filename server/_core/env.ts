@@ -43,6 +43,9 @@ export const ENV = {
   serperKey: process.env.SERPER_API_KEY || "",
   /** Most one "find" request may spend on web searches, in dollars, across its rounds. */
   searchBudgetUsd: parseFloat(process.env.SEARCH_BUDGET_USD || "2"),
+  /** ElevenLabs key: when set, huddle voices come from ElevenLabs instead of OpenAI. */
+  elevenLabsKey: process.env.ELEVENLABS_API_KEY || "",
+  elevenLabsModel: process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5",
   /** OpenAI key, used only for social and blog images. */
   openAiKey: process.env.OPENAI_API_KEY || "",
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",

@@ -17,7 +17,8 @@ import { BASE_RULES } from "./roster";
  *   each finished line people say to our webhook, and the bot's camera is the
  *   huddle page, which plays each answer into the meeting.
  * - Each answer comes from the employee's own facts, is spoken in that employee's
- *   own voice (OpenAI text to speech), and is added to the transcript. When the
+ *   own voice (ElevenLabs when ELEVENLABS_API_KEY is set, otherwise OpenAI text to
+ *   speech), and is added to the transcript. When the
  *   huddle ends, Simone turns the transcript into notes and action items for Nora.
  */
 
@@ -88,9 +89,110 @@ export function lastSpeechError() {
   return speechError;
 }
 
+// ==========================================
+// ElevenLabs voices
+// ==========================================
+
+/** How each employee sounds, so ElevenLabs voices are matched to them. */
+const VOICE_STYLE: Record<string, "female" | "male"> = {
+  coo: "female",
+  projects: "female",
+  grants: "female",
+  speaking: "male",
+  prospecting: "male",
+  outreach: "female",
+  leads: "male",
+  social: "female",
+  blog: "male",
+  website: "female",
+  video: "female",
+  inbox: "male",
+  hiring: "female",
+};
+const KIND_ORDER = Object.keys(VOICE_STYLE);
+
+export type ElevenVoice = { voice_id: string; name: string; category?: string; labels?: Record<string, string> };
+
+/**
+ * Gives each employee a different ElevenLabs voice from the account's own voice list:
+ * women's voices for the women, men's for the men, American accents first.
+ * ELEVENLABS_VOICES (JSON, like {"coo":"<voice id>"}) picks a voice for anyone.
+ */
+export function assignVoices(voices: ElevenVoice[], overrides: Record<string, string> = {}) {
+  const usable = voices.filter((v) => v.voice_id);
+  const rank = (v: ElevenVoice) => ((v.labels?.accent ?? "").toLowerCase().includes("american") ? 0 : 1) + (v.category === "premade" ? 0 : 0.5);
+  const pool = (g: string) => usable.filter((v) => (v.labels?.gender ?? "").toLowerCase() === g).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  const lists: Record<string, ElevenVoice[]> = { female: pool("female"), male: pool("male") };
+  const used = new Set(Object.values(overrides));
+  const out: Record<string, string> = { ...overrides };
+  for (const kind of KIND_ORDER) {
+    if (out[kind]) continue;
+    const list = lists[VOICE_STYLE[kind]].length ? lists[VOICE_STYLE[kind]] : usable;
+    const pick = list.find((v) => !used.has(v.voice_id)) ?? list[0];
+    if (pick) {
+      out[kind] = pick.voice_id;
+      used.add(pick.voice_id);
+    }
+  }
+  if (!out.custom && usable[0]) out.custom = usable[0].voice_id;
+  return out;
+}
+
+let elevenCache: { at: number; map: Record<string, string> } | null = null;
+
+async function elevenVoiceFor(kind: string) {
+  if (!elevenCache || Date.now() - elevenCache.at > 60 * 60_000) {
+    const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": ENV.elevenLabsKey }, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`ElevenLabs didn't list voices (${res.status}): ${(await res.text()).slice(0, 200)}`);
+    const data = (await res.json()) as { voices?: ElevenVoice[] };
+    let overrides: Record<string, string> = {};
+    try {
+      overrides = JSON.parse(process.env.ELEVENLABS_VOICES || "{}");
+    } catch {
+      overrides = {};
+    }
+    elevenCache = { at: Date.now(), map: assignVoices(data.voices ?? [], overrides) };
+  }
+  return elevenCache.map[kind] ?? elevenCache.map.custom ?? null;
+}
+
+async function elevenSpeak(kind: string, text: string) {
+  const voice = await elevenVoiceFor(kind);
+  if (!voice) throw new Error("Your ElevenLabs account has no voices to use. Add voices in ElevenLabs, My Voices.");
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
+    method: "POST",
+    headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
+    body: JSON.stringify({ text: text.slice(0, 1200), model_id: ENV.elevenLabsModel }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) {
+    const body = (await res.text()).slice(0, 300);
+    let msg = body;
+    try {
+      const j = JSON.parse(body);
+      msg = j?.detail?.message ?? (typeof j?.detail === "string" ? j.detail : body);
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(`ElevenLabs didn't make the voice (${res.status}): ${msg}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 /** One answer in the employee's voice, as MP3. Returns null when speech is not set up, so the words still show. */
 export async function speak(kind: string, text: string): Promise<string | null> {
   if (process.env.NODE_ENV === "test") return null;
+  if (ENV.elevenLabsKey) {
+    try {
+      const id = keepAudio(await elevenSpeak(kind, text));
+      speechError = null;
+      return id;
+    } catch (err) {
+      speechError = (err instanceof Error ? err.message : String(err)).slice(0, 300);
+      console.warn("[huddle] ElevenLabs failed:", speechError);
+      return null;
+    }
+  }
   if (!ENV.openAiKey) {
     speechError = "Voices are not set up: OPENAI_API_KEY is missing on the server.";
     return null;
