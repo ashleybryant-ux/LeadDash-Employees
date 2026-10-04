@@ -11,7 +11,7 @@
 # taken out again before anything reloads.
 #
 # To take the forward away later (a few weeks is plenty):
-#   . ~/.oldbox && ssh ssm-user@$OLD "sudo rm -f /etc/nginx/conf.d/employees-forward.conf && sudo nginx -t && sudo systemctl reload nginx"
+#   . ~/.oldbox && ssh ssm-user@$OLD "sudo rm -f /etc/nginx/sites-enabled/employees-forward /etc/nginx/sites-available/employees-forward && sudo nginx -t && sudo systemctl reload nginx"
 set -euo pipefail
 
 . "$HOME/.oldbox"   # OLD = the EHR server's private address, saved during the move
@@ -35,7 +35,7 @@ sudo cat "$CERT/fullchain.pem" | $SSH "sudo mkdir -p /etc/nginx/employees-forwar
 sudo cat "$CERT/privkey.pem" | $SSH "sudo tee /etc/nginx/employees-forward/privkey.pem > /dev/null && sudo chmod 600 /etc/nginx/employees-forward/privkey.pem"
 
 echo "== adding the forward on the EHR server (to $HERE)"
-sed "s/__HERE__/$HERE/" <<'CONF' | $SSH "sudo tee /etc/nginx/conf.d/employees-forward.conf > /dev/null"
+sed "s/__HERE__/$HERE/" <<'CONF' | $SSH "sudo tee /etc/nginx/sites-available/employees-forward > /dev/null"
 # Visits to employees.leaddash.io that land here go to the LeadDash Employees server.
 server {
     listen 80;
@@ -63,7 +63,9 @@ server {
 }
 CONF
 
-$SSH 'if sudo nginx -t 2>&1; then sudo systemctl reload nginx && echo "forward is on"; else sudo rm -f /etc/nginx/conf.d/employees-forward.conf; echo "NGINX TEST FAILED, so the forward was taken out again. The portal was not touched. Send me this output."; exit 1; fi'
+# The EHR server's nginx reads sites-enabled (not conf.d), so the forward goes there. An earlier copy in conf.d is removed.
+$SSH 'sudo rm -f /etc/nginx/conf.d/employees-forward.conf; sudo ln -sf /etc/nginx/sites-available/employees-forward /etc/nginx/sites-enabled/employees-forward; if sudo nginx -t 2>&1 && sudo nginx -T 2>/dev/null | grep -q "employees-forward/fullchain.pem"; then sudo systemctl reload nginx && echo "forward is on"; else sudo rm -f /etc/nginx/sites-enabled/employees-forward; sudo nginx -t >/dev/null 2>&1 && sudo systemctl reload nginx; echo "NGINX DID NOT TAKE THE FORWARD, so it was taken out again. The portal was not touched. Send me this output."; exit 1; fi'
 
+sleep 3
 echo "== check: asking the EHR server for LeadDash Employees"
 curl -sS -m 15 --resolve "employees.leaddash.io:443:$OLD" https://employees.leaddash.io/api/health && echo && echo "WORKING: phones that remember the old address now get LeadDash Employees."
