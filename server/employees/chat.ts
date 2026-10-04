@@ -282,6 +282,10 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 - An attached RFP or opportunity file: choose add_file.`,
 };
 TALK_BY_KIND.speaking = TALK_BY_KIND.grants;
+TALK_BY_KIND.video = `- The owner's photos are in the Brain under "Images on file". When she asks about her photos, name the ones there and how many. Never say you can't get to her photos when they're listed there. When none are, ask her to attach them right here with the paperclip (up to 10 at a time) and offer to save them to the Brain.
+- For AI video of the owner made from her photos (an avatar that looks like her), she wants it made through the video models' own APIs at wholesale prices with her own ElevenLabs voice, not resold subscription tools. Never recommend HeyGen, Synthesia or similar subscriptions.
+- Making the video itself isn't connected here yet. Say so plainly, and do the parts you can now: the scripts, the shots, what she says on camera, and which of her photos to use.
+- No markdown symbols like ** or #. Plain sentences, and number options as 1., 2., 3.`;
 
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 const fmtYmd = (ymd: string) => new Date(`${ymd}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" });

@@ -236,7 +236,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <span style={{ fontWeight: 800, fontSize: 14 }}>{m.authorName}</span>
                       <span style={{ fontSize: 12, color: "#5b6b64", fontWeight: 500, marginLeft: 6 }}>{fmtTime(m.createdAt)}</span>
                     </div>
-                    {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.content}</div>}
+                    {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.role === "user" ? m.content : <Rich text={m.content} />}</div>}
                     {m.role === "user" && <MessageAttachments raw={m.attachments} />}
                     {m.spoken && <SpokenTag role={m.role} />}
                   </div>
@@ -353,6 +353,13 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
       </div>
     </div>
   );
+}
+
+/** An employee's message with **bold** shown as bold and "# " heading marks dropped, so no stray asterisks show. */
+function Rich({ text }: { text: string }) {
+  const clean = text.replace(/^#{1,6}\s+/gm, "");
+  const parts = clean.split(/\*\*(.+?)\*\*/g);
+  return <>{parts.map((p, i) => (i % 2 ? <strong key={i}>{p}</strong> : <React.Fragment key={i}>{p.replace(/(^|\s)\*(\S[^*\n]*?)\*(?=\s|[.,!?]|$)/g, "$1$2")}</React.Fragment>))}</>;
 }
 
 function DaySep({ date }: { date: Date }) {
