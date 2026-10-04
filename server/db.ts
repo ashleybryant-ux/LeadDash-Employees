@@ -21,6 +21,7 @@ import {
   outboundItems,
   chatMessages,
   chatFiles,
+  huddles,
   chatReads,
   scheduledTasks,
   taskRuns,
@@ -1549,4 +1550,25 @@ export function markStuckPages() {
   for (const p of getDb().select().from(sitePages).where(eq(sitePages.status, "building")).all()) {
     getDb().update(sitePages).set({ status: p.currentVersion ? "ready" : "failed", progress: "Stopped by a server restart. Ask again and I'll redo it." }).where(eq(sitePages.id, p.id)).run();
   }
+}
+
+// ==========================================
+// Team huddles
+// ==========================================
+
+export function createHuddle(row: typeof huddles.$inferInsert) {
+  return getDb().insert(huddles).values(row).returning().all()[0];
+}
+export function getHuddle(id: number, orgId: number) {
+  return getDb().select().from(huddles).where(and(eq(huddles.id, id), eq(huddles.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export function huddleByToken(token: string) {
+  return getDb().select().from(huddles).where(eq(huddles.token, token)).limit(1).all()[0] || null;
+}
+export function listHuddles(orgId: number, limit = 20) {
+  return getDb().select().from(huddles).where(eq(huddles.organizationId, orgId)).orderBy(desc(huddles.id)).limit(limit).all();
+}
+export function updateHuddle(id: number, orgId: number, data: Partial<typeof huddles.$inferInsert>) {
+  getDb().update(huddles).set(data).where(and(eq(huddles.id, id), eq(huddles.organizationId, orgId))).run();
+  return getHuddle(id, orgId);
 }

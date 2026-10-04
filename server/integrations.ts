@@ -1426,6 +1426,30 @@ export async function createRecallBot(orgId: number, b: { meetingUrl: string; jo
   return String(data.id);
 }
 
+/**
+ * The talking team: a bot that joins now, shows the huddle page as its camera (so the
+ * meeting hears the employees' voices), and sends each finished line people say to
+ * our webhook as it happens.
+ */
+export async function createRecallTeamBot(orgId: number, b: { meetingUrl: string; botName: string; pageUrl: string; webhookUrl: string; message: string }) {
+  const key = await recallKey(orgId);
+  const data = await recallFetch(key, "bot/", {
+    method: "POST",
+    body: {
+      meeting_url: b.meetingUrl,
+      bot_name: b.botName.slice(0, 100),
+      output_media: { camera: { kind: "webpage", config: { url: b.pageUrl } } },
+      variant: { zoom: "web_4_core", google_meet: "web_4_core", microsoft_teams: "web_4_core" },
+      recording_config: {
+        transcript: { provider: { recallai_streaming: { mode: "prioritize_low_latency", language_code: "en" } } },
+        realtime_endpoints: [{ type: "webhook", url: b.webhookUrl, events: ["transcript.data"] }],
+      },
+      chat: { on_bot_join: { send_to: "everyone", message: b.message.slice(0, 480) } },
+    },
+  });
+  return String(data.id);
+}
+
 /** Cancels a booked bot, or takes it out of a meeting it is already in. */
 export async function removeRecallBot(orgId: number, botId: string) {
   const key = await recallKey(orgId);

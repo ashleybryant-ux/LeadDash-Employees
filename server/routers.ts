@@ -53,6 +53,7 @@ import * as team from "./employees/team";
 import * as projects from "./employees/projects";
 import * as coo from "./employees/coo";
 import * as notetaker from "./employees/notetaker";
+import * as huddle from "./employees/huddle";
 import { opsFor, saveOps, MEETING_MINUTES } from "./employees/ops";
 import { KPI_SOURCES } from "../drizzle/schema";
 import { postProblems, SOCIAL_CHANNELS, TIKTOK_PRIVACY, type SocialChannel } from "@shared/post-model";
@@ -1436,6 +1437,55 @@ export const appRouter = router({
         await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id);
         return result;
       }),
+  }),
+
+  // ==========================================
+  // Team huddles: talk out loud with the employees
+  // ==========================================
+  huddle: router({
+    current: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const list = db.listHuddles(input.organizationId, 5);
+      const live = list.find((h) => h.status === "live");
+      const last = list.find((h) => h.status === "ended");
+      return { live: live ? huddle.huddleView(live) : null, last: last ? huddle.huddleView(last) : null };
+    }),
+    start: protectedProcedure.input(orgInput.extend({ kinds: z.array(z.string().max(30)).max(20).default([]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return huddle.huddleView(await huddle.startHuddle(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.kinds));
+    }),
+    members: protectedProcedure.input(orgInput.extend({ id: z.number(), kinds: z.array(z.string().max(30)).min(1).max(20) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return huddle.huddleView(huddle.setMembers(input.organizationId, input.id, input.kinds)!);
+    }),
+    listenToken: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return huddle.listenToken();
+    }),
+    say: protectedProcedure.input(orgInput.extend({ id: z.number(), text: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const r = await huddle.say(input.organizationId, input.id, personName(ctx.user), input.text);
+      return { huddle: huddle.huddleView(r.huddle), replies: r.replies.map((x) => ({ ...x, audioUrl: x.audioId ? `/api/voice/audio/${x.audioId}` : null })) };
+    }),
+    bring: protectedProcedure.input(orgInput.extend({ id: z.number(), url: z.string().trim().min(10).max(1000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      try {
+        return huddle.huddleView((await huddle.bringToMeeting(input.organizationId, input.id, input.url))!);
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : "The team couldn't join that meeting." });
+      }
+    }),
+    takeOut: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return huddle.huddleView((await huddle.takeOut(input.organizationId, input.id))!);
+    }),
+    end: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const h = await huddle.endHuddle(input.organizationId, input.id);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Held a team huddle", details: `${huddle.linesOf(h).length} lines` });
+      return huddle.huddleView(h);
+    }),
   }),
 
   // ==========================================

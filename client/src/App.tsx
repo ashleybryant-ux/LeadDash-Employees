@@ -9,6 +9,7 @@ import { useAuth } from "./_core/hooks/useAuth";
 import SignIn from "./pages/SignIn";
 import ChatPage from "./ld/ChatPage";
 import Approvals from "./ld/pages/Approvals";
+import Huddle from "./ld/pages/Huddle";
 import Activity from "./ld/pages/Activity";
 import Tasks from "./ld/pages/Tasks";
 import Brain from "./ld/pages/Brain";
@@ -50,6 +51,7 @@ function Router() {
       <Route path="/chats/e/:id/:tab?" component={ChatPage} />
       <Route path="/chats/:kind/app/:appId/:view?" component={ChatPage} />
       <Route path="/chats/:kind/:tab?" component={ChatPage} />
+      <Route path="/huddle" component={Huddle} />
       <Route path="/activity" component={Activity} />
       <Route path="/approvals" component={Approvals} />
       <Route path="/tasks" component={Tasks} />

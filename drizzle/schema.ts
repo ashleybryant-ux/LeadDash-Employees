@@ -1393,3 +1393,38 @@ export const publicFiles = sqliteTable(
   (t) => [uniqueIndex("public_files_key_idx").on(t.fileKey)]
 );
 export type PublicFile = typeof publicFiles.$inferSelect;
+
+// ==========================================
+// Team huddles: talking out loud with the employees
+// ==========================================
+
+export type HuddleLine = { who: string; kind: string | null; text: string; at: number };
+
+/**
+ * A huddle: you talk, the employees answer out loud in their own voices. In the
+ * app (mode "room") or inside a Zoom or Meet through a Recall.ai bot ("meeting").
+ */
+export const huddles = sqliteTable(
+  "huddles",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    startedBy: integer("startedBy"),
+    startedByName: text("startedByName").notNull(),
+    /** JSON employee kinds in the huddle. */
+    kinds: text("kinds").notNull().default("[]"),
+    /** JSON HuddleLine[]. */
+    transcript: text("transcript").notNull().default("[]"),
+    status: text("status", { enum: ["live", "ended"] }).notNull().default("live"),
+    /** Random secret for the meeting bot's page and its transcript webhook. */
+    token: text("token").notNull(),
+    meetingUrl: text("meetingUrl"),
+    botId: text("botId"),
+    /** The meeting record holding the notes and action items after it ends. */
+    meetingId: integer("meetingId"),
+    createdAt: createdAt(),
+    endedAt: integer("endedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("huddles_org_idx").on(t.organizationId), uniqueIndex("huddles_token_idx").on(t.token)]
+);
+export type Huddle = typeof huddles.$inferSelect;

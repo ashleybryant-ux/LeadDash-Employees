@@ -129,6 +129,7 @@ const I = (d: React.ReactNode) => (
 );
 export const Icons = {
   chats: I(<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />),
+  huddle: I(<><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></>),
   activity: I(<path d="M3 12h4l3-8 4 16 3-8h4" />),
   approvals: I(<><path d="M9 11l3 3 8-8" /><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" /></>),
   tasks: I(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>),
@@ -153,7 +154,7 @@ export const Icons = {
 // Rail
 // ==========================================
 
-type RailKey = "chats" | "activity" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
+type RailKey = "chats" | "huddle" | "activity" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
 
 export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
@@ -207,6 +208,7 @@ export function Rail({ active }: { active: RailKey }) {
         <img src="/brand/icon.png" alt="LeadDash Employees" width={44} height={44} style={{ display: "block", width: 44, height: 44, borderRadius: 11 }} />
       </button>
       {item("chats", "Chats", "/chats", Icons.chats)}
+      {item("huddle", "Huddle", "/huddle", Icons.huddle)}
       {item("activity", "Activity", "/activity", Icons.activity)}
       {item("approvals", "Approvals", "/approvals", Icons.approvals, count)}
       {item("tasks", "Tasks", "/tasks", Icons.tasks)}
@@ -560,7 +562,7 @@ const MoreIcon = I(<><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r=
 
 export function BottomNav({ active }: { active: RailKey }) {
   const count = useApprovalCount();
-  const on = (k: RailKey) => (k === "more" ? ["activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
+  const on = (k: RailKey) => (k === "more" ? ["huddle", "activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
   const item = (key: RailKey, label: string, href: string, icon: React.ReactNode, badge?: number) => (
     <Link key={key} href={href} className={`ld-bn-item ${on(key) ? "on" : ""}`} aria-current={on(key) ? "page" : undefined}>
       <span style={{ position: "relative", display: "flex" }}>

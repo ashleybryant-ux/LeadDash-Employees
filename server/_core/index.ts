@@ -13,6 +13,7 @@ import { aiStatus } from "./llm";
 import { hasSecretsKey } from "./crypto";
 import { startScheduler } from "../employees/runner";
 import { registerUploads } from "../uploads";
+import { registerVoice } from "../voice";
 import { ensureIndexed } from "../employees/kb";
 import { markStuckApplications, markStuckPages } from "../db";
 import { ensureAllRosters } from "../employees/roster-sync";
@@ -45,6 +46,8 @@ async function startServer() {
 
   // Large files (videos, RFPs, signed forms) arrive as raw bodies, before JSON parsing.
   registerUploads(app);
+  // Team huddles: spoken answers, the meeting bot's page and its transcript webhook.
+  registerVoice(app);
 
   app.use(express.json({ limit: "16mb" })); // Brain uploads arrive as base64
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
