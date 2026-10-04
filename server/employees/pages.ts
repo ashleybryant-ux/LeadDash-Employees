@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import * as db from "../db";
 import { ENV } from "../_core/env";
-import { generateText } from "../_core/llm";
+import { generateJson, generateText } from "../_core/llm";
 import { generateImage } from "../_core/imageGeneration";
 import type { AIEmployee, SitePage } from "../../drizzle/schema";
 import { employeeFor, systemPromptAbout, working, actor } from "./tasks";
@@ -90,11 +90,37 @@ async function brief(emp: AIEmployee, page: SitePage) {
   return `${PAGE_DESIGN.split("{WRAP}").join(wrapClass(page.id))}${photoList}`;
 }
 
+/** What the owner chose in chat before the first build: the layout, where the button goes, notes and attached photos. */
+export type BuildExtra = { layout?: string; button?: string; notes?: string; photos?: { url: string; text: string; name: string }[] };
+
+const LAYOUT_GUIDE: Record<string, string> = {
+  split: "Layout: split hero with the photo beside the headline; the photo carries the page.",
+  bold: "Layout: a big centered headline first with the button under it, then the image below or in the next section; the promise carries the page.",
+  story: "Layout: open with the problem and why it matters in a short story section, then the offer, then proof.",
+};
+
+function layoutLine(layout?: string) {
+  const l = (layout ?? "").toLowerCase();
+  if (!l) return "";
+  if (l.includes("photo") || l.includes("split")) return LAYOUT_GUIDE.split;
+  if (l.includes("headline") || l.includes("bold")) return LAYOUT_GUIDE.bold;
+  if (l.includes("story")) return LAYOUT_GUIDE.story;
+  return `Layout the owner asked for: ${layout}`;
+}
+
+function buttonLine(button?: string) {
+  const b = (button ?? "").toLowerCase();
+  if (!b) return "";
+  if (b.includes("form on the page")) return "The main button scrolls to a form section: put {{form}} in that section and link the button to #form.";
+  if (b.includes("email")) return "The main button opens an email to the owner: link it to {{button_url}} (the owner adds the address).";
+  return `The main button goes to: ${button} (link it to {{button_url}}).`;
+}
+
 /** Starts a page; the build runs in the background and posts to chat when ready. */
-export async function startPage(orgId: number, input: { title: string; pageType: "landing" | "website"; goal: string; buttonUrl?: string | null }) {
+export async function startPage(orgId: number, input: { title: string; pageType: "landing" | "website"; goal: string; buttonUrl?: string | null }, extra: BuildExtra = {}) {
   const emp = await employeeFor(orgId, "website");
   const page = db.createSitePage({ organizationId: orgId, employeeId: emp.id, title: input.title.slice(0, 200), pageType: input.pageType, goal: input.goal.slice(0, 500), buttonUrl: input.buttonUrl ?? null, status: "building", progress: "Writing the page" });
-  void build(emp, page, null);
+  void build(emp, page, null, extra);
   return page;
 }
 
@@ -109,7 +135,7 @@ export async function revisePage(orgId: number, pageId: number, request: string)
   return updated;
 }
 
-async function build(emp: AIEmployee, page: SitePage, request: string | null) {
+async function build(emp: AIEmployee, page: SitePage, request: string | null, extra: BuildExtra = {}) {
   const orgId = emp.organizationId;
   const progress = (s: string) => void db.updateSitePage(page.id, orgId, { progress: s });
   try {
@@ -122,7 +148,15 @@ async function build(emp: AIEmployee, page: SitePage, request: string | null) {
       );
       const prompt = request && current
         ? `Page: ${page.title}\nGoal: ${page.goal}\n\nThe owner asked for these changes:\n${request}\n\nMake them, keep everything else as it is, and return the whole updated fragment (same wrapper class). Current page:\n${current.html}`
-        : `Page: ${page.title}\nType: ${page.pageType === "website" ? "website page" : "landing page"}\nGoal: ${page.goal}\nThe main button: ${page.buttonUrl ? "links to {{button_url}}" : "links to {{button_url}} (the owner adds the link later)"}`;
+        : [
+            `Page: ${page.title}`,
+            `Type: ${page.pageType === "website" ? "website page" : "landing page"}`,
+            `Goal: ${page.goal}`,
+            buttonLine(extra.button) || `The main button: ${page.buttonUrl ? "links to {{button_url}}" : "links to {{button_url}} (the owner adds the link later)"}`,
+            layoutLine(extra.layout),
+            extra.photos?.length ? `Photos the owner attached for this page (use these first, with the link as the img src):\n${extra.photos.map((p) => `- ${p.url}: ${p.text || p.name}`).join("\n")}` : "",
+            extra.notes ? `What the owner told you and gave you:\n${extra.notes.slice(0, 12000)}` : "",
+          ].filter(Boolean).join("\n");
       return clean(await generateText({ system, prompt, maxTokens: 16000, temperature: 0.7, timeoutMs: 290_000 }));
     });
     if (!html.includes(wrapClass(page.id))) throw new Error("The page came back without its wrapper. Ask again and I'll rebuild it.");
@@ -130,15 +164,14 @@ async function build(emp: AIEmployee, page: SitePage, request: string | null) {
     const version = (current?.version ?? page.currentVersion) + 1;
     db.addSitePageVersion({ organizationId: orgId, pageId: page.id, version, html: filled, note: request ? request.slice(0, 200) : "First build" });
     const done = db.updateSitePage(page.id, orgId, { status: "ready", currentVersion: version, progress: null });
+    const talk = await talkAbout(emp, page, filled, request, version);
     await db.createChatMessage({
       organizationId: orgId,
       employeeId: emp.id,
       role: "employee",
       authorName: emp.name,
-      content: request
-        ? `Done: version ${version} of ${page.title} has your changes. Earlier versions are saved on the Pages tab.`
-        : `Ready for review: ${page.title}. Preview it on desktop and phone on the Pages tab, then Copy HTML and paste it into a custom code element on your page.`,
-      cards: JSON.stringify([pageCard(done)]),
+      content: talk.content,
+      cards: JSON.stringify([pageCard(done), ...(talk.choices.length ? [{ type: "choices", id: Date.now(), title: "", options: talk.choices }] : [])]),
     });
     await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: request ? "Changed a page" : "Built a page", details: `${page.title}, version ${version}` });
   } catch (err) {
@@ -150,7 +183,35 @@ async function build(emp: AIEmployee, page: SitePage, request: string | null) {
 }
 
 export function pageCard(p: SitePage) {
-  return { type: "page" as const, id: p.id, title: p.title, subtitle: `${p.pageType === "website" ? "Website page" : "Landing page"} · version ${p.currentVersion}`, body: p.goal };
+  return { type: "page" as const, id: p.id, version: p.currentVersion, title: p.title, subtitle: `${p.pageType === "website" ? "Website page" : "Landing page"} · version ${p.currentVersion}`, body: p.goal };
+}
+
+/** Jordan's message with a new version: why she laid it out that way (first build) or exactly what changed, then quick replies. */
+async function talkAbout(emp: AIEmployee, page: SitePage, html: string, request: string | null, version: number) {
+  const fallback = {
+    content: request ? `Here's version ${version} with your changes. Version ${version - 1} is saved if you want it back.` : `Here's version 1 of ${page.title}.`,
+    choices: request ? ["Looks good", "Go back to the last version"] : ["Shorter headline", "Different photo", "Looks good"],
+  };
+  try {
+    const text = (await import("./files")).htmlToText(html).slice(0, 4000);
+    const out = await generateJson<{ message: string; why: string[]; choices: string[] }>({
+      system: `You are ${emp.name}, the owner's web designer, talking with them in chat about a page you just ${request ? "changed" : "built"}. Plain, warm, specific. No em dashes.`,
+      prompt: request
+        ? `They asked: ${request.slice(0, 1500)}\nThis is version ${version}.\nThe page now reads:\n${text}\n\nmessage: one or two sentences saying exactly what you changed and that version ${version - 1} is saved. why: []. choices: 2 to 4 short next things they might say about this page (under 6 words each), ending with "Looks good".`
+        : `Page: ${page.title}. Goal: ${page.goal}.\nThe page reads:\n${text}\n\nmessage: one sentence introducing version 1. why: 3 short points on why you laid it out this way (each one sentence, about this page). choices: 3 or 4 short changes they might want (under 6 words each), ending with "Looks good".`,
+      schemaName: "page_talk",
+      schema: { type: "object", additionalProperties: false, required: ["message", "why", "choices"], properties: { message: { type: "string" }, why: { type: "array", items: { type: "string" } }, choices: { type: "array", items: { type: "string" } } } },
+      maxTokens: 700,
+    });
+    if (!out?.message) return fallback;
+    const why = (out.why ?? []).filter(Boolean).slice(0, 4);
+    return {
+      content: `${out.message.trim()}${why.length ? `\n${why.map((w) => `- ${w.trim()}`).join("\n")}` : ""}`.replace(/—|–/g, ", "),
+      choices: (out.choices ?? []).map((c) => c.trim().slice(0, 60)).filter(Boolean).slice(0, 4),
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 export function restoreVersion(orgId: number, pageId: number, version: number) {

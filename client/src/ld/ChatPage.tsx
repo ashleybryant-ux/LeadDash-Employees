@@ -24,6 +24,7 @@ import { LaunchPlanCard, MeetingAgendaCard, MeetingNotesCard } from "./lead/Card
 import { OnboardingCard, OnboardingQuestionCard } from "./onboarding/ChatCards";
 import Onboarding from "./Onboarding";
 import type { Outputs } from "./types";
+import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 
 export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
 
@@ -90,7 +91,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live";
   id: number;
   title: string;
   subtitle?: string;
@@ -102,6 +103,8 @@ type Card = {
   status?: string;
   options?: string[];
   plan?: Plan;
+  version?: number;
+  before?: string;
 };
 
 type Plan = Outputs["social"]["schedulePlan"];
@@ -119,14 +122,18 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   const markRead = trpc.chat.markRead.useMutation({ onSuccess: () => utils.chat.summaries.invalidate() });
   const [text, setText] = React.useState("");
   const [pending, setPending] = React.useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = React.useState<{ id: number; name: string; size: number; kind: "image" | "document"; url: string }[]>([]);
+  const files = useAttachments(currentOrgId, emp.id);
   const send = trpc.chat.send.useMutation({
     onSuccess: async () => {
       setPending(null);
+      setPendingFiles([]);
       await Promise.all([utils.chat.list.invalidate(), utils.chat.summaries.invalidate(), utils.publishing.listApprovalQueue.invalidate()]);
     },
-    onError: () => setPending(null),
+    onError: () => { setPending(null); setPendingFiles([]); },
   });
   const bottom = React.useRef<HTMLDivElement>(null);
+  const composer = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     markRead.mutate({ organizationId: currentOrgId, employeeId: emp.id });
@@ -134,24 +141,47 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   }, [emp.id, currentOrgId, messages.data?.length]);
 
   React.useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
+    // Cards (page previews, drafts) load after the message, so scroll again once they have height.
+    const go = () => {
+      // The message box sits over the bottom of the chat, so leave room for it.
+      if (bottom.current && composer.current) bottom.current.style.scrollMarginBottom = `${composer.current.offsetHeight + 12}px`;
+      bottom.current?.scrollIntoView({ block: "end" });
+    };
+    go();
+    const t1 = setTimeout(go, 400);
+    const t2 = setTimeout(go, 1500);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [messages.data?.length, pending, busy]);
 
   const submit = (value: string) => {
     const v = value.trim();
-    if (!v || send.isPending) return;
+    const attached = files.ready;
+    if ((!v && !attached.length) || send.isPending || files.uploading) return;
     setPending(v);
+    setPendingFiles(attached);
     setText("");
-    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: v });
+    files.clear();
+    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: v, attachmentIds: attached.map((f) => f.id) });
+  };
+  /** A tapped quick reply goes out as the person's message, without touching files waiting in the box. */
+  const pick = (value: string) => {
+    if (send.isPending) return;
+    setPending(value);
+    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: value, attachmentIds: [] });
   };
 
   const list = messages.data ?? [];
+  const lastId = list.length ? list[list.length - 1].id : null;
+  const lastHasReplies = list.length > 0 && parseJson<Card[]>(list[list.length - 1].cards, []).some((c) => c.type === "choices" || c.type === "layout_choice");
   let lastDay: Date | null = null;
 
   return (
     <div className="ld-chatpane" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div className="ld-chatmsgs" style={{ flex: 1, padding: "24px 32px", display: "flex", flexDirection: "column", gap: 22, maxWidth: 900, boxSizing: "border-box", width: "100%" }}>
-        {list.length === 0 && !pending && (
+        {list.length === 0 && pending === null && (
           <div className="ld-empty" style={{ textAlign: "left", padding: "8px 0" }}>
             {emp.description}
           </div>
@@ -160,7 +190,10 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
           const day = new Date(m.createdAt);
           const sep = !lastDay || !isSameDay(lastDay, day);
           lastDay = day;
-          const cards = parseJson<Card[]>(m.cards, []);
+          const allCards = parseJson<Card[]>(m.cards, []);
+          const cards = allCards.filter((c) => c.type !== "choices");
+          // Quick replies show only under the latest message, while nothing is being sent.
+          const replies = m.id === lastId && pending === null && !busy ? allCards.filter((c) => c.type === "choices").flatMap((c) => c.options ?? []) : [];
           const queries = parseJson<string[]>(m.searchQueries, []);
           if (m.role === "handoff") {
             return (
@@ -186,10 +219,16 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <span style={{ fontSize: 12, color: "#5b6b64", fontWeight: 500, marginLeft: 6 }}>{fmtTime(m.createdAt)}</span>
                     </div>
                     {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.content}</div>}
+                    {m.role === "user" && <MessageAttachments raw={m.attachments} />}
                   </div>
-                  {cards.map((c) => (
-                    <ResultCard key={`${c.type}-${c.id}`} card={c} emp={emp} />
-                  ))}
+                  {cards.map((c) =>
+                    c.type === "layout_choice" ? (
+                      <LayoutChoiceCard key={`${c.type}-${c.id}`} options={c.options ?? []} onPick={pick} disabled={m.id !== lastId || pending !== null || send.isPending} />
+                    ) : (
+                      <ResultCard key={`${c.type}-${c.id}`} card={c} emp={emp} />
+                    )
+                  )}
+                  <QuickReplies options={replies} onPick={pick} disabled={send.isPending} />
                   {queries.length > 0 && (
                     <details style={{ fontSize: 13, color: "#3d4c45" }}>
                       <summary style={{ cursor: "pointer", fontWeight: 700 }}>
@@ -207,11 +246,14 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             </React.Fragment>
           );
         })}
-        {pending && (
+        {pending !== null && (
           <>
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start", opacity: 0.8 }}>
               <PersonAvatar name="You" src={user?.avatarUrl} />
-              <div style={{ fontSize: 15, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{pending}</div>
+              <div style={{ minWidth: 0 }}>
+                {pending && <div style={{ fontSize: 15, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{pending}</div>}
+                {pendingFiles.length > 0 && <MessageAttachments raw={JSON.stringify(pendingFiles)} />}
+              </div>
             </div>
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={36} />
@@ -224,7 +266,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             </div>
           </>
         )}
-        {!pending && busy && (
+        {pending === null && busy && (
           <div style={{ display: "flex", gap: 12, alignItems: "center" }} role="status" aria-live="polite">
             <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={36} />
             <span className="ld-dots" aria-hidden="true">
@@ -242,22 +284,30 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
         <div ref={bottom} />
       </div>
 
-      <div className="ld-composer" style={{ padding: "0 32px 24px 32px", display: "flex", flexDirection: "column", gap: 12, maxWidth: 900, boxSizing: "border-box", width: "100%", position: "sticky", bottom: 0, background: "#f8fafb", paddingTop: 12 }}>
-        <div className="ld-sugs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div ref={composer} className="ld-composer" style={{ padding: "0 32px 24px 32px", display: "flex", flexDirection: "column", gap: 12, maxWidth: 900, boxSizing: "border-box", width: "100%", position: "sticky", bottom: 0, background: "#f8fafb", paddingTop: 12 }}>
+        {!lastHasReplies && <div className="ld-sugs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(SUGGESTIONS[emp.kind as Kind] ?? []).map((s) => (
             <button key={s} type="button" className="ld-sug" onClick={() => (s.startsWith("Paste") ? setText("") : submit(s))} disabled={send.isPending}>
               {s}
             </button>
           ))}
-        </div>
+        </div>}
         <form
           className="ld-card"
-          style={{ padding: "10px 12px", display: "flex", alignItems: "flex-end", gap: 10 }}
+          style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 10 }}
           onSubmit={(e) => {
             e.preventDefault();
             submit(text);
           }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            files.onDrop(e.dataTransfer.files);
+          }}
         >
+          {files.chips}
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+          {files.button}
           <label htmlFor="chat-input" className="ld-sr">Message {emp.name}</label>
           <textarea
             id="chat-input"
@@ -273,9 +323,11 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             }}
             style={{ flex: 1, border: 0, outline: "none", resize: "none", font: "inherit", fontSize: 15, background: "transparent", color: "#14221c" }}
           />
-          <button type="submit" className="ld-btn p sm" disabled={send.isPending || !text.trim()}>
+          <button type="submit" className="ld-btn p sm" disabled={send.isPending || files.uploading || (!text.trim() && !files.ready.length)}>
             Send
           </button>
+          </div>
+          {files.note && <span className="ld-small" role="alert" style={{ color: "#b42318" }}>{files.note}</span>}
         </form>
       </div>
     </div>
@@ -398,6 +450,9 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   const err = start.error || skip.error || submit.error || answer.error || research.error || move.error || outreach.error || notFit.error;
 
   if (card.type === "schedule_plan" && card.plan) return <PlanCard card={card} emp={emp} />;
+  if (card.type === "page" && (card.version || card.subtitle?.includes("version"))) return <PagePreviewCard id={card.id} version={card.version ?? (Number(card.subtitle?.match(/version (\d+)/)?.[1]) || undefined)} title={card.title} kind={card.subtitle?.startsWith("Website") ? "Website page" : "Landing page"} />;
+  if (card.type === "application_draft") return <ApplicationDraftCard id={card.id} base={base} />;
+  if (card.type === "answer") return <AnswerCard title={card.title} body={card.body ?? ""} before={card.before ?? ""} subtitle={card.subtitle} />;
   if (card.type === "launch_plan") return <LaunchPlanCard id={card.id} />;
   if (card.type === "meeting_agenda") return <MeetingAgendaCard id={card.id} />;
   if (card.type === "meeting_notes") return <MeetingNotesCard id={card.id} />;

@@ -902,15 +902,16 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId);
       return db.listSitePages(input.organizationId);
     }),
-    get: protectedProcedure.input(orgInput.extend({ id: z.number() })).query(async ({ ctx, input }) => {
+    get: protectedProcedure.input(orgInput.extend({ id: z.number(), version: z.number().int().min(1).optional() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       const page = db.getSitePage(input.id, input.organizationId);
       if (!page) throw new TRPCError({ code: "NOT_FOUND", message: "That page is not in this workspace." });
       const versions = db.listSitePageVersions(input.id, input.organizationId);
-      const current = versions.find((v) => v.version === page.currentVersion) ?? versions[0] ?? null;
+      const current = (input.version ? versions.find((v) => v.version === input.version) : null) ?? versions.find((v) => v.version === page.currentVersion) ?? versions[0] ?? null;
       return {
         page,
         html: current?.html ?? "",
+        version: current?.version ?? 0,
         document: current ? pages.fullDocument(page.title, current.html) : "",
         versions: versions.map((v) => ({ version: v.version, note: v.note, createdAt: v.createdAt })),
       };
@@ -1421,7 +1422,7 @@ export const appRouter = router({
       }),
 
     send: protectedProcedure
-      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().min(1).max(20_000) }))
+      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().max(20_000), attachmentIds: z.array(z.number().int()).max(10).default([]) }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
         const result = await sendChatMessage({
@@ -1430,6 +1431,7 @@ export const appRouter = router({
           text: input.text,
           authorName: personName(ctx.user),
           userId: ctx.user.id,
+          attachmentIds: input.attachmentIds,
         });
         await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id);
         return result;

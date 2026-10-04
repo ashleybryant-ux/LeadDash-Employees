@@ -64,8 +64,15 @@ describe("Jordan builds pages as HTML", () => {
     expect(got.versions.map((v) => v.note)[0]).toBe("Restored version 1");
 
     const jordan = (await db.listEmployeesByOrg(orgId)).find((e) => e.kind === "website")!;
-    const msgs = (await db.listChatMessages(orgId, jordan.id, 20)).map((m) => m.content);
-    expect(msgs.some((m) => m.startsWith("Ready for review: Burnout keynote"))).toBe(true);
+    const chat = await db.listChatMessages(orgId, jordan.id, 20);
+    const msgs = chat.map((m) => m.content);
+    // Each version posts in chat with its own preview and quick replies.
+    expect(msgs.some((m) => m.startsWith("Here's version 1 of Burnout keynote"))).toBe(true);
+    const first = chat.find((m) => m.content.startsWith("Here's version 1"))!;
+    const cards = JSON.parse(first.cards!);
+    expect(cards[0]).toMatchObject({ type: "page", version: 1 });
+    expect(cards[1].type).toBe("choices");
+    expect(cards[1].options).toContain("Looks good");
 
     // Public links point at a stored file and are reused.
     const a = pages.publicLink(orgId, "/files/org-1/pages/image_abc.png");

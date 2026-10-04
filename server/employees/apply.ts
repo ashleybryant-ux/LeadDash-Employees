@@ -1198,12 +1198,13 @@ async function announce(orgId: number, app: Application) {
   const atts = parse<Attachment[]>(app.attachments, []);
   const open = await db.listOpenQuestions(orgId, app.id);
   const review = parse<Review | null>(app.review, null);
-  const cards: unknown[] = [applicationCard(app, opp)];
+  // The draft shows in chat, question by question, so the owner can talk it through.
+  const cards: unknown[] = [{ ...applicationCard(app, opp), type: "application_draft" }];
   for (const q of open) cards.push({ type: "question", id: q.id, title: q.label, body: q.question, options: parse<string[]>(q.options, []) });
   const outline = app.mode === "outline";
   const text = outline
     ? `The ${app.title} host limits AI-written applications, so I outlined the ${qs.length} sections with facts and sources for you to write from.`
-    : `I finished the ${app.title} application. It answers ${qs.length === 1 ? "the 1 question" : `all ${qs.length} questions`}${atts.length ? ` and lists ${atts.length} attachment${atts.length === 1 ? "" : "s"}` : ""}.${review ? ` The reviewer check estimates ${review.score} of ${review.total}.` : ""}${open.length ? " I need one answer from you first." : ""}`;
+    : `The ${app.title} application is drafted. It answers ${qs.length === 1 ? "the 1 question" : `all ${qs.length} questions`}${atts.length ? ` and lists ${atts.length} attachment${atts.length === 1 ? "" : "s"}` : ""}.${review ? ` The reviewer check estimates ${review.score} of ${review.total}.` : ""}${open.length ? ` I need ${open.length === 1 ? "one answer" : `${open.length} answers`} from you first.` : ""} Read it here and tell me what to change.`;
   await postToChat(emp, text, cards);
 }
 

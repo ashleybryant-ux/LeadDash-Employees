@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
-import type { AIEmployee, ChatMessage } from "../../drizzle/schema";
+import type { AIEmployee, ChatFile, ChatMessage } from "../../drizzle/schema";
 import { generateJson, generateText, type JsonSchema } from "../_core/llm";
 import * as tasks from "./tasks";
 import * as apply from "./apply";
@@ -25,7 +25,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice";
   id: number;
   title: string;
   subtitle?: string;
@@ -37,26 +37,48 @@ export type ChatCard = {
   status?: string;
   options?: string[];
   plan?: Plan;
+  /** A page card's version, so an older message keeps showing that version. */
+  version?: number;
+  /** An answer card: the answer before the rewrite, so "Go back to the old one" can restore it. */
+  before?: string;
 };
 
+/** Quick replies under an employee's message: fixed answers the person taps instead of typing. */
+export function choicesCard(options: string[]): ChatCard {
+  return { type: "choices", id: Date.now(), title: "", options: options.map((o) => o.trim().slice(0, 60)).filter(Boolean).slice(0, 4) };
+}
+
+/** The three page layouts Jordan offers before a first build. */
+export const LAYOUTS = [
+  { key: "split", title: "Photo beside headline", sub: "Your photo carries the page" },
+  { key: "bold", title: "Big headline first", sub: "The promise carries the page" },
+  { key: "story", title: "Story first", sub: "Opens with the problem and why it matters" },
+];
+
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
-  speaking: ["none", "report", "find_events", "add_link", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
-  video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "start_onboarding"],
-  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "start_onboarding"],
-  blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "start_onboarding"],
-  website: ["none", "report", "build_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "start_onboarding"],
-  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
-  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
-  outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
-  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
-  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "ask_teammate", "add_guideline", "start_onboarding"],
-  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "start_onboarding"],
-  custom: ["none", "report", "ask_teammate", "add_guideline", "start_onboarding"],
+  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  speaking: ["none", "report", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 
 const ACTION_HELP: Record<string, string> = {
+  save_files: "save_files: the person wants the files they attached in this chat kept in the Brain so every employee can use them.",
+  add_file: "add_file: the person attached an RFP, call for proposals or opportunity document and wants you to look at it or add it. It is added to Opportunities and scored.",
+  revise_answer: "revise_answer: change one answer on an application you wrote. Put words from the question (\"problem\", \"traction\") in `target`, the application's name in `title` ('' for the most recent), what to change in `notes`, and concise or detailed in `to` when they ask for shorter or longer ('' otherwise).",
+  restore_answer: "restore_answer: the person wants the answer you just rewrote put back the way it was (\"go back to the old one\").",
+  restore_page: "restore_page: the person wants the page you built put back to the version before (\"go back to the last version\"). Put the page's name in `target` ('' for the most recent page).",
+  ask_layout: "ask_layout: before building a NEW page, ask the person to pick a layout and where the button goes. In `reply`, say in one or two sentences what you took from what they gave you (attachments included), then ask them to pick a layout.",
   plan_launch: "plan_launch: plan a launch back from its launch date. Put the launch name in `title`, the launch date as YYYY-MM-DD in `date`, and everything the person said about it (goals, targets, who does what) in `notes`.",
   move_launch: "move_launch: move a launch to a new date. Put the launch name in `target` ('' for the next launch) and the new date as YYYY-MM-DD in `date`.",
   send_report: "send_report: write the weekly status report for a launch now. Put the launch name in `target` ('' for the next launch).",
@@ -93,7 +115,7 @@ const ACTION_HELP: Record<string, string> = {
   schedule_posts: "schedule_posts: the person wants upcoming posts put on the calendar for an account (for example \"schedule the next 12 posts on Facebook\"). Put the one account in `platforms` (facebook, instagram, linkedin, x or threads) and how many posts in `count` (default 8). You suggest the days and time; they confirm with a button.",
   write_article: "write_article: write a blog article. Put the title in `title` and points to cover in `notes`.",
   plan_page: "plan_page: only when the person asks for a plan or outline of a page (not the page itself). Put the page name in `page` and its goal in `goal`.",
-  build_page: "build_page: build a landing page or website page as HTML. Put the page name or offer in `page`, the goal in `goal`, and `landing` or `website` in `target` (landing unless they say website or a page of their site).",
+  build_page: "build_page: build a landing page or website page as HTML. Put the page name or offer in `page`, the goal in `goal`, `landing` or `website` in `target` (landing unless they say website or a page of their site), the layout they picked in `focus`, where the button goes in `to`, and everything else they told you about the page in `notes`.",
   change_page: "change_page: change a page you already built. Put the page's name in `target` ('' for the most recent page) and exactly what to change in `notes`.",
   draft_reply: "draft_reply: the person pasted a message they received. Put the sender in `from`, the subject in `subject` (make one up from the content if missing) and the full pasted message in `message`.",
 };
@@ -103,7 +125,7 @@ function decisionSchema(kind: string): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["reply", "action", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate"],
+    required: ["reply", "action", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate", "choices"],
     properties: {
       reply: { type: "string", description: "What you say back. If you are about to do a job, one short sentence saying what you are doing." },
       action: { type: "string", enum: ACTIONS[kind] ?? ["none"] },
@@ -126,6 +148,7 @@ function decisionSchema(kind: string): JsonSchema {
       time: str,
       attendees: str,
       teammate: str,
+      choices: { type: "array", items: str, description: "Up to 4 short quick replies the person can tap, written as what they would say. [] when none fit." },
     },
   };
 }
@@ -152,14 +175,72 @@ type Decision = {
   time: string;
   attendees: string;
   teammate?: string;
+  choices?: string[];
 };
 
 function transcript(history: ChatMessage[]) {
   return history
     .slice(-12)
-    .map((m) => `${m.role === "user" ? m.authorName : m.role === "handoff" ? `Handoff from ${m.authorName}` : "You"}: ${m.content}`)
+    .map((m) => {
+      const files = parseList<{ name: string }>(m.attachments).map((f) => f.name);
+      return `${m.role === "user" ? m.authorName : m.role === "handoff" ? `Handoff from ${m.authorName}` : "You"}: ${m.content}${files.length ? ` [attached: ${files.join(", ")}]` : ""}`;
+    })
     .join("\n\n");
 }
+
+function parseList<T>(raw: string | null | undefined): T[] {
+  try {
+    const v = raw ? JSON.parse(raw) : [];
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The files this chat can see: the ones sent with this message, else the latest ones sent here. */
+function filesText(files: ChatFile[]) {
+  if (!files.length) return "";
+  let budget = 40_000;
+  const parts = files.map((f) => {
+    const take = Math.max(0, Math.min(budget, f.kind === "image" ? 600 : 16_000));
+    budget -= take;
+    const body = f.kind === "image" ? `Photo. ${f.text || "No description yet."}` : `${f.pages ? `${f.pages} pages. ` : ""}${f.text.slice(0, take) || "(No readable text.)"}`;
+    return `--- ${f.name} ---\n${body}`;
+  });
+  return `\nFiles the person attached in this chat (read them; never repeat a client's name from them):\n${parts.join("\n\n")}`;
+}
+
+async function readStored(fileUrl: string) {
+  const { uploadsRoot } = await import("../storage");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  return fs.promises.readFile(path.join(uploadsRoot(), fileUrl.replace(/^\/files\//, "")));
+}
+
+/** What Morgan or Taylor knows about their opportunities and applications, so they can explain scores and revise answers. */
+async function applyFacts(emp: AIEmployee) {
+  if (emp.kind !== "grants" && emp.kind !== "speaking") return "";
+  const kinds = apply.KINDS_FOR[emp.kind === "speaking" ? "speaking" : "grants"];
+  const opps = (await db.listOpps(emp.organizationId, kinds)).filter((o) => o.status === "new" || o.status === "applying").sort((a, b) => b.fitScore - a.fitScore).slice(0, 25);
+  const apps = (await db.listApplications(emp.organizationId)).filter((a) => a.employeeId === emp.id && !["submitted", "awarded", "declined"].includes(a.status)).slice(0, 8);
+  const lines = opps.map((o) => `- ${o.title} (${o.host ?? "host"}): fit ${o.fitScore}, ${o.fitCall}; ${o.amount ?? ""}; due ${o.deadline ?? "not posted"}. Why: ${(o.fitReason ?? o.summary ?? "").slice(0, 300)}${o.eligibility ? ` Eligibility: ${o.eligibility.slice(0, 200)}` : ""}`);
+  const appLines = apps.map((a) => `- ${a.title} (${a.status}): questions: ${apply.parse<{ text: string }[]>(a.questions, []).map((q) => q.text.slice(0, 80)).join(" | ")}`);
+  return `${lines.length ? `\nOpen opportunities you found (explain a score from these facts only):\n${lines.join("\n")}` : ""}${appLines.length ? `\nApplications in progress:\n${appLines.join("\n")}` : ""}`;
+}
+
+const TALK = `Talk with the person like a colleague, back and forth, not like a form.
+- When the request is unclear in a way that would waste real work if you guessed, choose "none", ask one short question in "reply", and put 2 to 4 short fixed answers in "choices".
+- Otherwise do the job. After you finish or answer, put up to 4 short next steps the person is likely to want in "choices" (each under 6 words, written as what they would say). Leave "choices" empty when nothing obvious comes next.
+- Questions about your work, a result or a score get a plain, specific answer from your facts.`;
+
+const TALK_BY_KIND: Partial<Record<string, string>> = {
+  website: `- Before you build a NEW page, if the person has not picked a layout earlier in this conversation, choose ask_layout. When they answer, choose build_page with their layout in "focus" and where the button goes in "to". To change a page you built, choose change_page with exactly what to change.
+- When they say a page looks good, say what's left (button link, Approve, Copy HTML) in one sentence.`,
+  grants: `- Before a search the person asks for in chat, if they did not say where (a state, a region or nationwide), choose "none" and ask, with choices like "Oklahoma first", "Nationwide", "Both".
+- To change an answer on an application, choose revise_answer. After you showed a rewritten answer: "Use this" keeps it (say it's saved), "Make it shorter" is revise_answer with "to" concise, "Go back to the old one" is restore_answer.
+- An attached RFP or opportunity file: choose add_file.`,
+};
+TALK_BY_KIND.speaking = TALK_BY_KIND.grants;
 
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
@@ -171,28 +252,104 @@ function worth(n: number, total: number) {
 
 /** Where an action's output lives, so Nora can follow a task's work until it is approved. */
 type Ref = projects.WorkRef;
-type ActionResult = { text: string; cards: ChatCard[]; queries: string[]; refs?: Ref[] };
+type ActionResult = { text: string; cards: ChatCard[]; queries: string[]; refs?: Ref[]; choices?: string[] };
+type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[] };
 
-async function runAction(emp: AIEmployee, d: Decision, who = "the owner"): Promise<ActionResult> {
+async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promise<ActionResult> {
   const org = emp.organizationId;
+  const who = ctx.who ?? "the owner";
+  const files = ctx.files ?? [];
+  const docText = files.filter((f) => f.kind === "document").map((f) => `${f.name}:\n${f.text.slice(0, 6000)}`).join("\n\n");
   switch (d.action) {
     case "find_grants":
     case "find_events":
     case "find_and_apply": {
       const empKind = emp.kind === "speaking" ? "speaking" : "grants";
       const r = await apply.findOpportunities(org, empKind, { kind: d.oppKind || undefined, focus: d.focus || undefined });
-      const cards: ChatCard[] = r.created.map(oppCard);
+      const best = [...r.created].sort((a, b) => b.fitScore - a.fitScore);
+      const top = best.slice(0, 3);
+      const cards: ChatCard[] = top.map(oppCard);
       const thing = { grant: "open grant", pitch: "pitch competition", accelerator: "accelerator program", speaking: "event taking proposals", bid: "open bid", media: "media opportunity" }[r.kind];
       let text = r.created.length
-        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, `new ${thing}`)}. ${worth(r.created.filter((o) => o.fitCall === "apply").length, r.created.length)}`
+        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, `new ${thing}`)}. ${worth(r.created.filter((o) => o.fitCall === "apply").length, r.created.length)}${r.created.length > 3 ? ` The best 3 are below; the other ${r.created.length - 3} ${r.created.length - 3 === 1 ? "is" : "are"} on Opportunities.` : ""}`
         : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find new ones beyond what's already on Opportunities.`;
+      const worthIt = top.filter((o) => o.fitCall !== "skip");
+      const choices = worthIt.length ? [`Start ${worthIt[0].title.slice(0, 40)}`, ...(worthIt.length > 1 ? ["Start the top 2"] : []), "Tell me more about each"] : r.created.length ? ["Search somewhere else", "Tell me more about each"] : ["Search nationwide", "Try another focus"];
       if (r.more) text += " There's more out there, so I'm still searching. New finds will show up here as I go.";
       if (d.action === "find_and_apply") {
         const best = r.created.filter((o) => o.fitCall === "apply" && o.fitScore >= 75).sort((a, b) => b.fitScore - a.fitScore).slice(0, 2);
         for (const o of best) await apply.startApplication(org, o.id, null);
         if (best.length) text += ` I started ${best.length === 1 ? "the application for the best fit" : `applications for the ${best.length} best fits`} and will post ${best.length === 1 ? "it" : "each one"} here when it's ready for you.`;
       }
-      return { text, cards, queries: r.queries };
+      return { text, cards, queries: r.queries, choices: d.action === "find_and_apply" ? [] : choices };
+    }
+    case "add_file": {
+      const doc = files.find((f) => f.kind === "document");
+      if (!doc) return { text: "Attach the RFP or the opportunity's file and I'll read it.", cards: [], queries: [] };
+      const o = await apply.addOpportunity(org, emp.kind === "speaking" ? "speaking" : "grants", { file: { name: doc.name, buf: await readStored(doc.fileUrl), mime: doc.mime } }, who);
+      const fresh = (await db.getOpp(o.id, org)) ?? o;
+      const verdict = fresh.fitCall === "skip" ? "I'd skip it" : fresh.fitCall === "partner" ? "it fits best with a nonprofit partner leading" : "I'd apply";
+      return {
+        text: `I read ${doc.name}${doc.pages ? ` (${doc.pages} pages)` : ""} and added it to Opportunities. It scores ${fresh.fitScore}, so ${verdict}.${fresh.fitReason ? ` ${fresh.fitReason}` : ""}`,
+        cards: [oppCard(fresh)],
+        queries: [],
+        choices: fresh.fitCall === "skip" ? ["Apply anyway", "Skip it", "Save the file to the Brain"] : ["Start the application", "Save the file to the Brain", "Skip it"],
+      };
+    }
+    case "save_files": {
+      const list = files.length ? files : db.recentChatFiles(org, emp.id, 10).slice(0, 10);
+      if (!list.length) return { text: "There's nothing attached in this chat yet.", cards: [], queries: [] };
+      const { indexKnowledge } = await import("./kb");
+      for (const f of list) {
+        const item = await db.createKnowledgeItem({ organizationId: org, kind: f.kind === "image" ? "image" : "document", title: f.name.slice(0, 255), category: "mission_profile", content: f.text || (f.kind === "image" ? "" : "(No readable text was found in this file.)"), fileUrl: f.fileUrl, chars: f.text.length });
+        indexKnowledge(item);
+      }
+      return { text: `Saved ${list.length === 1 ? list[0].name : `${list.length} files`} to the Brain, so every employee can use ${list.length === 1 ? "it" : "them"}.`, cards: [], queries: [] };
+    }
+    case "revise_answer": {
+      const apps = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id && !["submitted", "awarded", "declined", "writing"].includes(a.status));
+      const tt = d.title.trim().toLowerCase();
+      const app = (tt && apps.find((a) => a.title.toLowerCase().includes(tt))) || apps[0];
+      if (!app) return { text: "I don't have an application in progress to change.", cards: [], queries: [] };
+      const qs = apply.parse<apply.Question[]>(app.questions, []);
+      const words = d.target.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
+      const q = qs.find((x) => words.length && words.every((w) => x.text.toLowerCase().includes(w))) ?? qs.find((x) => words.some((w) => x.text.toLowerCase().includes(w)));
+      if (!q) return { text: `Which question on ${app.title}? ${qs.map((x) => x.text.slice(0, 60)).join("; ")}`, cards: [], queries: [] };
+      const style = d.to === "concise" || d.to === "detailed" ? d.to : undefined;
+      const after = await apply.rewriteQuestion(org, app.id, q.id, d.notes || undefined, style);
+      const nq = apply.parse<apply.Question[]>(after?.questions, []).find((x) => x.id === q.id) ?? q;
+      const count = nq.answer.split(/\s+/).filter(Boolean).length;
+      return {
+        text: d.reply || `Here's the new answer. I changed what you asked and kept the rest.`,
+        cards: [{ type: "answer", id: app.id, call: q.id, title: q.text, subtitle: `${count}${q.maxWords ? ` of ${q.maxWords}` : ""} words`, body: nq.answer, before: q.answer }],
+        queries: [],
+        choices: ["Use this", "Make it shorter", "Go back to the old one"],
+      };
+    }
+    case "restore_answer": {
+      const last = [...(ctx.history ?? [])].reverse().flatMap((m) => parseList<ChatCard>(m.cards)).find((c) => c.type === "answer" && c.call && c.before !== undefined);
+      if (!last) return { text: "I don't have an earlier version to put back.", cards: [], queries: [] };
+      await apply.saveAnswer(org, last.id, last.call!, last.before ?? "");
+      return { text: `I put the old answer to "${last.title.slice(0, 80)}" back.`, cards: [], queries: [] };
+    }
+    case "restore_page": {
+      const list = db.listSitePages(org).filter((x) => x.currentVersion > 1);
+      const t = d.target.trim().toLowerCase();
+      const p = (t && list.find((x) => x.title.toLowerCase().includes(t))) || list[0];
+      if (!p) return { text: "There's no earlier version to go back to.", cards: [], queries: [] };
+      const versions = db.listSitePageVersions(p.id, org);
+      const prev = versions.find((v) => v.version < p.currentVersion);
+      if (!prev) return { text: "There's no earlier version to go back to.", cards: [], queries: [] };
+      const back = pages.restoreVersion(org, p.id, prev.version)!;
+      return { text: `I put ${p.title} back to how version ${prev.version} looked. It's saved as version ${back.currentVersion}, so nothing is lost.`, cards: [pages.pageCard(back) as ChatCard], queries: [], choices: ["Looks good", "Make a change"] };
+    }
+    case "ask_layout": {
+      return {
+        text: d.reply || "Before I build, pick the layout you want.",
+        cards: [{ type: "layout_choice", id: Date.now(), title: "Layout", options: LAYOUTS.map((l) => l.title) }],
+        queries: [],
+        choices: ["Your booking form", "An email to you", "A form on the page"],
+      };
     }
     case "check_bidprime": {
       const bids = await import("./bids");
@@ -447,7 +604,7 @@ async function runAction(emp: AIEmployee, d: Decision, who = "the owner"): Promi
       return { text: parts.filter(Boolean).join(" "), cards: [{ type: "schedule_plan", id: Date.now(), title: `${plural(plan.rows.length, `${name} post`)}${plan.account ? ` · ${plan.account}` : ""}`, plan }], queries: [] };
     }
     case "write_article": {
-      const a = await tasks.writeBlogArticle(org, { title: d.title || d.topic || "Untitled article", category: "Practice insights", outlineNotes: d.notes || undefined, generateBannerFlag: true });
+      const a = await tasks.writeBlogArticle(org, { title: d.title || d.topic || "Untitled article", category: "Practice insights", outlineNotes: [d.notes, docText].filter(Boolean).join("\n\n") || undefined, generateBannerFlag: true });
       return {
         text: "The article is drafted and waiting for your approval. The full text is on the Articles tab.",
         cards: [{ type: "article", id: a.id, title: a.title, body: (a.body ?? "").replace(/[#*_>]/g, "").slice(0, 280), imageUrl: a.imageUrl }],
@@ -455,15 +612,17 @@ async function runAction(emp: AIEmployee, d: Decision, who = "the owner"): Promi
       };
     }
     case "build_page": {
-      const p = await pages.startPage(org, { title: d.page || d.topic || "New page", pageType: /website/i.test(d.target) ? "website" : "landing", goal: d.goal || "Book a call" });
-      return { text: `Building the ${p.title} page now. It takes a few minutes; I'll post it here with a preview when it's ready.`, cards: [], queries: [], refs: [{ kind: "page", id: p.id }] };
+      const photos = files.filter((f) => f.kind === "image").map((f) => ({ url: pages.publicLink(org, f.fileUrl), text: f.text, name: f.name }));
+      const p = await pages.startPage(org, { title: d.page || d.topic || "New page", pageType: /website/i.test(d.target) ? "website" : "landing", goal: d.goal || "Book a call" }, { layout: d.focus, button: d.to, notes: [d.notes, docText].filter(Boolean).join("\n\n"), photos });
+      return { text: d.reply || `Building the ${p.title} page now. It takes a couple of minutes, and I'll show it to you right here.`, cards: [], queries: [], refs: [{ kind: "page", id: p.id }] };
     }
     case "change_page": {
       const list = db.listSitePages(org).filter((x) => x.currentVersion > 0);
       const t = d.target.trim().toLowerCase();
       const p = (t && list.find((x) => x.title.toLowerCase().includes(t))) || list[0];
       if (!p) return { text: "I haven't built a page yet. Tell me the offer and the goal and I'll build one.", cards: [], queries: [] };
-      await pages.revisePage(org, p.id, d.notes || d.message || d.reply);
+      const extra = files.filter((f) => f.kind === "image").map((f) => `Use this attached photo: ${pages.publicLink(org, f.fileUrl)} (${f.text || f.name})`).join("\n");
+      await pages.revisePage(org, p.id, [d.notes || d.message || d.reply, extra, docText].filter(Boolean).join("\n\n"));
       return { text: `Making those changes to ${p.title} now. The new version will show up here when it's ready.`, cards: [], queries: [], refs: [{ kind: "page", id: p.id }] };
     }
     case "plan_page": {
@@ -502,6 +661,7 @@ async function runAction(emp: AIEmployee, d: Decision, who = "the owner"): Promi
       };
     }
     case "draft_reply": {
+      if (!d.message.trim() && docText) d.message = docText;
       if (!d.message.trim()) return { text: "Paste the message you got and I'll draft the reply.", cards: [], queries: [] };
       const o = await tasks.draftEmailReply(org, { subject: d.subject || "Your message", recipient: d.from || "Sender", context: d.message });
       const meta = JSON.parse(o.metadata || "{}");
@@ -517,7 +677,7 @@ async function runAction(emp: AIEmployee, d: Decision, who = "the owner"): Promi
 }
 
 /** Actions that only talk about the work; a project task needs one that does it. */
-const NOT_WORK = new Set(["none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip"]);
+const NOT_WORK = new Set(["none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
 
 /**
  * An employee does a project task Nora assigned, with the same actions their
@@ -540,7 +700,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n")}`
   );
   const decision = await generateJson<Decision>({ system, prompt: request, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 2000 });
   if (!decision?.action || !actions.includes(decision.action)) return { action: "none", text: decision?.reply ?? "", cards: [] as ChatCard[], refs: [] as Ref[] };
-  const result = await runAction(emp, decision, task.from);
+  const result = await runAction(emp, decision, { who: task.from });
   const refs: Ref[] = [...(result.refs ?? []), ...result.cards.filter((c) => c.type === "post" || c.type === "article" || c.type === "reply").map((c) => ({ kind: "outbound" as const, id: c.id }))];
   const text = result.text || decision.reply;
   await db.createChatMessage({ organizationId: emp.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `For ${task.project}, "${task.title}": ${text}`, cards: result.cards.length ? JSON.stringify(result.cards) : null, searchQueries: result.queries.length ? JSON.stringify(result.queries) : null });
@@ -604,9 +764,13 @@ export async function sendChatMessage(opts: {
   text: string;
   authorName: string;
   userId: number | null;
+  attachmentIds?: number[];
 }) {
   const emp = await db.getEmployeeForOrg(opts.employeeId, opts.organizationId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+  // Only this chat's own unsent files can go with the message.
+  const sent = db.getChatFiles(opts.organizationId, (opts.attachmentIds ?? []).slice(0, 10)).filter((f) => f.employeeId === emp.id && f.messageId == null);
+  if (!opts.text.trim() && !sent.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Type a message or attach a file." });
 
   const userMsg = await db.createChatMessage({
     organizationId: opts.organizationId,
@@ -615,7 +779,9 @@ export async function sendChatMessage(opts: {
     authorName: opts.authorName,
     userId: opts.userId,
     content: opts.text,
+    attachments: sent.length ? JSON.stringify(sent.map((f) => ({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl }))) : null,
   });
+  db.attachChatFiles(opts.organizationId, sent.map((f) => f.id), userMsg.id);
 
   const reply = async (content: string, cards: ChatCard[] = [], queries: string[] = []) =>
     db.createChatMessage({
@@ -635,30 +801,38 @@ export async function sendChatMessage(opts: {
   try {
     const history = await db.listChatMessages(opts.organizationId, emp.id, 30);
     const actions = (ACTIONS[emp.kind] ?? ["none"]).filter((a) => a !== "none");
+    // The files this message can use: the ones sent with it, else the latest ones sent in this chat.
+    const recentIds = new Set(history.slice(-12).map((m) => m.id));
+    const files = sent.length ? sent : db.recentChatFiles(opts.organizationId, emp.id, 6).filter((f) => f.messageId != null && recentIds.has(f.messageId)).slice(0, 4);
+    const scheduled = /^Scheduled task/.test(opts.authorName);
+    const said = opts.text.trim() || `(attached ${sent.map((f) => f.name).join(", ")})`;
     const { system } = await tasks.systemPromptAbout(
       emp,
-      opts.text,
+      `${opts.text} ${sent.map((f) => f.name).join(" ")}`,
       `You are chatting with ${opts.authorName}. Answer questions about your work directly and briefly.
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
-Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await bidprimeFacts(emp)}
+Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await bidprimeFacts(emp)}${await applyFacts(emp)}
+${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}`}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     );
     const decision = await generateJson<Decision>({
       system,
-      prompt: `Conversation so far:\n${transcript(history.slice(0, -1))}\n\n${opts.authorName}: ${opts.text}`,
+      prompt: `Conversation so far:\n${transcript(history.slice(0, -1))}\n\n${opts.authorName}: ${said}`,
       schemaName: "chat_decision",
       schema: decisionSchema(emp.kind),
       maxTokens: 2000,
     });
+    const quick = (list?: string[]) => (!scheduled && list?.length ? [choicesCard(list)] : []);
 
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
-      return { user: userMsg, reply: await reply(decision.reply || "Could you say a bit more about what you need?") };
+      return { user: userMsg, reply: await reply(decision.reply || "Could you say a bit more about what you need?", quick(decision.choices)) };
     }
-    const result = await runAction(emp, decision, opts.authorName);
-    return { user: userMsg, reply: await reply(result.text || decision.reply, result.cards, result.queries) };
+    const result = await runAction(emp, decision, { who: opts.authorName, files: sent.length ? sent : files, history });
+    const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];
+    return { user: userMsg, reply: await reply(result.text || decision.reply, cards, result.queries) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[chat] ${emp.name} failed:`, message);

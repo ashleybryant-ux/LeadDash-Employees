@@ -481,10 +481,36 @@ export const chatMessages = sqliteTable(
     cards: text("cards"),
     /** JSON array of the web searches run for this reply. */
     searchQueries: text("searchQueries"),
+    /** JSON [{id, name, size, kind, url}]: files the person attached (chat_files). */
+    attachments: text("attachments"),
     createdAt: createdAt(),
   },
   (t) => [index("chat_messages_org_emp_idx").on(t.organizationId, t.employeeId)]
 );
+
+/** A file attached in an employee's chat: its stored copy and the text the employee reads from it. */
+export const chatFiles = sqliteTable(
+  "chat_files",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    userId: integer("userId"),
+    /** Set once the file is sent with a message. */
+    messageId: integer("messageId"),
+    name: text("name").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    kind: text("kind", { enum: ["image", "document"] }).notNull(),
+    fileUrl: text("fileUrl").notNull(),
+    /** The document's text, or a description of the photo. */
+    text: text("text").notNull().default(""),
+    pages: integer("pages"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("chat_files_org_idx").on(t.organizationId, t.employeeId)]
+);
+export type ChatFile = typeof chatFiles.$inferSelect;
 
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;

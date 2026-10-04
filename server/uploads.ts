@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import * as db from "./db";
 import { authenticateRequest } from "./_core/context";
 import { storagePut, storagePutStream } from "./storage";
+import { describeImage } from "./_core/llm";
 import { readFile, unsupportedNote } from "./employees/docs";
 import { indexKnowledge } from "./employees/kb";
 import { addOpportunity, parse, type Attachment, type Extras, type Award } from "./employees/apply";
@@ -22,6 +23,7 @@ const LIMITS: Record<string, number> = {
   video: 250_000_000,
   resume: 20_000_000,
   post_media: 250_000_000,
+  chat: 20_000_000,
 };
 
 const KNOWLEDGE_CATEGORY: Record<string, string> = {
@@ -108,6 +110,24 @@ export function registerUploads(app: Express) {
       const buf = await readBody(req, max);
       if (buf.length === 0) return res.status(400).json({ error: "The file was empty." });
 
+      // A file attached in an employee's chat: photos are described, documents are read.
+      if (slot === "chat") {
+        const emp = await db.getEmployeeForOrg(Number(req.query.employeeId), orgId);
+        if (!emp) return res.status(404).json({ error: "That employee is not in this workspace." });
+        const imageType = sniffImageType(buf);
+        let text = "";
+        let pages: number | null = null;
+        if (!imageType) {
+          const read = await readFile(buf, name, mime);
+          text = read.text.slice(0, 3_000_000);
+          pages = read.pages;
+        }
+        const saved = await storagePut(`org-${orgId}/chat/${name}`, buf, imageType ?? mime);
+        if (imageType) text = await describeImage(buf, imageType).catch(() => "");
+        const f = db.createChatFile({ organizationId: orgId, employeeId: emp.id, userId: user.id, name, mime: imageType ?? mime, size: buf.length, kind: imageType ? "image" : "document", fileUrl: saved.url, text, pages });
+        return res.json({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl });
+      }
+
       if (slot === "knowledge") {
         const employeeId = Number(req.query.employeeId);
         const emp = await db.getEmployeeForOrg(employeeId, orgId);
@@ -176,4 +196,12 @@ export function registerUploads(app: Express) {
       if (!res.headersSent) res.status(400).json({ error: message });
     }
   });
+}
+
+function sniffImageType(buf: Buffer) {
+  if (buf[0] === 0x89 && buf.subarray(1, 4).toString() === "PNG") return "image/png";
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.subarray(0, 4).toString() === "RIFF" && buf.subarray(8, 12).toString() === "WEBP") return "image/webp";
+  if (buf.subarray(0, 3).toString() === "GIF") return "image/gif";
+  return null;
 }

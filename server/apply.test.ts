@@ -124,7 +124,7 @@ describe("applying, end to end", () => {
     const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
     const chat = await db.listChatMessages(orgId, morgan.id);
     // After Approve, with no saved sign-in for the portal, Morgan says it's ready for a person to send.
-    expect(chat.map((m) => JSON.parse(m.cards || "[]")[0]?.type)).toEqual(["application", undefined, "submitted"]);
+    expect(chat.map((m) => JSON.parse(m.cards || "[]")[0]?.type)).toEqual(["application_draft", undefined, "submitted"]);
     expect(chat[1].content).toMatch(/ready for you to send/);
 
     const won = await caller(owner).applications.decide({ organizationId: orgId, id: app.id, result: "awarded", amount: "$58,500", period: "Jan 1, 2027 to Dec 31, 2027", reports: [{ name: "Q1 progress report", due: "Apr 15, 2027" }] });

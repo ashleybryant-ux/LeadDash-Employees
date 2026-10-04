@@ -20,6 +20,7 @@ import {
   externalConnections,
   outboundItems,
   chatMessages,
+  chatFiles,
   chatReads,
   scheduledTasks,
   taskRuns,
@@ -1011,6 +1012,22 @@ export async function listChatMessages(orgId: number, employeeId: number, limit 
 export async function createChatMessage(msg: InsertChatMessage) {
   const rows = getDb().insert(chatMessages).values(msg).returning().all();
   return rows[0];
+}
+
+export function createChatFile(row: typeof chatFiles.$inferInsert) {
+  return getDb().insert(chatFiles).values(row).returning().all()[0];
+}
+export function getChatFiles(orgId: number, ids: number[]) {
+  if (!ids.length) return [];
+  return getDb().select().from(chatFiles).where(and(eq(chatFiles.organizationId, orgId), inArray(chatFiles.id, ids))).all();
+}
+export function attachChatFiles(orgId: number, ids: number[], messageId: number) {
+  if (!ids.length) return;
+  getDb().update(chatFiles).set({ messageId }).where(and(eq(chatFiles.organizationId, orgId), inArray(chatFiles.id, ids))).run();
+}
+/** Files sent in an employee's chat, newest first. */
+export function recentChatFiles(orgId: number, employeeId: number, limit = 10) {
+  return getDb().select().from(chatFiles).where(and(eq(chatFiles.organizationId, orgId), eq(chatFiles.employeeId, employeeId))).orderBy(desc(chatFiles.id)).limit(limit).all().filter((f) => f.messageId != null);
 }
 
 /** Last message and unread count for every employee in a workspace, for one person. */
