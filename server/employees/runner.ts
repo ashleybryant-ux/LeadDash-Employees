@@ -133,6 +133,8 @@ export function startScheduler() {
       await (await import("./avatar")).avatarTicks();
       // Kai: notice when Claude finishes a change.
       await (await import("./dev")).devTicks();
+      // Taylor: reporter requests from the press inbox, every 15 minutes.
+      await (await import("./press")).pressTicks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

@@ -293,6 +293,7 @@ async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "onboarding") return (await import("./customers")).customersFacts(emp.organizationId);
   if (emp.kind === "platform") return (await import("./platform")).platformFacts(emp.organizationId);
   if (emp.kind === "video") return (await import("./drama")).dramaFacts(emp.organizationId);
+  if (emp.kind === "speaking") return (await import("./press")).pressFacts(emp.organizationId);
   if (emp.kind === "inbox") {
     const cals = db.listAccountLinks(emp.organizationId, "calendar");
     return cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : "";

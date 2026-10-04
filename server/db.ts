@@ -1714,7 +1714,7 @@ export function clearOpenFindings(orgId: number) {
 // Extra Google accounts and calendar links
 // ==========================================
 
-export function listAccountLinks(orgId: number, purpose?: "calendar" | "send") {
+export function listAccountLinks(orgId: number, purpose?: "calendar" | "send" | "press") {
   const all = getDb().select().from(accountLinks).where(eq(accountLinks.organizationId, orgId)).orderBy(accountLinks.id).all();
   return purpose ? all.filter((l) => l.purpose === purpose) : all;
 }

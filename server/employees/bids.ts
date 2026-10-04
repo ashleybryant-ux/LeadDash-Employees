@@ -157,8 +157,8 @@ function stuckPoster(orgId: number, liveId: string, what: string) {
 // Reading BidPrime
 // ==========================================
 
-async function post(orgId: number, content: string, cards: unknown[] = []) {
-  const emp = await employeeFor(orgId, "grants");
+async function post(orgId: number, content: string, cards: unknown[] = [], kind: "grants" | "speaking" = "grants") {
+  const emp = await employeeFor(orgId, kind);
   await db.createChatMessage({ organizationId: orgId, employeeId: emp.id, role: "employee", authorName: emp.name, content, cards: cards.length ? JSON.stringify(cards) : null });
 }
 
@@ -323,8 +323,11 @@ export async function readiness(orgId: number, app: Application) {
   const google = conns.some((x) => x.provider === "google_workspace" && x.status === "connected");
   const login = portalFor(await db.listPortalLogins(orgId), opp, app);
   const to = emailOf(app.channelDetail) ?? emailOf(reqs.channelDetail);
+  // A pitch to a reporter can go from Taylor's own sending address.
+  const sender = opp?.kind === "media" ? db.listAccountLinks(orgId, "send").find((l) => parse<string[]>(l.sendsFor, []).includes("speaking") && l.status === "connected") : undefined;
+  const canSend = google || Boolean(sender);
   let route: { how: "email" | "portal" | "manual"; label: string; ready: boolean; detail: string };
-  if (app.channel === "email") route = { how: "email", label: to ? `Sends by email to ${to}` : "Goes in by email", ready: Boolean(to && google), detail: !to ? "No email address found for submissions" : google ? "From your connected Google account" : "Connect Google on Integrations to send it" };
+  if (app.channel === "email") route = { how: "email", label: to ? `Sends by email to ${to}` : "Goes in by email", ready: Boolean(to && canSend), detail: !to ? "No email address found for submissions" : sender ? `From ${sender.email ?? "Taylor's sending address"}` : google ? "From your connected Google account" : "Connect Google on Integrations to send it" };
   else if (app.channel === "grants_gov") route = { how: "manual", label: "Goes in through Grants.gov", ready: false, detail: "Grants.gov needs your authorized representative to submit" };
   else route = { how: "portal", label: login ? `${login.name} sign-in saved` : `No saved sign-in for ${app.channelDetail || opp?.host || "this portal"}`, ready: Boolean(login), detail: login ? "Morgan signs in, uploads every file and submits" : "Add it on Integrations under Website logins" };
   return { route, portalId: login?.id ?? null };
@@ -335,11 +338,33 @@ export async function autoSubmit(orgId: number, appId: number) {
   const app = await db.getApplication(appId, orgId);
   if (!app || app.status !== "approved") return;
   const opp = await db.getOpp(app.opportunityId, orgId);
-  const emp = await employeeFor(orgId, "grants");
+  const who = opp?.kind === "media" || opp?.kind === "speaking" ? "speaking" : "grants";
+  const emp = await employeeFor(orgId, who);
   const org = await db.getOrganizationById(orgId);
   const { route } = await readiness(orgId, app);
   if (!route.ready) {
-    await post(orgId, `${app.title} is approved. ${route.detail}, so it's ready for you to send: download it from the application and submit it, then press Mark sent.`);
+    await post(orgId, `${app.title} is approved. ${route.detail}, so it's ready for you to send: download it from the application and submit it, then press Mark sent.`, [], who);
+    return;
+  }
+
+  // A pitch to a reporter is the email itself: short, in the body, no attachments.
+  if (opp?.kind === "media" && route.how === "email") {
+    const reqs = parse<Partial<Requirements>>(opp.requirements, {});
+    const to = emailOf(app.channelDetail) ?? emailOf(reqs.channelDetail)!;
+    const qs = parse<{ text: string; answer: string }[]>(app.questions, []);
+    const subjectQ = qs.find((q) => /subject/i.test(q.text));
+    const subject = (subjectQ?.answer.trim() || `Re: ${opp.title}`).replace(/\s+/g, " ").slice(0, 120);
+    const body = [
+      ...qs.filter((q) => q !== subjectQ && q.answer.trim()).map((q) => q.answer.trim()),
+      [org?.signerName, org?.signerTitle, org?.name].filter(Boolean).join("\n"),
+    ].join("\n\n");
+    try {
+      const link = await integrations.sendGmail(orgId, to, subject, body, "speaking");
+      await db.updateApplication(appId, orgId, { receiptUrl: link });
+      await markSubmitted(orgId, appId, `Emailed to ${to}`, emp.name);
+    } catch (err) {
+      await post(orgId, `I couldn't email the pitch for ${app.title}: ${(err as Error).message}. It's still approved; try again from the pitch or send it yourself.`, [], who);
+    }
     return;
   }
 
@@ -368,7 +393,7 @@ export async function autoSubmit(orgId: number, appId: number) {
       await db.updateApplication(appId, orgId, { receiptUrl: link });
       await markSubmitted(orgId, appId, `Emailed to ${to}`, emp.name);
     } catch (err) {
-      await post(orgId, `I couldn't email ${app.title}: ${(err as Error).message}. It's still approved; try again from the application or send it yourself.`);
+      await post(orgId, `I couldn't email ${app.title}: ${(err as Error).message}. It's still approved; try again from the application or send it yourself.`, [], who);
     }
     return;
   }
@@ -389,7 +414,13 @@ export async function autoSubmit(orgId: number, appId: number) {
     files: upload,
     maxSteps: 60,
     live: { id: liveId, onStuck: stuckPoster(orgId, liveId, `submitting ${app.title} on ${login.name}`) },
-    goal: `Sign in to ${login.name} with the saved email and password. Find the opportunity "${opp?.title ?? app.title}"${opp?.sourceUrl ? ` (${opp.sourceUrl})` : ""} and start a response or submission.
+    goal: opp?.kind === "media"
+      ? `Sign in to ${login.name} with the saved email and password. Open the reporter's request "${opp.title}"${opp.sourceUrl ? ` (${opp.sourceUrl})` : ""} and start a pitch or answer to it.
+Put this answer in the pitch or answer box, exactly as written (no files are needed):
+${qs.filter((q) => !/subject/i.test(q.text) && q.answer.trim()).map((q) => q.answer.trim()).join("\n\n").slice(0, 6000)}
+Expert: ${org?.signerName ?? ""}${org?.signerTitle ? `, ${org.signerTitle}` : ""}, ${org?.name ?? ""}.
+Then submit the pitch. Return JSON {"confirmation":"the confirmation message shown"}. If the request is closed or the site asks for something not given here, stop with fail and say what.`
+      : `Sign in to ${login.name} with the saved email and password. Find the opportunity "${opp?.title ?? app.title}"${opp?.sourceUrl ? ` (${opp.sourceUrl})` : ""} and start a response or submission.
 Upload each file from the file list to the matching upload field (the response document goes where the proposal or response is asked for; attachments to their named fields).
 Fill required text fields using these answers when a field matches:
 ${qs.map((q) => `- ${q.text}: ${q.answer.slice(0, 600)}`).join("\n").slice(0, 6000)}
@@ -406,10 +437,10 @@ If a field needs something not given here (a price, a signature, a notarized for
     return;
   }
   if (res.status === "need_code") {
-    await post(orgId, `${login.name} asked for a sign-in code before I could submit ${app.title}.`, [{ type: "portal_code", id: login.id, title: `${login.name} sign-in code`, subtitle: `For ${app.title}. Paste it and I'll submit right away.`, url: String(appId) }]);
+    await post(orgId, `${login.name} asked for a sign-in code before I could submit ${app.title}.`, [{ type: "portal_code", id: login.id, title: `${login.name} sign-in code`, subtitle: `For ${app.title}. Paste it and I'll submit right away.`, url: String(appId) }], who);
     return;
   }
-  await post(orgId, `I stopped before submitting ${app.title}: ${res.note}. It's still approved; fix that and press Send now on the application, or send it yourself.`);
+  await post(orgId, `I stopped before submitting ${app.title}: ${res.note}. It's still approved; fix that and press Send now on the application, or send it yourself.`, [], who);
 }
 
 /** A code for an agency portal, then retry the submission. */

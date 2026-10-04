@@ -1624,14 +1624,16 @@ export type PlatformFinding = typeof platformFindings.$inferSelect;
  * Accounts connected beyond the workspace's main Google connection.
  * purpose calendar: a calendar source Avery checks (a Google account, or an
  * Outlook or iCloud calendar's private link). purpose send: a Gmail account
- * certain employees send from (outreach on its own domain).
+ * certain employees send from (outreach on its own domain). purpose press:
+ * the inbox Taylor reads reporter requests from (HARO, Source of Sources,
+ * Qwoted, Featured), signed in with an app password.
  */
 export const accountLinks = sqliteTable(
   "account_links",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
-    purpose: text("purpose", { enum: ["calendar", "send"] }).notNull(),
+    purpose: text("purpose", { enum: ["calendar", "send", "press"] }).notNull(),
     kind: text("kind", { enum: ["google", "link"] }).notNull(),
     name: text("name").notNull(),
     color: text("color").notNull().default("#1b6b4a"),
@@ -1648,6 +1650,8 @@ export const accountLinks = sqliteTable(
     sendsFor: text("sendsFor").notNull().default("[]"),
     status: text("status", { enum: ["connected", "error"] }).notNull().default("connected"),
     error: text("error"),
+    /** JSON (purpose press): the last email read, when it was checked, and how many requests were found. */
+    sync: text("sync").notNull().default("{}"),
     createdAt: createdAt(),
     updatedAt: integer("updatedAt", { mode: "timestamp" }),
   },

@@ -106,6 +106,7 @@ export default function Integrations() {
       <WebsiteLogins />
       <Calendars />
       <SendingAddresses />
+      <PressInbox />
       {notice && (
         <div role="status" className="ld-card" style={{ padding: "12px 16px", borderColor: notice.ok ? "#1b6b4a" : "#e2a7a1", background: notice.ok ? "#f1f8f4" : "#fdf3f2", fontSize: 14, fontWeight: 600, color: notice.ok ? "#155c3e" : "#b42318" }}>
           {notice.text}
@@ -872,6 +873,90 @@ function SendingAddresses() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <button type="button" className="ld-btn p" disabled={!adding.trim()} onClick={() => linkStart(currentOrgId, "send", adding.trim())}>Connect Google</button>
             <button type="button" className="ld-btn" onClick={() => setAdding(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Taylor's press inbox: the address the owner signed up to HARO, Source of
+ * Sources, Qwoted and Featured with. Taylor reads only those services' emails
+ * and turns fitting reporter requests into pitches for approval.
+ */
+function PressInbox() {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.press.view.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [edit, setEdit] = React.useState<{ email: string; password: string; host: string } | null>(null);
+  const done = async () => { setEdit(null); await utils.press.view.invalidate(); };
+  const save = trpc.press.save.useMutation({ onSuccess: done });
+  const remove = trpc.press.remove.useMutation({ onSuccess: done });
+  const check = trpc.press.checkNow.useMutation({ onSuccess: () => utils.press.view.invalidate() });
+  const v = q.data;
+  const services = v?.services ?? [];
+  const guess = (email: string) => {
+    const d = (email.split("@")[1] ?? "").toLowerCase();
+    return /^(gmail|googlemail)\.com$/.test(d) ? "imap.gmail.com" : /^(outlook|hotmail|live|msn)\.com$/.test(d) ? "outlook.office365.com" : /^(yahoo|ymail)\.com$/.test(d) ? "imap.mail.yahoo.com" : /^(icloud|me|mac)\.com$/.test(d) ? "imap.mail.me.com" : "";
+  };
+  const open = () => setEdit(v?.connected ? { email: v.email, password: "", host: v.host } : { email: "", password: "", host: "" });
+  return (
+    <>
+      <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <span className="ld-lbl">Press inbox</span>
+          {v?.connected ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 28px", fontSize: 14, alignItems: "center" }}>
+              <b style={{ overflowWrap: "anywhere" }}>{v.email}</b>
+              <span style={{ color: v.status === "error" ? "#b42318" : undefined }}>{v.status === "error" ? v.error ?? "Can't read the inbox" : v.checkedAt ? `Checked ${fmtDate(v.checkedAt)}, ${fmtTime(v.checkedAt)}` : "Checking soon"}</span>
+              <span>{v.found} {v.found === 1 ? "request" : "requests"} found · {v.pitched} {v.pitched === 1 ? "pitch" : "pitches"} started</span>
+            </div>
+          ) : (
+            <span style={{ fontSize: 14, color: "#3d4c45", lineHeight: 1.5 }}>{q.isLoading ? "Loading..." : "Taylor reads reporter requests from free services the moment they arrive and pitches you for the ones that fit. Sign up for each one as a source with one email address, then connect that inbox here."}</span>
+          )}
+          <span style={{ fontSize: 14, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <b>Sign up free:</b>
+            {services.map((sv, i) => (
+              <React.Fragment key={sv.name}>
+                <a href={sv.signup} target="_blank" rel="noreferrer noopener" style={{ color: "#155c3e", fontWeight: 700 }}>{sv.name}</a>
+                {i < services.length - 1 && <span aria-hidden="true">·</span>}
+              </React.Fragment>
+            ))}
+          </span>
+          <span className="ld-small">Taylor only reads emails from these services. Every pitch waits in Approvals until you send it. Answers to Qwoted and Featured go in with their website login, so add those under Website logins.</span>
+          <ErrorLine error={check.error} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button type="button" className={`ld-btn ${v?.connected ? "" : "p"}`} onClick={open}>{v?.connected ? "Edit" : "Connect inbox"}</button>
+          {v?.connected && <button type="button" className="ld-btn" disabled={check.isPending} onClick={() => check.mutate({ organizationId: currentOrgId })}>{check.isPending ? "Checking..." : "Check now"}</button>}
+        </div>
+      </div>
+
+      {edit && (
+        <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+            <span className="ld-lbl">{v?.connected ? "Press inbox" : "Connect press inbox"}</span>
+            <div className="ld-logins-form" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
+              <label htmlFor="pr-email" style={{ fontWeight: 700 }}>Email address</label>
+              <input id="pr-email" className="ld-in" style={{ maxWidth: 360 }} autoComplete="off" placeholder="press@yourdomain.com" value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value, host: edit.host || guess(e.target.value) })} />
+              <label htmlFor="pr-pw" style={{ fontWeight: 700, alignSelf: "start", paddingTop: 6 }}>App password</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <input id="pr-pw" className="ld-in" style={{ maxWidth: 360 }} type="password" autoComplete="new-password" placeholder={v?.connected ? "Saved. Paste a new one to change it" : "16 letters from your email provider"} value={edit.password} onChange={(e) => setEdit({ ...edit, password: e.target.value })} />
+                <span className="ld-small">Not your regular password. In Gmail: Google Account, Security, 2-Step Verification, App passwords. It's stored encrypted and never shown to the AI.</span>
+              </div>
+              <label htmlFor="pr-host" style={{ fontWeight: 700, alignSelf: "start", paddingTop: 6 }}>Mail server</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <input id="pr-host" className="ld-in" style={{ maxWidth: 360 }} placeholder="imap.gmail.com" value={edit.host} onChange={(e) => setEdit({ ...edit, host: e.target.value })} />
+                <span className="ld-small">Filled in for Gmail, Outlook, Yahoo and iCloud. For Google Workspace, use imap.gmail.com.</span>
+              </div>
+            </div>
+            <ErrorLine error={save.error || remove.error} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" className="ld-btn p" disabled={save.isPending || !edit.email.trim() || (!v?.connected && !edit.password.trim())} onClick={() => save.mutate({ organizationId: currentOrgId, email: edit.email, password: edit.password || undefined, host: edit.host || undefined })}>{save.isPending ? "Checking..." : "Save"}</button>
+            <button type="button" className="ld-btn" onClick={() => setEdit(null)}>Cancel</button>
+            {v?.connected && <button type="button" className="ld-btn" disabled={remove.isPending} onClick={() => remove.mutate({ organizationId: currentOrgId })}>Remove</button>}
           </div>
         </div>
       )}

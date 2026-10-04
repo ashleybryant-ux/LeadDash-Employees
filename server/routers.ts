@@ -985,6 +985,32 @@ export const appRouter = router({
   }),
 
   // Calendars Avery checks, and sending addresses (extra Google accounts)
+  // Taylor's press inbox: HARO, Source of Sources, Qwoted and Featured requests by email.
+  press: router({
+    view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/press")).pressView(input.organizationId);
+    }),
+    save: protectedProcedure
+      .input(orgInput.extend({ email: z.string().trim().max(200), password: z.string().max(200).optional(), host: z.string().trim().max(200).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const view = await (await import("./employees/press")).savePressInbox(input.organizationId, input);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Connected the press inbox", details: input.email });
+        return view;
+      }),
+    remove: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      (await import("./employees/press")).removePressInbox(input.organizationId);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Removed the press inbox", details: "" });
+      return { success: true };
+    }),
+    checkNow: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/press")).checkPress(input.organizationId);
+    }),
+  }),
+
   accounts: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

@@ -1,0 +1,1 @@
+ALTER TABLE `account_links` ADD `sync` text DEFAULT '{}' NOT NULL;
