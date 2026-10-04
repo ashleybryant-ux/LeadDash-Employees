@@ -7,7 +7,8 @@ import * as apply from "./apply";
 import * as pages from "./pages";
 import * as hiring from "./hiring";
 import { writeReport } from "./onboarding";
-import type { Opportunity, OppKind } from "../../drizzle/schema";
+import { KNOWLEDGE_CATEGORIES, type Opportunity, type OppKind } from "../../drizzle/schema";
+import { learnFact } from "./learn";
 import { channelName, planSchedule, postNow, type Plan } from "../social";
 import * as sales from "./sales";
 import { askTeammate, gate } from "./team";
@@ -128,7 +129,7 @@ function decisionSchema(kind: string): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["reply", "action", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate", "choices"],
+    required: ["reply", "action", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate", "choices", "remember_topic", "remember_fact", "remember_category"],
     properties: {
       reply: { type: "string", description: "What you say back. If you are about to do a job, one short sentence saying what you are doing." },
       action: { type: "string", enum: ACTIONS[kind] ?? ["none"] },
@@ -152,6 +153,9 @@ function decisionSchema(kind: string): JsonSchema {
       attendees: str,
       teammate: str,
       choices: { type: "array", items: str, description: "Up to 4 short quick replies the person can tap, written as what they would say. [] when none fit." },
+      remember_topic: { type: "string", description: "2 to 5 words naming a new lasting fact to save to the Brain, or ''." },
+      remember_fact: { type: "string", description: "The fact as one plain sentence, or ''." },
+      remember_category: { type: "string", enum: ["", ...KNOWLEDGE_CATEGORIES] },
     },
   };
 }
@@ -179,6 +183,9 @@ type Decision = {
   attendees: string;
   teammate?: string;
   choices?: string[];
+  remember_topic?: string;
+  remember_fact?: string;
+  remember_category?: string;
 };
 
 function transcript(history: ChatMessage[]) {
@@ -248,6 +255,10 @@ async function leadershipFacts(emp: AIEmployee) {
   if (emp.kind === "projects") parts.push((await projects.projectsStatus(emp.organizationId).catch(() => "")).slice(0, 3000));
   return `\n${parts.filter(Boolean).join("\n")}`;
 }
+
+const REMEMBER = `Remembering for the whole team:
+- When the person tells you something new and lasting about the business that the Brain doesn't already say (an offer or price, who the customers are, a person on the team, a tool they use, a date that matters, how the whole team should do something), fill remember_topic, remember_fact and remember_category, whatever action you also take. Saying a topic again with new details replaces the old one, so use the same topic name for corrections (for example "Practice plan price").
+- Don't remember: one-off requests, things already in the Brain, a rule only for your own work (that's add_guideline), client names, anything about a client's health, passwords or codes.`;
 
 const TALK = `Talk with the person like a colleague, back and forth, not like a form.
 - When the request is unclear in a way that would waste real work if you guessed, choose "none", ask one short question in "reply", and put 2 to 4 short fixed answers in "choices".
@@ -868,7 +879,7 @@ Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "t
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
 Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}
-${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}`}${filesText(files)}
+${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}\n${REMEMBER}`}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     );
@@ -880,13 +891,19 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
       maxTokens: 2000,
     });
     const quick = (list?: string[]) => (!scheduled && list?.length ? [choicesCard(list)] : []);
+    // Something new and lasting: saved to the Brain so nobody has to be told twice.
+    let learned = "";
+    if (!scheduled && decision.remember_topic?.trim() && decision.remember_fact?.trim()) {
+      const r = await learnFact(opts.organizationId, { topic: decision.remember_topic, fact: decision.remember_fact, category: decision.remember_category, who: opts.authorName, via: emp.name }).catch(() => null);
+      if (r) learned = `\n\n${r.replaced ? "Updated the Brain" : "Saved to the Brain"} for the whole team: ${r.fact}`;
+    }
 
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
-      return { user: userMsg, reply: await reply(decision.reply || "Could you say a bit more about what you need?", quick(decision.choices)) };
+      return { user: userMsg, reply: await reply(`${decision.reply || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
     }
     const result = await runAction(emp, decision, { who: opts.authorName, files: sent.length ? sent : files, history });
     const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];
-    return { user: userMsg, reply: await reply(result.text || decision.reply, cards, result.queries) };
+    return { user: userMsg, reply: await reply(`${result.text || decision.reply}${learned}`, cards, result.queries) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[chat] ${emp.name} failed:`, message);

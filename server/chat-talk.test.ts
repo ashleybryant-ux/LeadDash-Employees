@@ -261,3 +261,40 @@ describe("every employee knows what's connected; Avery works in ClickUp", () => 
     expect(theoDue.reply.content).toMatch(/1 open ClickUp task for BJ due in the next 7 days/);
   });
 });
+
+describe("employees remember new facts for the whole team", () => {
+  beforeEach(async () => {
+    decision = null;
+    systems = [];
+    const llm = await import("./_core/llm");
+    (llm.generateJson as any).mockImplementation(async (opts: any) => {
+      if (opts.schemaName === "chat_decision") {
+        systems.push(opts.system);
+        return decision;
+      }
+      return {};
+    });
+  });
+
+  it("saves a new fact to the Brain, replaces it when it changes, and never keeps passwords", async () => {
+    const { orgId, owner } = await makeWorkspace("talk-learn");
+    const riley = (await db.getEmployeeByKind(orgId, "prospecting"))!;
+    decision = { ...blank, reply: "Got it.", remember_topic: "Practice plan price", remember_fact: "The Practice plan is $797 a month for up to 10 clinicians.", remember_category: "services_offers" };
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: riley.id, text: "FYI the Practice plan is $797 a month for up to 10 clinicians" });
+    expect(systems[0]).toContain("Remembering for the whole team");
+    expect(r.reply.content).toBe("Got it.\n\nSaved to the Brain for the whole team: The Practice plan is $797 a month for up to 10 clinicians.");
+    const item = (await db.listKnowledgeByOrg(orgId)).find((k) => k.title === "Learned: Practice plan price")!;
+    expect(item.category).toBe("services_offers");
+    expect(item.content).toMatch(/told Riley on/);
+
+    decision = { ...blank, reply: "Updated.", remember_topic: "Practice plan price", remember_fact: "The Practice plan is now $897 a month.", remember_category: "services_offers" };
+    const again = await caller(owner).chat.send({ organizationId: orgId, employeeId: riley.id, text: "We raised the Practice plan to $897" });
+    expect(again.reply.content).toMatch(/Updated the Brain for the whole team: The Practice plan is now \$897 a month\./);
+    expect((await db.listKnowledgeByOrg(orgId)).filter((k) => k.title === "Learned: Practice plan price")).toHaveLength(1);
+
+    decision = { ...blank, reply: "Noted.", remember_topic: "Portal password", remember_fact: "The portal password is hunter2.", remember_category: "mission_profile" };
+    const pw = await caller(owner).chat.send({ organizationId: orgId, employeeId: riley.id, text: "the portal password is hunter2" });
+    expect(pw.reply.content).toBe("Noted.");
+    expect((await db.listKnowledgeByOrg(orgId)).some((k) => k.title === "Learned: Portal password")).toBe(false);
+  });
+});

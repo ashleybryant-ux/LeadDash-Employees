@@ -4,7 +4,7 @@ import * as db from "../db";
 import { ENV } from "../_core/env";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import * as integrations from "../integrations";
-import type { AIEmployee, Huddle, HuddleLine } from "../../drizzle/schema";
+import { KNOWLEDGE_CATEGORIES, type AIEmployee, type Huddle, type HuddleLine } from "../../drizzle/schema";
 import { loadBrain } from "./brain";
 import { BASE_RULES } from "./roster";
 
@@ -333,8 +333,31 @@ export async function endHuddle(orgId: number, id: number) {
     } catch (err) {
       console.warn("[huddle] notes failed:", err instanceof Error ? err.message : err);
     }
+    await learnFromHuddle(orgId, h, lines).catch((err) => console.warn("[huddle] learning failed:", err instanceof Error ? err.message : err));
   }
   return db.getHuddle(id, orgId)!;
+}
+
+/** New lasting facts people said in the huddle go to the Brain, so nobody repeats them. */
+async function learnFromHuddle(orgId: number, h: Huddle, lines: HuddleLine[]) {
+  const said = lines.filter((l) => !l.kind);
+  if (!said.length) return [];
+  const brain = await loadBrain(orgId);
+  const known = brain.entries.filter((e) => e.title.startsWith("Learned: ") || e.title.startsWith("Company training: ")).map((e) => e.title).join("; ");
+  const out = await generateJson<{ facts: { topic: string; fact: string; category: string }[] }>({
+    system: `From a team huddle transcript, list only new, lasting facts about the business that people stated (an offer or price, who the customers are, a person on the team, a tool, an important date, how the whole team should work). Not tasks, not opinions, not one-off plans, not anything the employees said. Never client names or anything about a client's health, passwords or codes. topic: 2 to 5 words. fact: one plain sentence. category: one of ${KNOWLEDGE_CATEGORIES.join(", ")}. At most 5; [] when there are none. Already known topics: ${known || "none"}.`,
+    prompt: lines.map((l) => `${l.who}${l.kind ? " (employee)" : ""}: ${l.text}`).join("\n").slice(0, 30_000),
+    schemaName: "huddle_facts",
+    schema: obj({ facts: { type: "array", items: obj({ topic: str, fact: str, category: str }) } }),
+    maxTokens: 800,
+  });
+  const { learnFact } = await import("./learn");
+  const saved = [];
+  for (const f of (out.facts ?? []).slice(0, 5)) {
+    const r = await learnFact(orgId, { topic: f.topic, fact: f.fact, category: f.category, who: h.startedByName, via: "the team huddle" });
+    if (r) saved.push(r);
+  }
+  return saved;
 }
 
 // ==========================================

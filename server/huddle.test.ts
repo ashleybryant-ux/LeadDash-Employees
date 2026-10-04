@@ -12,6 +12,7 @@ vi.mock("./_core/llm", async (orig) => {
         return turn;
       }
       if (opts.schemaName === "action_items") return { items: [{ text: "Record the pitch video", owner: "Ashley" }] };
+      if (opts.schemaName === "huddle_facts") return { facts: [{ topic: "Founding member deadline", fact: "Founding member pricing closes December 31, 2026.", category: "services_offers" }] };
       return {};
     }),
   };
@@ -62,6 +63,9 @@ describe("team huddle", () => {
     expect(m.title).toMatch(/^Team huddle, /);
     expect(m.notes).toContain("Morgan: Two things are due");
     expect(JSON.parse(m.actionItems!)[0].text).toBe("Record the pitch video");
+    // New facts from the huddle go to the Brain for everyone.
+    const learned = (await db.listKnowledgeByOrg(orgId)).find((k) => k.title === "Learned: Founding member deadline")!;
+    expect(learned.content).toMatch(/^Founding member pricing closes December 31, 2026\.\n\(.* told the team huddle on /);
     await expect(c.huddle.say({ organizationId: orgId, id: h.id, text: "Hello?" })).rejects.toThrow(/ended/);
   });
 
