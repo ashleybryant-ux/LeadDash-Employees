@@ -31,6 +31,7 @@ const SEASON = {
   episodes: [
     {
       title: "The New Clinician",
+      music: "Low pulsing synth, slow build, drops out before the last line",
       logline: "A new therapist's first day ends with a file she was never supposed to see.",
       beats: [{ label: "Hook", at: "0:00", text: "Renee finds a sealed file on her desk." }, { label: "Cliffhanger", at: "0:55", text: "Dr. Bryant: I see you found it." }],
       shots: [
@@ -45,6 +46,7 @@ const SEASON = {
 
 let calls: { url: string; init: any }[] = [];
 let clip: Buffer;
+let mp3: Buffer;
 const before = { fal: ENV.falKey, eleven: ENV.elevenLabsKey };
 
 beforeAll(() => {
@@ -53,6 +55,9 @@ beforeAll(() => {
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "drama-t-")), "c.mp4");
   execFileSync(ff, ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=576x1024:rate=24", "-f", "lavfi", "-i", "sine=frequency=330", "-t", "2", "-shortest", out]);
   clip = fs.readFileSync(out);
+  const m = path.join(path.dirname(out), "m.mp3");
+  execFileSync(ff, ["-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220", "-t", "6", m]);
+  mp3 = fs.readFileSync(m);
 });
 
 beforeEach(() => {
@@ -65,6 +70,7 @@ beforeEach(() => {
     const u = String(url);
     calls.push({ url: u, init });
     if (u.includes("api.elevenlabs.io/v1/text-to-speech/")) return new Response(Buffer.alloc(32_000), { status: 200 }); // 2 seconds
+    if (u.startsWith("https://api.elevenlabs.io/v1/music")) return new Response(mp3, { status: 200 });
     if (u.startsWith("https://queue.fal.run/") && init.method === "POST") {
       const id = `r${++n}`;
       const model = u.replace("https://queue.fal.run/", "");
@@ -105,6 +111,8 @@ describe("Elena's mini drama studio", () => {
     const pic = await storagePut(`org-${orgId}/brain/front.jpg`, Buffer.from("jpeg-bytes"), "image/jpeg");
     const img = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "Ashley headshot", content: "Front", fileUrl: pic.url });
     await c.avatar.saveSettings({ organizationId: orgId, imageId: img.id, voiceId: "voice-ashley", voiceName: "Ashley", quality: "standard", limitCents: 5000 });
+    const side = await storagePut(`org-${orgId}/brain/side.png`, Buffer.from("png-side"), "image/png");
+    await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "Ashley side", content: "", fileUrl: side.url });
 
     season = SEASON;
     decision = { ...blank, action: "write_episodes", notes: "A therapist drama. I play the practice owner.", count: 1 };
@@ -139,6 +147,14 @@ describe("Elena's mini drama studio", () => {
     expect(videos[0].elements).toBeUndefined();
     expect(videos[2]).toMatchObject({ generate_audio: false });
     expect(videos[2].elements[0].frontal_image_url).toMatch(/^data:image\/jpeg;base64,/);
+    // Every photo of the owner is used, so her face holds from every angle.
+    expect(videos[2].elements[0].reference_image_urls[0]).toMatch(/^data:image\/png;base64,/);
+    expect(stills[1].image_urls).toHaveLength(2);
+    expect(stills[1].prompt).toContain("reference images 1 to 2, the same person from different angles");
+    // The score is made for the episode's length, instrumental.
+    const music = calls.find((x) => x.url.startsWith("https://api.elevenlabs.io/v1/music"))!;
+    expect(JSON.parse(music.init.body)).toMatchObject({ force_instrumental: true });
+    expect(JSON.parse(music.init.body).prompt).toContain("Low pulsing synth");
     expect(videos[2].prompt).toContain("@Element1");
     // The owner's line is read in her own voice and lip-synced onto the clip.
     expect(calls.some((x) => x.url.includes("text-to-speech/voice-ashley"))).toBe(true);

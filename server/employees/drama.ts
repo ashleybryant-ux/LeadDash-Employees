@@ -52,6 +52,8 @@ export type Shot = {
   cast: string[];
   line: { who: string; text: string } | null;
   seconds: number;
+  /** Room tone and the sounds the action makes. */
+  sound?: string;
   stillUrl?: string | null;
   clipUrl?: string | null;
   status?: "todo" | "making" | "done" | "failed";
@@ -64,14 +66,28 @@ export type Beat = { label: string; at: string; text: string };
  * How Elena shoots. Cinematic vertical micro drama: a story told in shots, the
  * way short-form drama studios do it, never one person talking at the camera.
  */
-export const STYLE = `How you make a micro drama (cinematic, vertical 9:16, built for TikTok and Reels):
-- Story: open in the middle of a conflict, never on an introduction. The first 2 seconds are the hook: a reveal, a confrontation or something that shouldn't be there. Raise the stakes every 10 to 15 seconds. End on a cliffhanger: a reveal, a threat or a line that changes everything, then cut to black.
-- Shots: 10 to 16 shots for a 60 to 90 second episode, each 3 to 7 seconds. Mix them like a film: an establishing wide of the place (2 to 3 seconds), medium two-shots, over-the-shoulder shots for conversations, close-ups for emotion, extreme close-up inserts (hands, a phone screen, a file, a door handle), and reaction shots. Never more than one line in a shot, and never two talking close-ups of the same person in a row.
-- Camera: every shot moves with purpose. Slow push-in on a reveal, handheld for tension, a dolly or tracking shot when someone walks, a rack focus to land a look. Name the move.
-- Light and color: a real film look, shallow depth of field, motivated light (windows, desk lamps, monitors), one consistent color grade for the series, 35mm or anamorphic lens feel, light film grain. Night scenes are moody, not dark.
-- Dialogue: short lines, 12 words at most, with subtext. Let silence and looks carry beats. Reactions matter as much as lines.
-- Continuity: the same wardrobe, hair and room for a character within an episode. Describe the setting the same way each time it returns.
-- Never: real clients or client stories, real patient details, real people other than the owner, brand logos, on-screen text, captions or watermarks in the picture.`;
+export const STYLE = `You work like a creative director, cinematographer and editor together, never "make me a video." You plan the story, the shots, the sound and the cut before anything is generated.
+Story:
+- Open in the middle of a conflict, never on an introduction. The first 2 seconds are the hook: a reveal, a confrontation or something that shouldn't be there. Raise the stakes every 10 to 15 seconds. End on a cliffhanger (a reveal, a threat or a line that changes everything), then cut to black.
+- Show the problem in pictures before anyone explains it. Faces and hands tell the story; dialogue is the last resort.
+Shots (the shot list comes first, every time):
+- 10 to 16 shots for a 60 to 90 second episode, each 3 to 7 seconds. Mix them like a film: an establishing wide of the place (2 to 3 seconds), medium two-shots, over-the-shoulder shots for conversations, close-ups for emotion, extreme close-up inserts (hands, a phone screen, a file, a door handle) and reaction shots.
+- Build depth in every frame: something in the foreground, the subject in the middle, the room behind. Compose for a vertical phone screen, not a cropped wide film.
+- Never more than one line in a shot, and never two talking close-ups of the same person in a row.
+Camera:
+- Every shot moves with purpose, and you name the move and how far: a slow dolly-in of a few inches over the shot, handheld micro-movement for tension, a tracking shot when someone walks, a rack focus to land a look, a static frame only for a held beat.
+- 24fps film look, shallow depth of field, a 35mm lens feel for rooms and a 50mm feel for faces.
+Light and color:
+- Motivated, directional light from real sources: a window, a desk lamp, a monitor, a phone screen. Rim or backlight to separate people from the background. Warm practicals, rich shadows, realistic skin tones, controlled contrast, one consistent color grade for the series, light film grain. Night is moody, never murky.
+Sound (planned per shot):
+- Room tone always, plus the sounds the action makes: footsteps, a door latch, keyboard taps, a phone vibrating, paper sliding, HVAC hum, rain on a window. A silent beat before a reveal.
+- The score: one music cue per episode with a mood, a tempo and the moment it builds or drops out.
+Dialogue:
+- Short lines, 12 words at most, with subtext. Let silence and looks carry beats. Reactions matter as much as lines.
+Character bible:
+- Each character keeps the same face, hair, skin tone, wardrobe and jewelry within an episode, and the same lighting treatment. The owner is played by the owner from her own photos.
+Never:
+- Real clients or client stories, real patient details, real people other than the owner, other companies' logos or brands, on-screen text, captions or watermarks in the picture.`;
 
 const parse = <T,>(raw: string | null | undefined, fallback: T): T => {
   try {
@@ -142,9 +158,10 @@ const SEASON_SCHEMA: JsonSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "logline", "beats", "shots"],
+        required: ["title", "logline", "beats", "shots", "music"],
         properties: {
           title: { type: "string" },
+          music: { type: "string", description: "The score: genre, mood, tempo, instruments, and where it builds or drops out. Instrumental only" },
           logline: { type: "string", description: "One sentence that makes someone want to watch" },
           beats: { type: "array", items: { type: "object", additionalProperties: false, required: ["label", "at", "text"], properties: { label: { type: "string", enum: ["Hook", "Turn", "Spike", "Cliffhanger"] }, at: { type: "string", description: "Like 0:00" }, text: { type: "string" } } } },
           shots: {
@@ -152,7 +169,7 @@ const SEASON_SCHEMA: JsonSchema = {
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["framing", "move", "action", "setting", "cast", "line_who", "line_text", "seconds"],
+              required: ["framing", "move", "action", "setting", "cast", "line_who", "line_text", "seconds", "sound"],
               properties: {
                 framing: { type: "string", enum: ["Wide", "Medium", "Two-shot", "Over the shoulder", "Close-up", "Extreme close-up", "Insert", "Reaction"] },
                 move: { type: "string", description: "The camera move: slow push-in, handheld, dolly left, static, rack focus..." },
@@ -162,6 +179,7 @@ const SEASON_SCHEMA: JsonSchema = {
                 line_who: { type: "string", description: "Who speaks in this shot, or ''" },
                 line_text: { type: "string", description: "The one line spoken, 12 words at most, or ''" },
                 seconds: { type: "integer", description: "3 to 7" },
+                sound: { type: "string", description: "Room tone and the sounds this shot makes (footsteps, a door latch, a phone buzzing), or a silent beat" },
               },
             },
           },
@@ -171,7 +189,7 @@ const SEASON_SCHEMA: JsonSchema = {
   },
 };
 
-type Written = { title: string; premise: string; look: string; cast: { name: string; role: string; owner: boolean; look: string; voice: string }[]; episodes: { title: string; logline: string; beats: Beat[]; shots: { framing: string; move: string; action: string; setting: string; cast: string[]; line_who: string; line_text: string; seconds: number }[] }[] };
+type Written = { title: string; premise: string; look: string; cast: { name: string; role: string; owner: boolean; look: string; voice: string }[]; episodes: { title: string; logline: string; music: string; beats: Beat[]; shots: { framing: string; move: string; action: string; setting: string; cast: string[]; line_who: string; line_text: string; seconds: number; sound: string }[] }[] };
 
 /** Writes episodes (and the series and cast the first time). New episodes continue from the last one. */
 export async function writeEpisodes(orgId: number, input: { brief: string; count: number; ownerName: string }) {
@@ -216,13 +234,22 @@ Voices you can cast (ElevenLabs): ${voiceList.filter((v) => !v.own).map((v) => v
       cast: (x.cast ?? []).filter((c) => names.has(c.toLowerCase())).slice(0, 3),
       line: x.line_text?.trim() && names.has((x.line_who || "").toLowerCase()) ? { who: x.line_who, text: x.line_text.trim().slice(0, 140) } : null,
       seconds: Math.max(3, Math.min(7, Math.round(x.seconds || 5))),
+      sound: (x.sound ?? "").slice(0, 200),
       status: "todo",
     }));
     if (!shots.length) continue;
     n++;
-    made.push(db.createDramaEpisode({ organizationId: orgId, number: n, title: e.title.slice(0, 120), logline: e.logline.slice(0, 400), beats: JSON.stringify((e.beats ?? []).slice(0, 6)), shots: JSON.stringify(shots), costCents: estimateEpisode(shots) }));
+    made.push(db.createDramaEpisode({ organizationId: orgId, number: n, title: e.title.slice(0, 120), logline: e.logline.slice(0, 400), beats: JSON.stringify((e.beats ?? []).slice(0, 6)), shots: JSON.stringify(shots), music: (e.music ?? "").slice(0, 500), costCents: estimateEpisode(shots) }));
   }
   return { series: s, episodes: made, cast: db.listDramaCast(orgId) };
+}
+
+/** Every photo of the owner (the one picked under Your avatar first), so her face holds from every angle. */
+async function ownerPhotos(orgId: number) {
+  const emp = await elena(orgId);
+  const s = avatar.settingsOf(emp);
+  const pics = await avatar.photos(orgId);
+  return [...pics.filter((p) => p.id === s.imageId), ...pics.filter((p) => p.id !== s.imageId)].map((p) => p.url).slice(0, 6);
 }
 
 /** The owner's portrait: the photo picked under Your avatar, else her first photo in the Brain. */
@@ -325,10 +352,15 @@ async function portraitFor(orgId: number, c: DramaCastMember, look: string) {
   return saved.url;
 }
 
-function stillPrompt(s: Shot, look: string, cast: DramaCastMember[]) {
-  const who = s.cast.map((n, i) => {
-    const c = cast.find((x) => x.name.toLowerCase() === n.toLowerCase());
-    return `${n} (the person in reference image ${i + 1}${c?.look ? `, ${c.look}` : ""})`;
+type Refs = { name: string; look: string; urls: string[] };
+
+function stillPrompt(s: Shot, look: string, refs: Refs[]) {
+  let at = 1;
+  const who = refs.map((r) => {
+    const from = at;
+    at += r.urls.length;
+    const which = r.urls.length > 1 ? `reference images ${from} to ${at - 1}, the same person from different angles` : `reference image ${from}`;
+    return `${r.name} (the person in ${which}${r.look ? `, ${r.look}` : ""})`;
   });
   return `A single cinematic film still, vertical 9:16, from a scripted drama. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference.` : "No people in frame."} ${look} Shallow depth of field, motivated light, film grain. No text, captions, logos or watermarks.`;
 }
@@ -339,7 +371,7 @@ function motionPrompt(s: Shot, cast: DramaCastMember[]) {
   for (const r of refs) action = action.replace(new RegExp(`\\b${r.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), r.tag);
   const talk = s.line ? ` ${refs.find((r) => r.n.toLowerCase() === s.line!.who.toLowerCase())?.tag ?? s.line.who} speaks a short line, mouth moving naturally.` : "";
   void cast;
-  return `${s.move}. ${action}${talk} Cinematic, realistic motion, subtle natural expressions, no on-screen text.`;
+  return `${s.move}. ${action}${talk} Cinematic, realistic motion, subtle natural expressions, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
 
 const active = new Set<number>();
@@ -401,15 +433,17 @@ export async function makeEpisode(orgId: number, id: number) {
     s.error = null;
     s.costCents = 0;
     save(`Shot ${s.n} of ${shots.length}: ${s.framing.toLowerCase()}, ${s.action.slice(0, 80)}`);
-    // 1. The film still, matched to each character's portrait.
-    const portraits: string[] = [];
+    // 1. The film still (the keyframe), matched to each character's faces: every photo of the owner, a portrait for the rest.
+    const refs: Refs[] = [];
     for (const c of inShot) {
-      if (!c.photoUrl) s.costCents += PRICE.portrait;
-      portraits.push(await portraitFor(orgId, c, look));
+      if (!c.photoUrl && c.kind !== "owner") s.costCents += PRICE.portrait;
+      const urls = c.kind === "owner" ? (await ownerPhotos(orgId)).filter(Boolean) : [];
+      refs.push({ name: c.name, look: c.look, urls: urls.length ? urls : [await portraitFor(orgId, c, look)] });
     }
-    const stillRes = portraits.length
-      ? await falRun(MODELS.still, { prompt: stillPrompt(s, look, cast), image_urls: await Promise.all(portraits.map(asInput)), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5)
-      : await falRun(MODELS.portrait, { prompt: stillPrompt(s, look, cast), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5);
+    const allRefs = refs.flatMap((r) => r.urls).slice(0, 14);
+    const stillRes = allRefs.length
+      ? await falRun(MODELS.still, { prompt: stillPrompt(s, look, refs), image_urls: await Promise.all(allRefs.map(asInput)), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5)
+      : await falRun(MODELS.portrait, { prompt: stillPrompt(s, look, refs), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5);
     const still = stillRes?.images?.[0]?.url as string | undefined;
     if (!still) throw new Error(`No picture came back for shot ${s.n}`);
     s.stillUrl = (await storagePut(`org-${orgId}/drama/ep${ep.number}-shot${s.n}.png`, await download(still), "image/png")).url;
@@ -431,7 +465,7 @@ export async function makeEpisode(orgId: number, id: number) {
       duration: String(seconds),
       generate_audio: !s.line,
       negative_prompt: "blur, distortion, low quality, on-screen text, captions, watermark, extra fingers, warped faces",
-      ...(portraits.length ? { elements: await Promise.all(portraits.map(async (p) => ({ frontal_image_url: await asInput(p), reference_image_urls: [await asInput(p)] }))) } : {}),
+      ...(refs.length ? { elements: await Promise.all(refs.map(async (r) => ({ frontal_image_url: await asInput(r.urls[0]), reference_image_urls: await Promise.all((r.urls.length > 1 ? r.urls.slice(1, 4) : r.urls).map(asInput)) }))) } : {}),
     }, 25);
     let clip = clipRes?.video?.url as string | undefined;
     if (!clip) throw new Error(`No video came back for shot ${s.n}`);
@@ -448,8 +482,10 @@ export async function makeEpisode(orgId: number, id: number) {
     s.status = "done";
     save(`Shot ${s.n} of ${shots.length} done`);
   }
-  save("Cutting the episode together");
-  const out = await stitch(orgId, ep.number, shots.map((s) => s.clipUrl!));
+  save("Scoring and cutting the episode together");
+  const total = shots.reduce((sum, x) => sum + x.seconds, 0);
+  const music = ep.music ? await score(ep.music, total).catch((err) => (console.warn("[drama] score skipped:", err instanceof Error ? err.message : err), null)) : null;
+  const out = await stitch(orgId, ep.number, shots.map((s) => s.clipUrl!), music);
   ep = db.updateDramaEpisode(id, orgId, { status: "ready", videoUrl: out, progress: null, error: null, costCents: shots.reduce((s, x) => s + (x.costCents ?? 0), 0) })!;
   const emp = await elena(orgId);
   const secs = shots.reduce((s, x) => s + x.seconds, 0);
@@ -474,8 +510,21 @@ function ffmpegPath() {
   return "ffmpeg";
 }
 
-/** Every shot cut together as one 1080x1920 episode, each with sound (silence where a shot has none). */
-export async function stitch(orgId: number, number: number, clips: string[]) {
+/** The episode's score from ElevenLabs Music, instrumental, as long as the episode. */
+async function score(prompt: string, seconds: number) {
+  if (!ENV.elevenLabsKey) return null;
+  const res = await fetch("https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128", {
+    method: "POST",
+    headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
+    body: JSON.stringify({ prompt: `${prompt}. Cinematic film score under dialogue, instrumental, no vocals.`.slice(0, 4000), music_length_ms: Math.max(10_000, Math.min(180_000, Math.round(seconds * 1000))), force_instrumental: true }),
+    signal: AbortSignal.timeout(240_000),
+  });
+  if (!res.ok) throw new Error(`ElevenLabs music (${res.status}): ${(await res.text()).slice(0, 200)}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+/** Every shot cut together as one 1080x1920 episode, each with sound (silence where a shot has none), with the score under it. */
+export async function stitch(orgId: number, number: number, clips: string[], music: Buffer | null = null) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-drama-"));
   try {
     const files = clips.map((c, i) => {
@@ -493,7 +542,16 @@ export async function stitch(orgId: number, number: number, clips: string[]) {
       // Every shot gets sound exactly as long as its picture: its own, padded or trimmed, or silence.
       parts.push(probes[i].audio ? `[${i}:a]aresample=44100,aformat=channel_layouts=stereo,apad,atrim=0:${d},asetpts=N/SR/TB[a${i}]` : `anullsrc=r=44100:cl=stereo,atrim=0:${d},asetpts=N/SR/TB[a${i}]`);
     });
-    parts.push(`${files.map((_, i) => `[v${i}][a${i}]`).join("")}concat=n=${files.length}:v=1:a=1[v][a]`);
+    if (music) {
+      const mp = path.join(dir, "score.mp3");
+      fs.writeFileSync(mp, music);
+      args.push("-i", mp);
+      parts.push(`${files.map((_, i) => `[v${i}][a${i}]`).join("")}concat=n=${files.length}:v=1:a=1[v][sfx]`);
+      // The score sits low under the dialogue and room sound, and fades out at the end.
+      const total = probes.reduce((t, p) => t + p.duration, 0).toFixed(3);
+      parts.push(`[${files.length}:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.22,atrim=0:${total},afade=t=out:st=${Math.max(0, Number(total) - 2).toFixed(3)}:d=2[mus]`);
+      parts.push(`[sfx][mus]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]`);
+    } else parts.push(`${files.map((_, i) => `[v${i}][a${i}]`).join("")}concat=n=${files.length}:v=1:a=1[v][a]`);
     const out = path.join(dir, "episode.mp4");
     args.push("-filter_complex", parts.join(";"), "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out);
     await run(ffmpegPath(), args, { maxBuffer: 20 * 1024 * 1024, timeout: 15 * 60_000 });

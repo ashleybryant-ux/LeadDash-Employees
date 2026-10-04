@@ -1713,6 +1713,8 @@ export const dramaEpisodes = sqliteTable(
     beats: text("beats").notNull().default("[]"),
     /** JSON shots: framing, camera move, action, who is in it, the line spoken, seconds, and what was made. */
     shots: text("shots").notNull().default("[]"),
+    /** The score under the episode: mood, tempo and where it builds. */
+    music: text("music").notNull().default(""),
     status: text("status", { enum: ["script", "making", "ready", "failed"] }).notNull().default("script"),
     progress: text("progress"),
     videoUrl: text("videoUrl"),

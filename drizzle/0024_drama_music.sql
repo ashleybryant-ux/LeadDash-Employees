@@ -1,0 +1,1 @@
+ALTER TABLE `drama_episodes` ADD `music` text DEFAULT '' NOT NULL;
