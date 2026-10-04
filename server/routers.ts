@@ -925,6 +925,16 @@ export const appRouter = router({
       const dr = await import("./employees/drama");
       return dr.episodeView(await dr.remakeShot(input.organizationId, input.id, input.n));
     }),
+    animateWith: protectedProcedure.input(orgInput.extend({ id: z.number(), n: z.number().int().min(1).max(30), engine: z.enum(["kling", "seedance"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const dr = await import("./employees/drama");
+      return dr.episodeView(await dr.animateWith(input.organizationId, input.id, input.n, input.engine));
+    }),
+    clearTake: protectedProcedure.input(orgInput.extend({ id: z.number(), n: z.number().int().min(1).max(30) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const dr = await import("./employees/drama");
+      return dr.episodeView(dr.clearTake(input.organizationId, input.id, input.n));
+    }),
     pickDirection: protectedProcedure.input(orgInput.extend({ id: z.number(), pick: z.number().int().min(1).max(3) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       const dr = await import("./employees/drama");

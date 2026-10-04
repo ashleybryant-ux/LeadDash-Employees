@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine } from "../ui";
+import { uploadFile } from "../meta";
 
 /**
  * Elena's studio on screen: micro drama episodes and branded campaigns. In
@@ -11,7 +12,7 @@ import { ErrorLine } from "../ui";
  * owner's character pack and plates) and Style (videos she likes).
  */
 
-type Shot = { n: number; framing: string; move: string; action: string; setting: string; cast: string[]; line: { who: string; text: string } | null; seconds: number; sound?: string; plate?: string; props?: string[]; vo?: string; caption?: string; stillUrl?: string | null; clipUrl?: string | null; status?: string; error?: string | null; costCents?: number };
+type Shot = { n: number; framing: string; move: string; action: string; setting: string; cast: string[]; line: { who: string; text: string } | null; seconds: number; sound?: string; plate?: string; props?: string[]; vo?: string; caption?: string; engine?: "kling" | "seedance"; takeUrl?: string | null; takeSeconds?: number; stillUrl?: string | null; clipUrl?: string | null; status?: string; error?: string | null; costCents?: number };
 type Direction = { title: string; hook: string; story: string; metaphor: string; location: string; wardrobe: string; lighting: string; camera: string; ending: string };
 type Ep = {
   id: number;
@@ -63,7 +64,59 @@ function useActions() {
     remake: trpc.drama.remakeShot.useMutation({ onSuccess: refresh }),
     approve: trpc.drama.approveKeyframes.useMutation({ onSuccess: refresh }),
     pick: trpc.drama.pickDirection.useMutation({ onSuccess: refresh }),
+    engine: trpc.drama.animateWith.useMutation({ onSuccess: refresh }),
+    clearTake: trpc.drama.clearTake.useMutation({ onSuccess: refresh }),
   };
+}
+
+const ENGINE: Record<string, string> = { kling: "Kling", seedance: "Seedance" };
+const otherEngine = (s: Shot) => (s.engine === "seedance" ? "kling" : "seedance");
+
+/**
+ * Add take: the owner records herself performing the shot (on a phone the
+ * front camera opens). Her movement, expressions and voice go onto the keyframe.
+ */
+function TakeButton({ e, s, width }: { e: Ep; s: Shot; width?: number | string }) {
+  const a = useActions();
+  const utils = trpc.useUtils();
+  const input = React.useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  if (!s.cast.length || e.status === "making") return null;
+  if (s.takeUrl) {
+    return (
+      <button type="button" className="ld-btn sm" style={{ width }} disabled={a.clearTake.isPending} onClick={() => a.clearTake.mutate({ organizationId: a.orgId, id: e.id, n: s.n })}>Remove take</button>
+    );
+  }
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        accept="video/*"
+        capture="user"
+        hidden
+        aria-label={`Your take for shot ${s.n}`}
+        onChange={async (ev) => {
+          const f = ev.target.files?.[0];
+          ev.target.value = "";
+          if (!f) return;
+          setBusy(true);
+          setErr("");
+          try {
+            await uploadFile("take", f, { organizationId: a.orgId, episodeId: e.id, n: s.n });
+            await utils.drama.invalidate();
+          } catch (x) {
+            setErr(x instanceof Error ? x.message : "Upload failed.");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+      <button type="button" className="ld-btn sm" style={{ width }} disabled={busy} onClick={() => input.current?.click()}>{busy ? "Uploading..." : "Add take"}</button>
+      {err && <span className="ld-small" style={{ color: "#a3272f" }}>{err}</span>}
+    </>
+  );
 }
 
 function useEpisode(id: number) {
@@ -212,17 +265,22 @@ export function DramaKeyframesCard({ id }: { id: number }) {
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {e.shots.map((s) => (
-            <div key={s.n} style={{ display: "flex", flexDirection: "column", gap: 4, width: 96 }}>
-              <Frame shot={{ ...s, clipUrl: null }} />
+            <div key={s.n} style={{ display: "flex", flexDirection: "column", gap: 4, width: 104 }}>
+              <Frame shot={{ ...s, clipUrl: null }} w={104} />
               <span className="ld-small">{s.n}. {s.framing}</span>
+              {s.takeUrl && <span className="ld-small" style={{ color: "#155c3e", fontWeight: 700 }}>Your take, {s.takeSeconds} sec</span>}
               {waiting && s.stillUrl && (
-                <button type="button" className="ld-btn sm" disabled={a.remake.isPending} onClick={() => a.remake.mutate({ organizationId: a.orgId, id: e.id, n: s.n })}>Redo</button>
+                <>
+                  <button type="button" className="ld-btn sm" disabled={a.remake.isPending} onClick={() => a.remake.mutate({ organizationId: a.orgId, id: e.id, n: s.n })}>Redo</button>
+                  <TakeButton e={e} s={s} />
+                </>
               )}
             </div>
           ))}
         </div>
         <span className="ld-small">{e.shots.length} shots · {e.length} · {waiting ? `${e.animateCost} to animate` : e.cost}</span>
-        <ErrorLine error={a.approve.error || a.remake.error} />
+        {waiting && e.shots.some((s) => s.line && s.cast.length) && <span className="ld-small">Speaking on camera? Press Add take and record yourself saying the line. Your expressions and real voice go onto the keyframe.</span>}
+        <ErrorLine error={a.approve.error || a.remake.error || a.clearTake.error} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {waiting && <button type="button" className="ld-btn p" disabled={a.approve.isPending} onClick={() => a.approve.mutate({ organizationId: a.orgId, id: e.id })}>{a.approve.isPending ? "Starting..." : "Animate it"}</button>}
@@ -280,7 +338,7 @@ function ShotList({ e }: { e: Ep }) {
         const key = s.clipUrl ? "done" : s.status === "making" ? "making" : s.stillUrl ? "todo" : s.status ?? "todo";
         const [sc, sl] = s.stillUrl && !s.clipUrl && key !== "making" ? ["gray", "Keyframe"] : SHOT_STATUS[key] ?? SHOT_STATUS.todo;
         return (
-          <div key={s.n} className="ld-shot" style={{ display: "grid", gridTemplateColumns: "28px 72px minmax(0,1fr) 110px", gap: 12, alignItems: "start", background: "#fff", border: "1px solid #e3e9e6", borderRadius: 10, padding: 10 }}>
+          <div key={s.n} className="ld-shot" style={{ display: "grid", gridTemplateColumns: "28px 72px minmax(0,1fr) 150px", gap: 12, alignItems: "start", background: "#fff", border: "1px solid #e3e9e6", borderRadius: 10, padding: 10 }}>
             <b style={{ fontSize: 13 }}>{s.n}</b>
             <Frame shot={s} w={72} />
             <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14, lineHeight: 1.5, minWidth: 0 }}>
@@ -288,18 +346,23 @@ function ShotList({ e }: { e: Ep }) {
               {s.line && <span style={{ color: "#3d4c45" }}>{s.line.who}: "{s.line.text}"</span>}
               {s.vo && <span style={{ color: "#3d4c45" }}>Voice-over: "{s.vo}"</span>}
               {s.caption && <span style={{ color: "#3d4c45" }}>Caption: {s.caption}</span>}
-              <span className="ld-small">{s.cast.length ? s.cast.join(", ") : "No one"}{s.plate ? ` · plate: ${s.plate}` : ""} · {s.seconds} sec{s.sound ? ` · ${s.sound}` : ""}{s.costCents ? ` · $${(s.costCents / 100).toFixed(2)}` : ""}</span>
+              {s.takeUrl && <span style={{ color: "#155c3e", fontWeight: 700 }}>Your take, {s.takeSeconds} sec: your movement and voice{s.vo ? " (in place of the voice-over)" : ""}</span>}
+              <span className="ld-small">{s.cast.length ? s.cast.join(", ") : "No one"}{s.plate ? ` · plate: ${s.plate}` : ""} · {s.seconds} sec · {s.takeUrl ? "your take" : ENGINE[s.engine ?? "kling"]}{s.sound ? ` · ${s.sound}` : ""}{s.costCents ? ` · $${(s.costCents / 100).toFixed(2)}` : ""}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "stretch" }}>
               <span className={`ld-pill ${sc}`} style={{ alignSelf: "flex-start" }}>{sl}</span>
               {(s.clipUrl || s.stillUrl) && e.status !== "making" && (
-                <button type="button" className="ld-btn sm" disabled={a.remake.isPending} onClick={() => a.remake.mutate({ organizationId: a.orgId, id: e.id, n: s.n })}>{s.clipUrl ? "Remake" : "Redo"}</button>
+                <button type="button" className="ld-btn sm" style={{ width: "100%" }} disabled={a.remake.isPending} onClick={() => a.remake.mutate({ organizationId: a.orgId, id: e.id, n: s.n })}>{s.clipUrl ? "Remake" : "Redo"}</button>
               )}
+              {s.stillUrl && !s.takeUrl && s.cast.length > 0 && e.status !== "making" && (e.plan.approved ? Boolean(s.clipUrl) : true) && (
+                <button type="button" className="ld-btn sm" style={{ width: "100%" }} disabled={a.engine.isPending} onClick={() => a.engine.mutate({ organizationId: a.orgId, id: e.id, n: s.n, engine: otherEngine(s) })}>{e.plan.approved ? `Redo with ${ENGINE[otherEngine(s)]}` : `Use ${ENGINE[otherEngine(s)]}`}</button>
+              )}
+              {s.stillUrl && <TakeButton e={e} s={s} width="100%" />}
             </div>
           </div>
         );
       })}
-      <ErrorLine error={a.remake.error} />
+      <ErrorLine error={a.remake.error || a.engine.error || a.clearTake.error} />
     </div>
   );
 }

@@ -38,10 +38,19 @@ export const MODELS = {
   portrait: "fal-ai/nano-banana-pro",
   video: "fal-ai/kling-video/v3/pro/image-to-video",
   lipsync: "fal-ai/sync-lipsync/v2",
+  /** The owner's own take (a phone clip of her performing the shot) moved onto the approved still. */
+  perform: "fal-ai/kling-video/v3/pro/motion-control",
+  /** The second animator, for shots with two or more people. */
+  seedance: "bytedance/seedance-2.0/reference-to-video",
 };
 
+export type Engine = "kling" | "seedance";
+export const ENGINE_LABEL: Record<Engine, string> = { kling: "Kling", seedance: "Seedance" };
+/** Kling holds one face best; Seedance holds several people in one frame best. */
+export const engineFor = (s: Pick<Shot, "engine" | "cast">): Engine => s.engine ?? (s.cast.length >= 2 ? "seedance" : "kling");
+
 /** Cents, from fal.ai's price pages (October 2026). */
-export const PRICE = { still: 15, portrait: 15, videoSilentPerSec: 11.2, videoSoundPerSec: 16.8, lipsyncPerSec: 5 };
+export const PRICE = { still: 15, portrait: 15, videoSilentPerSec: 11.2, videoSoundPerSec: 16.8, lipsyncPerSec: 5, performPerSec: 16.8, seedancePerSec: 30.34 };
 
 export type Shot = {
   n: number;
@@ -63,6 +72,11 @@ export type Shot = {
   voUrl?: string | null;
   /** On-screen caption for this shot (campaigns). */
   caption?: string;
+  /** Which model animates the shot (Kling unless chosen, or Seedance for two or more people). */
+  engine?: Engine;
+  /** The owner's own take for this shot: her performance and her real voice. */
+  takeUrl?: string | null;
+  takeSeconds?: number;
   stillUrl?: string | null;
   clipUrl?: string | null;
   status?: "todo" | "making" | "done" | "failed";
@@ -119,9 +133,13 @@ async function elena(orgId: number) {
 // Estimates and the monthly limit
 // ==========================================
 
-export function estimateShot(s: Pick<Shot, "seconds" | "line" | "stillUrl">) {
+export function estimateShot(s: Pick<Shot, "seconds" | "line" | "stillUrl" | "cast" | "engine" | "takeUrl" | "takeSeconds">) {
+  const still = s.stillUrl ? 0 : PRICE.still;
+  if (s.takeUrl) return Math.ceil(still + Math.max(3, Math.min(10, Math.ceil(s.takeSeconds || s.seconds || 5))) * PRICE.performPerSec);
   const secs = Math.max(3, Math.min(10, Math.round(s.seconds || 5)));
-  return Math.ceil((s.stillUrl ? 0 : PRICE.still) + secs * (s.line ? PRICE.videoSilentPerSec + PRICE.lipsyncPerSec : PRICE.videoSoundPerSec));
+  const sync = s.line ? PRICE.lipsyncPerSec : 0;
+  if (engineFor(s) === "seedance") return Math.ceil(still + Math.max(4, secs) * (PRICE.seedancePerSec + sync));
+  return Math.ceil(still + secs * (s.line ? PRICE.videoSilentPerSec + sync : PRICE.videoSoundPerSec));
 }
 export function estimateEpisode(shots: Shot[]) {
   return shots.reduce((sum, s) => sum + (s.clipUrl ? 0 : estimateShot(s)), 0);
@@ -350,7 +368,7 @@ function dataUri(buf: Buffer, mime: string) {
 }
 function mimeOf(url: string) {
   const ext = url.split("?")[0].split(".").pop()?.toLowerCase();
-  return ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  return ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : ext === "mp4" ? "video/mp4" : "image/jpeg";
 }
 async function readStored(fileUrl: string) {
   if (fileUrl.startsWith("/avatars/")) {
@@ -423,6 +441,25 @@ function motionPrompt(s: Shot, refs: Refs[]) {
   return `${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in the first frame; only the camera and natural movement change. Restrained, realistic motion: subtle breathing, natural blinks, no surreal body motion, no slow motion, no transformations, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
 
+/** Seedance takes the still and the faces as numbered images; the still is the first frame. */
+function seedancePrompt(s: Shot, refs: Refs[]) {
+  let at = 2;
+  const who = refs.map((r) => {
+    const tags = r.urls.slice(0, Math.max(0, 8 - (at - 2))).map(() => `@Image${at++}`);
+    return { n: r.name, tag: tags[0], all: tags };
+  }).filter((r) => r.tag);
+  let action = s.action;
+  for (const r of who) action = action.replace(new RegExp(`\\b${r.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), `the person in ${r.tag}`);
+  const faces = who.map((r) => `${r.n} is the person in ${r.all.join(" and ")}`).join("; ");
+  const talk = s.line ? ` ${s.line.who} speaks a short line, mouth moving naturally.` : "";
+  return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. Keep every face exactly like its images. ` : ""}${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in @Image1; only the camera and natural movement change. Restrained, realistic motion: subtle breathing, natural blinks, no surreal body motion, no slow motion, no transformations, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
+}
+
+/** The owner's take carries the performance and the voice; the still carries how everything looks. */
+function takePrompt(s: Shot) {
+  return `${s.move}. ${s.action} Keep the face, outfit, light and room exactly as in the image; follow the person's movement, expressions and timing from the video. Realistic, restrained motion, no on-screen text.`;
+}
+
 const active = new Set<number>();
 const label = (e: Pick<DramaEpisode, "kind" | "number" | "title">) => (e.kind === "campaign" ? `"${e.title}"` : `Episode ${e.number}`);
 const planOf = (e: Pick<DramaEpisode, "plan">) => parse<{ approved?: boolean; goal?: string; directions?: Direction[]; chosen?: number; script?: string; cta?: string }>(e.plan, {});
@@ -440,7 +477,7 @@ export async function startEpisode(orgId: number, id: number) {
   const cast = db.listDramaCast(orgId);
   const emp = await elena(orgId);
   const animating = Boolean(plan.approved);
-  if (animating && shots.some((s) => s.line || s.vo) && !ENV.elevenLabsKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Voices aren't connected yet: ELEVENLABS_API_KEY is missing on the server." });
+  if (animating && shots.some((s) => !s.takeUrl && !s.clipUrl && (s.line || s.vo)) && !ENV.elevenLabsKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Voices aren't connected yet: ELEVENLABS_API_KEY is missing on the server." });
   const needsOwner = shots.some((s) => s.vo || s.cast.some((n) => cast.find((c) => c.name.toLowerCase() === n.toLowerCase())?.kind === "owner"));
   const owner = cast.find((c) => c.kind === "owner");
   if (needsOwner) {
@@ -452,8 +489,8 @@ export async function startEpisode(orgId: number, id: number) {
   const ownVoice = s0.voiceId ? { id: s0.voiceId, name: s0.voiceName } : (await avatar.voices()).find((v) => v.own) ?? null;
   if (owner && !owner.voiceId && ownVoice) db.updateDramaCast(owner.id, orgId, { voiceId: ownVoice.id, voiceName: ownVoice.name ?? null });
   if (animating) {
-    for (const s of shots) if (s.line && !db.listDramaCast(orgId).find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${s.line.who} doesn't have a voice yet. Pick one on the Cast tab.` });
-    if (shots.some((s) => s.vo) && !ownVoice) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Pick your voice under Your avatar on my Videos tab, so the voice-over is you." });
+    for (const s of shots) if (s.line && !s.takeUrl && !db.listDramaCast(orgId).find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${s.line.who} doesn't have a voice yet. Pick one on the Cast tab.` });
+    if (shots.some((s) => s.vo && !s.takeUrl) && !ownVoice) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Pick your voice under Your avatar on my Videos tab, so the voice-over is you." });
   }
   const estimate = animating ? estimateEpisode(shots) : estimateStills(shots);
   const limit = s0.limitCents;
@@ -550,6 +587,21 @@ export async function makeEpisode(orgId: number, id: number) {
     s.error = null;
     save(`Animating shot ${s.n} of ${shots.length}: ${s.move.toLowerCase()}`);
     const { refs } = await refsFor(orgId, s, look);
+    if (s.takeUrl) {
+      // Her own take: her movement, expressions and real voice, moved onto the approved still.
+      save(`Shot ${s.n} of ${shots.length}: moving your take onto the keyframe`);
+      const secs = Math.max(3, Math.min(10, Math.ceil(s.takeSeconds || s.seconds)));
+      const res = await falRun(MODELS.perform, { image_url: await asInput(s.stillUrl!), video_url: await asInput(s.takeUrl), prompt: takePrompt(s), character_orientation: "image", keep_original_sound: true }, 25);
+      const out = res?.video?.url as string | undefined;
+      if (!out) throw new Error(`No video came back for shot ${s.n}`);
+      s.costCents = (s.costCents ?? 0) + Math.ceil(secs * PRICE.performPerSec);
+      s.clipUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-shot${s.n}.mp4`, await download(out), "video/mp4")).url;
+      s.voUrl = null; // her take is the sound for this shot
+      s.seconds = secs;
+      s.status = "done";
+      save(`Shot ${s.n} of ${shots.length} done`);
+      continue;
+    }
     let audio: Buffer | null = null;
     let seconds = s.seconds;
     if (s.line) {
@@ -565,17 +617,25 @@ export async function makeEpisode(orgId: number, id: number) {
       seconds = Math.max(seconds, Math.ceil((vo.length * 8) / 128_000) + 1);
     }
     seconds = Math.max(3, Math.min(10, seconds));
-    const clipRes = await falRun(MODELS.video, {
-      start_image_url: await asInput(s.stillUrl!),
-      prompt: motionPrompt(s, refs),
-      duration: String(seconds),
-      generate_audio: !s.line,
-      negative_prompt: "blur, distortion, low quality, on-screen text, captions, watermark, extra fingers, distorted hands, warped faces, morphing, surreal motion, slow motion",
-      ...(refs.length ? { elements: await Promise.all(refs.map(async (r) => ({ frontal_image_url: await asInput(r.urls[0]), reference_image_urls: await Promise.all((r.urls.length > 1 ? r.urls.slice(1, 4) : r.urls).map(asInput)) }))) } : {}),
-    }, 25);
+    const engine = engineFor(s);
+    let clipRes: any;
+    if (engine === "seedance") {
+      seconds = Math.max(4, seconds);
+      const faces = refs.flatMap((r) => r.urls).slice(0, 8);
+      clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(seconds), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25);
+    } else {
+      clipRes = await falRun(MODELS.video, {
+        start_image_url: await asInput(s.stillUrl!),
+        prompt: motionPrompt(s, refs),
+        duration: String(seconds),
+        generate_audio: !s.line,
+        negative_prompt: "blur, distortion, low quality, on-screen text, captions, watermark, extra fingers, distorted hands, warped faces, morphing, surreal motion, slow motion",
+        ...(refs.length ? { elements: await Promise.all(refs.map(async (r) => ({ frontal_image_url: await asInput(r.urls[0]), reference_image_urls: await Promise.all((r.urls.length > 1 ? r.urls.slice(1, 4) : r.urls).map(asInput)) }))) } : {}),
+      }, 25);
+    }
     let clip = clipRes?.video?.url as string | undefined;
     if (!clip) throw new Error(`No video came back for shot ${s.n}`);
-    s.costCents = (s.costCents ?? 0) + Math.ceil(seconds * (s.line ? PRICE.videoSilentPerSec : PRICE.videoSoundPerSec));
+    s.costCents = (s.costCents ?? 0) + Math.ceil(seconds * (engine === "seedance" ? PRICE.seedancePerSec : s.line ? PRICE.videoSilentPerSec : PRICE.videoSoundPerSec));
     if (audio) {
       const synced = await falRun(MODELS.lipsync, { video_url: clip, audio_url: dataUri(audio, "audio/mpeg"), sync_mode: "cut_off" }, 15);
       clip = synced?.video?.url as string | undefined;
@@ -790,6 +850,59 @@ export async function remakeShot(orgId: number, id: number, n: number) {
   return startEpisode(orgId, id);
 }
 
+/** Animate one shot with the other model: after approval the clip is made again from the same keyframe; before, it's just chosen. */
+export async function animateWith(orgId: number, id: number, n: number, engine: Engine) {
+  const ep = db.getDramaEpisode(id, orgId);
+  if (!ep) throw new TRPCError({ code: "NOT_FOUND", message: "That video isn't in this workspace." });
+  if (ep.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
+  if (!shotsOf(ep).some((s) => s.n === n)) throw new TRPCError({ code: "NOT_FOUND", message: "That shot isn't in this video." });
+  const approved = Boolean(planOf(ep).approved);
+  const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, engine, ...(approved ? { clipUrl: null, status: "todo" as const } : {}) } : s));
+  const next = db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots) })!;
+  return approved && shots.find((s) => s.n === n)!.stillUrl ? startEpisode(orgId, id) : next;
+}
+
+/**
+ * The owner's own take for a shot: a phone clip of her saying the line. It's
+ * trimmed to 10 seconds and made smaller, then used when the shot is animated:
+ * her movement, expressions and voice on the polished keyframe.
+ */
+export async function saveTake(orgId: number, id: number, n: number, buf: Buffer) {
+  const ep = db.getDramaEpisode(id, orgId);
+  if (!ep) throw new TRPCError({ code: "NOT_FOUND", message: "That video isn't in this workspace." });
+  if (ep.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
+  const shot = shotsOf(ep).find((s) => s.n === n);
+  if (!shot) throw new TRPCError({ code: "NOT_FOUND", message: "That shot isn't in this video." });
+  if (!shot.cast.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Nobody is in this shot, so there's no one to perform it." });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-take-"));
+  try {
+    const src = path.join(dir, "in");
+    const out = path.join(dir, "take.mp4");
+    fs.writeFileSync(src, buf);
+    // Up to 10 seconds, 720 wide, with its sound: small enough to send, sharp enough to follow.
+    await run(ffmpegPath(), ["-y", "-i", src, "-t", "10", "-vf", "scale='min(720,iw)':-2,fps=30,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out], { maxBuffer: 20 * 1024 * 1024, timeout: 5 * 60_000 }).catch(() => {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "That file isn't a video I can read. Record an MP4 or MOV on your phone." });
+    });
+    const info = await probe(out);
+    if (info.duration < 1.5) throw new TRPCError({ code: "BAD_REQUEST", message: "That take is too short. Record at least 2 seconds." });
+    const saved = await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-take${n}-${Date.now()}.mp4`, fs.readFileSync(out), "video/mp4");
+    const seconds = Math.max(3, Math.min(10, Math.ceil(info.duration)));
+    const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, takeUrl: saved.url, takeSeconds: seconds, clipUrl: null, voUrl: null, status: "todo" as const } : s));
+    return db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots), ...(ep.status === "ready" ? { status: "failed", error: "Your take is in. Press Make again to animate that shot and cut it again." } : {}) })!;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Remove the owner's take: the shot goes back to being animated from the keyframe alone. */
+export function clearTake(orgId: number, id: number, n: number) {
+  const ep = db.getDramaEpisode(id, orgId);
+  if (!ep) throw new TRPCError({ code: "NOT_FOUND", message: "That video isn't in this workspace." });
+  if (ep.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
+  const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, takeUrl: null, takeSeconds: undefined, ...(s.takeUrl ? { clipUrl: null, status: "todo" as const } : {}) } : s));
+  return db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots), ...(ep.status === "ready" ? { status: "failed", error: "Your take was removed. Press Make again to animate that shot and cut it again." } : {}) })!;
+}
+
 /** Edit the script: each shot's voice-over and caption, and the call to action. Changed voice-over is read again next time. */
 export function saveScript(orgId: number, id: number, input: { cta: string; shots: { n: number; vo: string; caption: string }[] }) {
   const ep = db.getDramaEpisode(id, orgId);
@@ -866,7 +979,7 @@ export function episodeView(e: DramaEpisode) {
     title: e.title,
     logline: e.logline,
     beats: beatsOf(e),
-    shots,
+    shots: shots.map((s) => ({ ...s, engine: engineFor(s) })),
     status: e.status,
     progress: e.progress,
     videoUrl: e.videoUrl,

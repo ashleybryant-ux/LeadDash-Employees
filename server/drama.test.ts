@@ -285,4 +285,67 @@ describe("Elena's mini drama studio", () => {
     expect(db.getDramaEpisode(camp.id, orgId)!.status).toBe("ready");
     expect(posts(drama.MODELS.video).length).toBe(before);
   }, 90_000);
+
+  it("uses Seedance for two people, the owner's own take for her line, and Redo with the other model", async () => {
+    const { orgId, owner } = await makeWorkspace("takes");
+    const c = caller(owner);
+    const pic = await storagePut(`org-${orgId}/brain/front.jpg`, Buffer.from("jpeg-bytes"), "image/jpeg");
+    const img = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "Ashley", content: "", fileUrl: pic.url });
+    await c.avatar.saveSettings({ organizationId: orgId, imageId: img.id, voiceId: "voice-ashley", voiceName: "Ashley", quality: "standard", limitCents: 5000 });
+    season = { ...SEASON, episodes: [{ ...SEASON.episodes[0], shots: [
+      shot({ framing: "Medium two-shot", action: "Dr. Ashley Bryant hands Renee Cole the file.", cast: ["Dr. Ashley Bryant", "Renee Cole"], seconds: 5 }),
+      shot({ action: "Dr. Ashley Bryant leans in.", cast: ["Dr. Ashley Bryant"], line_who: "Dr. Ashley Bryant", line_text: "I see you found it." }),
+    ] }] };
+    const w = await drama.writeEpisodes(orgId, { brief: "", count: 1, ownerName: "Ashley" });
+    const id = w.episodes[0].id;
+    let v = drama.episodeView(db.getDramaEpisode(id, orgId)!);
+    expect(v.shots.map((x) => x.engine)).toEqual(["seedance", "kling"]);
+    await c.drama.make({ organizationId: orgId, id });
+    await waitFor(() => db.getDramaEpisode(id, orgId)!.status === "keyframes");
+
+    // Her take for the line: a phone clip, trimmed and kept with its sound.
+    await expect(drama.saveTake(orgId, id, 2, Buffer.from("not a video"))).rejects.toThrow(/isn't a video I can read/);
+    const before = drama.estimateEpisode(drama.shotsOf(db.getDramaEpisode(id, orgId)!));
+    await drama.saveTake(orgId, id, 2, clip);
+    v = drama.episodeView(db.getDramaEpisode(id, orgId)!);
+    expect(v.shots[1]).toMatchObject({ takeSeconds: 3 });
+    expect(v.status).toBe("keyframes");
+    expect(drama.estimateEpisode(drama.shotsOf(db.getDramaEpisode(id, orgId)!))).not.toBe(before);
+
+    calls = [];
+    await c.drama.approveKeyframes({ organizationId: orgId, id });
+    await waitFor(() => db.getDramaEpisode(id, orgId)!.status !== "making");
+    const done = drama.episodeView(db.getDramaEpisode(id, orgId)!);
+    expect(done.error).toBeNull();
+    expect(done.status).toBe("ready");
+    // Two people: Seedance, with the keyframe first and both faces after it.
+    const sd = posts(drama.MODELS.seedance);
+    expect(sd).toHaveLength(1);
+    expect(sd[0]).toMatchObject({ aspect_ratio: "9:16", resolution: "720p", duration: "5", generate_audio: true });
+    expect(sd[0].image_urls.length).toBeGreaterThanOrEqual(3);
+    expect(sd[0].prompt).toContain("@Image1 is the first frame");
+    expect(sd[0].prompt).toContain("Renee Cole is the person in @Image3");
+    // Her take: her movement and voice on the keyframe; no reading, no lip sync.
+    const pf = posts(drama.MODELS.perform);
+    expect(pf).toHaveLength(1);
+    expect(pf[0]).toMatchObject({ character_orientation: "image", keep_original_sound: true });
+    expect(pf[0].video_url).toMatch(/^data:video\/mp4;base64,/);
+    expect(posts(drama.MODELS.video)).toHaveLength(0);
+    expect(posts(drama.MODELS.lipsync)).toHaveLength(0);
+    expect(calls.some((x) => x.url.includes("text-to-speech"))).toBe(false);
+
+    // Redo with Kling: only that shot is animated again, from the same keyframe.
+    calls = [];
+    await c.drama.animateWith({ organizationId: orgId, id, n: 1, engine: "kling" });
+    await waitFor(() => db.getDramaEpisode(id, orgId)!.status !== "making");
+    expect(posts(drama.MODELS.video)).toHaveLength(1);
+    expect(posts(drama.MODELS.still)).toHaveLength(0);
+    expect(posts(drama.MODELS.seedance)).toHaveLength(0);
+    expect(drama.episodeView(db.getDramaEpisode(id, orgId)!).shots[0].engine).toBe("kling");
+
+    // Removing the take sends that shot back to the keyframe alone.
+    drama.clearTake(orgId, id, 2);
+    expect(drama.shotsOf(db.getDramaEpisode(id, orgId)!)[1]).toMatchObject({ takeUrl: null, clipUrl: null });
+    expect(db.getDramaEpisode(id, orgId)!.status).toBe("failed");
+  }, 60_000);
 });

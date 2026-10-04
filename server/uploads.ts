@@ -25,6 +25,7 @@ const LIMITS: Record<string, number> = {
   post_media: 250_000_000,
   chat: 20_000_000,
   history: 400_000_000,
+  take: 200_000_000,
 };
 
 const KNOWLEDGE_CATEGORY: Record<string, string> = {
@@ -112,7 +113,7 @@ export function registerUploads(app: Express) {
       }
 
       const old = unsupportedNote(name);
-      if (old && slot !== "video" && slot !== "post_media") return res.status(400).json({ error: old });
+      if (old && slot !== "video" && slot !== "post_media" && slot !== "take") return res.status(400).json({ error: old });
 
       // Images and videos for Sienna's posts.
       if (slot === "post_media") {
@@ -142,6 +143,17 @@ export function registerUploads(app: Express) {
 
       const buf = await readBody(req, max);
       if (buf.length === 0) return res.status(400).json({ error: "The file was empty." });
+
+      // The owner's own take for one of Elena's shots: her performance and voice.
+      if (slot === "take") {
+        const dr = await import("./employees/drama");
+        try {
+          const ep = await dr.saveTake(orgId, Number(req.query.episodeId), Number(req.query.n), buf);
+          return res.json(dr.episodeView(ep));
+        } catch (err) {
+          return res.status(400).json({ error: err instanceof Error ? err.message : "That take couldn't be saved." });
+        }
+      }
 
       // A file attached in an employee's chat: photos are described, documents are read.
       if (slot === "chat") {
