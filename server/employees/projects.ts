@@ -850,10 +850,24 @@ export async function morningChecks() {
 // From Simone: action items become tasks
 // ==========================================
 
+export const TEAM_ITEMS = "Team action items";
+
+/** The standing list for meeting action items that don't belong to a project. Kept open; its date moves forward. */
+async function teamItemsList(orgId: number) {
+  const ahead = new Date(Date.now() + 90 * DAY);
+  const have = (await db.listLaunches(orgId)).find((l) => l.name === TEAM_ITEMS && l.status !== "dropped");
+  if (have) {
+    if (have.status !== "active" || new Date(have.launchDate) < new Date(Date.now() + 30 * DAY)) await db.updateLaunch(have.id, orgId, { status: "active", launchDate: ahead });
+    return (await db.getLaunch(have.id, orgId))!;
+  }
+  return db.createLaunch({ organizationId: orgId, name: TEAM_ITEMS, launchDate: ahead, status: "active", brief: "Action items from meetings and huddles that don't belong to a project.", approvedBy: "Nora", approvedAt: new Date() });
+}
+
 export async function addActionItems(orgId: number, items: { text: string; owner: string; due?: Date }[], source: string, launchId?: number | null) {
   const fromMeeting = launchId ? await db.getLaunch(launchId, orgId) : null;
-  const launch = (fromMeeting && fromMeeting.status === "active" ? fromMeeting : null) ?? (await db.listLaunches(orgId)).filter((l) => l.status === "active").sort((a, b) => new Date(a.launchDate).getTime() - new Date(b.launchDate).getTime())[0];
-  if (!launch) return { launch: null, tasks: [] as LaunchTask[] };
+  let launch = (fromMeeting && fromMeeting.status === "active" ? fromMeeting : null) ?? (await db.listLaunches(orgId)).filter((l) => l.status === "active").sort((a, b) => new Date(a.launchDate).getTime() - new Date(b.launchDate).getTime())[0];
+  // No project running: items still get an owner, a due date and tracking, under a standing list.
+  if (!launch) launch = await teamItemsList(orgId);
   const emps = await db.listEmployeesByOrg(orgId);
   const members = await db.listMembers(orgId);
   const out: LaunchTask[] = [];

@@ -167,3 +167,40 @@ describe("Morgan talks it through", () => {
     expect(cards.at(-1).options).toEqual(["Start Comp 1", "Start the top 2", "Tell me more about each"]);
   });
 });
+
+describe("Simone works from her meeting notes", () => {
+  beforeEach(() => {
+    decision = null;
+    systems = [];
+  });
+
+  it("sees the last huddle's action items in chat, and gives each one an owner, a due date and a tracked task even with no project running", async () => {
+    const { orgId, owner } = await makeWorkspace("talk-simone");
+    const simone = (await db.getEmployeeByKind(orgId, "coo"))!;
+    const m = await db.createMeeting({ organizationId: orgId, title: "Team huddle, Sat, Oct 3, 2026", startsAt: new Date("2026-10-03T23:00:00Z"), minutes: 20, attendees: "[]", updatesFrom: "[]", status: "held", linkKind: "meet", notes: "Owner: Morgan, send the OCAST letter. Theo, draft the launch article.", actionItems: JSON.stringify([{ text: "Send the OCAST letter", owner: "Morgan", ownerKind: "grants", taskId: null, status: "open" }, { text: "Draft the launch article", owner: "Theo", ownerKind: "blog", taskId: null, status: "open" }]) });
+
+    decision = { ...blank, reply: "Checking." };
+    await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "What came out of the last huddle?" });
+    expect(systems[0]).toContain("Team huddle, Sat, Oct 3, 2026: 2 action items");
+    expect(systems[0]).toContain("Send the OCAST letter (owner: Morgan; no due date; not a task yet)");
+
+    const later = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    const llm = await import("./_core/llm");
+    (llm.generateJson as any).mockImplementation(async (opts: any) => {
+      if (opts.schemaName === "chat_decision") return { ...blank, action: "set_deadlines", target: "", notes: "" };
+      if (opts.schemaName === "item_dates") return { dates: [later(3), later(7)] };
+      return {};
+    });
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "Assign deadlines to everyone with tasks from the last huddle" });
+    expect(r.reply.content).toMatch(/Send the OCAST letter \(Morgan, due /);
+    const items = JSON.parse((await db.getMeeting(m.id, orgId))!.actionItems!);
+    expect(items.map((i: any) => i.due)).toEqual([later(3), later(7)]);
+    expect(items.every((i: any) => i.taskId)).toBe(true);
+    const launch = (await db.listLaunches(orgId)).find((l) => l.name === "Team action items")!;
+    expect(launch.status).toBe("active");
+    const tasks = await db.listLaunchTasks(launch.id, orgId);
+    expect(tasks.map((t) => t.ownerName).sort()).toEqual(["Morgan", "Theo"]);
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    expect((await db.listChatMessages(orgId, morgan.id, 10)).some((x) => x.role === "handoff" && /^Due .*Send the OCAST letter/.test(x.content))).toBe(true);
+  });
+});

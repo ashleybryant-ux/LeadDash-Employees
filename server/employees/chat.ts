@@ -67,8 +67,8 @@ const ACTIONS: Record<string, string[]> = {
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 
@@ -77,6 +77,7 @@ const ACTION_HELP: Record<string, string> = {
   add_file: "add_file: the person attached an RFP, call for proposals or opportunity document and wants you to look at it or add it. It is added to Opportunities and scored.",
   revise_answer: "revise_answer: change one answer on an application you wrote. Put words from the question (\"problem\", \"traction\") in `target`, the application's name in `title` ('' for the most recent), what to change in `notes`, and concise or detailed in `to` when they ask for shorter or longer ('' otherwise).",
   restore_answer: "restore_answer: the person wants the answer you just rewrote put back the way it was (\"go back to the old one\").",
+  set_deadlines: "set_deadlines: give every action item from a meeting or huddle a due date and make sure each one is a tracked task with its owner (\"assign deadlines from the last meeting\"). Put the meeting's name in `target` ('' for the most recent, huddles included) and any timing the person gave (\"by Friday\", \"next week\") in `notes`.",
   restore_page: "restore_page: the person wants the page you built put back to the version before (\"go back to the last version\"). Put the page's name in `target` ('' for the most recent page).",
   ask_layout: "ask_layout: before building a NEW page, ask the person to pick a layout and where the button goes. In `reply`, say in one or two sentences what you took from what they gave you (attachments included), then ask them to pick a layout.",
   plan_launch: "plan_launch: plan a launch back from its launch date. Put the launch name in `title`, the launch date as YYYY-MM-DD in `date`, and everything the person said about it (goals, targets, who does what) in `notes`.",
@@ -226,6 +227,14 @@ async function applyFacts(emp: AIEmployee) {
   const lines = opps.map((o) => `- ${o.title} (${o.host ?? "host"}): fit ${o.fitScore}, ${o.fitCall}; ${o.amount ?? ""}; due ${o.deadline ?? "not posted"}. Why: ${(o.fitReason ?? o.summary ?? "").slice(0, 300)}${o.eligibility ? ` Eligibility: ${o.eligibility.slice(0, 200)}` : ""}`);
   const appLines = apps.map((a) => `- ${a.title} (${a.status}): questions: ${apply.parse<{ text: string }[]>(a.questions, []).map((q) => q.text.slice(0, 80)).join(" | ")}`);
   return `${lines.length ? `\nOpen opportunities you found (explain a score from these facts only):\n${lines.join("\n")}` : ""}${appLines.length ? `\nApplications in progress:\n${appLines.join("\n")}` : ""}`;
+}
+
+/** Simone and Nora see recent meetings, huddles and their action items (and Nora her projects), so they never say they have no notes. */
+async function leadershipFacts(emp: AIEmployee) {
+  if (emp.kind !== "coo" && emp.kind !== "projects") return "";
+  const parts = [await coo.recentMeetingsFacts(emp.organizationId).catch(() => "")];
+  if (emp.kind === "projects") parts.push((await projects.projectsStatus(emp.organizationId).catch(() => "")).slice(0, 3000));
+  return `\n${parts.filter(Boolean).join("\n")}`;
 }
 
 const TALK = `Talk with the person like a colleague, back and forth, not like a form.
@@ -489,6 +498,19 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const items = JSON.parse(r.actionItems || "[]") as coo.ActionItem[];
       const sent = items.some((i) => i.status === "in_clickup" || i.status === "task");
       return { text: `I found ${plural(items.length, "action item")} in your notes from ${m.title}${items.length ? `: ${items.map((i) => `${i.text} (${i.owner})`).join("; ")}` : ""}.${sent ? (emp.kind === "projects" ? " I added them to the launch plan and I'll track each one." : " Nora added them to the launch plan.") : ""}`, cards: [], queries: [] };
+    }
+    case "set_deadlines": {
+      const m = await coo.lastMeetingFor(org, d.target, emp.kind === "projects" ? "project" : "all");
+      if (!m) return { text: "I don't have a past meeting or huddle with action items yet.", cards: [], queries: [] };
+      const items = await coo.setDeadlines(org, m.id, d.notes);
+      if (!items.length) return { text: `${m.title} has no action items to date.`, cards: [], queries: [] };
+      const day = (ymd?: string) => (ymd ? new Date(`${ymd}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" }) : "no date");
+      return {
+        text: `Done. Every action item from ${m.title} has an owner and a due date, and I let each employee know theirs:\n${items.map((i) => `- ${i.text} (${i.owner}, due ${day(i.due)})`).join("\n")}\nNora is tracking them as tasks and will chase anything that slips.`,
+        cards: [],
+        queries: [],
+        choices: ["Move a date", "Send the recap", "Looks good"],
+      };
     }
     case "capture": {
       const kind = (["idea", "risk", "blocker", "decision"] as const).find((k) => d.target.trim().toLowerCase().startsWith(k)) ?? "idea";
@@ -813,7 +835,7 @@ export async function sendChatMessage(opts: {
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
-Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await bidprimeFacts(emp)}${await applyFacts(emp)}
+Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}
 ${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}`}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`

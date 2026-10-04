@@ -190,9 +190,19 @@ export async function speak(kind: string, text: string): Promise<string | null> 
     } catch (err) {
       speechError = (err instanceof Error ? err.message : String(err)).slice(0, 300);
       console.warn("[huddle] ElevenLabs failed:", speechError);
-      return null;
+      // Out of credits or a key problem: keep talking with OpenAI's voices when that key is set.
+      if (!ENV.openAiKey) return null;
+      const fallback = speechError;
+      const id = await openAiSpeak(kind, text);
+      if (id) speechError = null;
+      else speechError = `${fallback} OpenAI's voices didn't work either: ${speechError ?? "unknown error"}`.slice(0, 400);
+      return id;
     }
   }
+  return openAiSpeak(kind, text);
+}
+
+async function openAiSpeak(kind: string, text: string): Promise<string | null> {
   if (!ENV.openAiKey) {
     speechError = "Voices are not set up: OPENAI_API_KEY is missing on the server.";
     return null;

@@ -30,7 +30,7 @@ const arr = (items: JsonSchema): JsonSchema => ({ type: "array", items });
 const DAY = 86_400_000;
 
 export type AgendaItem = { at: string; item: string; who: string; minutes: number };
-export type ActionItem = { text: string; owner: string; ownerKind: string | null; taskId: number | null; status: "in_clickup" | "task" | "open" | "done" };
+export type ActionItem = { text: string; owner: string; ownerKind: string | null; taskId: number | null; status: "in_clickup" | "task" | "open" | "done"; due?: string };
 export type Attendee = { name: string; email: string };
 
 const parse = <T,>(raw: string | null | undefined, fallback: T): T => {
@@ -310,7 +310,13 @@ export async function sendItems(orgId: number, meetingId: number) {
   const items = parse<ActionItem[]>(m.actionItems, []);
   const open = items.filter((i) => i.status === "open");
   if (!open.length) return items;
-  const r = await addActionItems(orgId, open.map((i) => ({ text: i.text, owner: i.owner })), `meeting:${m.id}`, m.launchId);
+  const { tz } = await opsFor(orgId);
+  const dueOf = (ymd?: string) => {
+    if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return undefined;
+    const [y, mo, d] = ymd.split("-").map(Number);
+    return zonedToUtc(y, mo, d, 17, 0, tz);
+  };
+  const r = await addActionItems(orgId, open.map((i) => ({ text: i.text, owner: i.owner, due: dueOf(i.due) })), `meeting:${m.id}`, m.launchId);
   const inClickup = !!r.launch?.clickupListId;
   open.forEach((it, idx) => {
     const t = r.tasks[idx];
@@ -324,6 +330,66 @@ export async function sendItems(orgId: number, meetingId: number) {
   }
   await db.updateMeeting(m.id, orgId, { actionItems: JSON.stringify(items) });
   return items;
+}
+
+/**
+ * Gives every action item from a meeting (or huddle) a due date, makes sure each is a
+ * tracked task with an owner, and tells each employee theirs. Dates follow the
+ * person's guidance ("by Friday"), otherwise a sensible date for each item.
+ */
+export async function setDeadlines(orgId: number, meetingId: number, guidance: string) {
+  const m = await db.getMeeting(meetingId, orgId);
+  if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
+  const items = parse<ActionItem[]>(m.actionItems, []);
+  if (!items.length) return items;
+  const simone = await employeeFor(orgId, m.launchId ? "projects" : "coo");
+  const { tz } = await opsFor(orgId);
+  const p = partsIn(new Date(), tz);
+  const today = `${p.y}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
+  const out = await working(simone, async () => {
+    const { system } = await systemPromptFor(simone, `Give each action item a due date. Today is ${today} (${fmtDay(new Date(), tz)}). Dates are YYYY-MM-DD, on a weekday, after today. Follow the person's guidance when they gave it; otherwise pick a realistic date for the size of each item (small things in 2 to 3 business days, bigger ones within 2 weeks). Return the items in the same order.`);
+    return generateJson<{ dates: string[] }>({ system, prompt: `Guidance: ${guidance || "none"}\n\nItems:\n${items.map((i, n) => `${n + 1}. ${i.text} (owner: ${i.owner})`).join("\n")}`, schemaName: "item_dates", schema: obj({ dates: arr(str) }), maxTokens: 600 });
+  });
+  const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d > today;
+  items.forEach((it, i) => {
+    const d = out.dates?.[i] ?? "";
+    it.due = ok(d) ? d : it.due ?? today;
+  });
+  await db.updateMeeting(m.id, orgId, { actionItems: JSON.stringify(items) });
+  // Items that never became tasks become tasks now, with their dates.
+  if (items.some((i) => i.status === "open")) await sendItems(orgId, m.id);
+  const fresh = parse<ActionItem[]>((await db.getMeeting(m.id, orgId))!.actionItems, []);
+  const { updateTask } = await import("./projects");
+  for (const it of fresh) {
+    if (!it.taskId || !it.due) continue;
+    const [y, mo, d] = it.due.split("-");
+    await updateTask(orgId, it.taskId, { due: `${mo}/${d}/${y}` }).catch(() => null);
+  }
+  for (const it of fresh.filter((i) => i.ownerKind && i.due)) {
+    const [y, mo, d] = it.due!.split("-").map(Number);
+    await handoff(orgId, m.launchId ? "projects" : "coo", it.ownerKind as AIEmployee["kind"], `Due ${fmtDay(zonedToUtc(y, mo, d, 12, 0, tz), tz)}: ${it.text} (from ${m.title})`, chatLink(m)).catch(() => null);
+  }
+  await logActivity(simone, "done", `Set due dates for ${fresh.length} action item${fresh.length === 1 ? "" : "s"} from ${m.title}.`, chatLink(m));
+  return fresh;
+}
+
+/** What Simone and Nora know about recent meetings and huddles, so they can answer and act on them in chat. */
+export async function recentMeetingsFacts(orgId: number) {
+  const { tz } = await opsFor(orgId);
+  const held = (await db.listMeetings(orgId)).filter((m) => m.status === "held" || m.notes).sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()).slice(0, 4);
+  if (!held.length) return "Recent meetings: none with notes yet.";
+  return [
+    "Recent meetings and huddles (newest first). You have their notes and action items:",
+    ...held.map((m) => {
+      const items = parse<ActionItem[]>(m.actionItems, []);
+      const lines = items.map((i) => {
+        const [y, mo, d] = (i.due ?? "").split("-").map(Number);
+        return `  - ${i.text} (owner: ${i.owner}; ${i.due ? `due ${fmtDay(zonedToUtc(y, mo, d, 12, 0, tz), tz)}` : "no due date"}; ${i.status === "open" ? "not a task yet" : i.status === "done" ? "done" : "tracked as a task"})`;
+      });
+      const when = fmtDay(m.startsAt, tz);
+      return `- ${m.title.includes(when) ? m.title : `${m.title}, ${when}`}: ${items.length} action item${items.length === 1 ? "" : "s"}${lines.length ? `\n${lines.join("\n")}` : ""}${m.notes ? `\n  Notes excerpt: ${m.notes.slice(0, 600).replace(/\n/g, " / ")}` : ""}`;
+    }),
+  ].join("\n");
 }
 
 export async function sendRecap(orgId: number, meetingId: number, who: string) {
