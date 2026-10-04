@@ -51,7 +51,7 @@ const ACTIONS: Record<string, string[]> = {
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   outreach: ["none", "report", "start_outreach", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
-  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "ask_teammate", "add_guideline", "start_onboarding"],
+  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "ask_teammate", "add_guideline", "start_onboarding"],
   coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "start_onboarding"],
   custom: ["none", "report", "ask_teammate", "add_guideline", "start_onboarding"],
 };
@@ -60,6 +60,10 @@ const ACTION_HELP: Record<string, string> = {
   plan_launch: "plan_launch: plan a launch back from its launch date. Put the launch name in `title`, the launch date as YYYY-MM-DD in `date`, and everything the person said about it (goals, targets, who does what) in `notes`.",
   move_launch: "move_launch: move a launch to a new date. Put the launch name in `target` ('' for the next launch) and the new date as YYYY-MM-DD in `date`.",
   send_report: "send_report: write the weekly status report for a launch now. Put the launch name in `target` ('' for the next launch).",
+  capture: "capture: write down an idea, risk, blocker or decision so it is never lost (\"new idea: a podcast tour\", \"we decided to drop the webinar\", \"the pricing page is blocked on the logo\"). Put idea, risk, blocker or decision in `target`, the one line in `notes`, and the project's name in `title` ('' for an idea, or for the next launch).",
+  close_item: "close_item: a risk, blocker or idea you wrote down is handled or no longer needed. Put words from it in `target`.",
+  start_task: "start_task: the person wants an employee to start a project task now (\"have Theo start the launch article\"). Put the task's name in `target`.",
+  project_meeting: "project_meeting: set up a meeting about a project (kickoff, check-in, weekly project meeting). Put its name in `title`, the project's name in `notes` ('' for the next launch), the date as YYYY-MM-DD in `date`, the start time like 10:00 AM in `time`, the length in minutes in `count` (15, 30, 45, 60 or 90), who attends (names or emails, '' for everyone) in `attendees`, and \"weekly\" or \"once\" in `to`.",
   write_agenda: "write_agenda: write or rewrite the agenda for an upcoming meeting. Put the meeting name in `target` ('' for the next one) and anything to add or change in `notes`.",
   schedule_meeting: "schedule_meeting: set up a one-time meeting. Put its name in `title`, the date as YYYY-MM-DD in `date`, the start time like 10:00 AM in `time`, the length in minutes in `count` (15, 30, 45, 60 or 90), who attends (names or emails) in `attendees`, and employees whose updates belong on the agenda (names, comma-separated) in `notes`.",
   meeting_notes: "meeting_notes: the person pasted notes from a meeting. Put the meeting name in `target` ('' for the most recent) and the full notes in `message`.",
@@ -165,7 +169,11 @@ function worth(n: number, total: number) {
   return `${n} ${n === 1 ? "is" : "are"} worth applying to.`;
 }
 
-async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; cards: ChatCard[]; queries: string[] }> {
+/** Where an action's output lives, so Nora can follow a task's work until it is approved. */
+type Ref = projects.WorkRef;
+type ActionResult = { text: string; cards: ChatCard[]; queries: string[]; refs?: Ref[] };
+
+async function runAction(emp: AIEmployee, d: Decision, who = "the owner"): Promise<ActionResult> {
   const org = emp.organizationId;
   switch (d.action) {
     case "find_grants":
@@ -222,7 +230,7 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
           : open.filter((o) => o.fitCall !== "skip").sort((a, b) => b.fitScore - a.fitScore)[0];
       if (!pick) return { text: "I couldn't find that one on Opportunities. Tell me its name, or ask me to search first.", cards: [], queries: [] };
       const app = await apply.startApplication(org, pick.id, null);
-      return { text: `I'm writing the ${pick.title} application now. I'll post it here when it's ready for you.`, cards: [apply.applicationCard(app, pick) as ChatCard], queries: [] };
+      return { text: `I'm writing the ${pick.title} application now. I'll post it here when it's ready for you.`, cards: [apply.applicationCard(app, pick) as ChatCard], queries: [], refs: [{ kind: "application", id: app.id }] };
     }
     case "report": {
       const text = await writeReport(emp, d.notes || d.reply || "Send me a report.");
@@ -296,13 +304,18 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
     }
     case "write_agenda": {
       await coo.ensureMeetings(org);
-      const m = await coo.nextMeetingFor(org, d.target);
-      if (!m) return { text: "There's no meeting coming up. Add a repeating meeting on my Onboarding tab or ask me to schedule one.", cards: [], queries: [] };
+      const m = await coo.nextMeetingFor(org, d.target, emp.kind === "projects" ? "project" : "all");
+      if (!m) return { text: emp.kind === "projects" ? "There's no project meeting coming up. Ask me to set one up." : "There's no meeting coming up. Add a repeating meeting on my Onboarding tab or ask me to schedule one.", cards: [], queries: [] };
       let next = await coo.buildAgenda(org, m.id);
       if (d.notes.trim()) {
         const items = JSON.parse(next.agenda || "[]") as coo.AgendaItem[];
         const extra = { item: d.notes.trim().slice(0, 160), who: "", minutes: 5 };
         next = await coo.editMeeting(org, m.id, { agenda: [...items.slice(0, -1), extra, ...items.slice(-1)], minutes: next.minutes });
+      }
+      if (emp.kind === "projects" && next.status !== "invited" && gate(emp, "meetings") === "auto") {
+        const sent = await coo.sendInvite(org, next.id, `${emp.name} (on her own)`).catch((err) => err instanceof Error ? err.message : String(err));
+        if (typeof sent === "string") return { text: `Here's the agenda for ${next.title}. I couldn't send it: ${sent}`, cards: [coo.meetingCard(next) as ChatCard], queries: [] };
+        return { text: `Here's the agenda for ${next.title}. I sent it to everyone attending with the meeting link.`, cards: [coo.meetingCard(sent) as ChatCard], queries: [] };
       }
       return { text: `Here's the agenda for ${next.title}.${next.status === "invited" ? " The invite already went out, so I updated the calendar event." : " Press Send invite and it goes out with the meeting link."}`, cards: [coo.meetingCard(next) as ChatCard], queries: [] };
     }
@@ -313,12 +326,35 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       return { text: `I set up ${m.title} and wrote the agenda. Press Send invite and it goes out with the meeting link.`, cards: [coo.meetingCard(m) as ChatCard], queries: [] };
     }
     case "meeting_notes": {
-      const m = await coo.lastMeetingFor(org, d.target);
+      const m = await coo.lastMeetingFor(org, d.target, emp.kind === "projects" ? "project" : "all");
       if (!m) return { text: "I don't have a past meeting to attach these to yet.", cards: [], queries: [] };
       const r = await coo.saveNotes(org, m.id, d.message || d.notes);
       const items = JSON.parse(r.actionItems || "[]") as coo.ActionItem[];
       const sent = items.some((i) => i.status === "in_clickup" || i.status === "task");
-      return { text: `I found ${plural(items.length, "action item")} in your notes from ${m.title}${items.length ? `: ${items.map((i) => `${i.text} (${i.owner})`).join("; ")}` : ""}.${sent ? " Nora added them to the launch plan." : ""}`, cards: [], queries: [] };
+      return { text: `I found ${plural(items.length, "action item")} in your notes from ${m.title}${items.length ? `: ${items.map((i) => `${i.text} (${i.owner})`).join("; ")}` : ""}.${sent ? (emp.kind === "projects" ? " I added them to the launch plan and I'll track each one." : " Nora added them to the launch plan.") : ""}`, cards: [], queries: [] };
+    }
+    case "capture": {
+      const kind = (["idea", "risk", "blocker", "decision"] as const).find((k) => d.target.trim().toLowerCase().startsWith(k)) ?? "idea";
+      const r = await projects.addNote(org, { kind, text: d.notes || d.message || d.reply, project: d.title, who });
+      const where = r.launch ? ` on ${r.launch.name}` : "";
+      const said = { idea: "Saved the idea. Say the word when you want me to plan it.", risk: `Logged that risk${where}. I'll track it until it's handled.`, blocker: `Logged that blocker${where}. I'll push to clear it and keep it on the agenda until it is.`, decision: `Recorded that decision${where}.` }[kind];
+      return { text: said, cards: [], queries: [] };
+    }
+    case "close_item": {
+      const n = await projects.closeNote(org, d.target || d.notes);
+      return { text: n ? `Closed: ${n.text}` : "I couldn't find an open item like that.", cards: [], queries: [] };
+    }
+    case "start_task": {
+      const r = await projects.startTaskByName(org, d.target);
+      return { text: r.started && r.task ? `${r.task.ownerName} is starting "${r.task.title}" now. I'll check it when it's done.` : r.why, cards: [], queries: [] };
+    }
+    case "project_meeting": {
+      const m = await coo.scheduleProjectMeeting(org, { title: d.title || "Project meeting", project: d.notes, date: d.date, time: d.time, minutes: Number(d.count) || 30, attendees: d.attendees, weekly: d.to.trim().toLowerCase() === "weekly" });
+      const auto = gate(emp, "meetings") === "auto";
+      const sent = auto ? await coo.sendInvite(org, m.id, `${emp.name} (on her own)`).catch((err) => err instanceof Error ? err.message : String(err)) : null;
+      const repeat = d.to.trim().toLowerCase() === "weekly" ? " It repeats every week, and I'll write each agenda from where the project stands." : "";
+      if (typeof sent === "string") return { text: `I set up ${m.title} and wrote the agenda, but couldn't send it: ${sent}${repeat}`, cards: [coo.meetingCard(m) as ChatCard], queries: [] };
+      return { text: sent ? `I set up ${m.title}, wrote the agenda and sent it with the meeting link.${repeat}` : `I set up ${m.title} and wrote the agenda. Press Send invite and it goes out with the meeting link.${repeat}`, cards: [coo.meetingCard(sent ?? m) as ChatCard], queries: [] };
     }
     case "sat_in_notes": {
       const r = await notetaker.findMeeting(org, d.target, "notes");
@@ -420,7 +456,7 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
     }
     case "build_page": {
       const p = await pages.startPage(org, { title: d.page || d.topic || "New page", pageType: /website/i.test(d.target) ? "website" : "landing", goal: d.goal || "Book a call" });
-      return { text: `Building the ${p.title} page now. It takes a few minutes; I'll post it here with a preview when it's ready.`, cards: [], queries: [] };
+      return { text: `Building the ${p.title} page now. It takes a few minutes; I'll post it here with a preview when it's ready.`, cards: [], queries: [], refs: [{ kind: "page", id: p.id }] };
     }
     case "change_page": {
       const list = db.listSitePages(org).filter((x) => x.currentVersion > 0);
@@ -428,7 +464,7 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
       const p = (t && list.find((x) => x.title.toLowerCase().includes(t))) || list[0];
       if (!p) return { text: "I haven't built a page yet. Tell me the offer and the goal and I'll build one.", cards: [], queries: [] };
       await pages.revisePage(org, p.id, d.notes || d.message || d.reply);
-      return { text: `Making those changes to ${p.title} now. The new version will show up here when it's ready.`, cards: [], queries: [] };
+      return { text: `Making those changes to ${p.title} now. The new version will show up here when it's ready.`, cards: [], queries: [], refs: [{ kind: "page", id: p.id }] };
     }
     case "plan_page": {
       const item = await tasks.planWebsitePage(org, d.page || d.topic || "New page", d.goal || "Book a consultation");
@@ -478,6 +514,37 @@ async function runAction(emp: AIEmployee, d: Decision): Promise<{ text: string; 
     default:
       return { text: "", cards: [], queries: [] };
   }
+}
+
+/** Actions that only talk about the work; a project task needs one that does it. */
+const NOT_WORK = new Set(["none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip"]);
+
+/**
+ * An employee does a project task Nora assigned, with the same actions their
+ * chat uses. The result posts in their chat. "none" means no action of theirs
+ * can do it, and `text` says what a person needs to do instead.
+ */
+export async function doTask(emp: AIEmployee, task: { title: string; details: string; doneWhen: string; project: string; due: string; feedback: string; from: string }) {
+  const actions = (ACTIONS[emp.kind] ?? []).filter((a) => !NOT_WORK.has(a));
+  if (!actions.length) return { action: "none", text: "", cards: [] as ChatCard[], refs: [] as Ref[] };
+  const request = `Task: ${task.title}${task.details ? `\nDetails: ${task.details}` : ""}${task.doneWhen ? `\nDone when: ${task.doneWhen}` : ""}\nProject: ${task.project}\nDue: ${task.due}${task.feedback ? `\nSent back because: ${task.feedback}. Fix exactly that.` : ""}`;
+  const { system } = await tasks.systemPromptAbout(
+    emp,
+    `${task.title} ${task.details}`,
+    `${task.from}, your project manager, assigned you a task on the ${task.project} project. Do it now: choose the action that produces what the task asks for and fill its fields so the result meets "Done when". Put everything the task says into the fields (topic, title, notes, goal, focus).
+Right now it is ${await nowIn(emp.organizationId)}.
+If none of your actions can produce it, choose "none" and say in "reply", in one sentence, what a person needs to do instead.
+Fill every field; use "" or [] for fields the action does not use.
+Actions you can take:
+${actions.map((a) => "- " + ACTION_HELP[a]).join("\n")}`
+  );
+  const decision = await generateJson<Decision>({ system, prompt: request, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 2000 });
+  if (!decision?.action || !actions.includes(decision.action)) return { action: "none", text: decision?.reply ?? "", cards: [] as ChatCard[], refs: [] as Ref[] };
+  const result = await runAction(emp, decision, task.from);
+  const refs: Ref[] = [...(result.refs ?? []), ...result.cards.filter((c) => c.type === "post" || c.type === "article" || c.type === "reply").map((c) => ({ kind: "outbound" as const, id: c.id }))];
+  const text = result.text || decision.reply;
+  await db.createChatMessage({ organizationId: emp.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `For ${task.project}, "${task.title}": ${text}`, cards: result.cards.length ? JSON.stringify(result.cards) : null, searchQueries: result.queries.length ? JSON.stringify(result.queries) : null });
+  return { action: decision.action, text, cards: result.cards, refs };
 }
 
 function oppCard(o: Opportunity): ChatCard {
@@ -590,7 +657,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
       return { user: userMsg, reply: await reply(decision.reply || "Could you say a bit more about what you need?") };
     }
-    const result = await runAction(emp, decision);
+    const result = await runAction(emp, decision, opts.authorName);
     return { user: userMsg, reply: await reply(result.text || decision.reply, result.cards, result.queries) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

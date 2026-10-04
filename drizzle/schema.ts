@@ -1064,6 +1064,10 @@ export const launchTasks = sqliteTable(
     doneAt: integer("doneAt", { mode: "timestamp" }),
     /** Where it came from: "plan" or a meeting id ("meeting:12"). */
     source: text("source").notNull().default("plan"),
+    /** What will exist when the task is finished, e.g. "Article approved and published". */
+    doneWhen: text("doneWhen"),
+    /** JSON TaskWork: the employee's work on it and Nora's check (state, refs, summary). */
+    work: text("work"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1104,13 +1108,34 @@ export const launchReports = sqliteTable(
     week: integer("week").notNull(),
     weeks: integer("weeks").notNull(),
     status: text("status", { enum: ["on_track", "behind"] }).notNull(),
-    /** JSON {overall, done, behind, next, needsYou}. */
+    /** JSON {overall, done, behind, next, needsYou, rating?: green | amber | red, risks?}. */
     body: text("body").notNull(),
     createdAt: createdAt(),
   },
   (t) => [index("launch_reports_launch_idx").on(t.launchId)]
 );
 export type LaunchReport = typeof launchReports.$inferSelect;
+
+export const PROJECT_NOTE_KINDS = ["idea", "risk", "blocker", "decision"] as const;
+export type ProjectNoteKind = (typeof PROJECT_NOTE_KINDS)[number];
+
+/** Nora's running list: ideas (no project yet), and each project's risks, blockers and decisions. */
+export const projectNotes = sqliteTable(
+  "project_notes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    launchId: integer("launchId"),
+    kind: text("kind", { enum: PROJECT_NOTE_KINDS }).notNull(),
+    text: text("text").notNull(),
+    status: text("status", { enum: ["open", "closed"] }).notNull().default("open"),
+    createdBy: text("createdBy"),
+    closedAt: integer("closedAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("project_notes_org_idx").on(t.organizationId)]
+);
+export type ProjectNote = typeof projectNotes.$inferSelect;
 
 // ==========================================
 // Simone (COO): meetings
@@ -1125,6 +1150,8 @@ export const meetings = sqliteTable(
     organizationId: integer("organizationId").notNull(),
     /** The repeating meeting it came from (ops.recurring[].id), or null for a one-time meeting. */
     seriesId: text("seriesId"),
+    /** A project meeting: Nora writes the agenda and recap, and action items go to this launch. Null for Simone's meetings. */
+    launchId: integer("launchId"),
     title: text("title").notNull(),
     startsAt: integer("startsAt", { mode: "timestamp" }).notNull(),
     minutes: integer("minutes").notNull().default(30),

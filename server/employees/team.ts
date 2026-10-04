@@ -37,6 +37,8 @@ export const RULES: Partial<Record<EmployeeKind, Rule[]>> = {
     { key: "create_plan", label: "Creating a launch plan", default: "ask" },
     { key: "update_tasks", label: "Updating tasks and dates", default: "auto" },
     { key: "remind", label: "Reminding owners", default: "auto" },
+    { key: "assign_work", label: "Starting employees on their tasks", default: "auto" },
+    { key: "meetings", label: "Sending project meeting agendas and recaps", default: "auto" },
   ],
 };
 

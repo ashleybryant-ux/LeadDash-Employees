@@ -70,6 +70,7 @@ import {
   launchTasks,
   launchKpis,
   launchReports,
+  projectNotes,
   meetings,
   notetakerMeetings,
 } from "../drizzle/schema";
@@ -1385,6 +1386,17 @@ export async function listLaunchReports(launchId: number, orgId: number) {
 }
 export async function createLaunchReport(row: typeof launchReports.$inferInsert) {
   return getDb().insert(launchReports).values(row).returning().all()[0];
+}
+
+export function listProjectNotes(orgId: number) {
+  return getDb().select().from(projectNotes).where(eq(projectNotes.organizationId, orgId)).orderBy(desc(projectNotes.createdAt), desc(projectNotes.id)).all();
+}
+export function createProjectNote(row: typeof projectNotes.$inferInsert) {
+  return getDb().insert(projectNotes).values(row).returning().all()[0];
+}
+export function updateProjectNote(id: number, orgId: number, data: Partial<typeof projectNotes.$inferInsert>) {
+  getDb().update(projectNotes).set(data).where(and(eq(projectNotes.id, id), eq(projectNotes.organizationId, orgId))).run();
+  return getDb().select().from(projectNotes).where(and(eq(projectNotes.id, id), eq(projectNotes.organizationId, orgId))).limit(1).all()[0] || null;
 }
 
 export async function listMeetings(orgId: number) {

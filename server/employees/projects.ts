@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import { withUsage } from "../usage";
-import type { AIEmployee, Launch, LaunchKpi, LaunchTask, KpiSource } from "../../drizzle/schema";
+import type { AIEmployee, Launch, LaunchKpi, LaunchTask, KpiSource, ProjectNoteKind } from "../../drizzle/schema";
 import { KPI_SOURCES } from "../../drizzle/schema";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import * as integrations from "../integrations";
@@ -11,11 +11,18 @@ import { gate, handoff, logActivity } from "./team";
 import { opsFor, saveOps } from "./ops";
 
 /**
- * Nora (Projects).
- * - Plans a launch back from its date: milestones, tasks with one owner each, and KPIs.
+ * Nora (Projects), the project manager.
+ * - Plans a launch back from its date: milestones, tasks with one owner and a
+ *   definition of done each, and KPIs.
  * - Once the plan is approved, creates a ClickUp list for it with every task.
+ * - Starts each employee on their ready task (one at a time per employee), then
+ *   checks the result against the definition of done. Work waiting for the
+ *   owner's approval is not done until they approve it.
  * - Every morning: reads ClickUp, marks what is done, flags what is behind and
- *   reminds owners. On the report day: the weekly status report.
+ *   reminds owners. On the report day: the weekly status report, rated green,
+ *   amber or red.
+ * - Keeps a running list: ideas, and each project's risks, blockers and decisions.
+ * - Runs project meetings (agenda before, recap and action items after; see coo.ts).
  * - KPIs count from what the employees already track (demos, outreach, posts...).
  */
 
@@ -67,6 +74,16 @@ export function taskState(t: Pick<LaunchTask, "status" | "dueDate">, now = new D
   return { key: "on_track", label: "On track" };
 }
 
+/** What the Tasks list shows: work waiting on the owner says so instead of "On track". */
+export function shownState(t: Pick<LaunchTask, "status" | "dueDate" | "work">, now = new Date()): { key: string; label: string } {
+  if (t.status !== "done") {
+    const w = readWork(t);
+    if (w?.state === "waiting") return { key: "waiting", label: "Waiting for you" };
+    if (w?.state === "needs_person") return { key: "waiting", label: "Needs a person" };
+  }
+  return taskState(t, now);
+}
+
 async function kpiValue(orgId: number, launch: Launch, k: LaunchKpi) {
   const since = new Date(launch.approvedAt ?? launch.createdAt);
   const after = (d: Date | null | undefined) => !!d && new Date(d) >= since;
@@ -112,7 +129,7 @@ export function pace(k: Pick<LaunchKpi, "target" | "unit" | "byDate">, value: nu
 type PlanOut = {
   name: string;
   milestones: { name: string; date: string }[];
-  tasks: { title: string; details: string; milestone: number; owner: string; date: string; waitingOn: string }[];
+  tasks: { title: string; details: string; doneWhen: string; milestone: number; owner: string; date: string; waitingOn: string }[];
   kpis: { name: string; target: number; unit: "count" | "percent"; source: string }[];
 };
 
@@ -141,7 +158,9 @@ export async function planLaunch(orgId: number, input: { name?: string; date: st
 - 4 to 6 milestones in order, the last one is "Launch day" on the launch date.
 - 15 to 40 small tasks. Each has exactly one owner and belongs to one milestone (its index, starting at 0). A task is due ${answers.buffer ? answers.buffer : "1 day"} or more before its milestone, except launch-day tasks.
 - Owners: give an employee's job key when an employee does that work, otherwise a person's name. Employees (job key: what they do): ${emps.map((e) => `${e.kind} (${e.name}): ${e.roleTitle}`).join("; ")}. People on the team: ${people.join(", ") || "the owner"}. Work only a person can do (pricing decisions, calls, approvals, signing) goes to a person.
-- waitingOn: the task that must finish first, or "".
+- doneWhen: what will exist when the task is finished, in a few plain words ("Article approved and published", "Pricing decided and written in the Brain"). Never "work on" something.
+- details: what to make and for whom, enough for the owner to do it without asking.
+- waitingOn: the exact title of the task that must finish first, or "".
 - 3 to 6 KPIs with a whole-number target. source is one of: ${KPI_SOURCES.join(", ")}. Use "manual" for anything the app cannot count (sign-ups, revenue). unit is percent only for reply_rate and tasks_on_time.
 - name: a short name for the launch.`
     );
@@ -152,7 +171,7 @@ export async function planLaunch(orgId: number, input: { name?: string; date: st
       schema: obj({
         name: str,
         milestones: arr(obj({ name: str, date: str })),
-        tasks: arr(obj({ title: str, details: str, milestone: int, owner: str, date: str, waitingOn: str })),
+        tasks: arr(obj({ title: str, details: str, doneWhen: str, milestone: int, owner: str, date: str, waitingOn: str })),
         kpis: arr(obj({ name: str, target: int, unit: { type: "string", enum: ["count", "percent"] }, source: { type: "string", enum: [...KPI_SOURCES] } })),
       }),
       maxTokens: 6000,
@@ -184,6 +203,7 @@ export async function planLaunch(orgId: number, input: { name?: string; date: st
       ownerEmail: emp ? null : ((await db.listMembers(orgId)).find((x) => (x.name || x.email).toLowerCase() === t.owner.trim().toLowerCase())?.email ?? null),
       dueDate: dayAt(clamp(t.date), tz),
       waitingOn: t.waitingOn?.slice(0, 200) || null,
+      doneWhen: t.doneWhen?.slice(0, 300) || null,
     });
   }
   for (const [i, k] of Array.from((plan.kpis ?? []).slice(0, 8).entries())) {
@@ -216,6 +236,8 @@ export async function approvePlan(orgId: number, launchId: number, who: string) 
     const mine = tasks.filter((t) => t.ownerKind === kind);
     await handoff(orgId, "projects", kind as AIEmployee["kind"], `${nora.name} added ${mine.length === 1 ? "a task" : `${mine.length} tasks`} for you on the ${fresh.name} launch. First due: ${mine[0].title}, ${fmt(mine[0].dueDate, (await opsFor(orgId)).tz)}.`, "/chats/projects/work");
   }
+  // Employees whose first task is ready start on it now, not tomorrow morning.
+  await startReadyTasks(orgId).catch((err) => console.warn("[projects] start failed:", err instanceof Error ? err.message : err));
   return { launch: fresh, clickup: !!fresh.clickupListId, error };
 }
 
@@ -238,7 +260,7 @@ function clickupMeta(l: Launch) {
 }
 
 function describe(t: LaunchTask, milestone: string | undefined) {
-  return [t.details, milestone ? `Milestone: ${milestone}` : "", `Owner: ${t.ownerName}${t.ownerType === "employee" ? " (LeadDash Employees)" : ""}`, t.waitingOn ? `Waiting on: ${t.waitingOn}` : ""].filter(Boolean).join("\n");
+  return [t.details, t.doneWhen ? `Done when: ${t.doneWhen}` : "", milestone ? `Milestone: ${milestone}` : "", `Owner: ${t.ownerName}${t.ownerType === "employee" ? " (LeadDash Employees)" : ""}`, t.waitingOn ? `Waiting on: ${t.waitingOn}` : ""].filter(Boolean).join("\n");
 }
 
 async function assigneesFor(orgId: number, t: LaunchTask, members: { id: number; email: string }[], ownerId: number | null) {
@@ -324,13 +346,14 @@ export async function markTaskDone(orgId: number, taskId: number, done = true) {
   return db.getLaunchTask(t.id, orgId);
 }
 
-export async function updateTask(orgId: number, taskId: number, input: { title?: string; details?: string; owner?: string; due?: string }) {
+export async function updateTask(orgId: number, taskId: number, input: { title?: string; details?: string; doneWhen?: string; owner?: string; due?: string }) {
   const t = await db.getLaunchTask(taskId, orgId);
   if (!t) throw new TRPCError({ code: "NOT_FOUND", message: "That task is not in this workspace." });
   const { tz } = await opsFor(orgId);
   const patch: Partial<LaunchTask> = {};
   if (input.title?.trim()) patch.title = input.title.trim().slice(0, 200);
   if (input.details !== undefined) patch.details = input.details.trim().slice(0, 2000) || null;
+  if (input.doneWhen !== undefined) patch.doneWhen = input.doneWhen.trim().slice(0, 300) || null;
   if (input.due) {
     const m = input.due.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (!m) throw new TRPCError({ code: "BAD_REQUEST", message: "Type the due date as MM/DD/YYYY." });
@@ -375,6 +398,282 @@ export async function moveLaunch(orgId: number, launchId: number, newDate: strin
 }
 
 // ==========================================
+// Getting the work done: employees do their tasks, Nora checks them
+// ==========================================
+
+/** Where an employee's output lives, so Nora can tell when it is approved or finished. */
+export type WorkRef = { kind: "outbound" | "page" | "application"; id: number };
+export type WorkState = "running" | "in_progress" | "waiting" | "done" | "sent_back" | "needs_person" | "failed";
+export type TaskWork = { state: WorkState; startedAt: number; action?: string; summary?: string; review?: string; refs?: WorkRef[]; tries?: number };
+
+/** An employee starts a task this many days before it is due. */
+export const START_WINDOW_DAYS = 10;
+const MAX_TRIES = 2;
+
+export function readWork(t: Pick<LaunchTask, "work">): TaskWork | null {
+  if (!t.work) return null;
+  try {
+    const w = JSON.parse(t.work) as TaskWork;
+    return w && typeof w.state === "string" ? w : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when the task this one waits on is done (or can't be found by its title). */
+export function waitingDone(t: Pick<LaunchTask, "waitingOn">, siblings: Pick<LaunchTask, "title" | "status">[]) {
+  const w = (t.waitingOn ?? "").trim().toLowerCase();
+  if (!w) return true;
+  const dep = siblings.find((x) => x.title.trim().toLowerCase() === w) ?? siblings.find((x) => x.title.toLowerCase().includes(w) || w.includes(x.title.toLowerCase()));
+  return !dep || dep.status === "done";
+}
+
+/**
+ * Which employee tasks start now: owned by an active employee, not done, not
+ * started (or sent back with tries left), due within the start window, and not
+ * waiting on an unfinished task. One task at a time per employee, earliest due first.
+ */
+export function pickReady(tasks: LaunchTask[], activeKinds: Set<string>, now = Date.now()) {
+  const busy = new Set<string>();
+  for (const t of tasks) {
+    const w = readWork(t);
+    if (t.ownerKind && t.status !== "done" && w && (w.state === "running" || w.state === "in_progress")) busy.add(t.ownerKind);
+  }
+  const ready: LaunchTask[] = [];
+  const open = tasks
+    .filter((t) => t.ownerType === "employee" && t.ownerKind && activeKinds.has(t.ownerKind) && t.status !== "done")
+    .filter((t) => {
+      const w = readWork(t);
+      return !w || (w.state === "sent_back" && (w.tries ?? 0) < MAX_TRIES) || (w.state === "failed" && (w.tries ?? 0) < MAX_TRIES);
+    })
+    .filter((t) => new Date(t.dueDate).getTime() - now <= START_WINDOW_DAYS * DAY)
+    .filter((t) => waitingDone(t, tasks.filter((x) => x.launchId === t.launchId && x.id !== t.id)))
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  for (const t of open) {
+    if (busy.has(t.ownerKind!)) continue;
+    busy.add(t.ownerKind!);
+    ready.push(t);
+  }
+  return ready;
+}
+
+/** Starts every employee whose next task is ready. Runs the work in the background unless `wait` is set. */
+export async function startReadyTasks(orgId: number, opts: { wait?: boolean } = {}) {
+  const nora = await db.getEmployeeByKind(orgId, "projects");
+  if (!nora || nora.status === "paused" || gate(nora, "assign_work") !== "auto") return [] as LaunchTask[];
+  const active = (await db.listLaunches(orgId)).filter((l) => l.status === "active");
+  if (!active.length) return [] as LaunchTask[];
+  const kinds = new Set((await db.listEmployeesByOrg(orgId)).filter((e) => e.status !== "paused" && e.kind !== "projects").map((e) => e.kind as string));
+  const all: LaunchTask[] = [];
+  for (const l of active) all.push(...(await db.listLaunchTasks(l.id, orgId)));
+  const ready = pickReady(all, kinds);
+  // Claim them first so a second call never starts the same task twice.
+  for (const t of ready) {
+    const w = readWork(t);
+    await db.updateLaunchTask(t.id, orgId, { status: "in_progress", work: JSON.stringify({ ...(w ?? {}), state: "running", startedAt: Date.now(), tries: w?.tries ?? 0 }), note: `${t.ownerName} is working on it.` });
+  }
+  const run = () => Promise.all(ready.map((t) => executeTask(orgId, t.id).catch((err) => console.warn("[projects] task failed:", err instanceof Error ? err.message : err))));
+  if (opts.wait) await run();
+  else void run();
+  return ready;
+}
+
+/** Starts one task now, by name, when the owner asks ("have Theo start the launch article"). */
+export async function startTaskByName(orgId: number, target: string) {
+  const t0 = target.trim().toLowerCase();
+  const all = (await db.listOrgLaunchTasks(orgId)).filter((t) => t.status !== "done" && t.ownerType === "employee");
+  const t = (t0 && (all.find((x) => x.title.toLowerCase() === t0) ?? all.find((x) => x.title.toLowerCase().includes(t0) || t0.includes(x.title.toLowerCase())))) || null;
+  if (!t) return { task: null, started: false, why: "I couldn't find an open employee task by that name." };
+  const w = readWork(t);
+  if (w && (w.state === "running" || w.state === "in_progress")) return { task: t, started: false, why: `${t.ownerName} is already working on it.` };
+  await db.updateLaunchTask(t.id, orgId, { status: "in_progress", work: JSON.stringify({ state: "running", startedAt: Date.now(), tries: 0 }), note: `${t.ownerName} is working on it.` });
+  void executeTask(orgId, t.id).catch((err) => console.warn("[projects] task failed:", err instanceof Error ? err.message : err));
+  return { task: t, started: true, why: "" };
+}
+
+async function saveWork(orgId: number, t: LaunchTask, w: TaskWork, patch: Partial<LaunchTask> = {}) {
+  return db.updateLaunchTask(t.id, orgId, { work: JSON.stringify(w), ...patch });
+}
+
+const WHERE: Record<WorkRef["kind"], string> = { outbound: "Approvals", page: "the Pages tab", application: "Applications" };
+
+/** Where the employee's output stands: still being made, waiting for the owner, finished, or rejected. */
+export async function refState(orgId: number, refs: WorkRef[]): Promise<{ state: "in_progress" | "waiting" | "done" | "sent_back"; where: string; text: string }> {
+  const states: string[] = [];
+  const texts: string[] = [];
+  let where = "";
+  for (const r of refs) {
+    if (r.kind === "outbound") {
+      const o = await db.getOutboundItemForOrg(r.id, orgId);
+      if (!o) continue;
+      states.push(o.status === "published" ? "done" : o.status === "cancelled" || o.status === "changes_requested" ? "sent_back" : o.status === "drafting" ? "in_progress" : "waiting");
+      texts.push(`${o.title}\n${(o.body ?? "").slice(0, 3000)}`);
+    } else if (r.kind === "page") {
+      const p = db.getSitePage(r.id, orgId);
+      if (!p) continue;
+      states.push(p.status === "approved" ? "done" : p.status === "building" ? "in_progress" : p.status === "failed" ? "sent_back" : "waiting");
+      texts.push(`Page: ${p.title}. Goal: ${p.goal}.`);
+    } else {
+      const a = await db.getApplication(r.id, orgId);
+      if (!a) continue;
+      states.push(["approved", "submitted", "awarded", "declined"].includes(a.status) ? "done" : a.status === "writing" ? "in_progress" : a.status === "error" ? "sent_back" : "waiting");
+      texts.push(`Application: ${a.title} (${a.status}).`);
+    }
+    if (!where && states[states.length - 1] === "waiting") where = WHERE[r.kind];
+  }
+  const state = states.includes("sent_back") ? "sent_back" : states.includes("in_progress") ? "in_progress" : states.includes("waiting") ? "waiting" : "done";
+  return { state, where, text: texts.join("\n\n") };
+}
+
+/** Nora checks the work against the task's definition of done. */
+async function review(nora: AIEmployee, t: LaunchTask, ownerName: string, output: string) {
+  return working(nora, async () => {
+    const { system } = await systemPromptFor(nora, `Check ${ownerName}'s work on a task against its definition of done. meets: true when the work matches what the task asked for (approval by the owner comes later and does not count against it). missing: when it does not meet it, exactly what is missing or wrong in one or two sentences ${ownerName} can act on; otherwise "".`);
+    return generateJson<{ meets: boolean; missing: string }>({
+      system,
+      prompt: `Task: ${t.title}\nDetails: ${t.details ?? "none"}\nDone when: ${t.doneWhen ?? "the task is finished"}\n\n${ownerName}'s work:\n${output.slice(0, 8000) || "(nothing)"}`,
+      schemaName: "task_review",
+      schema: obj({ meets: { type: "boolean" }, missing: str }),
+      maxTokens: 500,
+    });
+  });
+}
+
+/** The employee does the task with their own tools; Nora checks it and sends it back once if it misses. */
+export async function executeTask(orgId: number, taskId: number, feedback = ""): Promise<LaunchTask | null> {
+  let t = await db.getLaunchTask(taskId, orgId);
+  if (!t || t.status === "done" || !t.ownerKind) return null;
+  const launch = await db.getLaunch(t.launchId, orgId);
+  const nora = await db.getEmployeeByKind(orgId, "projects");
+  const emp = await db.getEmployeeByKind(orgId, t.ownerKind as AIEmployee["kind"]);
+  if (!launch || !nora) return null;
+  const { tz } = await opsFor(orgId);
+  const prev = readWork(t);
+  const tries = (prev?.tries ?? 0) + 1;
+  if (!emp || emp.status === "paused") {
+    return saveWork(orgId, t, { state: "needs_person", startedAt: Date.now(), tries }, { status: "todo", note: `${t.ownerName} is ${emp ? "paused" : "not in this workspace"}, so a person needs to do this or reassign it.` });
+  }
+  const sentBack = feedback || (prev?.state === "sent_back" ? prev.review ?? "" : "");
+  await handoff(
+    orgId,
+    "projects",
+    emp.kind,
+    `${sentBack ? "Sending this back" : "Task"} for the ${launch.name} launch: ${t.title}.${t.details ? ` ${t.details}` : ""}${t.doneWhen ? ` Done when: ${t.doneWhen}.` : ""} Due ${fmt(t.dueDate, tz)}.${sentBack ? ` What's missing: ${sentBack}` : ""}`,
+    "/chats/projects/work"
+  );
+  const { doTask } = await import("./chat");
+  let r: Awaited<ReturnType<typeof doTask>>;
+  try {
+    r = await doTask(emp, { title: t.title, details: t.details ?? "", doneWhen: t.doneWhen ?? "", project: launch.name, due: fmt(t.dueDate, tz), feedback: sentBack, from: nora.name });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return saveWork(orgId, t, { state: "failed", startedAt: Date.now(), tries, summary: msg }, { status: "todo", note: `${emp.name} couldn't do it: ${msg}${tries < MAX_TRIES ? " I'll have them try again tomorrow." : " A person needs to look at it."}` });
+  }
+  if (r.action === "none") {
+    t = (await saveWork(orgId, t, { state: "needs_person", startedAt: Date.now(), tries, summary: r.text }, { status: "todo", note: `${emp.name} can't do this with their own tools. ${r.text}`.trim() }))!;
+    await db.createChatMessage({ organizationId: orgId, employeeId: nora.id, role: "employee", authorName: nora.name, content: `"${t.title}" on ${launch.name} needs a person: ${emp.name} can't do it with their own tools. Tell me who should own it and I'll reassign it.` });
+    return t;
+  }
+  const work: TaskWork = { state: "in_progress", startedAt: Date.now(), action: r.action, summary: r.text.slice(0, 1000), refs: r.refs, tries };
+  return settle(orgId, t, emp, nora, work, `${r.text}\n\n${r.cards.map((c) => [c.title, c.subtitle, c.body].filter(Boolean).join("\n")).join("\n\n")}`);
+}
+
+/** Decides where a task stands once the employee has produced something. */
+async function settle(orgId: number, t: LaunchTask, emp: AIEmployee, nora: AIEmployee, work: TaskWork, said: string): Promise<LaunchTask | null> {
+  const refs = work.refs ?? [];
+  const where = refs.length ? await refState(orgId, refs) : { state: "done" as const, where: "", text: "" };
+  if (where.state === "in_progress") return saveWork(orgId, t, { ...work, state: "in_progress" }, { status: "in_progress", note: `${emp.name} is working on it.` });
+  if (where.state === "sent_back") return sendBack(orgId, t, emp, work, "The owner sent it back or it did not finish.");
+  const check = await review(nora, t, emp.name, [where.text, said].filter(Boolean).join("\n\n")).catch(() => ({ meets: true, missing: "" }));
+  if (!check.meets && check.missing.trim()) return sendBack(orgId, t, emp, work, check.missing.trim());
+  if (where.state === "waiting") {
+    return saveWork(orgId, t, { ...work, state: "waiting", review: "" }, { status: "in_progress", note: `${emp.name} finished it and I checked it. It's waiting for your approval in ${where.where || "Approvals"}.` });
+  }
+  await saveWork(orgId, t, { ...work, state: "done", review: "" }, { note: `${emp.name} finished it and I checked it against the definition of done.` });
+  await logActivity(nora, "done", `Checked and closed "${t.title}" (${emp.name}).`, "/chats/projects/work");
+  return markTaskDone(orgId, t.id, true);
+}
+
+async function sendBack(orgId: number, t: LaunchTask, emp: AIEmployee, work: TaskWork, missing: string): Promise<LaunchTask | null> {
+  const tries = work.tries ?? 1;
+  if (tries >= MAX_TRIES) {
+    const nora = await db.getEmployeeByKind(orgId, "projects");
+    const out = await saveWork(orgId, t, { ...work, state: "needs_person", review: missing }, { status: "todo", note: `I sent this back to ${emp.name} and it still misses: ${missing} A person needs to look at it.` });
+    if (nora) await db.createChatMessage({ organizationId: orgId, employeeId: nora.id, role: "employee", authorName: nora.name, content: `"${t.title}" still isn't done after ${emp.name}'s second try. What's missing: ${missing} Want me to reassign it?` });
+    return out;
+  }
+  await saveWork(orgId, t, { ...work, state: "sent_back", review: missing }, { status: "in_progress", note: `I sent it back to ${emp.name}: ${missing}` });
+  return executeTask(orgId, t.id, missing);
+}
+
+/**
+ * Every couple of minutes: work that was still being made (a page building, an
+ * application being written) gets checked once it's ready, and work waiting for
+ * the owner closes the moment they approve it.
+ */
+export async function followUpWork(orgId: number) {
+  const nora = await db.getEmployeeByKind(orgId, "projects");
+  if (!nora || nora.status === "paused") return 0;
+  let changed = 0;
+  for (const t of await db.listOrgLaunchTasks(orgId)) {
+    if (t.status === "done" || !t.ownerKind) continue;
+    const w = readWork(t);
+    if (!w || (w.state !== "in_progress" && w.state !== "waiting") || !w.refs?.length) continue;
+    const r = await refState(orgId, w.refs);
+    if (r.state === w.state) continue;
+    const emp = await db.getEmployeeByKind(orgId, t.ownerKind as AIEmployee["kind"]);
+    if (!emp) continue;
+    changed++;
+    if (w.state === "in_progress") {
+      await settle(orgId, t, emp, nora, w, w.summary ?? "");
+    } else if (r.state === "done") {
+      await saveWork(orgId, t, { ...w, state: "done" }, { note: `You approved ${emp.name}'s work, so it's done.` });
+      await markTaskDone(orgId, t.id, true);
+    } else if (r.state === "sent_back") {
+      await saveWork(orgId, t, { ...w, state: "sent_back", review: "You asked for changes." }, { status: "in_progress", note: `You asked for changes, so ${emp.name} has it again.` });
+    }
+  }
+  return changed;
+}
+
+export async function followUps() {
+  for (const orgId of await db.listAllOrganizationIds()) {
+    await withUsage({ orgId, kind: "projects" }, () => followUpWork(orgId)).catch((err) => console.warn("[projects] follow-up failed:", err instanceof Error ? err.message : err));
+  }
+}
+
+// ==========================================
+// Ideas, risks, blockers and decisions
+// ==========================================
+
+export const NOTE_LABELS: Record<ProjectNoteKind, string> = { idea: "Idea", risk: "Risk", blocker: "Blocker", decision: "Decision" };
+
+/** Captures one line. Ideas stand alone until the owner says to plan them; the rest belong to a project. */
+export async function addNote(orgId: number, input: { kind: ProjectNoteKind; text: string; project?: string; who: string }) {
+  const text = input.text.trim().slice(0, 500);
+  if (!text) throw new TRPCError({ code: "BAD_REQUEST", message: "What should I write down?" });
+  const launch = input.kind === "idea" ? null : await findLaunch(orgId, input.project ?? "");
+  const note = db.createProjectNote({ organizationId: orgId, launchId: launch?.id ?? null, kind: input.kind, text, createdBy: input.who.slice(0, 120), status: input.kind === "decision" ? "closed" : "open", closedAt: input.kind === "decision" ? new Date() : null });
+  return { note, launch };
+}
+
+/** Closes the open risk, blocker or idea that best matches the words given. */
+export async function closeNote(orgId: number, words: string) {
+  const w = words.trim().toLowerCase();
+  const open = db.listProjectNotes(orgId).filter((n) => n.status === "open");
+  const hit = (w && (open.find((n) => n.text.toLowerCase().includes(w)) ?? open.find((n) => w.split(/\s+/).filter((x) => x.length > 3).every((x) => n.text.toLowerCase().includes(x))))) || null;
+  if (!hit) return null;
+  return db.updateProjectNote(hit.id, orgId, { status: "closed", closedAt: new Date() });
+}
+
+function notesFacts(orgId: number, launchId: number | null) {
+  const all = db.listProjectNotes(orgId).filter((n) => n.launchId === launchId);
+  const open = all.filter((n) => n.status === "open" && n.kind !== "decision");
+  const decisions = all.filter((n) => n.kind === "decision").slice(0, 8);
+  return { open, decisions };
+}
+
+// ==========================================
 // KPIs
 // ==========================================
 
@@ -416,7 +715,7 @@ export async function launchView(orgId: number, launchId: number) {
       const mine = tasks.filter((t) => t.milestoneId === m.id);
       return { ...m, total: mine.length, done: mine.filter((t) => t.status === "done").length, behind: mine.filter((t) => taskState(t, now).key === "behind").length };
     }),
-    tasks: tasks.map((t) => ({ ...t, state: taskState(t, now) })),
+    tasks: tasks.map((t) => ({ ...t, state: taskState(t, now), shown: shownState(t, now) })),
     kpis,
     reports: (await db.listLaunchReports(launch.id, orgId)).map((r) => ({ ...r, body: JSON.parse(r.body) as ReportBody })),
     kpiSources: KPI_SOURCES.map((s) => ({ key: s, label: KPI_LABELS[s] })),
@@ -427,7 +726,15 @@ export async function launchView(orgId: number, launchId: number) {
 // Morning check and the weekly report
 // ==========================================
 
-export type ReportBody = { overall: string; done: string; behind: string; next: string; needsYou: string };
+export type Rating = "green" | "amber" | "red";
+export type ReportBody = { overall: string; done: string; behind: string; next: string; needsYou: string; rating?: Rating; risks?: string };
+export const RATING_LABELS: Record<Rating, string> = { green: "On track", amber: "At risk", red: "Off track" };
+
+function workLine(t: LaunchTask) {
+  const w = readWork(t);
+  if (!w) return "";
+  return { running: "being worked on now", in_progress: "being worked on now", waiting: "finished, waiting for the owner's approval", done: "", sent_back: "sent back for changes", needs_person: "needs a person", failed: "the employee hit an error" }[w.state] ?? "";
+}
 
 async function launchFacts(orgId: number, launch: Launch) {
   const { tz } = await opsFor(orgId);
@@ -436,6 +743,7 @@ async function launchFacts(orgId: number, launch: Launch) {
   const weekAgo = new Date(now.getTime() - 7 * DAY);
   const inWeek = new Date(now.getTime() + 7 * DAY);
   const t = view.tasks;
+  const notes = notesFacts(orgId, launch.id);
   return [
     `Launch: ${launch.name}, launch day ${fmt(launch.launchDate, tz)}. ${t.filter((x) => x.status === "done").length} of ${t.length} tasks done.`,
     `Milestones: ${view.milestones.map((m) => `${m.name} (${fmt(m.dueDate, tz)}): ${m.done} of ${m.total} done${m.behind ? `, ${m.behind} behind` : ""}`).join("; ")}`,
@@ -443,6 +751,9 @@ async function launchFacts(orgId: number, launch: Launch) {
     `Behind: ${t.filter((x) => x.state.key === "behind").map((x) => `${x.title} (${x.ownerName}, due ${fmt(x.dueDate, tz)}${x.waitingOn ? `, waiting on ${x.waitingOn}` : ""})`).join("; ") || "nothing"}`,
     `Due in the next 7 days: ${t.filter((x) => x.status !== "done" && new Date(x.dueDate) <= inWeek && new Date(x.dueDate) >= now).map((x) => `${x.title} (${x.ownerName}, ${fmt(x.dueDate, tz)})`).join("; ") || "nothing"}`,
     `KPIs: ${view.kpis.map((k) => `${k.name}: ${k.value}${k.unit === "percent" ? "%" : ""} of ${k.target}${k.unit === "percent" ? "%" : ""} (${k.pace === "on_pace" ? "on pace" : "behind"})`).join("; ") || "none"}`,
+    `Employee work: ${t.filter((x) => x.status !== "done" && workLine(x)).map((x) => `${x.title} (${x.ownerName}): ${workLine(x)}`).join("; ") || "nothing in progress"}`,
+    `Open risks and blockers: ${notes.open.map((n) => `${NOTE_LABELS[n.kind]}: ${n.text}`).join("; ") || "none"}`,
+    `Decisions made: ${notes.decisions.map((n) => `${n.text} (${fmt(n.createdAt, tz)})`).join("; ") || "none recorded"}`,
   ].join("\n");
 }
 
@@ -452,17 +763,24 @@ export async function weeklyReport(orgId: number, launchId: number) {
   const nora = await employeeFor(orgId, "projects");
   const facts = await launchFacts(orgId, launch);
   const view = await launchView(orgId, launch.id);
-  const behind = view.tasks.some((t) => t.state.key === "behind") || view.kpis.some((k) => k.pace === "behind");
+  const late = view.tasks.some((t) => t.state.key === "behind") || view.kpis.some((k) => k.pace === "behind");
   const start = new Date(launch.approvedAt ?? launch.createdAt).getTime();
   const weeks = Math.max(1, Math.ceil((new Date(launch.launchDate).getTime() - start) / (7 * DAY)));
   const week = Math.min(weeks, Math.max(1, Math.ceil((Date.now() - start) / (7 * DAY))));
   const body = await working(nora, async () => {
-    const { system } = await systemPromptFor(nora, `Write the weekly launch status report from the facts only. Each field is 1 to 3 plain sentences with dates and numbers from the facts. overall: on track or behind, and whether launch day still holds and what it depends on. done: what finished. behind: what is late, why if the facts say, and what is being done. next: what is due next week. needsYou: only decisions or approvals the owner must make, or "Nothing this week.".`);
-    return generateJson<ReportBody>({ system, prompt: facts, schemaName: "launch_report", schema: obj({ overall: str, done: str, behind: str, next: str, needsYou: str }), maxTokens: 1200 });
+    const { system } = await systemPromptFor(nora, `Write the weekly launch status report from the facts only. Each field is 1 to 3 plain sentences with dates and numbers from the facts.
+- rating: green when work is on schedule and launch day holds; amber when something is late or blocked but launch day can still hold with action this week; red when launch day or a key result will be missed without a decision from the owner. ${late ? "Something is late, so it is amber or red." : ""} Never soften a red to amber.
+- overall: the rating in words and whether launch day still holds and what it depends on.
+- done: what finished. behind: what is late, why if the facts say, and what is being done about it. next: what is due next week.
+- risks: open risks and blockers and what is being done, or "None open.".
+- needsYou: only decisions or approvals the owner must make (including work waiting for their approval), or "Nothing this week.".`);
+    return generateJson<ReportBody>({ system, prompt: facts, schemaName: "launch_report", schema: obj({ rating: { type: "string", enum: ["green", "amber", "red"] }, overall: str, done: str, behind: str, next: str, risks: str, needsYou: str }), maxTokens: 1400 });
   });
-  const report = await db.createLaunchReport({ organizationId: orgId, launchId: launch.id, week, weeks, status: behind ? "behind" : "on_track", body: JSON.stringify(body) });
-  await db.createChatMessage({ organizationId: orgId, employeeId: nora.id, role: "employee", authorName: nora.name, content: `Week ${week} of ${weeks} on ${launch.name}: ${behind ? "behind" : "on track"}. ${body.overall} ${body.needsYou && !/^nothing/i.test(body.needsYou) ? `Needs you: ${body.needsYou}` : ""}`.trim() });
-  await logActivity(nora, "done", `Sent the week ${week} status report for ${launch.name}: ${behind ? "behind" : "on track"}.`, "/chats/projects/work");
+  const rating: Rating = body.rating === "red" || body.rating === "amber" || body.rating === "green" ? (late && body.rating === "green" ? "amber" : body.rating) : late ? "amber" : "green";
+  body.rating = rating;
+  const report = await db.createLaunchReport({ organizationId: orgId, launchId: launch.id, week, weeks, status: rating === "green" ? "on_track" : "behind", body: JSON.stringify(body) });
+  await db.createChatMessage({ organizationId: orgId, employeeId: nora.id, role: "employee", authorName: nora.name, content: `Week ${week} of ${weeks} on ${launch.name}: ${RATING_LABELS[rating].toLowerCase()} (${rating}). ${body.overall} ${body.needsYou && !/^nothing/i.test(body.needsYou) ? `Needs you: ${body.needsYou}` : ""}`.trim() });
+  await logActivity(nora, "done", `Sent the week ${week} status report for ${launch.name}: ${RATING_LABELS[rating].toLowerCase()}.`, "/chats/projects/work");
   return report;
 }
 
@@ -487,7 +805,12 @@ export async function morningCheck(orgId: number, opts: { force?: boolean } = {}
     const tasks = await db.listLaunchTasks(launch.id, orgId);
     const behind = tasks.filter((t) => taskState(t, now).key === "behind");
     const cu = !!launch.clickupListId && !!(await integrations.clickupSettings(orgId));
+    const waiting = tasks.filter((t) => t.status !== "done" && readWork(t)?.state === "waiting");
+    const needPerson = tasks.filter((t) => t.status !== "done" && readWork(t)?.state === "needs_person");
     for (const t of behind) {
+      // An employee already on it, or work waiting for the owner, is not chased.
+      const w = readWork(t);
+      if (w && (w.state === "running" || w.state === "in_progress" || w.state === "waiting")) continue;
       const days = Math.round((new Date(t.dueDate).getTime() - now.getTime()) / DAY);
       const when = days < 0 ? `${-days} day${days === -1 ? "" : "s"} late` : days === 0 ? "due today" : `due in ${days} day${days === 1 ? "" : "s"}`;
       let note = `${when[0].toUpperCase()}${when.slice(1)} and ${t.status === "todo" ? "not started" : "not done"}.`;
@@ -504,11 +827,15 @@ export async function morningCheck(orgId: number, opts: { force?: boolean } = {}
       } else await db.updateLaunchTask(t.id, orgId, { note });
     }
     if (behind.length) lines.push(`${launch.name}: ${behind.length} task${behind.length === 1 ? "" : "s"} behind (${behind.slice(0, 3).map((t) => `${t.title}, ${t.ownerName}`).join("; ")}${behind.length > 3 ? "; and more" : ""}).`);
+    if (waiting.length) lines.push(`Waiting for your approval: ${waiting.slice(0, 4).map((t) => t.title).join("; ")}${waiting.length > 4 ? "; and more" : ""}.`);
+    if (needPerson.length) lines.push(`Needs a person: ${needPerson.slice(0, 3).map((t) => t.title).join("; ")}.`);
     if (p.wd === ops.reportDay && ops.lastReport !== today) {
       await weeklyReport(orgId, launch.id).catch((err) => console.warn("[projects] report failed:", err instanceof Error ? err.message : err));
     }
   }
   if (p.wd === ops.reportDay) await saveOps(orgId, { lastReport: today });
+  // Employees whose next task is ready start on it.
+  await startReadyTasks(orgId).catch((err) => console.warn("[projects] start failed:", err instanceof Error ? err.message : err));
   if (lines.length) await db.createChatMessage({ organizationId: orgId, employeeId: nora.id, role: "employee", authorName: nora.name, content: `Morning check: ${lines.join(" ")} The Tasks tab shows each one.` });
   return lines;
 }
@@ -523,8 +850,9 @@ export async function morningChecks() {
 // From Simone: action items become tasks
 // ==========================================
 
-export async function addActionItems(orgId: number, items: { text: string; owner: string; due?: Date }[], source: string) {
-  const launch = (await db.listLaunches(orgId)).filter((l) => l.status === "active").sort((a, b) => new Date(a.launchDate).getTime() - new Date(b.launchDate).getTime())[0];
+export async function addActionItems(orgId: number, items: { text: string; owner: string; due?: Date }[], source: string, launchId?: number | null) {
+  const fromMeeting = launchId ? await db.getLaunch(launchId, orgId) : null;
+  const launch = (fromMeeting && fromMeeting.status === "active" ? fromMeeting : null) ?? (await db.listLaunches(orgId)).filter((l) => l.status === "active").sort((a, b) => new Date(a.launchDate).getTime() - new Date(b.launchDate).getTime())[0];
   if (!launch) return { launch: null, tasks: [] as LaunchTask[] };
   const emps = await db.listEmployeesByOrg(orgId);
   const members = await db.listMembers(orgId);
@@ -549,6 +877,7 @@ export async function addActionItems(orgId: number, items: { text: string; owner
     );
   }
   if (launch.clickupListId && (await integrations.clickupSettings(orgId))) await pushToClickup(orgId, launch.id).catch(() => null);
+  await startReadyTasks(orgId).catch(() => null);
   return { launch, tasks: out };
 }
 
@@ -568,10 +897,39 @@ export async function planCounts(orgId: number, launchId: number) {
 
 export async function projectsStatus(orgId: number) {
   const active = (await db.listLaunches(orgId)).filter((l) => l.status === "active" || l.status === "planning");
-  if (!active.length) return "There's no launch planned yet. Tell me what you're launching and the date.";
+  const ideas = db.listProjectNotes(orgId).filter((n) => n.kind === "idea" && n.status === "open");
+  const ideaLine = ideas.length ? `Ideas not planned yet: ${ideas.slice(0, 10).map((n) => n.text).join("; ")}.` : "";
+  if (!active.length) return ["There's no launch planned yet. Tell me what you're launching and the date.", ideaLine].filter(Boolean).join("\n\n");
   const parts = [];
   for (const l of active) parts.push(await launchFacts(orgId, l));
+  if (ideaLine) parts.push(ideaLine);
   return parts.join("\n\n");
+}
+
+// ==========================================
+// Project meetings (Simone's meeting engine schedules and sends; Nora writes them)
+// ==========================================
+
+/** Nora's agenda for a project meeting, built from the project's real status. */
+export async function projectAgenda(orgId: number, launchId: number, m: { title: string; startsAt: Date; minutes: number }, attendees: string[]) {
+  const nora = await employeeFor(orgId, "projects");
+  const launch = await db.getLaunch(launchId, orgId);
+  if (!launch) throw new TRPCError({ code: "NOT_FOUND", message: "That project is not in this workspace." });
+  const { tz } = await opsFor(orgId);
+  const facts = await launchFacts(orgId, launch);
+  const out = await working(nora, async () => {
+    const { system } = await systemPromptFor(
+      nora,
+      `Write the agenda for the project meeting "${m.title}" on ${fmt(m.startsAt, tz)}, ${m.minutes} minutes, for the ${launch.name} launch.
+- 3 to 6 items. Minutes add up to ${m.minutes} or less.
+- First item: where the project stands in numbers and its rating, ending with the meeting's purpose in a few words (who: ${nora.name}).
+- Then what is late or blocked, by name, each with who owns it; then the decisions the group must make. Name the real task, date and number from the facts in each item.
+- Last item: decisions and action items, with owners and due dates (who: ${attendees[0] || "the owner"}).
+- who: one person attending (${attendees.join(", ") || "the owner"}), ${nora.name}, or the employee whose task it is. No item without a reason to discuss it.`
+    );
+    return generateJson<{ items: { item: string; who: string; minutes: number }[] }>({ system, prompt: facts, schemaName: "meeting_agenda", schema: obj({ items: arr(obj({ item: str, who: str, minutes: int })) }), maxTokens: 1200 });
+  });
+  return (out.items ?? []).slice(0, 8);
 }
 
 export async function findLaunch(orgId: number, target: string) {

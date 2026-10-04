@@ -5,6 +5,7 @@ import * as integrations from "./integrations";
 import * as projects from "./employees/projects";
 import * as coo from "./employees/coo";
 import { saveOps } from "./employees/ops";
+import { saveAutonomy } from "./employees/team";
 import { encryptJson } from "./_core/crypto";
 
 type Call = { url: string; init: any };
@@ -93,6 +94,8 @@ describe("Nora (Projects)", () => {
   it("morning check flags what is behind and the report is written", async () => {
     mockAi();
     const { orgId } = await makeWorkspace("pm-check");
+    // Employees starting their own tasks is covered in nora.test.ts; here Nora only chases.
+    await saveAutonomy((await db.getEmployeeByKind(orgId, "projects"))!, { assign_work: "ask" });
     const r = await projects.planLaunch(orgId, { date: ymd(20), brief: "Launch" });
     await projects.approvePlan(orgId, r.launch.id, "Ashley");
     const lines = await projects.morningCheck(orgId, { force: true });

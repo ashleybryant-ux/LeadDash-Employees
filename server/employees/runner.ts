@@ -8,7 +8,7 @@ import { notify } from "../notify";
 import { hiringDaily } from "./hiring";
 import { sweepExpired } from "../review";
 import { postDue } from "../social";
-import { morningChecks } from "./projects";
+import { followUps, morningChecks } from "./projects";
 import { cooTicks } from "./coo";
 import { interviewTicks } from "./interview";
 
@@ -119,6 +119,8 @@ export function startScheduler() {
       await sweepExpired();
       await cooTicks();
       await morningChecks();
+      // Nora closes tasks the moment their work is approved or finished.
+      await followUps();
       // New employees reach out first; "Later" reminders come due.
       await interviewTicks();
       // BidPrime: once a day after 7:00 in each workspace's time zone.

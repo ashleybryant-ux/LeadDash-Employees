@@ -13,7 +13,7 @@ type Tab = "tasks" | "milestones" | "kpis" | "reports";
 const day = (d: Date | string | number, tz: string) => new Date(d).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" });
 const short = (d: Date | string | number, tz: string) => new Date(d).toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric" });
 const mdy = (d: Date | string | number, tz: string) => new Date(d).toLocaleDateString("en-US", { timeZone: tz, month: "2-digit", day: "2-digit", year: "numeric" });
-const STATE_CLS: Record<string, string> = { done: "gray", on_track: "green", behind: "amber", not_started: "gray" };
+const STATE_CLS: Record<string, string> = { done: "gray", on_track: "green", behind: "amber", not_started: "gray", waiting: "amber" };
 
 function KV({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -145,7 +145,7 @@ function Tasks({ v, tz, emp }: { v: View; tz: string; emp: EmployeeRow }) {
                   <span className="ld-strong">{t.title}</span>
                   <Owner t={t} />
                   <span>{day(t.dueDate, tz)}</span>
-                  <span className={`ld-pill ${STATE_CLS[t.state.key]}`}>{t.state.label}</span>
+                  <span className={`ld-pill ${STATE_CLS[t.shown.key]}`}>{t.shown.label}</span>
                   <button type="button" className="ld-btn" onClick={() => { setOpen(isOpen ? null : t.id); setEditing(null); }}>{isOpen ? "Close" : "Open"}</button>
                 </div>
                 {isOpen && (
@@ -175,6 +175,7 @@ function Tasks({ v, tz, emp }: { v: View; tz: string; emp: EmployeeRow }) {
                       <>
                         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                           <KV label="Task">{t.details || t.title}</KV>
+                          {t.doneWhen && <KV label="Done when">{t.doneWhen}</KV>}
                           {t.waitingOn && <KV label="Waiting on">{t.waitingOn}</KV>}
                           {t.note && <KV label={`${emp.name}'s note`}>{t.note}</KV>}
                         </div>
@@ -327,7 +328,7 @@ function Reports({ v, tz }: { v: View; tz: string }) {
   const copy = async (r: View["reports"][number]) => {
     const b = r.body;
     try {
-      await navigator.clipboard.writeText([`Week ${r.week} of ${r.weeks}: ${v.launch.name}`, `Overall: ${b.overall}`, `Done this week: ${b.done}`, `Behind: ${b.behind}`, `Next week: ${b.next}`, `Needs you: ${b.needsYou}`].join("\n"));
+      await navigator.clipboard.writeText([`Week ${r.week} of ${r.weeks}: ${v.launch.name} (${b.rating === "red" ? "Off track" : b.rating === "amber" ? "At risk" : r.status === "behind" ? "At risk" : "On track"})`, `Overall: ${b.overall}`, `Done this week: ${b.done}`, `Behind: ${b.behind}`, `Next week: ${b.next}`, ...(b.risks ? [`Risks: ${b.risks}`] : []), `Needs you: ${b.needsYou}`].join("\n"));
       setCopied(r.id);
       setTimeout(() => setCopied(null), 2000);
     } catch {
@@ -350,7 +351,10 @@ function Reports({ v, tz }: { v: View; tz: string }) {
             <div className={`ld-rw ${isOpen ? "open" : ""}`} style={{ gridTemplateColumns: RQ, cursor: "pointer" }} onClick={(e) => { if ((e.target as HTMLElement).closest("button,a")) return; setOpen(isOpen ? null : r.id); }}>
               <span className="ld-strong">{`Week ${r.week} of ${r.weeks}`}</span>
               <span>{day(r.createdAt, tz)}</span>
-              <span className={`ld-pill ${r.status === "behind" ? "amber" : "green"}`}>{r.status === "behind" ? "Behind" : "On track"}</span>
+              {(() => {
+                const rating = r.body.rating ?? (r.status === "behind" ? "amber" : "green");
+                return <span className={`ld-pill ${rating}`}>{rating === "red" ? "Off track" : rating === "amber" ? "At risk" : "On track"}</span>;
+              })()}
               <button type="button" className="ld-btn" onClick={() => setOpen(isOpen ? null : r.id)}>{isOpen ? "Close" : "Open"}</button>
             </div>
             {isOpen && (
@@ -360,6 +364,7 @@ function Reports({ v, tz }: { v: View; tz: string }) {
                   <KV label="Done this week">{r.body.done}</KV>
                   <KV label="Behind">{r.body.behind}</KV>
                   <KV label="Next week">{r.body.next}</KV>
+                  {r.body.risks && <KV label="Risks">{r.body.risks}</KV>}
                   <KV label="Needs you">{r.body.needsYou}</KV>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

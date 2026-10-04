@@ -8,7 +8,7 @@ import { partsIn, zonedToUtc } from "./schedule";
 import { employeeFor, systemPromptFor, working } from "./tasks";
 import { gate, handoff, logActivity } from "./team";
 import { opsFor, saveOps, type Series } from "./ops";
-import { addActionItems, launchView } from "./projects";
+import { addActionItems, findLaunch, launchView, projectAgenda } from "./projects";
 import { cancelAll, notetakerStatus, notetakerTick } from "./notetaker";
 
 /**
@@ -18,6 +18,9 @@ import { cancelAll, notetakerStatus, notetakerTick } from "./notetaker";
  * - After a meeting: your notes (or the Zoom transcript) become action items.
  *   Items go to Nora as tasks, and employees hear about theirs in their chat.
  * - The scorecard: each team's numbers this week against last week and the goal.
+ * - Project meetings (meetings.launchId set) run through the same engine, but
+ *   Nora owns them: she writes the agenda from the project's status, sends the
+ *   invite and recap, and their action items go to that project.
  */
 
 const str = { type: "string" } as const;
@@ -54,6 +57,12 @@ async function people(orgId: number) {
   return (await db.listMembers(orgId)).map((m) => ({ name: m.name || m.email, email: m.email }));
 }
 
+/** Who runs a meeting: Nora for a project meeting, Simone for the rest. */
+async function ownerOf(orgId: number, m: Pick<Meeting, "launchId">) {
+  return db.getEmployeeByKind(orgId, m.launchId ? "projects" : "coo");
+}
+const chatLink = (m: Pick<Meeting, "launchId">) => (m.launchId ? "/chats/projects/work" : "/chats/coo/work");
+
 // ==========================================
 // Repeating meetings
 // ==========================================
@@ -77,12 +86,15 @@ export async function ensureMeetings(orgId: number) {
   const existing = await db.listMeetings(orgId);
   const members = await people(orgId);
   const made: Meeting[] = [];
-  for (const s of ops.recurring) {
+  const launches = ops.projectRecurring.length ? await db.listLaunches(orgId) : [];
+  // A project's weekly meeting stops once the project is done or dropped.
+  const live = ops.projectRecurring.filter((s) => launches.some((l) => l.id === s.launchId && (l.status === "active" || l.status === "planning")));
+  for (const s of [...ops.recurring.map((x) => ({ ...x, launchId: null as number | null })), ...live]) {
     const at = nextStart(s, tz);
     if (!at) continue;
     if (existing.some((m) => m.seriesId === s.id && Math.abs(new Date(m.startsAt).getTime() - at.getTime()) < 60_000)) continue;
     const attendees = members.filter((m) => s.attendees.includes(m.email));
-    made.push(await db.createMeeting({ organizationId: orgId, seriesId: s.id, title: s.name, startsAt: at, minutes: s.minutes, attendees: JSON.stringify(attendees), updatesFrom: JSON.stringify(s.updatesFrom), linkKind: ops.meetingLink }));
+    made.push(await db.createMeeting({ organizationId: orgId, seriesId: s.id, launchId: s.launchId, title: s.name, startsAt: at, minutes: s.minutes, attendees: JSON.stringify(attendees), updatesFrom: JSON.stringify(s.updatesFrom), linkKind: ops.meetingLink }));
   }
   return made;
 }
@@ -117,8 +129,15 @@ async function weekFacts(orgId: number, updatesFrom: string[]) {
 export async function buildAgenda(orgId: number, meetingId: number) {
   const m = await db.getMeeting(meetingId, orgId);
   if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
-  const simone = await employeeFor(orgId, "coo");
   const { tz } = await opsFor(orgId);
+  if (m.launchId) {
+    const items = await projectAgenda(orgId, m.launchId, m, parse<Attendee[]>(m.attendees, []).map((a) => a.name));
+    let used = 0;
+    const fit = items.filter((i) => (used += Math.max(1, i.minutes)) <= m.minutes + 15);
+    await db.updateMeeting(m.id, orgId, { agenda: JSON.stringify(timed(fit, new Date(m.startsAt), tz)) });
+    return (await db.getMeeting(m.id, orgId))!;
+  }
+  const simone = await employeeFor(orgId, "coo");
   const updatesFrom = parse<string[]>(m.updatesFrom, []);
   const emps = await db.listEmployeesByOrg(orgId);
   const attendees = parse<Attendee[]>(m.attendees, []);
@@ -152,21 +171,21 @@ export function agendaText(m: Meeting, tz: string) {
 export async function sendInvite(orgId: number, meetingId: number, who: string) {
   const m = await db.getMeeting(meetingId, orgId);
   if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
-  if ((await db.getConnectionByProvider(orgId, "google_workspace"))?.status !== "connected") throw new TRPCError({ code: "BAD_REQUEST", message: "Connect Google on Integrations so Simone can send invites from your calendar." });
+  const owner = await ownerOf(orgId, m);
+  if ((await db.getConnectionByProvider(orgId, "google_workspace"))?.status !== "connected") throw new TRPCError({ code: "BAD_REQUEST", message: `Connect Google on Integrations so ${owner?.name ?? "I"} can send invites from your calendar.` });
   const { tz } = await opsFor(orgId);
   const attendees = parse<Attendee[]>(m.attendees, []);
   let zoomUrl: string | null = m.linkKind === "zoom" ? m.link : null;
   let zoomId = m.zoomMeetingId;
   if (m.linkKind === "zoom" && !zoomUrl) {
-    if ((await db.getConnectionByProvider(orgId, "zoom"))?.status !== "connected") throw new TRPCError({ code: "BAD_REQUEST", message: "Connect Zoom on Integrations, or switch Simone's meeting link to Google Meet." });
+    if ((await db.getConnectionByProvider(orgId, "zoom"))?.status !== "connected") throw new TRPCError({ code: "BAD_REQUEST", message: "Connect Zoom on Integrations, or switch the meeting link to Google Meet on Simone's Onboarding tab." });
     const z = await integrations.createZoomMeeting(orgId, { topic: m.title, start: new Date(m.startsAt), minutes: m.minutes, tz, agenda: agendaText(m, tz) });
     zoomUrl = z.joinUrl;
     zoomId = z.id;
   }
   const ev = await integrations.inviteMeeting(orgId, { eventId: m.calendarEventId, summary: m.title, description: agendaText(m, tz), start: new Date(m.startsAt), minutes: m.minutes, tz, attendees: attendees.map((a) => a.email), zoomUrl });
   await db.updateMeeting(m.id, orgId, { status: "invited", calendarEventId: ev.eventId, eventUrl: ev.eventUrl, link: ev.link, zoomMeetingId: zoomId, inviteSentAt: new Date() });
-  const simone = await employeeFor(orgId, "coo");
-  await logActivity(simone, "sent", `Sent the invite and agenda for ${m.title}, ${fmtDay(m.startsAt, tz)} at ${fmtTime(m.startsAt, tz)}, to ${attendees.length} ${attendees.length === 1 ? "person" : "people"}.`, "/chats/coo/work");
+  await logActivity(owner, "sent", `Sent the invite and agenda for ${m.title}, ${fmtDay(m.startsAt, tz)} at ${fmtTime(m.startsAt, tz)}, to ${attendees.length} ${attendees.length === 1 ? "person" : "people"}.`, chatLink(m), orgId);
   await db.logAction({ organizationId: orgId, actorType: who.includes("on her own") ? "employee" : "human_user", actorName: who, action: "Sent a meeting invite", details: m.title });
   return (await db.getMeeting(m.id, orgId))!;
 }
@@ -226,6 +245,35 @@ export async function scheduleMeeting(orgId: number, input: { title: string; dat
   return buildAgenda(orgId, m.id);
 }
 
+/** Nora's project meeting: one time, or weekly on the same day and time until the project ends. Gets its agenda right away. */
+export async function scheduleProjectMeeting(orgId: number, input: { title: string; project: string; date: string; time: string; minutes: number; attendees: string; weekly: boolean }) {
+  const launch = await findLaunch(orgId, input.project);
+  if (!launch) throw new TRPCError({ code: "BAD_REQUEST", message: "There's no active project to meet about yet. Tell me what you're launching and the date first." });
+  const { ops, tz } = await opsFor(orgId);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new TRPCError({ code: "BAD_REQUEST", message: "What day should it be? Tell me the date and time." });
+  const tm = (input.time || "9:00 AM").match(/(\d{1,2})(?::(\d{2}))?\s*([ap]m)?/i);
+  let h = tm ? +tm[1] : 9;
+  const mi = tm?.[2] ? +tm[2] : 0;
+  if (tm?.[3]?.toLowerCase() === "pm" && h < 12) h += 12;
+  if (tm?.[3]?.toLowerCase() === "am" && h === 12) h = 0;
+  const [y, mo, d] = input.date.split("-").map(Number);
+  const start = zonedToUtc(y, mo, d, h, mi, tz);
+  const members = await people(orgId);
+  const asked = input.attendees.toLowerCase();
+  const picked = asked.trim() ? members.filter((p) => asked.includes(p.email.toLowerCase()) || (p.name && asked.includes(p.name.toLowerCase().split(" ")[0]))) : members;
+  const attendees = picked.length ? picked : members.slice(0, 1);
+  const minutes = [15, 30, 45, 60, 90].includes(input.minutes) ? input.minutes : 30;
+  const title = (input.title || `${launch.name} project meeting`).slice(0, 160);
+  let seriesId: string | null = null;
+  if (input.weekly) {
+    seriesId = `p${launch.id}-${Date.now().toString(36)}`;
+    const series = { id: seriesId, name: title, day: new Date(Date.UTC(y, mo - 1, d, 12)).getUTCDay(), time: `${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}`, minutes, attendees: attendees.map((a) => a.email), updatesFrom: [], launchId: launch.id };
+    await saveOps(orgId, { projectRecurring: [...ops.projectRecurring, series] });
+  }
+  const m = await db.createMeeting({ organizationId: orgId, seriesId, launchId: launch.id, title, startsAt: start, minutes, attendees: JSON.stringify(attendees), updatesFrom: "[]", linkKind: ops.meetingLink });
+  return buildAgenda(orgId, m.id);
+}
+
 // ==========================================
 // After the meeting
 // ==========================================
@@ -235,7 +283,7 @@ export async function saveNotes(orgId: number, meetingId: number, notes: string,
   const m = await db.getMeeting(meetingId, orgId);
   if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
   if (!notes.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "Paste your notes first." });
-  const simone = await employeeFor(orgId, "coo");
+  const simone = await employeeFor(orgId, m.launchId ? "projects" : "coo");
   const { tz } = await opsFor(orgId);
   const emps = await db.listEmployeesByOrg(orgId);
   const attendees = parse<Attendee[]>(m.attendees, []);
@@ -248,9 +296,10 @@ export async function saveNotes(orgId: number, meetingId: number, notes: string,
     return { text: i.text.slice(0, 200), owner: emp ? emp.name : i.owner.trim().split(" ")[0] || "Owner", ownerKind: emp?.kind ?? null, taskId: null, status: "open" };
   });
   await db.updateMeeting(m.id, orgId, { notes: notes.slice(0, 30_000), notesAt: new Date(), status: "held", actionItems: JSON.stringify(items) });
-  if (gate(simone, "action_items") === "auto") items = await sendItems(orgId, m.id);
-  if (gate(simone, "recap") === "auto" && attendees.length) await sendRecap(orgId, m.id, `${simone.name} (on her own)`).catch(() => null);
-  await logActivity(simone, "done", `Turned the ${m.title} notes from ${fmtDay(m.startsAt, tz)} into ${items.length} action item${items.length === 1 ? "" : "s"}.`, "/chats/coo/work");
+  // Nora always tracks her own project's action items; Simone follows her settings.
+  if (m.launchId || gate(simone, "action_items") === "auto") items = await sendItems(orgId, m.id);
+  if (gate(simone, m.launchId ? "meetings" : "recap") === "auto" && attendees.length) await sendRecap(orgId, m.id, `${simone.name} (on her own)`).catch(() => null);
+  await logActivity(simone, "done", `Turned the ${m.title} notes from ${fmtDay(m.startsAt, tz)} into ${items.length} action item${items.length === 1 ? "" : "s"}.`, chatLink(m));
   return (await db.getMeeting(m.id, orgId))!;
 }
 
@@ -261,7 +310,7 @@ export async function sendItems(orgId: number, meetingId: number) {
   const items = parse<ActionItem[]>(m.actionItems, []);
   const open = items.filter((i) => i.status === "open");
   if (!open.length) return items;
-  const r = await addActionItems(orgId, open.map((i) => ({ text: i.text, owner: i.owner })), `meeting:${m.id}`);
+  const r = await addActionItems(orgId, open.map((i) => ({ text: i.text, owner: i.owner })), `meeting:${m.id}`, m.launchId);
   const inClickup = !!r.launch?.clickupListId;
   open.forEach((it, idx) => {
     const t = r.tasks[idx];
@@ -271,7 +320,7 @@ export async function sendItems(orgId: number, meetingId: number) {
     }
   });
   for (const it of open.filter((i) => i.ownerKind)) {
-    await handoff(orgId, "coo", it.ownerKind as AIEmployee["kind"], `From ${m.title}: ${it.text}`, "/chats/coo/work").catch(() => null);
+    await handoff(orgId, m.launchId ? "projects" : "coo", it.ownerKind as AIEmployee["kind"], `From ${m.title}: ${it.text}`, chatLink(m)).catch(() => null);
   }
   await db.updateMeeting(m.id, orgId, { actionItems: JSON.stringify(items) });
   return items;
@@ -280,12 +329,17 @@ export async function sendItems(orgId: number, meetingId: number) {
 export async function sendRecap(orgId: number, meetingId: number, who: string) {
   const m = await db.getMeeting(meetingId, orgId);
   if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
-  if ((await db.getConnectionByProvider(orgId, "google_workspace"))?.status !== "connected") throw new TRPCError({ code: "BAD_REQUEST", message: "Connect Google on Integrations so Simone can email the recap." });
+  if ((await db.getConnectionByProvider(orgId, "google_workspace"))?.status !== "connected") throw new TRPCError({ code: "BAD_REQUEST", message: `Connect Google on Integrations so ${(await ownerOf(orgId, m))?.name ?? "I"} can email the recap.` });
   const { tz } = await opsFor(orgId);
   const items = parse<ActionItem[]>(m.actionItems, []);
   const attendees = parse<Attendee[]>(m.attendees, []);
   if (!attendees.length) throw new TRPCError({ code: "BAD_REQUEST", message: "This meeting has no attendees to send the recap to." });
-  const body = [`Recap: ${m.title}, ${fmtDay(m.startsAt, tz)}`, "", "Action items", ...(items.length ? items.map((i) => `- ${i.text} (${i.owner})`) : ["- None"]), "", "Agenda", ...parse<AgendaItem[]>(m.agenda, []).map((a) => `- ${a.item}`)].join("\n");
+  const due = new Map<number, Date>();
+  for (const i of items) if (i.taskId) {
+    const t = await db.getLaunchTask(i.taskId, orgId);
+    if (t) due.set(i.taskId, new Date(t.dueDate));
+  }
+  const body = [`Recap: ${m.title}, ${fmtDay(m.startsAt, tz)}`, "", "Action items", ...(items.length ? items.map((i) => `- ${i.text} (${i.owner}${i.taskId && due.get(i.taskId) ? `, due ${fmtDay(due.get(i.taskId)!, tz)}` : ""})`) : ["- None"]), "", "Agenda", ...parse<AgendaItem[]>(m.agenda, []).map((a) => `- ${a.item}`)].join("\n");
   await integrations.sendGmail(orgId, attendees.map((a) => a.email).join(", "), `Recap: ${m.title}, ${fmtDay(m.startsAt, tz)}`, body);
   await db.updateMeeting(m.id, orgId, { recapSentAt: new Date() });
   await db.logAction({ organizationId: orgId, actorType: who.includes("on her own") ? "employee" : "human_user", actorName: who, action: "Sent a meeting recap", details: m.title });
@@ -393,19 +447,23 @@ function agendaDue(m: Meeting, when: "day_before" | "morning_of", tz: string) {
 
 export async function cooTick(orgId: number, now = new Date()) {
   const simone = await db.getEmployeeByKind(orgId, "coo");
-  if (!simone) return;
-  // Paused: no bots join for her.
-  if (simone.status === "paused") return cancelAll(orgId).catch(() => null);
+  const nora = await db.getEmployeeByKind(orgId, "projects");
+  const runs = (e: AIEmployee | null) => !!e && e.status !== "paused";
+  // Simone paused: no bots join for her. Nora's project meetings still run.
+  if (simone?.status === "paused") await cancelAll(orgId).catch(() => null);
+  if (!runs(simone) && !runs(nora)) return;
   const { ops, tz } = await opsFor(orgId);
-  if (ops.recurring.length) await ensureMeetings(orgId);
+  if (ops.recurring.length || ops.projectRecurring.length) await ensureMeetings(orgId);
   for (const m of await db.listMeetings(orgId)) {
+    const owner = m.launchId ? nora : simone;
+    if (!owner || !runs(owner)) continue;
     const ended = new Date(m.startsAt).getTime() + m.minutes * 60_000;
     // Agenda and invite.
     if (m.status === "draft" && !m.agenda && new Date(m.startsAt) > now && agendaDue(m, ops.agendaWhen, tz) <= now) {
       const withAgenda = await buildAgenda(orgId, m.id).catch(() => null);
       if (!withAgenda) continue;
-      if (gate(simone, "invites") === "auto") await sendInvite(orgId, m.id, `${simone.name} (on her own)`).catch((err) => console.warn("[coo] invite failed:", err instanceof Error ? err.message : err));
-      else await db.createChatMessage({ organizationId: orgId, employeeId: simone.id, role: "employee", authorName: simone.name, content: `Here's the agenda for ${m.title}, ${fmtDay(m.startsAt, tz)} at ${fmtTime(m.startsAt, tz)}. Press Send invite and it goes out with the meeting link.`, cards: JSON.stringify([meetingCard(withAgenda)]) });
+      if (gate(owner, m.launchId ? "meetings" : "invites") === "auto") await sendInvite(orgId, m.id, `${owner.name} (on her own)`).catch((err) => console.warn("[coo] invite failed:", err instanceof Error ? err.message : err));
+      else await db.createChatMessage({ organizationId: orgId, employeeId: owner.id, role: "employee", authorName: owner.name, content: `Here's the agenda for ${m.title}, ${fmtDay(m.startsAt, tz)} at ${fmtTime(m.startsAt, tz)}. Press Send invite and it goes out with the meeting link.`, cards: JSON.stringify([meetingCard(withAgenda)]) });
     }
     // Zoom transcript after the meeting.
     if (m.status === "invited" && ended < now.getTime() - 30 * 60_000 && ended > now.getTime() - 3 * DAY && !m.notes && ops.afterMeeting === "zoom" && m.zoomMeetingId) {
@@ -414,7 +472,7 @@ export async function cooTick(orgId: number, now = new Date()) {
     }
   }
   // Sitting in on meetings (Recall.ai).
-  await notetakerTick(orgId, now).catch((err) => console.warn("[coo] notetaker failed:", err instanceof Error ? err.message : err));
+  if (runs(simone)) await notetakerTick(orgId, now).catch((err) => console.warn("[coo] notetaker failed:", err instanceof Error ? err.message : err));
 }
 
 export async function cooTicks() {
@@ -462,14 +520,19 @@ export async function cooStatus(orgId: number) {
   ].join("\n");
 }
 
-export async function nextMeetingFor(orgId: number, target: string) {
+type Which = "all" | "project";
+const keep = (which: Which) => (m: { launchId: number | null }) => which === "all" || !!m.launchId;
+
+export async function nextMeetingFor(orgId: number, target: string, which: Which = "all") {
   const v = await meetingsView(orgId);
+  const list = v.upcoming.filter(keep(which));
   const t = target.trim().toLowerCase();
-  return (t && v.upcoming.find((m) => m.title.toLowerCase().includes(t) || t.includes(m.title.toLowerCase()))) || v.upcoming[0] || null;
+  return (t && list.find((m) => m.title.toLowerCase().includes(t) || t.includes(m.title.toLowerCase()))) || list[0] || null;
 }
 
-export async function lastMeetingFor(orgId: number, target: string) {
+export async function lastMeetingFor(orgId: number, target: string, which: Which = "all") {
   const v = await meetingsView(orgId);
+  const list = v.past.filter(keep(which));
   const t = target.trim().toLowerCase();
-  return (t && v.past.find((m) => m.title.toLowerCase().includes(t))) || v.past[0] || null;
+  return (t && list.find((m) => m.title.toLowerCase().includes(t))) || list[0] || null;
 }
