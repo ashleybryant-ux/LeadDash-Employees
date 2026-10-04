@@ -5,6 +5,7 @@ import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine, UnderlineTabs } from "../ui";
 import { fmtDate, parseJson } from "../meta";
 import { AvatarVideosTab } from "../chat/Avatar";
+import { DramaCastTab, DramaEpisodesTab } from "../chat/Drama";
 
 type Shot = { time: string; shot: string; say: string };
 type VideoData = {
@@ -21,7 +22,8 @@ const short = (url: string) => url.replace(/^https?:\/\/(www\.)?/, "");
 export default function Videos({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
-  const [tab, setTab] = React.useState<"plans" | "trends" | "avatar">("plans");
+  const studio = trpc.drama.studio.useQuery({ organizationId: currentOrgId });
+  const [tab, setTab] = React.useState<"episodes" | "cast" | "plans" | "trends" | "avatar">("episodes");
   const avatarCount = trpc.avatar.list.useQuery({ organizationId: currentOrgId }).data?.length ?? 0;
   const [selected, setSelected] = React.useState<number | null>(null);
 
@@ -39,7 +41,7 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
 
   return (
     <main className="ld-main" style={{ padding: "28px 36px" }}>
-      {tab !== "avatar" && <div className="ld-row" style={{ justifyContent: "flex-end" }}>
+      {(tab === "plans" || tab === "trends") && <div className="ld-row" style={{ justifyContent: "flex-end" }}>
         {find.data && !find.isPending && (
           <span className="ld-small ld-muted">
             {find.data.added ? `Planned ${find.data.added} from ${find.data.queries.length} searches.` : `No new trends from ${find.data.queries.length} searches.`}
@@ -55,13 +57,19 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
         value={tab}
         onChange={setTab}
         tabs={[
+          { key: "episodes", label: `Episodes (${studio.data?.episodes.length ?? 0})` },
+          { key: "cast", label: `Cast (${studio.data?.cast.length ?? 0})` },
           { key: "plans", label: `Video plans (${list.length})` },
           { key: "trends", label: `Trends (${list.length})` },
           { key: "avatar", label: `Your videos (${avatarCount})` },
         ]}
       />
 
-      {tab === "avatar" ? (
+      {tab === "episodes" ? (
+        <DramaEpisodesTab empName={emp.name} />
+      ) : tab === "cast" ? (
+        <DramaCastTab />
+      ) : tab === "avatar" ? (
         <AvatarVideosTab empName={emp.name} />
       ) : list.length === 0 ? (
         <div className="ld-card ld-empty">{videos.isLoading ? "Loading..." : `No video plans yet. Press Find trends or ask ${emp.name} in Chat.`}</div>

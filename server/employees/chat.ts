@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode";
   id: number;
   /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -63,7 +63,7 @@ export const LAYOUTS = [
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   speaking: ["none", "report", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  video: ["none", "report", "find_videos", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  video: ["none", "report", "find_videos", "write_episodes", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -99,6 +99,8 @@ const ACTION_HELP: Record<string, string> = {
   merge_change: "merge_change: merge a change Claude finished, when the owner says to (\"merge it\", \"looks good, merge\"). Words from its title in `target` ('' for the newest one ready).",
   change_request: "change_request: send a finished change back to Claude with what to change. Words from its title in `target` ('' for the newest), what to change in `notes`.",
   onboard_customer: "onboard_customer: start onboarding a new customer. The practice name in `title`, the contact's name in `to`, their email in `from` ('' if not given), the go-live date as YYYY-MM-DD in `date`, anything else in `notes`. If there's no go-live date, ask for it.",
+  write_episodes: "write_episodes: write episodes of the owner's cinematic micro drama series (a drama, micro drama, mini drama, series, season or more episodes). Put everything she said about the story, characters, setting and tone in `notes`, and how many episodes in `count` (default 3, at most 10). The first time, you also create the series and its cast; she plays herself.",
+  make_episode: "make_episode: make an episode you wrote into a finished video (\"make episode 1\", \"make it\"). Put the episode number in `count` (0 for the next one not made yet).",
   avatar_script: "avatar_script: write a video of the owner talking, made by AI from her photo and her own voice. Put a short title in `title` and the exact words she says in `message`, written the way she talks out loud (about 2.5 words a second, so 110 words is about 45 seconds; aim for the length she asked for, 30 to 60 seconds if she didn't say). No stage directions, no labels, only her words. Several scripts at once: write the first and offer the rest.",
   make_avatar: "make_avatar: make the video from a script you wrote (\"Make it\", \"make the video\", \"make the double entry one\"). Put words from its title in `target` ('' for the newest script).",
   clickup_bulk: "clickup_bulk: change MANY ClickUp tasks at once, like \"close everything overdue\" or \"push everything in Goals + Tactics to next Friday\". Put which tasks in `goal`: overdue (past due), all (every open task that matches), or a date YYYY-MM-DD for tasks due before it. Words to narrow by list, folder or task name in `target` ('' for every list), a person in `to` (''), the new status in `focus` (done, open... or ''), and a new due date YYYY-MM-DD in `date` (''). Do it when they say so; never ask first. Never use clickup_change for more than one task.",
@@ -286,6 +288,7 @@ async function teamFacts(emp: AIEmployee) {
   }
   if (emp.kind === "onboarding") return (await import("./customers")).customersFacts(emp.organizationId);
   if (emp.kind === "platform") return (await import("./platform")).platformFacts(emp.organizationId);
+  if (emp.kind === "video") return (await import("./drama")).dramaFacts(emp.organizationId);
   if (emp.kind === "inbox") {
     const cals = db.listAccountLinks(emp.organizationId, "calendar");
     return cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : "";
@@ -336,7 +339,7 @@ TALK_BY_KIND.onboarding = `- You onboard new customers (practices) onto LeadDash
 - Nora tracks each onboarding plan as a project; you own the customer-facing steps.`;
 TALK_BY_KIND.video = `- The owner's photos are in the Brain under "Images on file". When she asks about her photos, name the ones there and how many. Never say you can't get to her photos when they're listed there. When none are, ask her to attach them right here with the paperclip (up to 10 at a time) and save them to the Brain with save_files.
 - You make videos of the owner from her photo and her own ElevenLabs voice yourself: choose avatar_script to write one, and make_avatar when she says to make it. Never recommend HeyGen, Synthesia or any other tool; this is how it's made.
-- One person talking straight to camera is what this makes. For scenes with several characters, write the script and say only the talking-to-camera parts can be made here for now.
+- Two kinds of video. A micro drama (story, scenes, characters, cinematic, episodes, a series) is write_episodes, then make_episode: a cinematic episode cut from 10 to 16 shots with camera moves, the cast's faces matched in every shot, and each line spoken in that character's voice. A video of the owner talking to camera (a tip, an announcement) is avatar_script, then make_avatar. When she asks for a drama, never write a talking-to-camera script.
 - No markdown symbols like ** or #. Plain sentences, and number options as 1., 2., 3.`;
 
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -728,6 +731,38 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         const r = await cust.onboardCustomer(org, { practice: d.title, contact: d.to, email: d.from, goLive: d.date, notes: d.notes });
         const text = `Here's their onboarding plan, worked back from ${fmtYmd(d.date)}: ${plural(r.counts.milestones, "step")} and ${plural(r.counts.tasks, "task")}. Nora will track every step${r.auto ? " and it's started" : " once you approve it"}.${r.email ? " The welcome email is waiting for your OK in Approvals." : " Send me their email and I'll write the welcome."}`;
         return { text, cards: [projects.planCard(r.launch, r.counts) as ChatCard], queries: [] };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+    }
+    case "write_episodes": {
+      const dr = await import("./drama");
+      try {
+        const org0 = await db.getOrganizationById(org);
+        const r = await dr.writeEpisodes(org, { brief: d.notes || d.message || d.topic || "", count: d.count || 3, ownerName: org0?.signerName || who });
+        if (!r.episodes.length) return { text: "I couldn't write those episodes. Tell me a little more about the story and I'll try again.", cards: [], queries: [] };
+        const first = r.episodes[0];
+        const est = r.episodes.reduce((s, e) => s + e.costCents, 0) / r.episodes.length;
+        const owner = r.cast.find((c) => c.kind === "owner");
+        return {
+          text: `I wrote ${r.episodes.length === 1 ? "an episode" : `${r.episodes.length} episodes`} of ${r.series.title}. Each opens on a hook and ends on a cliffhanger, cut from about ${Math.round(dr.shotsOf(first).length)} shots with real camera moves. ${owner ? `You play ${owner.name}, from your photo and your voice. ` : ""}${(() => { const n = r.cast.filter((c) => c.kind === "made_up").length; return n === 1 ? "The other character is" : `The other ${n} characters are`; })()} made up, and no real clients or client stories are used. Each episode costs about $${(est / 100).toFixed(2)} to make.`,
+          cards: [{ type: "drama_season", id: first.id, title: r.series.title }],
+          queries: [],
+          choices: [`Make episode ${first.number}`, "Change a character", "Write more episodes"],
+        };
+      } catch (err) {
+        return { text: `I couldn't write it: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
+    }
+    case "make_episode": {
+      const dr = await import("./drama");
+      const eps = db.listDramaEpisodes(org);
+      const ep = (d.count ? eps.find((e) => e.number === d.count) : null) ?? eps.find((e) => e.status === "script" || e.status === "failed");
+      if (!ep) return { text: eps.length ? "Every episode I wrote is made. Want me to write the next ones?" : "There are no episodes yet. Tell me about the story and I'll write them.", cards: [], queries: [] };
+      try {
+        const started = await dr.startEpisode(org, ep.id);
+        const v = dr.episodeView(started);
+        return { text: `Making episode ${ep.number}, "${ep.title}." That's ${v.shots.length} shots, ${v.cost}. Each shot takes a few minutes, so the episode takes a while. I'll post it here when it's cut.`, cards: [{ type: "drama_episode", id: ep.id, title: ep.title }], queries: [] };
       } catch (err) {
         return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
       }

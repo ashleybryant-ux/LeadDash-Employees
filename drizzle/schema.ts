@@ -1655,3 +1655,74 @@ export const accountLinks = sqliteTable(
 );
 
 export type AccountLink = typeof accountLinks.$inferSelect;
+
+// ==========================================
+// Elena's mini drama studio
+// ==========================================
+
+/** One series per workspace: the show, its look, and the studio settings. */
+export const dramaSeries = sqliteTable(
+  "drama_series",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    title: text("title").notNull(),
+    premise: text("premise").notNull().default(""),
+    /** The visual look every shot shares (light, color, lens, setting). */
+    look: text("look").notNull().default(""),
+    /** JSON studio settings: quality, monthly limit, episode length. */
+    settings: text("settings").notNull().default("{}"),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [uniqueIndex("drama_series_org_unique").on(t.organizationId)]
+);
+export type DramaSeries = typeof dramaSeries.$inferSelect;
+
+/** The cast: the owner (her photo and her voice) and made-up characters. */
+export const dramaCast = sqliteTable(
+  "drama_cast",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    role: text("role").notNull().default(""),
+    /** owner: played by the owner from her photos. made_up: a fictional character. */
+    kind: text("kind", { enum: ["owner", "made_up"] }).notNull().default("made_up"),
+    /** How they look, for every shot they're in. */
+    look: text("look").notNull().default(""),
+    /** The portrait every shot is matched to (the owner's photo, or one made for a made-up character). */
+    photoUrl: text("photoUrl"),
+    voiceId: text("voiceId"),
+    voiceName: text("voiceName"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("drama_cast_org_idx").on(t.organizationId)]
+);
+export type DramaCastMember = typeof dramaCast.$inferSelect;
+
+export const dramaEpisodes = sqliteTable(
+  "drama_episodes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    number: integer("number").notNull(),
+    title: text("title").notNull(),
+    logline: text("logline").notNull().default(""),
+    /** JSON [{label, at, text}]: hook, turn, spike, cliffhanger. */
+    beats: text("beats").notNull().default("[]"),
+    /** JSON shots: framing, camera move, action, who is in it, the line spoken, seconds, and what was made. */
+    shots: text("shots").notNull().default("[]"),
+    status: text("status", { enum: ["script", "making", "ready", "failed"] }).notNull().default("script"),
+    progress: text("progress"),
+    videoUrl: text("videoUrl"),
+    /** What it cost (or is estimated to cost), in cents. */
+    costCents: integer("costCents").notNull().default(0),
+    error: text("error"),
+    madeAt: integer("madeAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("drama_episodes_org_idx").on(t.organizationId)]
+);
+export type DramaEpisode = typeof dramaEpisodes.$inferSelect;

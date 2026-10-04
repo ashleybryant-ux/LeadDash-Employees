@@ -38,6 +38,9 @@ import {
   portalLogins,
   webTasks,
   accountLinks,
+  dramaSeries,
+  dramaCast,
+  dramaEpisodes,
   platformFindings,
   pushSubscriptions,
   hrRoles,
@@ -1727,4 +1730,49 @@ export function updateAccountLink(id: number, orgId: number, data: Partial<typeo
 }
 export function deleteAccountLink(id: number, orgId: number) {
   getDb().delete(accountLinks).where(and(eq(accountLinks.id, id), eq(accountLinks.organizationId, orgId))).run();
+}
+
+// ==========================================
+// Elena's mini drama studio
+// ==========================================
+
+export function getDramaSeries(orgId: number) {
+  return getDb().select().from(dramaSeries).where(eq(dramaSeries.organizationId, orgId)).limit(1).all()[0] || null;
+}
+export function saveDramaSeries(orgId: number, data: Partial<typeof dramaSeries.$inferInsert>) {
+  const cur = getDramaSeries(orgId);
+  if (cur) {
+    getDb().update(dramaSeries).set({ ...data, updatedAt: new Date() }).where(eq(dramaSeries.id, cur.id)).run();
+    return getDramaSeries(orgId)!;
+  }
+  return getDb().insert(dramaSeries).values({ organizationId: orgId, title: data.title ?? "My series", ...data }).returning().all()[0];
+}
+export function listDramaCast(orgId: number) {
+  return getDb().select().from(dramaCast).where(eq(dramaCast.organizationId, orgId)).orderBy(dramaCast.id).all();
+}
+export function createDramaCast(row: typeof dramaCast.$inferInsert) {
+  return getDb().insert(dramaCast).values(row).returning().all()[0];
+}
+export function updateDramaCast(id: number, orgId: number, data: Partial<typeof dramaCast.$inferInsert>) {
+  getDb().update(dramaCast).set(data).where(and(eq(dramaCast.id, id), eq(dramaCast.organizationId, orgId))).run();
+  return getDb().select().from(dramaCast).where(eq(dramaCast.id, id)).all()[0] || null;
+}
+export function deleteDramaCast(id: number, orgId: number) {
+  getDb().delete(dramaCast).where(and(eq(dramaCast.id, id), eq(dramaCast.organizationId, orgId))).run();
+}
+export function listDramaEpisodes(orgId: number) {
+  return getDb().select().from(dramaEpisodes).where(eq(dramaEpisodes.organizationId, orgId)).orderBy(dramaEpisodes.number).all();
+}
+export function getDramaEpisode(id: number, orgId: number) {
+  return getDb().select().from(dramaEpisodes).where(and(eq(dramaEpisodes.id, id), eq(dramaEpisodes.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export function createDramaEpisode(row: typeof dramaEpisodes.$inferInsert) {
+  return getDb().insert(dramaEpisodes).values(row).returning().all()[0];
+}
+export function updateDramaEpisode(id: number, orgId: number, data: Partial<typeof dramaEpisodes.$inferInsert>) {
+  getDb().update(dramaEpisodes).set({ ...data, updatedAt: new Date() }).where(and(eq(dramaEpisodes.id, id), eq(dramaEpisodes.organizationId, orgId))).run();
+  return getDramaEpisode(id, orgId);
+}
+export function listMakingDramaEpisodes() {
+  return getDb().select().from(dramaEpisodes).where(eq(dramaEpisodes.status, "making")).all();
 }

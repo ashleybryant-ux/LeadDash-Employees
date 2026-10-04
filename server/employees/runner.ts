@@ -109,6 +109,7 @@ export function startScheduler() {
   // History imports that were running when the server restarted pick back up.
   void import("./history").then((h) => h.resumeImports()).catch(() => null);
   void import("./web").then((w) => w.failInterrupted()).catch(() => null);
+  void import("./drama").then((d) => d.resumeDrama()).catch(() => null);
   let busy = false;
   const timer = setInterval(async () => {
     if (busy) return;

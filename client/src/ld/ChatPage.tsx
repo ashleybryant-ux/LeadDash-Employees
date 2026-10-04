@@ -23,6 +23,7 @@ import Meetings from "./work/Meetings";
 import Changes, { DevChangeCard } from "./work/Changes";
 import Workflows from "./work/Workflows";
 import { FindingsCard, PlatformPageCard, WebTaskCard } from "./chat/Platform";
+import { DramaEpisodeCard, DramaSeasonCard } from "./chat/Drama";
 import { LaunchPlanCard, MeetingAgendaCard, MeetingNotesCard } from "./lead/Cards";
 import { OnboardingCard, OnboardingQuestionCard } from "./onboarding/ChatCards";
 import Onboarding from "./Onboarding";
@@ -98,7 +99,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode";
   id: number;
   title: string;
   subtitle?: string;
@@ -258,6 +259,10 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <WebTaskCard key={`${c.type}-${c.id}`} id={c.id} empName={emp.name} />
                     ) : c.type === "platform_findings" ? (
                       <FindingsCard key={`${c.type}-${c.id}`} />
+                    ) : c.type === "drama_season" ? (
+                      <DramaSeasonCard key={`${c.type}-${c.id}`} firstId={c.id} />
+                    ) : c.type === "drama_episode" ? (
+                      <DramaEpisodeCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "platform_page" ? (
                       <PlatformPageCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : (

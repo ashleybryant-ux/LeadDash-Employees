@@ -903,6 +903,38 @@ export const appRouter = router({
       }),
   }),
 
+  // Elena's mini drama studio
+  drama: router({
+    studio: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/drama")).studio(input.organizationId);
+    }),
+    episode: protectedProcedure.input(orgInput.extend({ id: z.number() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const dr = await import("./employees/drama");
+      const e = db.getDramaEpisode(input.id, input.organizationId);
+      return e ? dr.episodeView(e) : null;
+    }),
+    make: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const dr = await import("./employees/drama");
+      return dr.episodeView(await dr.startEpisode(input.organizationId, input.id));
+    }),
+    remakeShot: protectedProcedure.input(orgInput.extend({ id: z.number(), n: z.number().int().min(1).max(30) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const dr = await import("./employees/drama");
+      return dr.episodeView(await dr.remakeShot(input.organizationId, input.id, input.n));
+    }),
+    saveCast: protectedProcedure
+      .input(orgInput.extend({ id: z.number(), name: z.string().trim().min(1).max(80), role: z.string().max(120), look: z.string().max(500), voiceId: z.string().max(80).nullable(), voiceName: z.string().max(120).nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, id, ...rest } = input;
+        (await import("./employees/drama")).saveCast(organizationId, id, rest);
+        return { success: true };
+      }),
+  }),
+
   // Calendars Avery checks, and sending addresses (extra Google accounts)
   accounts: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {

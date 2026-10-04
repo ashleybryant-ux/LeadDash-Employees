@@ -380,3 +380,8 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
 @media (max-width: 760px) {
   .ld-sched { grid-template-columns: minmax(0, 1fr) !important; gap: 2px !important; }
 }
+
+@media (max-width: 760px) {
+  .ld-shot { grid-template-columns: 24px 64px minmax(0, 1fr) !important; }
+  .ld-shot > div:last-child { grid-column: 1 / -1; flex-direction: row !important; }
+}
