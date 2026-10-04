@@ -178,6 +178,8 @@ export const aiEmployees = sqliteTable(
     dayToDay: text("dayToDay"),
     /** JSON {rules: {ruleKey: "ask"|"first5"|"auto"}, approved: {ruleKey: count}}: what it does on its own. */
     autonomy: text("autonomy"),
+    /** JSON AvatarSettings: Elena's avatar videos of the owner (photo, voice, quality, monthly limit). */
+    studio: text("studio"),
     onboardedAt: integer("onboardedAt", { mode: "timestamp" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -1430,3 +1432,33 @@ export const huddles = sqliteTable(
   (t) => [index("huddles_org_idx").on(t.organizationId), uniqueIndex("huddles_token_idx").on(t.token)]
 );
 export type Huddle = typeof huddles.$inferSelect;
+
+/** A video of the owner made by AI from her photo and her voice (Elena). */
+export const avatarVideos = sqliteTable(
+  "avatar_videos",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    title: text("title").notNull(),
+    /** The exact words the owner says on camera. */
+    script: text("script").notNull(),
+    status: text("status", { enum: ["draft", "making", "ready", "failed"] }).notNull().default("draft"),
+    /** The Brain image used as the face. */
+    imageId: integer("imageId"),
+    voiceId: text("voiceId"),
+    voiceName: text("voiceName"),
+    quality: text("quality", { enum: ["standard", "pro"] }).notNull().default("standard"),
+    /** Length in tenths of a second, once made. */
+    tenths: integer("tenths"),
+    /** What it cost (or will cost, while a draft), in cents. */
+    costCents: integer("costCents").notNull().default(0),
+    requestId: text("requestId"),
+    videoUrl: text("videoUrl"),
+    error: text("error"),
+    madeAt: integer("madeAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("avatar_videos_org_idx").on(t.organizationId)]
+);
+export type AvatarVideo = typeof avatarVideos.$inferSelect;

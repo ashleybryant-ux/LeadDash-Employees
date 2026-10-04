@@ -125,6 +125,8 @@ export function startScheduler() {
       await interviewTicks();
       // BidPrime: once a day after 7:00 in each workspace's time zone.
       await (await import("./bids")).bidsTick();
+      // Elena's avatar videos: save each one fal.ai has finished.
+      await (await import("./avatar")).avatarTicks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

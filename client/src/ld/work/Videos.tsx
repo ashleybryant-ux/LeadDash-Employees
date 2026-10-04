@@ -4,6 +4,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine, UnderlineTabs } from "../ui";
 import { fmtDate, parseJson } from "../meta";
+import { AvatarVideosTab } from "../chat/Avatar";
 
 type Shot = { time: string; shot: string; say: string };
 type VideoData = {
@@ -20,7 +21,8 @@ const short = (url: string) => url.replace(/^https?:\/\/(www\.)?/, "");
 export default function Videos({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
-  const [tab, setTab] = React.useState<"plans" | "trends">("plans");
+  const [tab, setTab] = React.useState<"plans" | "trends" | "avatar">("plans");
+  const avatarCount = trpc.avatar.list.useQuery({ organizationId: currentOrgId }).data?.length ?? 0;
   const [selected, setSelected] = React.useState<number | null>(null);
 
   const videos = trpc.video.list.useQuery({ organizationId: currentOrgId });
@@ -37,7 +39,7 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
 
   return (
     <main className="ld-main" style={{ padding: "28px 36px" }}>
-      <div className="ld-row" style={{ justifyContent: "flex-end" }}>
+      {tab !== "avatar" && <div className="ld-row" style={{ justifyContent: "flex-end" }}>
         {find.data && !find.isPending && (
           <span className="ld-small ld-muted">
             {find.data.added ? `Planned ${find.data.added} from ${find.data.queries.length} searches.` : `No new trends from ${find.data.queries.length} searches.`}
@@ -46,7 +48,7 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
         <button type="button" className="ld-btn p" disabled={find.isPending} onClick={() => find.mutate({ organizationId: currentOrgId })}>
           {find.isPending ? "Searching..." : "Find trends"}
         </button>
-      </div>
+      </div>}
       <ErrorLine error={find.error} />
 
       <UnderlineTabs
@@ -55,10 +57,13 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
         tabs={[
           { key: "plans", label: `Video plans (${list.length})` },
           { key: "trends", label: `Trends (${list.length})` },
+          { key: "avatar", label: `Your videos (${avatarCount})` },
         ]}
       />
 
-      {list.length === 0 ? (
+      {tab === "avatar" ? (
+        <AvatarVideosTab empName={emp.name} />
+      ) : list.length === 0 ? (
         <div className="ld-card ld-empty">{videos.isLoading ? "Loading..." : `No video plans yet. Press Find trends or ask ${emp.name} in Chat.`}</div>
       ) : tab === "trends" ? (
         <div className="ld-card" style={{ overflow: "hidden" }}>

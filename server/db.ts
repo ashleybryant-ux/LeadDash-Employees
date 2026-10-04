@@ -22,6 +22,7 @@ import {
   chatMessages,
   chatFiles,
   huddles,
+  avatarVideos,
   chatReads,
   scheduledTasks,
   taskRuns,
@@ -1571,4 +1572,28 @@ export function listHuddles(orgId: number, limit = 20) {
 export function updateHuddle(id: number, orgId: number, data: Partial<typeof huddles.$inferInsert>) {
   getDb().update(huddles).set(data).where(and(eq(huddles.id, id), eq(huddles.organizationId, orgId))).run();
   return getHuddle(id, orgId);
+}
+
+// ==========================================
+// Avatar videos (Elena)
+// ==========================================
+
+export function createAvatarVideo(row: typeof avatarVideos.$inferInsert) {
+  return getDb().insert(avatarVideos).values(row).returning().all()[0];
+}
+export function getAvatarVideo(id: number, orgId: number) {
+  return getDb().select().from(avatarVideos).where(and(eq(avatarVideos.id, id), eq(avatarVideos.organizationId, orgId))).limit(1).all()[0] || null;
+}
+export function listAvatarVideos(orgId: number, limit = 200) {
+  return getDb().select().from(avatarVideos).where(eq(avatarVideos.organizationId, orgId)).orderBy(desc(avatarVideos.id)).limit(limit).all();
+}
+export function listMakingAvatarVideos() {
+  return getDb().select().from(avatarVideos).where(eq(avatarVideos.status, "making")).all();
+}
+export function updateAvatarVideo(id: number, orgId: number, data: Partial<typeof avatarVideos.$inferInsert>) {
+  getDb().update(avatarVideos).set(data).where(and(eq(avatarVideos.id, id), eq(avatarVideos.organizationId, orgId))).run();
+  return getAvatarVideo(id, orgId);
+}
+export function deleteAvatarVideo(id: number, orgId: number) {
+  getDb().delete(avatarVideos).where(and(eq(avatarVideos.id, id), eq(avatarVideos.organizationId, orgId))).run();
 }

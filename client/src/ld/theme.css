@@ -334,3 +334,23 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
   .ld-1on1-btns .ld-btn { flex: 1; }
   .ld-1on1-wave { display: none; }
 }
+
+/* Elena: videos of the owner from her photo and voice */
+.ld-av-card { padding: 16px 18px; display: grid; gap: 18px; align-items: start; }
+.ld-av-player { position: relative; aspect-ratio: 9 / 16; border-radius: 12px; overflow: hidden; background: #1f1a1c; flex-shrink: 0; }
+.ld-av-ai { position: absolute; top: 8px; left: 8px; z-index: 1; font-size: 11px; font-weight: 700; background: rgba(255,255,255,.88); color: #1f1a1c; border-radius: 6px; padding: 2px 6px; pointer-events: none; }
+.ld a.ld-btn.ld-av-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; color: #fff; box-sizing: border-box; }
+.ld-av-set { padding: 16px 18px; display: grid; grid-template-columns: minmax(0,1fr) 128px; gap: 20px; align-items: start; }
+.ld-av-kv { display: grid; grid-template-columns: 140px minmax(0,1fr); gap: 10px 16px; font-size: 14px; align-items: center; }
+.ld-av-thumb { width: 64px; height: 84px; border-radius: 8px; object-fit: cover; object-position: top; display: block; }
+.ld-av-thumb.sm { width: 40px; height: 52px; }
+.ld-av-pick { padding: 0; border: 0; background: none; border-radius: 9px; cursor: pointer; outline: 3px solid transparent; outline-offset: 1px; }
+.ld-av-pick.on { outline-color: #1b6b4a; }
+.ld-av-exp { display: grid; gap: 20px; padding: 16px 18px 20px; background: #f4f8f6; border-bottom: 1px solid #e3e9e6; align-items: start; }
+@media (max-width: 760px) {
+  .ld-av-card, .ld-av-exp { grid-template-columns: 1fr !important; }
+  .ld-av-card .ld-av-player, .ld-av-exp .ld-av-player { width: 100% !important; max-width: 260px; }
+  .ld-av-set { grid-template-columns: 1fr; }
+  .ld-av-kv { grid-template-columns: 1fr; gap: 4px; }
+  .ld-av-kv > .ld-strong { margin-top: 8px; }
+}

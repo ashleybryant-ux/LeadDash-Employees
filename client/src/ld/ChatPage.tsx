@@ -25,6 +25,7 @@ import { OnboardingCard, OnboardingQuestionCard } from "./onboarding/ChatCards";
 import Onboarding from "./Onboarding";
 import type { Outputs } from "./types";
 import { SpokenTag, TalkButton, VoiceBar, useOneOnOne } from "./chat/OneOnOne";
+import { AvatarVideoCard } from "./chat/Avatar";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 
 export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
@@ -92,7 +93,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video";
   id: number;
   title: string;
   subtitle?: string;
@@ -243,6 +244,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                   {cards.map((c) =>
                     c.type === "layout_choice" ? (
                       <LayoutChoiceCard key={`${c.type}-${c.id}`} options={c.options ?? []} onPick={pick} disabled={m.id !== lastId || pending !== null || send.isPending} />
+                    ) : c.type === "avatar_video" ? (
+                      <AvatarVideoCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : (
                       <ResultCard key={`${c.type}-${c.id}`} card={c} emp={emp} />
                     )

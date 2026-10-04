@@ -120,6 +120,13 @@
       "when": 1791083915326,
       "tag": "0016_chat_spoken",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1791087158089,
+      "tag": "0017_avatar_videos",
+      "breakpoints": true
     }
   ]
 }

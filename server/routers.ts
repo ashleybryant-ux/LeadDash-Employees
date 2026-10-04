@@ -55,6 +55,7 @@ import * as coo from "./employees/coo";
 import * as notetaker from "./employees/notetaker";
 import * as huddle from "./employees/huddle";
 import { endOneOnOne } from "./employees/oneonone";
+import * as avatar from "./employees/avatar";
 import { opsFor, saveOps, MEETING_MINUTES } from "./employees/ops";
 import { KPI_SOURCES } from "../drizzle/schema";
 import { postProblems, SOCIAL_CHANNELS, TIKTOK_PRIVACY, type SocialChannel } from "@shared/post-model";
@@ -1007,6 +1008,55 @@ export const appRouter = router({
   // ==========================================
   // Nico: video
   // ==========================================
+  // ==========================================
+  // Elena: videos of the owner made from her photo and voice
+  // ==========================================
+  avatar: router({
+    settings: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const emp = await db.getEmployeeByKind(input.organizationId, "video");
+      const s = emp ? avatar.settingsOf(emp) : avatar.settingsOf({ studio: null });
+      const [photos, voices, spent] = await Promise.all([avatar.photos(input.organizationId), avatar.voices(), avatar.spentThisMonth(input.organizationId)]);
+      return { ...s, photos, voices, spentCents: spent, rates: avatar.RATE_CENTS, ready: { fal: !!ENV.falKey, voice: !!ENV.elevenLabsKey } };
+    }),
+    saveSettings: protectedProcedure
+      .input(orgInput.extend({ imageId: z.number().int().nullable(), voiceId: z.string().max(80).nullable(), voiceName: z.string().max(120).nullable(), quality: z.enum(["standard", "pro"]), limitCents: z.number().int().min(0).max(1_000_000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, ...rest } = input;
+        return avatar.saveSettings(organizationId, rest);
+      }),
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const photos = await avatar.photos(input.organizationId);
+      return db.listAvatarVideos(input.organizationId).map((v) => avatar.view(v, photos.find((p) => p.id === v.imageId)?.title));
+    }),
+    get: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const v = db.getAvatarVideo(input.id, input.organizationId);
+      if (!v) return null;
+      const photos = await avatar.photos(input.organizationId);
+      return avatar.view(v, photos.find((p) => p.id === v.imageId)?.title);
+    }),
+    make: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return avatar.view(await avatar.make(input.organizationId, input.id));
+    }),
+    again: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return avatar.view(await avatar.again(input.organizationId, input.id));
+    }),
+    updateScript: protectedProcedure.input(orgInput.extend({ id: z.number().int(), title: z.string().max(120), script: z.string().min(1).max(2400) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return avatar.view(await avatar.updateScript(input.organizationId, input.id, { title: input.title, script: input.script }));
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      db.deleteAvatarVideo(input.id, input.organizationId);
+      return { success: true };
+    }),
+  }),
+
   video: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

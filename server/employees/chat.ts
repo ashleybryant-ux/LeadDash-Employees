@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video";
   id: number;
   /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -61,7 +61,7 @@ export const LAYOUTS = [
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   speaking: ["none", "report", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  video: ["none", "report", "find_videos", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  video: ["none", "report", "find_videos", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -84,6 +84,8 @@ const ACTION_HELP: Record<string, string> = {
   clickup_find: "clickup_find: look something up in ClickUp: tasks by words (task, list, folder or Space name, like \"marketing\" or \"W-9\"), by person, or both. Put the words in `target` ('' for all), the person in `to` ('' for anyone), and \"all\" in `focus` to include finished tasks ('' for open only).",
   clickup_lists: "clickup_lists: the person asks what's in their ClickUp (Spaces, folders, lists) or where something lives.",
   clickup_add: "clickup_add: add a task to ClickUp. Put the task in `title`, any details in `notes`, the due date as YYYY-MM-DD in `date` ('' for none), who it's for (a name or email) in `to` ('' for no one), and the ClickUp list to put it in in `page` ('' for the LeadDash Employees tasks list).",
+  avatar_script: "avatar_script: write a video of the owner talking, made by AI from her photo and her own voice. Put a short title in `title` and the exact words she says in `message`, written the way she talks out loud (about 2.5 words a second, so 110 words is about 45 seconds; aim for the length she asked for, 30 to 60 seconds if she didn't say). No stage directions, no labels, only her words. Several scripts at once: write the first and offer the rest.",
+  make_avatar: "make_avatar: make the video from a script you wrote (\"Make it\", \"make the video\", \"make the double entry one\"). Put words from its title in `target` ('' for the newest script).",
   clickup_bulk: "clickup_bulk: change MANY ClickUp tasks at once, like \"close everything overdue\" or \"push everything in Goals + Tactics to next Friday\". Put which tasks in `goal`: overdue (past due), all (every open task that matches), or a date YYYY-MM-DD for tasks due before it. Words to narrow by list, folder or task name in `target` ('' for every list), a person in `to` (''), the new status in `focus` (done, open... or ''), and a new due date YYYY-MM-DD in `date` (''). Do it when they say so; never ask first. Never use clickup_change for more than one task.",
   clickup_undo: "clickup_undo: reopen the tasks you just closed with clickup_bulk (\"Reopen them\", \"undo that\").",
   clickup_change: "clickup_change: change a ClickUp task: mark it done or another status, move its due date, assign it, or comment on it. Put words from the task's name in `target`, the new status in `focus` (done, open, in progress... or ''), the new due date as YYYY-MM-DD in `date` (''), who to assign in `to` (''), and a comment in `notes` ('').",
@@ -282,9 +284,9 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 - An attached RFP or opportunity file: choose add_file.`,
 };
 TALK_BY_KIND.speaking = TALK_BY_KIND.grants;
-TALK_BY_KIND.video = `- The owner's photos are in the Brain under "Images on file". When she asks about her photos, name the ones there and how many. Never say you can't get to her photos when they're listed there. When none are, ask her to attach them right here with the paperclip (up to 10 at a time) and offer to save them to the Brain.
-- For AI video of the owner made from her photos (an avatar that looks like her), she wants it made through the video models' own APIs at wholesale prices with her own ElevenLabs voice, not resold subscription tools. Never recommend HeyGen, Synthesia or similar subscriptions.
-- Making the video itself isn't connected here yet. Say so plainly, and do the parts you can now: the scripts, the shots, what she says on camera, and which of her photos to use.
+TALK_BY_KIND.video = `- The owner's photos are in the Brain under "Images on file". When she asks about her photos, name the ones there and how many. Never say you can't get to her photos when they're listed there. When none are, ask her to attach them right here with the paperclip (up to 10 at a time) and save them to the Brain with save_files.
+- You make videos of the owner from her photo and her own ElevenLabs voice yourself: choose avatar_script to write one, and make_avatar when she says to make it. Never recommend HeyGen, Synthesia or any other tool; this is how it's made.
+- One person talking straight to camera is what this makes. For scenes with several characters, write the script and say only the talking-to-camera parts can be made here for now.
 - No markdown symbols like ** or #. Plain sentences, and number options as 1., 2., 3.`;
 
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -584,6 +586,32 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         queries: [],
         choices: ["What's due this week?", "Add a task"],
       };
+    }
+    case "avatar_script": {
+      const av = await import("./avatar");
+      const words = (d.message || d.notes || "").trim();
+      if (!words) return { text: "What should the video say? Give me the topic and I'll write it.", cards: [], queries: [] };
+      const v = await av.draft(org, { title: d.title || "Video", script: words });
+      const pics = await av.photos(org);
+      const photo = pics.find((p) => p.id === v.imageId);
+      const secs = Math.round(av.estimateTenths(v.script) / 10);
+      const text = photo
+        ? `Here's the script. It's about ${secs} seconds in your voice, using "${photo.title}" from the Brain. Read it over, then press Make it.`
+        : `Here's the script, about ${secs} seconds. I need a photo of you to make it: attach one here with the paperclip, facing the camera in good light, and I'll save it to the Brain.`;
+      return { text, cards: [{ type: "avatar_video", id: v.id, title: v.title }], queries: [] };
+    }
+    case "make_avatar": {
+      const av = await import("./avatar");
+      const t = d.target.trim().toLowerCase();
+      const all = db.listAvatarVideos(org, 50);
+      const v = (t ? all.find((x) => x.title.toLowerCase().includes(t) && x.status !== "making") : null) ?? all.find((x) => x.status === "draft" || x.status === "failed") ?? all[0];
+      if (!v) return { text: "There's no script yet. Tell me what the video should be about and I'll write it.", cards: [], queries: [] };
+      try {
+        const made = await av.make(org, v.id);
+        return { text: `Making "${made.title}" now. It usually takes 3 to 8 minutes, and I'll post it here when it's done.`, cards: [{ type: "avatar_video", id: made.id, title: made.title }], queries: [] };
+      } catch (err) {
+        return { text: `I couldn't start it: ${err instanceof Error ? err.message : String(err)}`, cards: [{ type: "avatar_video", id: v.id, title: v.title }], queries: [] };
+      }
     }
     case "clickup_bulk": {
       const ck = await import("./clickup-tasks");
