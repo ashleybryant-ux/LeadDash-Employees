@@ -80,6 +80,7 @@ beforeEach(() => {
     calls.push({ url: u, init });
     if (u.includes("api.elevenlabs.io/v1/text-to-speech/")) return new Response(mp3, { status: 200 }); // a real MP3
     if (u.startsWith("https://api.elevenlabs.io/v1/music")) return new Response(mp3, { status: 200 });
+    if (u.startsWith("https://api.elevenlabs.io/v1/sound-generation")) return new Response(mp3, { status: 200 });
     if (u.startsWith("https://queue.fal.run/") && init.method === "POST") {
       const id = `r${++n}`;
       const model = u.replace("https://queue.fal.run/", "");
@@ -155,9 +156,11 @@ describe("Elena's mini drama studio", () => {
 
     // Renee got a portrait once; her shot and the owner's are matched to their faces.
     expect(posts(drama.MODELS.portrait).filter((b) => /Cinematic portrait photograph of Renee Cole/.test(b.prompt))).toHaveLength(1);
+    // Every shot after the first in a scene also sees the shot before it, so the room and light carry over.
     const stills = posts(drama.MODELS.still);
-    expect(stills).toHaveLength(2);
+    expect(stills).toHaveLength(3);
     expect(stills[1].image_urls[0]).toMatch(/^data:image\/jpeg;base64,/);
+    expect(stills[1].prompt).toContain("the shot just before this one in the same scene");
     const videos = posts(drama.MODELS.video);
     expect(videos).toHaveLength(4);
     expect(videos[0]).toMatchObject({ generate_audio: true, duration: "3" });
@@ -166,7 +169,7 @@ describe("Elena's mini drama studio", () => {
     expect(videos[2].elements[0].frontal_image_url).toMatch(/^data:image\/jpeg;base64,/);
     // Every photo of the owner is used, so her face holds from every angle.
     expect(videos[2].elements[0].reference_image_urls[0]).toMatch(/^data:image\/png;base64,/);
-    expect(stills[1].image_urls).toHaveLength(2);
+    expect(stills[1].image_urls).toHaveLength(3);
     expect(stills[1].prompt).toContain("reference images 1 to 2, the same person from different angles");
     // The score is made for the episode's length, instrumental.
     const music = calls.find((x) => x.url.startsWith("https://api.elevenlabs.io/v1/music"))!;
@@ -271,7 +274,7 @@ describe("Elena's mini drama studio", () => {
     const stills = posts(drama.MODELS.still).slice(9);
     expect(stills).toHaveLength(3);
     expect(stills[0].image_urls).toHaveLength(2);
-    expect(stills[1].image_urls).toHaveLength(1); // Malik's own portrait
+    expect(stills[1].image_urls).toHaveLength(2); // Malik's own portrait
     expect(stills[2].prompt).toContain("reference image 1 is LeadDash logo");
     expect((await c.drama.studio({ organizationId: orgId })).cast.find((x) => x.name === malik.name)).toMatchObject({ kind: "team" });
 
@@ -392,4 +395,26 @@ describe("Elena's mini drama studio", () => {
     expect(rw.reply.content).toMatch(/^I rewrote episode 1, "Already Done\." You play Ashley in 2 of the 2 shots, from your photos, and you speak in your own voice: 1 spoken line lip synced to your face and 1 voice-over line\./);
     expect(db.listDramaEpisodes(orgId).filter((e) => e.kind === "drama")).toHaveLength(1);
   });
+
+  it("cuts scenes together like a film: soft cuts inside a scene, a dip to black between scenes, continuous moves ending on the next keyframe", async () => {
+    expect(drama.transitionFor({ scene: 1, setting: "x", flow: "cut" }, { scene: 1, setting: "x" })).toEqual({ kind: "fade", seconds: 0.12 });
+    expect(drama.transitionFor({ scene: 1, setting: "x", flow: "continue" }, { scene: 1, setting: "x" })).toEqual({ kind: "dissolve", seconds: 0.3 });
+    expect(drama.transitionFor({ scene: 1, setting: "x", flow: "cut" }, { scene: 2, setting: "y" }).kind).toBe("fadeblack");
+    // Campaign shots without scene numbers: a new setting is a new scene.
+    expect(drama.transitionFor({ setting: "Office", flow: "cut" }, { setting: "Lobby" }).kind).toBe("fadeblack");
+    const { orgId } = await makeWorkspace("drama10");
+    const saved = await Promise.all([0, 1, 2].map((i) => storagePut(`org-${orgId}/drama/c${i}.mp4`, clip, "video/mp4")));
+    const shots = [
+      { clipUrl: saved[0].url, voUrl: null, caption: "", scene: 1, setting: "Office", flow: "continue" as const },
+      { clipUrl: saved[1].url, voUrl: null, caption: "", scene: 1, setting: "Office", flow: "cut" as const },
+      { clipUrl: saved[2].url, voUrl: null, caption: "", scene: 2, setting: "Hall", flow: "cut" as const },
+    ];
+    const out = await drama.stitch(orgId, "flow", shots, { beds: { "scene-1": mp3, "scene-2": mp3 } });
+    const file = path.join(process.env.UPLOADS_DIR || "uploads", out["9:16"].replace(/^\/files\//, ""));
+    const p = await drama.probe(fs.existsSync(file) ? file : path.resolve("uploads", out["9:16"].replace(/^\/files\//, "")));
+    // Three 2-second clips, a tenth trimmed off shots 2 and 3, overlapped by 0.3 and 0.5 seconds.
+    expect(p.duration).toBeGreaterThan(4.6);
+    expect(p.duration).toBeLessThan(5.3);
+    expect(p.audio).toBe(true);
+  }, 120_000);
 });

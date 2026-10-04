@@ -63,6 +63,10 @@ export type Shot = {
   seconds: number;
   /** Room tone and the sounds the action makes. */
   sound?: string;
+  /** The scene this shot belongs to: one place, one moment, shots that follow each other. */
+  scene?: number;
+  /** continue: the camera carries straight into the next shot (this clip ends on the next keyframe). cut: a normal cut. */
+  flow?: "cut" | "continue";
   /** The owner's character plate for this shot (front, walking, seated, green blazer...). */
   plate?: string;
   /** Brain images shown in the shot (a logo, a screenshot of the product), by title. */
@@ -200,8 +204,10 @@ const SEASON_SCHEMA: JsonSchema = {
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["framing", "move", "action", "setting", "cast", "line_who", "line_text", "voice_over", "seconds", "sound"],
+              required: ["scene", "flow", "framing", "move", "action", "setting", "cast", "line_who", "line_text", "voice_over", "seconds", "sound"],
               properties: {
+                scene: { type: "integer", description: "Scene number, starting at 1. A scene is one place and one continuous moment, 2 to 5 shots" },
+                flow: { type: "string", enum: ["cut", "continue"], description: "continue: the camera carries straight on into the next shot with no cut (a push-in that lands on the next framing). cut: a normal cut" },
                 framing: { type: "string", enum: ["Wide", "Medium", "Two-shot", "Over the shoulder", "Close-up", "Extreme close-up", "Insert", "Reaction"] },
                 move: { type: "string", description: "The camera move: slow push-in, handheld, dolly left, static, rack focus..." },
                 action: { type: "string", description: "What we see, in one or two sentences, with expressions and body language" },
@@ -221,7 +227,38 @@ const SEASON_SCHEMA: JsonSchema = {
   },
 };
 
-type Written = { title: string; premise: string; look: string; cast: { name: string; role: string; owner: boolean; look: string; voice: string }[]; episodes: { title: string; logline: string; music: string; beats: Beat[]; shots: { framing: string; move: string; action: string; setting: string; cast: string[]; line_who: string; line_text: string; voice_over?: string; seconds: number; sound: string }[] }[] };
+type Written = { title: string; premise: string; look: string; cast: { name: string; role: string; owner: boolean; look: string; voice: string }[]; episodes: { title: string; logline: string; music: string; beats: Beat[]; shots: { scene?: number; flow?: "cut" | "continue"; framing: string; move: string; action: string; setting: string; cast: string[]; line_who: string; line_text: string; voice_over?: string; seconds: number; sound: string }[] }[] };
+
+const CHECK_SCHEMA: JsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["fixes"],
+  properties: {
+    fixes: {
+      type: "array",
+      items: { type: "object", additionalProperties: false, required: ["n", "action", "setting"], properties: { n: { type: "integer" }, action: { type: "string", description: "The shot's action rewritten so it follows from the shot before" }, setting: { type: "string", description: "The setting, worded exactly like the rest of its scene" } } },
+    },
+  },
+};
+
+/** A script editor's pass: anything that doesn't follow from the shot before is rewritten so the story makes sense. */
+async function checkContinuity(system: string, title: string, shots: Shot[]) {
+  const r = await generateJson<{ fixes: { n: number; action: string; setting: string }[] }>({
+    system: `${system}
+You are now the script supervisor. Read the shot list as a viewer would. Fix only shots that break the story: a jump nobody would follow, a person or prop that appears or vanishes, a change of room or time inside a scene, an action that doesn't follow from the shot before, a setting worded differently from the rest of its scene. Keep the cast, the lines and the length. Return no fixes if it already flows.`,
+    prompt: `Episode: ${title}
+${shots.map((x) => `${x.n}. Scene ${x.scene}, ${x.framing}, ${x.move}. ${x.action} Setting: ${x.setting}. On screen: ${x.cast.join(", ") || "nobody"}.${x.line ? ` ${x.line.who}: "${x.line.text}"` : ""}${x.vo ? ` Voice-over: "${x.vo}"` : ""} Then: ${x.flow}`).join("\n")}`,
+    schemaName: "drama_continuity",
+    schema: CHECK_SCHEMA,
+    maxTokens: 4000,
+  });
+  for (const f of r.fixes ?? []) {
+    const sh = shots.find((x) => x.n === f.n);
+    if (!sh) continue;
+    if (f.action?.trim()) sh.action = f.action.trim().slice(0, 600);
+    if (f.setting?.trim()) sh.setting = f.setting.trim().slice(0, 300);
+  }
+}
 
 /** Writes episodes (and the series and cast the first time). New episodes continue from the last one. */
 export async function writeEpisodes(orgId: number, input: { brief: string; count: number; ownerName: string; replace?: DramaEpisode }) {
@@ -239,6 +276,11 @@ export async function writeEpisodes(orgId: number, input: { brief: string; count
     prompt: `${series ? `The series: ${series.title}. ${series.premise}\nLook: ${series.look}\nCast:\n${cast.map((c) => `- ${c.name} (${c.kind === "owner" ? "played by the owner" : "made up"}): ${c.role}. ${c.look}`).join("\n")}\nEpisodes so far:\n${eps.map((e) => `${e.number}. ${e.title}: ${e.logline}`).join("\n") || "none"}\nKeep the same title, premise, look and cast (add a character only if the story needs one).` : `This is a new series. The owner plays one character herself (${input.ownerName}): mark that character owner. Make up the rest of the cast (2 to 4 characters), all fictional.`}
 What the owner asked for: ${input.brief || "the next episodes"}
 ${input.replace ? `Rewrite episode ${input.replace.number}, "${input.replace.title}" (${input.replace.logline}), as one episode, 60 to 90 seconds, following what she asked for.` : `Write ${count} new episode${count === 1 ? "" : "s"}${eps.length ? `, starting at episode ${eps.length + 1}` : ""}, each 60 to 90 seconds.`} Each one works on its own and ends on a cliffhanger that leads into the next.
+Make it flow like one film, not separate clips:
+- First decide the scenes: 3 to 5 scenes, each one place and one continuous moment, 2 to 5 shots each. Every scene must be caused by the one before it, and the audience must always know where we are, who this is and what she wants.
+- Inside a scene, each shot picks up exactly where the last one ended: same position, same eyeline, same wardrobe, same props, same light, the action continuing. Cut on motion (she stands, the next shot finishes the stand). Never jump to a different room or time inside a scene.
+- Describe a scene's setting in exactly the same words in every shot of that scene.
+- Mark flow "continue" when the camera carries straight on into the next shot (a slow push that lands on the next framing); otherwise "cut". The last shot of a scene is always "cut".
 The owner's character is the lead and she talks, in her own cloned voice: she speaks a line (lip synced to her face) in about half of the shots she is in, and when she's alone, give her a few short voice_over lines (her thoughts, in her voice). An episode is never silent, and she is never played by anyone else. Every shot she appears in lists her name in cast, spelled exactly as her character's name.
 Voices you can cast (ElevenLabs): ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(0, 60).join(", ") || "none listed; leave voice ''"}. The owner's character always uses her own voice: leave voice '' for her.`,
     schemaName: "drama_season",
@@ -274,8 +316,15 @@ Voices you can cast (ElevenLabs): ${voiceList.filter((v) => !v.own).map((v) => v
       vo: ownerRow && x.voice_over?.trim() && !x.line_text?.trim() ? x.voice_over.trim().slice(0, 160) : undefined,
       seconds: Math.max(3, Math.min(7, Math.round(x.seconds || 5))),
       sound: (x.sound ?? "").slice(0, 200),
+      scene: Math.max(1, Math.round(x.scene || 1)),
+      flow: x.flow === "continue" ? "continue" : "cut",
       status: "todo",
     }));
+    // The last shot of each scene is always a cut.
+    shots.forEach((sh, i) => {
+      if (i === shots.length - 1 || shots[i + 1].scene !== sh.scene) sh.flow = "cut";
+    });
+    await checkContinuity(sys.system, e.title, shots).catch((err) => console.warn("[drama] continuity check skipped:", err instanceof Error ? err.message : err));
     if (!shots.length) continue;
     if (input.replace) {
       made.push(db.updateDramaEpisode(input.replace.id, orgId, { title: e.title.slice(0, 120), logline: e.logline.slice(0, 400), beats: JSON.stringify((e.beats ?? []).slice(0, 6)), shots: JSON.stringify(shots), music: (e.music ?? "").slice(0, 500), costCents: estimateEpisode(shots), status: "script", plan: "{}", error: null, progress: null, videoUrl: null })!);
@@ -456,7 +505,9 @@ async function portraitFor(orgId: number, c: DramaCastMember, look: string) {
 type Refs = { name: string; look: string; urls: string[] };
 type Prop = { title: string; url: string };
 
-function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = []) {
+export const sceneOf = (s: Pick<Shot, "scene" | "setting">) => (s.scene != null ? `scene-${s.scene}` : `set-${(s.setting || "").trim().toLowerCase()}`);
+
+function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], prev = false) {
   let at = 1;
   const who = refs.map((r) => {
     const from = at;
@@ -465,7 +516,8 @@ function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = []) {
     return `${r.name} (the person in ${which}${r.look ? `, ${r.look}` : ""})`;
   });
   const shown = props.map((p) => `reference image ${at++} is ${p.title}: show it exactly as it is`);
-  return `A single cinematic film still, vertical 9:16, from a professionally produced commercial or drama. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look} Shallow depth of field, motivated light, realistic skin texture, film grain. No added text, captions or watermarks.`;
+  const before = prev ? ` Reference image ${at} is the shot just before this one in the same scene: keep the same room, light, color grade, wardrobe, hair and props, and continue from that moment from this new camera angle.` : "";
+  return `A single cinematic film still, vertical 9:16, from a professionally produced commercial or drama. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look} Shallow depth of field, motivated light, realistic skin texture, film grain. No added text, captions or watermarks.${before}`;
 }
 
 /** The video model moves the camera and the people; it never redesigns them. */
@@ -609,9 +661,12 @@ export async function makeEpisode(orgId: number, id: number) {
     save(`Keyframe ${s.n} of ${shots.length}: ${s.framing.toLowerCase()}, ${s.action.slice(0, 80)}`);
     const { refs, extra } = await refsFor(orgId, s, look);
     const shown = (s.props ?? []).map((t) => props.find((p) => p.title.toLowerCase() === t.toLowerCase())).filter((p): p is (typeof props)[number] => Boolean(p)).slice(0, 2);
-    const all = [...refs.flatMap((r) => r.urls), ...shown.map((p) => p.url)].slice(0, 14);
+    // The shot before it in the same scene is a reference too, so the room, light and wardrobe carry over.
+    const i = shots.indexOf(s);
+    const prevStill = i > 0 && sceneOf(shots[i - 1]) === sceneOf(s) ? shots[i - 1].stillUrl ?? null : null;
+    const all = [...[...refs.flatMap((r) => r.urls), ...shown.map((p) => p.url)].slice(0, 13), ...(prevStill ? [prevStill] : [])];
     const res = all.length
-      ? await falRun(MODELS.still, { prompt: stillPrompt(s, look, refs, shown), image_urls: await Promise.all(all.map(asInput)), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5)
+      ? await falRun(MODELS.still, { prompt: stillPrompt(s, look, refs, shown, !!prevStill), image_urls: await Promise.all(all.map(asInput)), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5)
       : await falRun(MODELS.portrait, { prompt: stillPrompt(s, look, refs), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5);
     const still = res?.images?.[0]?.url as string | undefined;
     if (!still) throw new Error(`No picture came back for shot ${s.n}`);
@@ -683,8 +738,12 @@ export async function makeEpisode(orgId: number, id: number) {
       const faces = refs.flatMap((r) => r.urls).slice(0, 8);
       clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(seconds), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25);
     } else {
+      // A shot that carries straight on into the next one ends exactly on the next keyframe, so there's no jump.
+      const nextShot = shots[shots.indexOf(s) + 1];
+      const endOn = s.flow === "continue" && nextShot?.stillUrl && !s.line ? nextShot.stillUrl : null;
       clipRes = await falRun(MODELS.video, {
         start_image_url: await asInput(s.stillUrl!),
+        ...(endOn ? { end_image_url: await asInput(endOn) } : {}),
         prompt: motionPrompt(s, refs),
         duration: String(seconds),
         generate_audio: !s.line,
@@ -711,7 +770,13 @@ export async function makeEpisode(orgId: number, id: number) {
   save("Scoring, cutting and captioning");
   const total = shots.reduce((t, x) => t + x.seconds, 0);
   const music = ep.music ? await score(ep.music, total).catch((err) => (console.warn("[drama] score skipped:", err instanceof Error ? err.message : err), null)) : null;
-  const versions = await stitch(orgId, `${ep.kind}-${ep.id}`, shots, { music, cta: ep.kind === "campaign" ? plan.cta ?? "" : "", versions: ep.kind === "campaign" });
+  const beds: Record<string, Buffer> = {};
+  for (const key of Array.from(new Set(shots.map(sceneOf)))) {
+    const inScene = shots.filter((x) => sceneOf(x) === key);
+    const bed = await ambience(inScene[0].setting, inScene.map((x) => x.sound).filter(Boolean).join("; "), inScene.reduce((t, x) => t + x.seconds, 0)).catch((err) => (console.warn("[drama] room tone skipped:", err instanceof Error ? err.message : err), null));
+    if (bed) beds[key] = bed;
+  }
+  const versions = await stitch(orgId, `${ep.kind}-${ep.id}`, shots, { music, cta: ep.kind === "campaign" ? plan.cta ?? "" : "", versions: ep.kind === "campaign", beds });
   ep = db.updateDramaEpisode(id, orgId, { status: "ready", videoUrl: versions["9:16"], versions: JSON.stringify(versions), progress: null, error: null, costCents: shots.reduce((t, x) => t + (x.costCents ?? 0), 0) })!;
   const secs = total;
   const len = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
@@ -748,6 +813,19 @@ function fontsDir() {
 }
 
 /** The episode's score from ElevenLabs Music, instrumental, as long as the episode. */
+/** One continuous room tone for a scene (ElevenLabs sound effects), looped under its shots. */
+async function ambience(setting: string, sounds: string, seconds: number) {
+  if (!ENV.elevenLabsKey || !setting.trim()) return null;
+  const res = await fetch("https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128", {
+    method: "POST",
+    headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
+    body: JSON.stringify({ text: `Quiet continuous room tone and ambience for: ${setting}.${sounds ? ` Faint background: ${sounds}.` : ""} No music, no voices, no sudden sounds.`.slice(0, 900), duration_seconds: Math.max(5, Math.min(30, Math.round(seconds))), loop: true, prompt_influence: 0.4 }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) throw new Error(`ElevenLabs sound (${res.status}): ${(await res.text()).slice(0, 200)}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
 async function score(prompt: string, seconds: number) {
   if (!ENV.elevenLabsKey) return null;
   const res = await fetch("https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128", {
@@ -803,7 +881,16 @@ ${lines.join("\n")}
  * captions and the call to action burned in. Campaigns also export square and
  * wide versions.
  */
-export async function stitch(orgId: number, name: string, shots: Pick<Shot, "clipUrl" | "voUrl" | "caption">[], opts: { music?: Buffer | null; cta?: string; versions?: boolean } = {}) {
+export type Transition = { kind: "fadeblack" | "dissolve" | "fade"; seconds: number };
+
+/** How one shot hands off to the next: a dip to black between scenes, a dissolve on a continuous move, a soft cut inside a scene. */
+export function transitionFor(a: Pick<Shot, "scene" | "setting" | "flow">, b: Pick<Shot, "scene" | "setting">): Transition {
+  if (sceneOf(a) !== sceneOf(b)) return { kind: "fadeblack", seconds: 0.5 };
+  if (a.flow === "continue") return { kind: "dissolve", seconds: 0.3 };
+  return { kind: "fade", seconds: 0.12 };
+}
+
+export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "clipUrl" | "voUrl" | "caption"> & Partial<Pick<Shot, "scene" | "setting" | "flow" | "line">>)[], opts: { music?: Buffer | null; cta?: string; versions?: boolean; beds?: Record<string, Buffer> } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-drama-"));
   try {
     const files = shots.map((s, i) => {
@@ -830,12 +917,24 @@ export async function stitch(orgId: number, name: string, shots: Pick<Shot, "cli
       musicIn = next++;
     }
     const probes = await Promise.all(files.map((f) => probe(f)));
+    // Generated clips often open on a held frame: a tenth of a second comes off the front of every shot after the first.
+    const head = probes.map((p, i) => (i > 0 && p.duration > 1.5 ? 0.1 : 0));
+    const dur = probes.map((p, i) => p.duration - head[i]);
+    const trans = shots.slice(0, -1).map((s, i) => {
+      const t = transitionFor(s as Shot, shots[i + 1] as Shot);
+      return { ...t, seconds: Math.min(t.seconds, dur[i] / 3, dur[i + 1] / 3) };
+    });
+    const starts: number[] = [0];
+    for (let i = 0; i < trans.length; i++) starts.push(starts[i] + dur[i] - trans[i].seconds);
+    const total = starts[starts.length - 1] + dur[dur.length - 1];
     const parts: string[] = [];
     files.forEach((_, i) => {
-      const d = probes[i].duration.toFixed(3);
-      parts.push(`[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p,setsar=1[v${i}]`);
+      const d = dur[i].toFixed(3);
+      const h = head[i].toFixed(3);
+      parts.push(`[${i}:v]trim=start=${h},setpts=PTS-STARTPTS,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p,setsar=1,settb=AVTB[v${i}]`);
       // Every shot gets sound exactly as long as its picture: its own, padded or trimmed, or silence.
-      const base = probes[i].audio ? `[${i}:a]aresample=44100,aformat=channel_layouts=stereo,apad,atrim=0:${d},asetpts=N/SR/TB` : `anullsrc=r=44100:cl=stereo,atrim=0:${d},asetpts=N/SR/TB`;
+      const own = shots[i].line ? 1 : 0.7;
+      const base = probes[i].audio ? `[${i}:a]aresample=44100,aformat=channel_layouts=stereo,atrim=start=${h},asetpts=PTS-STARTPTS,volume=${own},apad,atrim=0:${d},asetpts=N/SR/TB` : `anullsrc=r=44100:cl=stereo,atrim=0:${d},asetpts=N/SR/TB`;
       if (voIn[i] !== undefined) {
         // The voice-over sits on top; the shot's own sound drops under it.
         parts.push(`${base},volume=0.45[b${i}]`);
@@ -843,10 +942,41 @@ export async function stitch(orgId: number, name: string, shots: Pick<Shot, "cli
         parts.push(`[b${i}][o${i}]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a${i}]`);
       } else parts.push(`${base}[a${i}]`);
     });
-    const total = probes.reduce((t, p) => t + p.duration, 0);
-    const cat = `${files.map((_, i) => `[v${i}][a${i}]`).join("")}concat=n=${files.length}:v=1:a=1[vc][sfx]`;
-    parts.push(cat);
-    const caps = captionsFile(dir, shots, probes.map((p) => p.duration), opts.cta ?? "");
+    // Picture and sound hand off together: each transition overlaps the two shots by the same amount.
+    let vLast = "v0";
+    let aLast = "a0";
+    let len = dur[0];
+    trans.forEach((t, i) => {
+      const off = (len - t.seconds).toFixed(3);
+      parts.push(`[${vLast}][v${i + 1}]xfade=transition=${t.kind}:duration=${t.seconds.toFixed(3)}:offset=${off}[x${i}]`);
+      parts.push(`[${aLast}][a${i + 1}]acrossfade=d=${t.seconds.toFixed(3)}:c1=tri:c2=tri[y${i}]`);
+      vLast = `x${i}`;
+      aLast = `y${i}`;
+      len = len + dur[i + 1] - t.seconds;
+    });
+    parts.push(`[${vLast}]null[vc]`);
+    // Each scene gets one continuous room tone under it, so the sound doesn't jump at every cut.
+    const beds: string[] = [];
+    const sceneKeys = Array.from(new Set(shots.map((x) => sceneOf(x as Shot))));
+    sceneKeys.forEach((k, j) => {
+      const buf = opts.beds?.[k];
+      if (!buf) return;
+      const idx = shots.findIndex((x) => sceneOf(x as Shot) === k);
+      const last = shots.length - 1 - [...shots].reverse().findIndex((x) => sceneOf(x as Shot) === k);
+      const from = starts[idx];
+      const to = starts[last] + dur[last];
+      const bp = path.join(dir, `bed${j}.mp3`);
+      fs.writeFileSync(bp, buf);
+      args.push("-stream_loop", "-1", "-i", bp);
+      const n = next++;
+      const length = Math.max(0.5, to - from);
+      parts.push(`[${n}:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:${length.toFixed(3)},asetpts=N/SR/TB,volume=0.3,afade=t=in:d=0.4,afade=t=out:st=${Math.max(0, length - 0.4).toFixed(3)}:d=0.4,adelay=${Math.round(from * 1000)}|${Math.round(from * 1000)}[bed${j}]`);
+      beds.push(`[bed${j}]`);
+    });
+    if (beds.length) parts.push(`[${aLast}]${beds.join("")}amix=inputs=${beds.length + 1}:duration=first:dropout_transition=0:normalize=0[sfx]`);
+    else parts.push(`[${aLast}]anull[sfx]`);
+    const effective = dur.map((d, i) => (i < trans.length ? starts[i + 1] - starts[i] : d));
+    const caps = captionsFile(dir, shots, effective, opts.cta ?? "");
     const fd = fontsDir();
     parts.push(caps ? `[vc]ass=${caps.replace(/:/g, "\\:")}${fd ? `:fontsdir=${fd.replace(/:/g, "\\:")}` : ""}[v]` : `[vc]null[v]`);
     if (musicIn >= 0) {
