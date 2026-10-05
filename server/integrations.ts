@@ -1138,13 +1138,30 @@ async function addToCalendar(orgId: number, item: OutboundItem) {
   if (!start) throw new Error("The hold has no date and time Google can read. Edit it with a date like 10/05/2026 and a time like 2:00 PM.");
   const end = new Date(new Date(`${start}Z`).getTime() + 60 * 60_000).toISOString().slice(0, 19);
   const attendees = (meta.attendees ?? []).map((a: string) => emailIn(a)).filter(Boolean).map((email: string) => ({ email }));
-  const { data } = await api(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=none`, {
+  // A hold with guests is a call: it gets a video link (Zoom when that's the workspace's meeting link and Zoom is connected, else Google Meet) and the invites go out.
+  const call = attendees.length > 0;
+  const video = call ? await holdVideo(orgId, item.title, start, tz, item.body ?? "") : null;
+  const description = video?.zoomUrl ? `Join on Zoom: ${video.zoomUrl}\n\n${item.body ?? ""}` : item.body ?? "";
+  const { data } = await api(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=${call ? "all&conferenceDataVersion=1" : "none"}`, {
     method: "POST",
     token,
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ summary: item.title, description: item.body ?? "", start: { dateTime: start, timeZone: tz }, end: { dateTime: end, timeZone: tz }, attendees }),
+    body: JSON.stringify({ summary: item.title, description, start: { dateTime: start, timeZone: tz }, end: { dateTime: end, timeZone: tz }, attendees, ...(video?.zoomUrl ? { location: video.zoomUrl } : video ? { conferenceData: { createRequest: { requestId: crypto.randomBytes(10).toString("hex"), conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {}) }),
   });
   return data.htmlLink ?? null;
+}
+
+/** The video link for a call Avery books: a Zoom meeting when Zoom is the workspace's meeting link and connected, else Google Meet. */
+export async function holdVideo(orgId: number, title: string, localStart: string, tz: string, agenda: string): Promise<{ zoomUrl: string | null }> {
+  const { opsFor } = await import("./employees/ops");
+  const { ops } = await opsFor(orgId);
+  const zoomOn = (await db.getConnectionByProvider(orgId, "zoom"))?.status === "connected";
+  if (ops.meetingLink !== "zoom" || !zoomOn) return { zoomUrl: null };
+  const { zonedToUtc } = await import("./employees/schedule");
+  const [Y, M, D] = localStart.slice(0, 10).split("-").map(Number);
+  const [h, mi] = localStart.slice(11, 16).split(":").map(Number);
+  const z = await createZoomMeeting(orgId, { topic: title, start: zonedToUtc(Y, M, D, h, mi, tz), minutes: 60, tz, agenda });
+  return { zoomUrl: z.joinUrl };
 }
 
 /** Busy times on the connected Google Calendar (primary), for offering open times. All-day events block the whole day. */
