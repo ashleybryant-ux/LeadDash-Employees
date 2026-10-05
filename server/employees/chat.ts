@@ -70,7 +70,7 @@ const ACTIONS: Record<string, string[]> = {
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "sat_in_notes", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -138,9 +138,9 @@ const ACTION_HELP: Record<string, string> = {
   write_agenda: "write_agenda: write or rewrite the agenda for an upcoming meeting. Put the meeting name in `target` ('' for the next one) and anything to add or change in `notes`.",
   schedule_meeting: "schedule_meeting: set up a one-time meeting. Put its name in `title`, the date as YYYY-MM-DD in `date`, the start time like 10:00 AM in `time`, the length in minutes in `count` (15, 30, 45, 60 or 90), who attends (names or emails) in `attendees`, and employees whose updates belong on the agenda (names, comma-separated) in `notes`.",
   meeting_notes: "meeting_notes: the person pasted notes from a meeting. Put the meeting name in `target` ('' for the most recent) and the full notes in `message`.",
-  sat_in_notes: "sat_in_notes: the person asks about a meeting you sat in on and took notes for (what was decided, who agreed to what). Put the meeting name, company or person in `target` ('' for the most recent) and the question in `message`.",
-  join_or_skip: "join_or_skip: the person wants you to skip, or to sit in on, an upcoming meeting on their calendar. Put the meeting name or its start time (like 4:00 PM) in `target`, and \"join\" or \"skip\" in `to`.",
-  send_notes: "send_notes: email the notes from a meeting you sat in on. Put the meeting name in `target` ('' for the most recent).",
+  sat_in_notes: "sat_in_notes: the person asks about a meeting Avery sat in on and took notes for (Avery takes them, Simone gets them; what was decided, who agreed to what). Put the meeting name, company or person in `target` ('' for the most recent) and the question in `message`.",
+  join_or_skip: "join_or_skip: the person wants Avery (the notetaker) to skip, or to sit in on, an upcoming meeting on their calendar. Put the meeting name or its start time (like 4:00 PM) in `target`, and \"join\" or \"skip\" in `to`.",
+  send_notes: "send_notes: email the notes from a meeting Avery sat in on. Put the meeting name in `target` ('' for the most recent).",
   set_goal: "set_goal: set a weekly goal on the scorecard. Put one of practices_contacted, demos_booked, reply_minutes, posts_published, articles_published, grant_apps_sent, tasks_on_time, approvals_waiting in `target` and the goal number in `count`.",
   add_guideline: "add_guideline: the person states a standing rule or preference for how you work (\"from now on...\", \"always...\", \"never...\", \"don't...\"). Put the rule as one plain sentence in `notes`, and the Guidelines heading it belongs under in `target` (one of the headings in your Guidelines).",
   start_onboarding: "start_onboarding: the person wants to start, continue or redo your onboarding interview.",
@@ -289,7 +289,7 @@ async function applyFacts(emp: AIEmployee) {
 }
 
 const TOOL_NAMES: Record<string, string> = { google_workspace: "Google (Gmail and Calendar)", clickup: "ClickUp", zoom: "Zoom", recall: "Recall.ai (meeting bot)", linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", threads: "Threads", x: "X", tiktok: "TikTok", wordpress: "WordPress", google_business: "Google Business Profile", submittable: "Submittable", sessionize: "Sessionize" };
-const TOOL_USERS: Record<string, string> = { clickup: "every employee has full access: what's due, finding any task or list, adding tasks, marking done, changing dates and owners, commenting; Nora also tracks launches there", recall: "Simone sits in on meetings and the team joins huddles", zoom: "Simone uses it for meeting links", google_workspace: "Avery, Simone and Nora use it for email and calendar" };
+const TOOL_USERS: Record<string, string> = { clickup: "every employee has full access: what's due, finding any task or list, adding tasks, marking done, changing dates and owners, commenting; Nora also tracks launches there", recall: "Avery sits in on Zoom and Google Meet meetings and sends the notes to Simone; the team joins huddles", zoom: "Simone uses it for meeting links", google_workspace: "Avery, Simone and Nora use it for email and calendar" };
 
 /** Which tools are connected on Integrations, so no employee ever says a connected tool isn't there. */
 async function connectedFacts(emp: AIEmployee) {
@@ -298,7 +298,7 @@ async function connectedFacts(emp: AIEmployee) {
   return `\nConnected tools on Integrations: ${on.map((p) => `${TOOL_NAMES[p] ?? p}${TOOL_USERS[p] ? ` (${TOOL_USERS[p]})` : ""}`).join("; ")}. Never say a connected tool isn't connected. If none of your actions use it, say it's connected and which teammate works in it.`;
 }
 
-/** Simone and Nora see recent meetings, huddles and their action items (and Nora her projects), so they never say they have no notes. */
+/** Simone and Nora see recent meetings (Avery's notes), huddles and their action items (and Nora her projects), so they never say they have no notes. */
 /** Kai's code list and changes, Imani's customers. */
 async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "developer") {
@@ -1086,7 +1086,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
     }
     case "sat_in_notes": {
       const r = await notetaker.findMeeting(org, d.target, "notes");
-      if (!r) return { text: "I don't have notes from a meeting like that yet. I only have notes from meetings I sat in on.", cards: [], queries: [] };
+      if (!r) return { text: "I don't have notes from a meeting like that yet. I only have notes from meetings Avery sat in on.", cards: [], queries: [] };
       const tz = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
       const { system } = await tasks.systemPromptFor(emp, "Answer the question from these meeting notes only, in 1 to 3 plain sentences. If the notes don't say, say so.");
       const answer = await generateText({ system, prompt: `Notes:\n${notetaker.notesText(r, tz)}\n\nQuestion: ${d.message || "What happened in this meeting?"}`, maxTokens: 400 });
@@ -1097,7 +1097,8 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       if (!r) return { text: "I couldn't find that meeting among the ones with a Zoom or Google Meet link in the next two days.", cards: [], queries: [] };
       const choice = d.to.trim().toLowerCase() === "join" ? "join" : "skip";
       const next = await notetaker.setChoice(org, r.id, choice);
-      return { text: choice === "join" ? (next.status === "scheduled" ? `I'll sit in on ${r.title}.` : `I'll sit in on ${r.title} once it's close enough to book.`) : `I'll skip ${r.title}.`, cards: [], queries: [] };
+      const who = emp.kind === "inbox" ? "I'll" : "Avery will";
+      return { text: choice === "join" ? (next.status === "scheduled" ? `${who} sit in on ${r.title}.` : `${who} sit in on ${r.title} once it's close enough to book.`) : `${who} skip ${r.title}.`, cards: [], queries: [] };
     }
     case "send_notes": {
       const r = await notetaker.findMeeting(org, d.target, "notes");

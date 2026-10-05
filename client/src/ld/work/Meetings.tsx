@@ -286,7 +286,7 @@ function PastMeeting({ m, tz, onClose }: { m: M; tz: string; onClose: () => void
 }
 
 // ==========================================
-// Sitting in: meetings on the calendar Simone joins
+// Sitting in: meetings on the calendar Avery joins (his notes come to Simone)
 // ==========================================
 
 const PLATFORM: Record<string, string> = { zoom: "Zoom", meet: "Google Meet" };
@@ -296,7 +296,7 @@ export function sitState(r: Pick<NT, "status" | "lockReason" | "botId" | "choice
   if (r.lockReason) return { l: "Never joins", c: "gray" };
   if (r.status === "in_call") return { l: "In the meeting", c: "green" };
   if (r.status === "joining") return { l: "Joining", c: "green" };
-  if (r.status === "scheduled") return { l: "Simone joins", c: "green" };
+  if (r.status === "scheduled") return { l: "Avery joins", c: "green" };
   if (r.choice === "join" || (r.choice === "auto" && joinsAll)) return { l: "Joins at the start", c: "green" };
   return { l: "Skipped", c: "gray" };
 }
@@ -313,8 +313,8 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
   if (s && (!s.recall || !s.google)) {
     return (
       <div className="ld-empty" style={{ textAlign: "left" }}>
-        {!s.google ? "Connect Google on Integrations so Simone can read your calendar. " : ""}
-        {!s.recall ? "Connect Recall.ai on Integrations so Simone can sit in on your Zoom and Google Meet meetings. " : ""}
+        {!s.google ? "Connect Google on Integrations so Avery can read your calendar. " : ""}
+        {!s.recall ? "Connect Recall.ai on Integrations so Avery can sit in on your Zoom and Google Meet meetings. " : ""}
         <Link href="/integrations">Open Integrations</Link>
       </div>
     );
@@ -357,7 +357,7 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
                   {r.lockReason ? (
-                    <KV label="Why she never joins">{`${r.lockReason}. Change the never-join words on ${emp.name}'s Onboarding tab if this is wrong.`}</KV>
+                    <KV label="Why Avery never joins">{`${r.lockReason}. Change the never-join words on Avery's Onboarding tab if this is wrong.`}</KV>
                   ) : (
                     <KV label="She joins as">{s?.botNameShown ?? emp.name}</KV>
                   )}
@@ -383,7 +383,7 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
 }
 
 // ==========================================
-// Notes: meetings Simone sat in on
+// Notes: meetings Avery sat in on
 // ==========================================
 
 const SQ_NOTES = "minmax(0,1.8fr) 240px 90px 160px 128px";
@@ -407,7 +407,7 @@ function NotesList({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
         <span>Status</span>
         <span />
       </div>
-      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : `No notes yet. ${emp.name} writes them after each meeting she sits in on.`}</div>}
+      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : "No notes yet. Avery writes them after each meeting he sits in on and sends them here."}</div>}
       {list.map((r) => {
         const isOpen = open === r.id;
         const st = notesState(r);

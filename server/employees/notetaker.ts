@@ -10,7 +10,7 @@ import { addActionItems } from "./projects";
 import { recordMeeting } from "../usage";
 
 /**
- * Simone sits in on your meetings.
+ * Avery sits in on your meetings and sends the notes to Simone, who runs the follow-up.
  * - Every 10 minutes she reads the next two days of your Google Calendar. Events with a
  *   Zoom or Google Meet link are listed on Meetings, Sitting in. Teams and other links are ignored.
  * - An event whose title, description or place has a never-join word (session, intake, therapy...)
@@ -18,8 +18,8 @@ import { recordMeeting } from "../usage";
  *   are kept out this way.
  * - For the rest she books a Recall.ai bot that joins a minute early under her name and posts
  *   a note in the meeting chat. After the meeting the recording becomes a transcript, the
- *   transcript becomes notes and action items, items go to Nora, and the recording is deleted
- *   (or kept 7 or 30 days, as set).
+ *   transcript becomes Avery's notes and action items, the notes go to Simone (her Meetings tab
+ *   and chat), items go to Nora, and the recording is deleted (or kept 7 or 30 days, as set).
  */
 
 const str = { type: "string" } as const;
@@ -55,13 +55,13 @@ async function ownerOf(orgId: number) {
 
 export async function botNameFor(orgId: number, n: Notetaker) {
   if (n.botName) return n.botName;
-  const simone = await db.getEmployeeByKind(orgId, "coo");
-  return `${simone?.name ?? "Simone"} (notes for ${(await ownerOf(orgId)).first})`;
+  const avery = await db.getEmployeeByKind(orgId, "inbox");
+  return `${avery?.name ?? "Avery"} (notes for ${(await ownerOf(orgId)).first})`;
 }
 
 async function joinMessage(orgId: number) {
-  const simone = await db.getEmployeeByKind(orgId, "coo");
-  return `I'm ${simone?.name ?? "Simone"}, taking notes for ${(await ownerOf(orgId)).first}. Ask me to leave anytime.`;
+  const avery = await db.getEmployeeByKind(orgId, "inbox");
+  return `I'm ${avery?.name ?? "Avery"}, taking notes for ${(await ownerOf(orgId)).first}. Ask me to leave anytime.`;
 }
 
 /** The never-join word an event has, if any. Links to leaddash.io always lock. */
@@ -72,7 +72,7 @@ export function lockReasonFor(text: string, words: string[]) {
   return hit ? `Has the word "${hit}"` : null;
 }
 
-/** Whether Simone should be in this meeting. Locked meetings never. */
+/** Whether Avery should be in this meeting. Locked meetings never. */
 export function wantsJoin(m: Pick<NotetakerMeeting, "choice" | "lockReason">, n: Notetaker) {
   if (m.lockReason) return false;
   if (m.choice === "join") return true;
@@ -195,7 +195,7 @@ export async function followBots(orgId: number, now = new Date()) {
       } else if (t.state === "done") {
         await db.updateNotetaker(row.id, orgId, { transcript: t.text, heldMinutes: t.minutes });
         const billed = t.minutes || Math.max(1, Math.round((new Date(row.endsAt).getTime() - new Date(row.startsAt).getTime()) / 60000));
-        await recordMeeting(orgId, (await db.getEmployeeByKind(orgId, "coo"))?.id ?? null, billed);
+        await recordMeeting(orgId, (await db.getEmployeeByKind(orgId, "inbox"))?.id ?? null, billed);
         await writeNotes(orgId, row.id);
         if (ops.notetaker.keep === "delete") await deleteMedia(orgId, row.id);
       }
@@ -219,19 +219,20 @@ async function deleteMedia(orgId: number, id: number) {
   await db.updateNotetaker(id, orgId, { mediaDeletedAt: new Date() });
 }
 
-/** Transcript to summary, decisions, open questions and action items. Items go to Nora when that is On its own. */
+/** Avery writes the notes (summary, decisions, open questions, action items) and sends them to Simone. Items go to Nora when Simone's setting is On its own. */
 export async function writeNotes(orgId: number, id: number) {
   const row = await db.getNotetaker(id, orgId);
   if (!row?.transcript) throw new TRPCError({ code: "BAD_REQUEST", message: "There's no transcript for this meeting yet." });
   const simone = await employeeFor(orgId, "coo");
+  const avery = (await db.getEmployeeByKind(orgId, "inbox")) ?? simone;
   const { tz } = await opsFor(orgId);
   const emps = await db.listEmployeesByOrg(orgId);
   const attendees = parse<Attendee[]>(row.attendees, []);
   const owner = await ownerOf(orgId);
   const names = Array.from(new Set([owner.name, ...attendees.map((a) => a.name), ...emps.map((e) => e.name)])).join(", ");
-  const out = await working(simone, async () => {
+  const out = await working(avery, async () => {
     const { system } = await systemPromptFor(
-      simone,
+      avery,
       `Write the notes for a meeting you sat in on: "${row.title}", ${fmtDay(row.startsAt, tz)}. Use only what the transcript says.
 summary: 2 to 4 plain sentences on what the meeting was about and where things stand, with any dates and numbers said.
 decisions: each thing that was agreed, one short sentence each. [] if none.
@@ -265,15 +266,30 @@ Never include a client's name or health details. Your own lines in the transcrip
   }
   const mine = items.filter((i) => i.owner.toLowerCase() === owner.first.toLowerCase()).length;
   const emp = items.filter((i) => i.ownerKind).length;
+  const count = `${items.length} action item${items.length === 1 ? "" : "s"}${items.length ? ` (${mine} for you${emp ? `, ${emp} for the team` : ""})` : ""}`;
+  const card = JSON.stringify([notesCard((await db.getNotetaker(id, orgId))!)]);
+  const sameOne = avery.id === simone.id;
+  // Simone gets the notes: her chat carries the card, the recap and what went to Nora.
   await db.createChatMessage({
     organizationId: orgId,
     employeeId: simone.id,
     role: "employee",
     authorName: simone.name,
-    content: `I sat in on ${row.title} and wrote the notes: ${items.length} action item${items.length === 1 ? "" : "s"}${items.length ? ` (${mine} for you${emp ? `, ${emp} for the team` : ""})` : ""}.${gate(simone, "action_items") === "auto" && items.length ? " I sent the action items to Nora." : ""} The recap is ready when you are.`,
-    cards: JSON.stringify([notesCard((await db.getNotetaker(id, orgId))!)]),
+    content: `${sameOne ? `I sat in on ${row.title} and wrote the notes` : `${avery.name} sat in on ${row.title} and sent me the notes`}: ${count}.${gate(simone, "action_items") === "auto" && items.length ? " I sent the action items to Nora." : ""} The recap is ready when you are.`,
+    cards: card,
   });
-  await logActivity(simone, "done", `Sat in on ${row.title} (${fmtDay(row.startsAt, tz)}) and wrote the notes with ${items.length} action item${items.length === 1 ? "" : "s"}.`, "/chats/coo/work?tab=notes");
+  // Avery says he was there and where the notes went.
+  if (!sameOne) {
+    await db.createChatMessage({
+      organizationId: orgId,
+      employeeId: avery.id,
+      role: "employee",
+      authorName: avery.name,
+      content: `I sat in on ${row.title} and sent the notes to ${simone.name}: ${count}.`,
+      cards: card,
+    });
+  }
+  await logActivity(avery, "done", `Sat in on ${row.title} (${fmtDay(row.startsAt, tz)}) and sent the notes to ${simone.name}, with ${items.length} action item${items.length === 1 ? "" : "s"}.`, "/chats/coo/work?tab=notes");
   return (await db.getNotetaker(id, orgId))!;
 }
 
@@ -359,7 +375,7 @@ export async function editNotes(orgId: number, id: number, input: { summary: str
 export async function setChoice(orgId: number, id: number, choice: "join" | "skip") {
   const row = await db.getNotetaker(id, orgId);
   if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
-  if (row.lockReason && choice === "join") throw new TRPCError({ code: "BAD_REQUEST", message: `${row.lockReason}, so Simone never joins it. Change the never-join words on her Onboarding tab if this is wrong.` });
+  if (row.lockReason && choice === "join") throw new TRPCError({ code: "BAD_REQUEST", message: `${row.lockReason}, so Avery never joins it. Change the never-join words on Avery's Onboarding tab if this is wrong.` });
   if (!["skipped", "scheduled", "cancelled", "joining", "in_call"].includes(row.status)) throw new TRPCError({ code: "BAD_REQUEST", message: "That meeting is already over." });
   const { ops } = await opsFor(orgId);
   let next = (await db.updateNotetaker(id, orgId, { choice }))!;

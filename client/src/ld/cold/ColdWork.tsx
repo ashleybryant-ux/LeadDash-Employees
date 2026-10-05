@@ -1161,7 +1161,7 @@ function PrecallRow({ r, open, onToggle, cols }: { r: Precall; open: boolean; on
             )}
             {after !== null && (
               <Box label="After the call">
-                <textarea className="ld-in" aria-label="What you learned" rows={6} style={TA} placeholder="What did you learn? Leave it empty to use Simone's notes when she sat in." value={after} onChange={(e) => setAfter(e.target.value)} />
+                <textarea className="ld-in" aria-label="What you learned" rows={6} style={TA} placeholder="What did you learn? Leave it empty to use Avery's notes when he sat in." value={after} onChange={(e) => setAfter(e.target.value)} />
                 <div style={{ display: "flex", gap: 8 }}>
                   <button type="button" className="ld-btn p" disabled={afterCall.isPending} onClick={() => afterCall.mutate({ organizationId: orgId, id: r.id, notes: after })}>{afterCall.isPending ? "Comparing..." : "Compare"}</button>
                   <button type="button" className="ld-btn" onClick={() => setAfter(null)}>Cancel</button>

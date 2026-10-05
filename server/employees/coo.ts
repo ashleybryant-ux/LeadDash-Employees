@@ -515,8 +515,10 @@ export async function cooTick(orgId: number, now = new Date()) {
   const simone = await db.getEmployeeByKind(orgId, "coo");
   const nora = await db.getEmployeeByKind(orgId, "projects");
   const runs = (e: AIEmployee | null) => !!e && e.status !== "paused";
-  // Simone paused: no bots join for her. Nora's project meetings still run.
-  if (simone?.status === "paused") await cancelAll(orgId).catch(() => null);
+  // Avery sits in on meetings: paused, no bots join for him. Simone and Nora's meetings still run.
+  const avery = await db.getEmployeeByKind(orgId, "inbox");
+  if (avery?.status === "paused") await cancelAll(orgId).catch(() => null);
+  if (runs(avery)) await notetakerTick(orgId, now).catch((err) => console.warn("[coo] notetaker failed:", err instanceof Error ? err.message : err));
   if (!runs(simone) && !runs(nora)) return;
   const { ops, tz } = await opsFor(orgId);
   if (ops.recurring.length || ops.projectRecurring.length) await ensureMeetings(orgId);
@@ -537,8 +539,6 @@ export async function cooTick(orgId: number, now = new Date()) {
       if (text) await saveNotes(orgId, m.id, text, "transcript").catch(() => null);
     }
   }
-  // Sitting in on meetings (Recall.ai).
-  if (runs(simone)) await notetakerTick(orgId, now).catch((err) => console.warn("[coo] notetaker failed:", err instanceof Error ? err.message : err));
 }
 
 export async function cooTicks() {

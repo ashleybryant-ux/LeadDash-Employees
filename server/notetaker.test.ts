@@ -28,7 +28,7 @@ afterEach(() => {
 
 const at = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
 
-describe("Simone's notetaker", () => {
+describe("Avery's notetaker (notes go to Simone)", () => {
   it("finds Zoom and Google Meet links and ignores Teams", () => {
     expect(integrations.meetingLinkOf({ hangoutLink: "https://meet.google.com/abc-defg-hij" })).toEqual({ platform: "meet", url: "https://meet.google.com/abc-defg-hij" });
     expect(integrations.meetingLinkOf({ location: "https://us02web.zoom.us/j/8123456789?pwd=xyz." })).toEqual({ platform: "zoom", url: "https://us02web.zoom.us/j/8123456789?pwd=xyz" });
@@ -76,7 +76,8 @@ describe("Simone's notetaker", () => {
     expect(booked).toHaveLength(1);
     expect(booked[0].meeting_url).toBe("https://meet.google.com/abc-defg-hij");
     expect(booked[0].join_at).toBeTruthy();
-    expect(booked[0].chat.on_bot_join.message).toMatch(/taking notes for/);
+    expect(booked[0].chat.on_bot_join.message).toMatch(/^I'm Avery, taking notes for/);
+    expect(booked[0].bot_name).toMatch(/^Avery \(notes for /);
     await expect(c.coo.setJoin({ organizationId: orgId, id: session.id, choice: "join" })).rejects.toThrow(/never joins/);
 
     // The meeting happens: pretend it started already, then follow the bot through to notes.
@@ -106,7 +107,10 @@ describe("Simone's notetaker", () => {
     expect(tr.transcript).toMatch(/^Lauren Pierce: We start Nov 1\.\nAshley Bryant: Jada sends the trial link\./);
     const simone = await db.getEmployeeByKind(orgId, "coo");
     const msgs = await db.listChatMessages(orgId, simone!.id, 5);
-    expect(msgs.some((m) => (m.cards ?? "").includes("meeting_notes"))).toBe(true);
+    expect(msgs.some((m) => (m.cards ?? "").includes("meeting_notes") && /^Avery sat in on Demo: Riverbend Counseling and sent me the notes/.test(m.content))).toBe(true);
+    const avery = await db.getEmployeeByKind(orgId, "inbox");
+    const mine = await db.listChatMessages(orgId, avery!.id, 5);
+    expect(mine.some((m) => /sent the notes to Simone/.test(m.content))).toBe(true);
   });
 
   it("cancels a booked bot when you press Skip, and every bot when Recall.ai is disconnected", async () => {
@@ -123,5 +127,20 @@ describe("Simone's notetaker", () => {
     await c.publishing.disconnect({ organizationId: orgId, provider: "recall" });
     expect(calls.some((x) => /bot-b\/$/.test(x.url) && x.init.method === "DELETE")).toBe(true);
     expect((await db.getNotetaker(b.id, orgId))!.status).toBe("skipped");
+  });
+  it("follows Avery: pausing Avery cancels booked bots, pausing Simone does not", async () => {
+    const { orgId } = await makeWorkspace("notetaker-pause");
+    await db.upsertExternalConnection({ organizationId: orgId, provider: "recall", accountLabel: "Recall.ai", status: "connected", settings: "{}", secretsEncrypted: encryptJson({ apiKey: "recall-key-1234567890abcdef" }), connectedAt: new Date(), lastCheckedAt: new Date() });
+    const a = await db.createNotetaker({ organizationId: orgId, eventId: "p1", title: "Partner call", startsAt: new Date(Date.now() + 3 * 3600_000), endsAt: new Date(Date.now() + 4 * 3600_000), platform: "meet", meetingUrl: "https://meet.google.com/abc-defg-hij", status: "scheduled", botId: "bot-p" });
+    routes.push([/recall\.ai\/api\/v1\/bot\/bot-p\/$/, () => json({})]);
+    const { cooTick } = await import("./employees/coo");
+    const simone = (await db.getEmployeeByKind(orgId, "coo"))!;
+    const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
+    await db.updateEmployee(simone.id, orgId, { status: "paused" });
+    await cooTick(orgId).catch(() => null);
+    expect((await db.getNotetaker(a.id, orgId))!.botId).toBe("bot-p");
+    await db.updateEmployee(avery.id, orgId, { status: "paused" });
+    await cooTick(orgId).catch(() => null);
+    expect((await db.getNotetaker(a.id, orgId))!.botId).toBeNull();
   });
 });

@@ -13,7 +13,7 @@ import Drafts from "../work/Drafts";
  * Today (top three, meetings, off track, handled), Decisions (who decides,
  * options, notes, decided today), Waiting (what others owe, the owner's
  * promises), Drafts (emails and holds) and Rules (who decides, what Avery
- * does on her own, the owner's time, who comes first).
+ * does on his own, the owner's time, who comes first).
  */
 
 type D = Outputs["desk"];
@@ -448,7 +448,7 @@ function WaitingTab({ v }: { v: D["waiting"] }) {
       </FolderTabs>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "start", flexWrap: "wrap" }}>
         <span className="ld-small" style={{ color: "#5b6b64", maxWidth: 760, lineHeight: 1.5 }}>
-          {folder === "owed" ? "Avery nudges people outside the company herself. Work owed by an employee goes to Nora, and sales and speaking follow-ups go to Jada and Taylor, so nobody chases the same thing twice." : "Avery picks up promises from meeting notes and from what you tell her in chat."}
+          {folder === "owed" ? "Avery nudges people outside the company himself. Work owed by an employee goes to Nora, and sales and speaking follow-ups go to Jada and Taylor, so nobody chases the same thing twice." : "Avery picks up promises from meeting notes and from what you tell her in chat."}
         </span>
         {!adding && <button type="button" className="ld-btn" onClick={() => setAdding(true)}>Add</button>}
       </div>
@@ -689,9 +689,9 @@ function RulesTab() {
       {edit === "duties" && draft ? (
         <Card label="What Avery does" buttons={saveBtns(() => save.mutate({ organizationId: orgId, rules: { duties: draft.duties } }))}>
           <Form>
-            <span style={{ fontWeight: 700, alignSelf: "start", paddingTop: 6 }}>On her own</span>
+            <span style={{ fontWeight: 700, alignSelf: "start", paddingTop: 6 }}>On his own</span>
             <Chips
-              label="On her own"
+              label="On his own"
               options={duties.filter((d) => d.key !== "new_people" && d.key !== "money").map((d) => ({ key: d.key, label: d.label }))}
               value={duties.filter((d) => draft.duties[d.key] === "own").map((d) => d.key)}
               onToggle={(k) => setDraft({ ...draft, duties: { ...draft.duties, [k]: (draft.duties[k as string] === "own" ? "ask" : "own") as "own" | "ask" } })}
@@ -705,7 +705,7 @@ function RulesTab() {
         </Card>
       ) : (
         <Card label="What Avery does" buttons={editBtn("duties")}>
-          <Lane rows={[["On her own", own.map((d) => d.label).join(", ") || "Nothing"], ["Asks you first", ask.map((d) => d.label).join(", ")], ["Never", never]]} />
+          <Lane rows={[["On his own", own.map((d) => d.label).join(", ") || "Nothing"], ["Asks you first", ask.map((d) => d.label).join(", ")], ["Never", never]]} />
         </Card>
       )}
 
@@ -815,9 +815,9 @@ function RulesTab() {
       <Card label="Who asks you for things">
         <Lane
           rows={[
-            ["Avery", "The only employee who brings you and your team decisions and reminders. She merges repeats into one request."],
+            ["Avery", "The only employee who brings you and your team decisions and reminders. He merges repeats into one request."],
             ["Nora", "Owns projects, tasks and deadlines. Sends Avery what needs a person."],
-            ["Simone", "Runs the meetings and the scorecard. Asks Avery for your time."],
+            ["Simone", "Runs the meetings and the scorecard, with the notes Avery takes in your meetings. Asks Avery for your time."],
             ["Everyone else", "Sends Avery their decisions instead of asking you in their own chats."],
           ]}
         />

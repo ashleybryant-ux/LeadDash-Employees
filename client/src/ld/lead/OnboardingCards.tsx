@@ -168,7 +168,7 @@ export function MeetingsCard({ emp }: { emp: EmployeeRow }) {
   );
 }
 
-/** Simone sits in on meetings: which ones, the never-join words, her name, who gets the notes, the recording. */
+/** Avery sits in on meetings: which ones, the never-join words, his name, who gets the notes, the recording. Simone gets the notes. */
 export function NotetakerCard({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
@@ -190,8 +190,8 @@ export function NotetakerCard({ emp }: { emp: EmployeeRow }) {
           <span className="ld-lbl">Notetaker</span>
           {(!s.recall || !s.google) && (
             <span className="ld-body" style={{ padding: "6px 0" }}>
-              {!s.google ? "Connect Google so she can read your calendar. " : ""}
-              {!s.recall ? "Connect Recall.ai so she can join meetings. " : ""}
+              {!s.google ? "Connect Google so he can read your calendar. " : ""}
+              {!s.recall ? "Connect Recall.ai so he can join meetings. " : ""}
               <Link href="/integrations">Open Integrations</Link>
             </span>
           )}
@@ -207,10 +207,10 @@ export function NotetakerCard({ emp }: { emp: EmployeeRow }) {
           <Row label="Name in the meeting">
             {editing ? <input className="ld-in" style={{ maxWidth: 420 }} aria-label="Name in the meeting" placeholder={s.botNameShown} value={d.botName} maxLength={60} onChange={(e) => setD({ ...d, botName: e.target.value })} /> : <span className="ld-body">{s.botNameShown}</span>}
           </Row>
-          <Row label="When she joins" note="Some states require everyone's consent to record.">
+          <Row label="When he joins" note="Some states require everyone's consent to record.">
             <span className="ld-body">{`Posts in the meeting chat: "${s.joinMessage}"`}</span>
           </Row>
-          <Row label="Notes go to" note="Action items still go to Nora.">
+          <Row label="Notes go to" note="Simone always gets them, and action items go to Nora.">
             {editing ? <Choice options={[{ key: "me", label: "Only me" }, { key: "everyone", label: "Everyone invited" }]} value={d.notesTo} onChange={(v) => setD({ ...d, notesTo: v })} /> : <span className="ld-body">{s.notesTo === "everyone" ? "Everyone invited" : "Only you"}</span>}
           </Row>
           <Row label="Recording" note={editing ? "The transcript and notes are kept either way." : undefined}>

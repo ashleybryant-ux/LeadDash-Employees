@@ -59,7 +59,7 @@ export default function Onboarding({ emp }: { emp: EmployeeRow }) {
       {emp.kind === "outreach" && <LinkedInStepCard emp={emp} />}
       {emp.kind === "projects" && <ClickUpCard emp={emp} />}
       {emp.kind === "coo" && <MeetingsCard emp={emp} />}
-      {emp.kind === "coo" && <NotetakerCard emp={emp} />}
+      {emp.kind === "inbox" && <NotetakerCard emp={emp} />}
       {emp.kind === "leads" && <LeadSetupCard emp={emp} rule={d.rules.find((r) => r.key === "reply")} />}
       <WorksOnOwnCard emp={emp} rules={emp.kind === "leads" ? d.rules.filter((r) => r.key !== "reply") : d.rules} alwaysAsks={d.alwaysAsks} firstN={d.firstN} />
       <DayCard emp={emp} items={d.dayToDay} />

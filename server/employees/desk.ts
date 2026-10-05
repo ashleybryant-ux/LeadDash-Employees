@@ -689,7 +689,7 @@ async function fullOwnerName(orgId: number) {
   return org?.signerName || members.find((m) => m.role === "owner")?.name || "the owner";
 }
 
-/** Due nudges and escalations. Avery sends follow-ups on her own when the rules say so; otherwise the nudge waits in Approvals. */
+/** Due nudges and escalations. Avery sends follow-ups on his own when the rules say so; otherwise the nudge waits in Approvals. */
 export async function waitingTick(orgId: number, now = new Date()) {
   const rules = rulesOf(orgId);
   const avery = await db.getEmployeeByKind(orgId, "inbox");
@@ -909,7 +909,7 @@ export async function briefText(orgId: number, now = new Date()) {
   return { t, head, tail: tail.trim() };
 }
 
-/** 7:30 AM (or the time in the rules) on brief days: Avery posts the brief in her chat and sends a push notice. */
+/** 7:30 AM (or the time in the rules) on brief days: Avery posts the brief in his chat and sends a push notice. */
 export async function briefTick(now = new Date()) {
   for (const orgId of await db.listAllOrganizationIds()) {
     try {
@@ -967,7 +967,7 @@ Your desk (the Today, Decisions, Waiting and Rules tabs on your Work page):
 - You do on your own: ${own.join(", ") || "nothing"}. You ask first: ${ask.join(", ")}.
 - ${owner}'s time: meetings ${t.meetFrom || "?"} to ${t.meetTo || "?"} on ${dayList(t.meetDays)}; focus time ${t.focusFrom && t.focusTo ? `${t.focusFrom} to ${t.focusTo} on ${dayList(t.focusDays)}` : "not set"}; at most ${t.maxHours ?? "no limit on"} hours of meetings a day; ${t.buffer ?? 0} minutes between meetings; demos on ${dayList(t.demoDays)}; ${t.afterTalk ? `nothing for ${t.afterTalk} hours after a talk` : "no rule after talks"}.
 - Who comes first: ${rules.first}. Normal: ${rules.normal}. Can wait: ${rules.wait}.
-- You own the owner's attention, calendar, promises and the decision queue. Nora owns projects, tasks and deadlines: when someone asks you to get an employee to do work, choose to_nora, never assign it yourself. Simone runs meetings and the scorecard.`;
+- You own the owner's attention, calendar, promises and the decision queue. Nora owns projects, tasks and deadlines: when someone asks you to get an employee to do work, choose to_nora, never assign it yourself. Simone runs meetings and the scorecard. You sit in on the owner's Zoom and Google Meet meetings as the notetaker (never client sessions) and send the notes to Simone, who sends the recap and the action items.`;
 }
 
 /** A decision named in chat ("approve option B", "the launch price"). */

@@ -15,7 +15,7 @@ const CATALOG: CatalogItem[] = [
   { key: "google", name: "Google", provider: "google_workspace", app: "google", logo: "G", color: "#db4437", desc: "Gmail, Calendar and Google Meet. Avery sends replies you approve, and Simone adds a Meet link to each meeting she schedules." },
   { key: "clickup", name: "ClickUp", provider: "clickup", app: "clickup", logo: "CU", color: "#7b68ee", desc: "Nora creates a list for each launch and keeps tasks, owners and due dates in sync." },
   { key: "zoom", name: "Zoom", provider: "zoom", app: "zoom", logo: "Z", color: "#0b5cff", desc: "Simone adds a Zoom link instead of Google Meet, and can read the transcript when cloud recording is on." },
-  { key: "recall", name: "Recall.ai", provider: "recall", logo: "R", color: "#2f54eb", desc: "Simone joins your Zoom and Google Meet meetings and takes notes. About $0.65 an hour, paid to Recall.ai." },
+  { key: "recall", name: "Recall.ai", provider: "recall", logo: "R", color: "#2f54eb", desc: "Avery joins your Zoom and Google Meet meetings, takes notes and sends them to Simone. About $0.65 an hour, paid to Recall.ai." },
   { key: "linkedin", name: "LinkedIn", provider: "linkedin", app: "linkedin", logo: "in", color: "#0a66c2", desc: "Sienna posts to your profile after you approve." },
   { key: "meta", name: "Facebook and Instagram", provider: "facebook", app: "meta", logo: "f", color: "#1877f2", desc: "Sienna posts and Reels to your page and Instagram after you approve." },
   { key: "tiktok", name: "TikTok", provider: "tiktok", app: "tiktok", logo: "tt", color: "#010101", desc: "Sienna posts videos to TikTok after you approve." },

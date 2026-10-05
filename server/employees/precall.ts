@@ -14,7 +14,7 @@ import { employeeFor, systemPromptFor } from "./tasks";
  *
  * Public business information only, every fact with its source, and
  * anything not confirmed marked Likely or Unknown. After the call it is
- * corrected from Simone's notes (when she sat in) or the owner's own notes.
+ * corrected from Avery's meeting notes (when he sat in) or the owner's own notes.
  */
 
 const str = { type: "string" } as const;
@@ -165,7 +165,7 @@ export async function refreshDue(orgId: number, now = new Date()) {
 
 type After = { changes: { what: string; before: string; after: string }[]; nextStep: string; notesFrom: string };
 
-/** Simone's notes from the meeting, when she sat in on it. */
+/** Avery's notes from the meeting, when he sat in on it. */
 async function simoneNotes(orgId: number, r: PrecallReport) {
   if (!r.email) return null;
   const list = await db.listNotetaker(orgId);
@@ -181,7 +181,7 @@ export async function afterCall(orgId: number, id: number, notes: string) {
   if (!r) throw new TRPCError({ code: "NOT_FOUND", message: "That report isn't here." });
   const fromSimone = notes.trim() ? null : await simoneNotes(orgId, r);
   const text = notes.trim() || fromSimone;
-  if (!text) throw new TRPCError({ code: "BAD_REQUEST", message: "Simone didn't sit in on this one. Type what you learned on the call." });
+  if (!text) throw new TRPCError({ code: "BAD_REQUEST", message: "Avery didn't sit in on this one. Type what you learned on the call." });
   const emp = await employeeFor(orgId, "outreach");
   const { system } = await systemPromptFor(emp, "Your job now: compare the pre-call report with what was learned on the call. List only what the call confirmed or corrected (size, systems, problems, decision makers, timing), the next step with a date if one was agreed, and nothing that wasn't said.");
   const out = await generateJson<Omit<After, "notesFrom">>({
@@ -191,7 +191,7 @@ export async function afterCall(orgId: number, id: number, notes: string) {
     schema: obj({ changes: arr(obj({ what: str, before: str, after: str })), nextStep: str }),
     maxTokens: 2000,
   });
-  const after: After = { changes: (out.changes ?? []).slice(0, 12), nextStep: out.nextStep ?? "", notesFrom: fromSimone ? "Simone's meeting notes" : "Your notes" };
+  const after: After = { changes: (out.changes ?? []).slice(0, 12), nextStep: out.nextStep ?? "", notesFrom: fromSimone ? "Avery's meeting notes" : "Your notes" };
   return db.cold.precall.update(id, orgId, { after: JSON.stringify(after) })!;
 }
 

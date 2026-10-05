@@ -95,7 +95,7 @@ export async function saveLink(orgId: number, input: { id?: number; name: string
   return db.createAccountLink({ organizationId: orgId, purpose: "calendar", kind: "link", name, color: nextColor(orgId), secretsEncrypted: secrets, calendars: JSON.stringify([{ id: "link", name, primary: true, include: true }]), holds: "no", detail: "full" });
 }
 
-/** Edit: the name, which calendars Avery checks, what she sees, and where holds go. */
+/** Edit: the name, which calendars Avery checks, what he sees, and where holds go. */
 export function saveCalendar(orgId: number, id: number, input: { name: string; include: string[]; detail: "full" | "busy"; holds: "default" | "yes" | "no" }) {
   const l = db.getAccountLink(id, orgId);
   if (!l || l.purpose !== "calendar") throw new TRPCError({ code: "NOT_FOUND", message: "That calendar isn't in this workspace." });

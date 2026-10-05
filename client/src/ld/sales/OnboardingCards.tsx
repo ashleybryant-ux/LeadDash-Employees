@@ -61,7 +61,7 @@ export function WorksOnOwnCard({ emp, rules, alwaysAsks, firstN }: { emp: Employ
   const [draft, setDraft] = React.useState<Record<string, Mode>>({});
   const save = trpc.onboarding.saveRules.useMutation({ onSuccess: async () => { setEditing(false); await utils.onboarding.get.invalidate(); } });
   if (!rules.length) return null;
-  const pronoun = ["Sienna", "Jada", "Riley", "Morgan", "Elena", "Avery", "Taylor", "Jordan", "Nora", "Simone"].includes(emp.name) ? "her" : ["Theo", "Malik", "Quinn"].includes(emp.name) ? "his" : "its";
+  const pronoun = ["Sienna", "Jada", "Riley", "Morgan", "Elena", "Taylor", "Jordan", "Nora", "Simone"].includes(emp.name) ? "her" : ["Theo", "Malik", "Quinn", "Avery"].includes(emp.name) ? "his" : "its";
   return (
     <section className={`ld-card ${editing ? "editing" : ""}`}>
       <div style={grid} className="ld-keep-check">
