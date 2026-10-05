@@ -7,6 +7,7 @@ import { readFile, unsupportedNote } from "./employees/docs";
 import { indexKnowledge } from "./employees/kb";
 import { addOpportunity, parse, type Attachment, type Extras, type Award } from "./employees/apply";
 import { addApplicant } from "./employees/hiring";
+import { KNOWLEDGE_CATEGORIES } from "../drizzle/schema";
 
 /**
  * File uploads that are too big to send as JSON: Knowledge documents, a host's
@@ -24,6 +25,8 @@ const LIMITS: Record<string, number> = {
   resume: 20_000_000,
   post_media: 250_000_000,
   chat: 20_000_000,
+  brain_doc: 40_000_000,
+  brain_image: 30_000_000,
   history: 400_000_000,
   take: 200_000_000,
   leads: 80_000_000,
@@ -227,6 +230,55 @@ export function registerUploads(app: Express) {
         if (imageType) text = await describeImage(buf, imageType).catch(() => "");
         const f = db.createChatFile({ organizationId: orgId, employeeId: emp.id, userId: user.id, name, mime: imageType ?? mime, size: buf.length, kind: imageType ? "image" : "document", fileUrl: saved.url, text, pages });
         return res.json({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl });
+      }
+
+      // The Brain: documents (PDF, Word, PowerPoint, Excel, text) and photos, sent as the raw file so size and type never trip the JSON limits.
+      if (slot === "brain_doc" || slot === "brain_image") {
+        const title = String(req.query.title || name.replace(/\.[^.]+$/, "")).trim().slice(0, 255) || name;
+        if (slot === "brain_doc") {
+          const cat = String(req.query.category || "mission_profile");
+          const category = ((KNOWLEDGE_CATEGORIES as readonly string[]).includes(cat) ? cat : "mission_profile") as (typeof KNOWLEDGE_CATEGORIES)[number];
+          let read;
+          try {
+            read = await readFile(buf, name, mime);
+          } catch (err) {
+            return res.status(400).json({ error: err instanceof Error ? err.message : "That file couldn't be read." });
+          }
+          const saved = await storagePut(`org-${orgId}/documents/${name}`, buf, mime);
+          const item = await db.createKnowledgeItem({ organizationId: orgId, kind: "document", title, category, content: read.text.slice(0, 3_000_000) || "(No readable text was found in this file.)", fileUrl: saved.url, pages: read.pages, pagesUnit: read.unit, chars: read.text.length, readNote: read.note });
+          indexKnowledge(item);
+          await db.logAction({ organizationId: orgId, actorType: "human_user", actorName: who, action: "Added document to Brain", details: title });
+          return res.json({ id: item.id });
+        }
+        let img = buf;
+        let type = sniffImageType(img);
+        if (!type) {
+          const heic = img.subarray(4, 12).toString().match(/^ftyp(heic|heix|hevc|mif1|msf1)/);
+          return res.status(400).json({ error: heic ? "iPhone HEIC photos can't be read. On your phone, share the photo as JPG (or set Camera, Formats to Most Compatible), then upload it." : "Photos must be PNG, JPG, WebP or GIF." });
+        }
+        // Big photos are scaled down so employees and pages can use them.
+        if (img.length > 8_000_000 && type !== "image/gif") {
+          const sharp = (await import("sharp")).default;
+          img = await sharp(img).rotate().resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+          type = "image/jpeg";
+        }
+        const ext = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif" }[type];
+        const saved = await storagePut(`org-${orgId}/brain/image${ext}`, img, type);
+        const note = String(req.query.note || "").slice(0, 2000);
+        const item = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", title, category: "mission_profile", content: note, fileUrl: saved.url });
+        indexKnowledge(item);
+        await db.logAction({ organizationId: orgId, actorType: "human_user", actorName: who, action: "Added image to Brain", details: title });
+        if (!note.trim()) {
+          const finalType = type;
+          void describeImage(img, finalType)
+            .then(async (text) => {
+              if (!text) return;
+              const next = await db.updateKnowledgeItem(item.id, orgId, { content: text });
+              if (next) indexKnowledge(next);
+            })
+            .catch(() => null);
+        }
+        return res.json({ id: item.id });
       }
 
       if (slot === "knowledge") {

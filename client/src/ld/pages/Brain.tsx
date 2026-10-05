@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, FolderTabs, Page } from "../ui";
 import BrainImport from "./BrainImport";
-import { fmtDate } from "../meta";
+import { fmtDate, uploadFile } from "../meta";
 
 const CATEGORIES = [
   { value: "mission_profile", label: "Profile and mission" },
@@ -22,8 +22,8 @@ const KIND_LABEL: Record<EntryKind, string> = { fact: "Fact", webpage: "Webpage"
 
 type TabKey = "all" | EntryKind | "import";
 
-const IMAGE_MAX = 8 * 1024 * 1024;
-const DOC_MAX = 10 * 1024 * 1024;
+const IMAGE_MAX = 30 * 1000 * 1000;
+const DOC_MAX = 40 * 1000 * 1000;
 
 type Entry = {
   id: number;
@@ -51,23 +51,6 @@ const cardStyle: React.CSSProperties = {
 };
 
 const editStyle: React.CSSProperties = { ...cardStyle, gridColumn: "span 2", borderColor: "#1b6b4a" };
-
-function readDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = () => reject(new Error("That file could not be read."));
-    r.readAsDataURL(file);
-  });
-}
-
-function guessMime(name: string) {
-  const ext = name.toLowerCase().split(".").pop();
-  if (ext === "pdf") return "application/pdf";
-  if (ext === "md") return "text/markdown";
-  if (ext === "csv") return "text/csv";
-  return "text/plain";
-}
 
 function CategorySelect({ id, value, onChange }: { id: string; value: Category; onChange: (v: Category) => void }) {
   return (
@@ -276,9 +259,7 @@ function AddEditor({ onDone }: { onDone: () => void }) {
   };
   const create = trpc.knowledge.create.useMutation({ onSuccess: done });
   const addPage = trpc.knowledge.addWebpage.useMutation({ onSuccess: done });
-  const upImage = trpc.knowledge.uploadImage.useMutation({ onSuccess: done });
-  const upDoc = trpc.knowledge.uploadDocument.useMutation({ onSuccess: done });
-  const busy = reading || Boolean(progress) || create.isPending || addPage.isPending || upImage.isPending || upDoc.isPending;
+  const busy = reading || Boolean(progress) || create.isPending || addPage.isPending;
 
   const submit = async () => {
     setLocalError(null);
@@ -299,14 +280,13 @@ function AddEditor({ onDone }: { onDone: () => void }) {
     if (kind === "image" && files.length > 1) {
       const big = files.find((f) => f.size > max);
       if (big) {
-        setLocalError(`${big.name} is over 8 MB.`);
+        setLocalError(`${big.name} is over 30 MB.`);
         return;
       }
       try {
         for (let i = 0; i < files.length; i++) {
           setProgress(`Saving ${i + 1} of ${files.length}...`);
-          const data = await readDataUrl(files[i]);
-          await upImage.mutateAsync({ organizationId: currentOrgId, title: files[i].name.replace(/\.[a-z0-9]+$/i, ""), note: content.trim(), data });
+          await uploadFile("brain_image", files[i], { organizationId: currentOrgId, title: files[i].name.replace(/\.[a-z0-9]+$/i, ""), note: content.trim() });
         }
         setProgress("");
         await done();
@@ -317,19 +297,16 @@ function AddEditor({ onDone }: { onDone: () => void }) {
       return;
     }
     if (file.size > max) {
-      setLocalError(kind === "image" ? "Images can be up to 8 MB." : "Documents can be up to 10 MB.");
+      setLocalError(kind === "image" ? "Photos can be up to 30 MB." : "Documents can be up to 40 MB.");
       return;
     }
     try {
       setReading(true);
-      const data = await readDataUrl(file);
+      const name = title.trim() || file.name.replace(/\.[a-z0-9]+$/i, "");
+      if (kind === "image") await uploadFile("brain_image", file, { organizationId: currentOrgId, title: name, note: content.trim() });
+      else await uploadFile("brain_doc", file, { organizationId: currentOrgId, title: name, category });
       setReading(false);
-      const name = title.trim() || file.name;
-      if (kind === "image") {
-        upImage.mutate({ organizationId: currentOrgId, title: name, note: content.trim(), data });
-      } else {
-        upDoc.mutate({ organizationId: currentOrgId, title: name, fileName: file.name, mimeType: file.type || guessMime(file.name), category, data });
-      }
+      await done();
     } catch (err) {
       setReading(false);
       setLocalError((err as Error).message);
@@ -408,7 +385,7 @@ function AddEditor({ onDone }: { onDone: () => void }) {
             id={`${id}-file`}
             type="file"
             className="ld-small"
-            accept={kind === "image" ? "image/png,image/jpeg,image/webp,image/gif" : ".pdf,.txt,.md,.csv"}
+            accept={kind === "image" ? "image/png,image/jpeg,image/webp,image/gif,.heic,.heif" : ".pdf,.docx,.pptx,.xlsx,.txt,.md,.csv"}
             multiple={kind === "image"}
             onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
           />
@@ -421,7 +398,7 @@ function AddEditor({ onDone }: { onDone: () => void }) {
           {localError}
         </p>
       )}
-      <ErrorLine error={create.error ?? addPage.error ?? upImage.error ?? upDoc.error} />
+      <ErrorLine error={create.error ?? addPage.error} />
     </div>
   );
 }
