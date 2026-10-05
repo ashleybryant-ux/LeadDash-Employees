@@ -50,10 +50,21 @@ export async function post(emp: AIEmployee, content: string, cards: unknown[] = 
   return db.createChatMessage({ organizationId: emp.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content, cards: cards.length ? JSON.stringify(cards) : null });
 }
 
+/**
+ * The reason a site stopped the browser, said safely: a sign-in wall never turns
+ * into a request for a password. People sign in themselves on Take over, or save
+ * a Website login; passwords never go through chat or the AI.
+ */
+export function safeReason(reason: string) {
+  const r = reason.replace(/\s+/g, " ").trim().replace(/\.$/, "");
+  if (/password|credential|log ?in|sign ?in|username|e-?mail and/i.test(r)) return "it needs someone signed in, and there's no saved login for it. Take over and sign in yourself, or save a Website login for it on Integrations. I never see or ask for passwords";
+  return r;
+}
+
 /** When the browser is stuck: a message with the live card, waiting for the person. */
 export function stuckPoster(emp: AIEmployee, liveId: string, what: string) {
   return async (reason: string) => {
-    await post(emp, `I'm stuck ${what}: ${reason.replace(/\.$/, "")}. Take over and get me past it, then press Hand back and I'll keep going. I'll wait 10 minutes.`, [liveCard(liveId, `${emp.name}'s browser`)]);
+    await post(emp, `I'm stuck ${what}: ${safeReason(reason)}. Take over and get me past it, then press Hand back and I'll keep going. I'll wait 10 minutes.`, [liveCard(liveId, `${emp.name}'s browser`)]);
   };
 }
 
@@ -172,7 +183,7 @@ export function plainNote(note: string, url: string) {
   if (/ERR_NAME_NOT_RESOLVED|ENOTFOUND|EAI_AGAIN/.test(text)) return `there's no website at ${hostOf(url)}`;
   if (/ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ERR_CONNECTION_TIMED_OUT/.test(text)) return `${hostOf(url)} didn't answer`;
   if (/Timeout \d+ms exceeded/.test(text)) return `${hostOf(url)} took too long to load`;
-  return text.split(/\n\s*Call log:/)[0].replace(/^page\.\w+:\s*/, "").replace(/\s+/g, " ").trim().slice(0, 300);
+  return safeReason(text.split(/\n\s*Call log:/)[0].replace(/^page\.\w+:\s*/, "").replace(/\s+/g, " ").trim().slice(0, 300));
 }
 
 export async function runWebTask(orgId: number, id: number) {

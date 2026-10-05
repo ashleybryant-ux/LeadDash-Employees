@@ -402,7 +402,7 @@ export async function moveLaunch(orgId: number, launchId: number, newDate: strin
 // ==========================================
 
 /** Where an employee's output lives, so Nora can tell when it is approved or finished. */
-export type WorkRef = { kind: "outbound" | "page" | "application"; id: number };
+export type WorkRef = { kind: "outbound" | "page" | "application" | "web"; id: number };
 export type WorkState = "running" | "in_progress" | "waiting" | "done" | "sent_back" | "needs_person" | "failed";
 export type TaskWork = { state: WorkState; startedAt: number; action?: string; summary?: string; review?: string; refs?: WorkRef[]; tries?: number };
 
@@ -495,10 +495,10 @@ async function saveWork(orgId: number, t: LaunchTask, w: TaskWork, patch: Partia
   return db.updateLaunchTask(t.id, orgId, { work: JSON.stringify(w), ...patch });
 }
 
-const WHERE: Record<WorkRef["kind"], string> = { outbound: "Approvals", page: "the Pages tab", application: "Applications" };
+const WHERE: Record<WorkRef["kind"], string> = { outbound: "Approvals", page: "the Pages tab", application: "Applications", web: "the browser card in chat" };
 
-/** Where the employee's output stands: still being made, waiting for the owner, finished, or rejected. */
-export async function refState(orgId: number, refs: WorkRef[]): Promise<{ state: "in_progress" | "waiting" | "done" | "sent_back"; where: string; text: string }> {
+/** Where the employee's output stands: still being made, waiting for the owner, finished, rejected, or stuck until a person helps. */
+export async function refState(orgId: number, refs: WorkRef[]): Promise<{ state: "in_progress" | "waiting" | "done" | "sent_back" | "blocked"; where: string; text: string }> {
   const states: string[] = [];
   const texts: string[] = [];
   let where = "";
@@ -508,6 +508,12 @@ export async function refState(orgId: number, refs: WorkRef[]): Promise<{ state:
       if (!o) continue;
       states.push(o.status === "published" ? "done" : o.status === "cancelled" || o.status === "changes_requested" ? "sent_back" : o.status === "drafting" ? "in_progress" : "waiting");
       texts.push(`${o.title}\n${(o.body ?? "").slice(0, 3000)}`);
+    } else if (r.kind === "web") {
+      // A browser job: Nora waits while it runs, and a stuck one goes to a person instead of being sent back.
+      const w = db.getWebTask(r.id, orgId);
+      if (!w) continue;
+      states.push(w.status === "done" ? (w.pending ? "waiting" : "done") : w.status === "failed" ? "blocked" : "in_progress");
+      texts.push(w.status === "done" ? `What the browser found: ${(w.result ?? "").slice(0, 3000)}` : w.status === "failed" ? `The browser stopped: ${(await import("./web")).safeReason(w.note ?? "")}.` : `Still in the browser: ${w.title}`);
     } else if (r.kind === "page") {
       const p = db.getSitePage(r.id, orgId);
       if (!p) continue;
@@ -521,7 +527,7 @@ export async function refState(orgId: number, refs: WorkRef[]): Promise<{ state:
     }
     if (!where && states[states.length - 1] === "waiting") where = WHERE[r.kind];
   }
-  const state = states.includes("sent_back") ? "sent_back" : states.includes("in_progress") ? "in_progress" : states.includes("waiting") ? "waiting" : "done";
+  const state = states.includes("blocked") ? "blocked" : states.includes("sent_back") ? "sent_back" : states.includes("in_progress") ? "in_progress" : states.includes("waiting") ? "waiting" : "done";
   return { state, where, text: texts.join("\n\n") };
 }
 
@@ -583,6 +589,13 @@ async function settle(orgId: number, t: LaunchTask, emp: AIEmployee, nora: AIEmp
   const refs = work.refs ?? [];
   const where = refs.length ? await refState(orgId, refs) : { state: "done" as const, where: "", text: "" };
   if (where.state === "in_progress") return saveWork(orgId, t, { ...work, state: "in_progress" }, { status: "in_progress", note: `${emp.name} is working on it.` });
+  if (where.state === "blocked") {
+    // Trying again hits the same wall (a sign-in, a CAPTCHA), so a person takes it from here.
+    const why = where.text.replace(/^The browser stopped:\s*/, "").trim();
+    const out = await saveWork(orgId, t, { ...work, state: "needs_person", review: why }, { status: "todo", note: `${emp.name} got stuck in the browser: ${why || "the site stopped the browser."} A person needs to do this or get ${emp.name} past it.` });
+    await db.createChatMessage({ organizationId: orgId, employeeId: nora.id, role: "employee", authorName: nora.name, content: `"${t.title}" needs a person: ${emp.name} got stuck in the browser${why ? ` (${why.replace(/\.$/, "")})` : ""}. I won't send it back again. Do it yourself or tell me who should own it.` });
+    return out;
+  }
   if (where.state === "sent_back") return sendBack(orgId, t, emp, work, "The owner sent it back or it did not finish.");
   const check = await review(nora, t, emp.name, [where.text, said].filter(Boolean).join("\n\n")).catch(() => ({ meets: true, missing: "" }));
   if (!check.meets && check.missing.trim()) return sendBack(orgId, t, emp, work, check.missing.trim());

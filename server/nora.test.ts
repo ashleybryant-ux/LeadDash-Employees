@@ -154,6 +154,35 @@ describe("Employees do their project tasks and Nora checks them", () => {
     expect((await db.listChatMessages(orgId, nora.id, 5)).some((m) => /second try/.test(m.content))).toBe(true);
   });
 
+  it("browser work: Nora waits while it runs, and a stuck browser goes to a person instead of looping", async () => {
+    mockAi({ decision: { action: "browse", goal: "Check the access", title: "Check access" }, reviews: [{ meets: false, missing: "Only opened a browser." }] });
+    const web = await import("./employees/web");
+    const start = vi.spyOn(web, "startWebTask").mockImplementation(async (emp: any, input: any) => ({ task: db.createWebTask({ organizationId: emp.organizationId, employeeId: emp.id, kind: "browse", title: input.title, goal: input.goal, startUrl: "", liveId: "live-1", status: "working" }), login: null }) as any);
+    const { orgId, task } = await plannedLaunch("nora-web");
+    await projects.startReadyTasks(orgId, { wait: true });
+    let t = (await db.getLaunchTask(task("Launch article").id, orgId))!;
+    const w = projects.readWork(t)!;
+    // Not reviewed or sent back while the browser is still going.
+    expect(w.state).toBe("in_progress");
+    expect(w.refs).toEqual([{ kind: "web", id: expect.any(Number) }]);
+    expect(start).toHaveBeenCalledTimes(1);
+    // The site needs a sign-in nobody saved: one note to a person, no second try.
+    db.updateWebTask(w.refs![0].id, orgId, { status: "failed", note: "Cannot log in because no email or password credentials are saved." });
+    await projects.followUpWork(orgId);
+    t = (await db.getLaunchTask(t.id, orgId))!;
+    expect(projects.readWork(t)!.state).toBe("needs_person");
+    expect(t.status).toBe("todo");
+    expect(start).toHaveBeenCalledTimes(1);
+    const nora = (await db.getEmployeeByKind(orgId, "projects"))!;
+    const said = (await db.listChatMessages(orgId, nora.id, 5)).map((m) => m.content).join("\n");
+    expect(said).toMatch(/needs a person: .* got stuck in the browser/);
+    expect(said).toMatch(/sign in yourself/);
+    expect(said).not.toMatch(/credentials/i);
+    // Nothing anywhere asks for a password.
+    expect(web.safeReason("Please provide the credentials so I can log in")).toMatch(/sign in yourself.*never see or ask for passwords/);
+    expect(web.safeReason("The page says 404")).toBe("The page says 404");
+  });
+
   it("a task no employee tool can do goes back to a person, and Nora says so", async () => {
     mockAi({ decision: { action: "none", reply: "Pricing is a decision only the owner can make." } });
     const { orgId, task } = await plannedLaunch("nora-none");

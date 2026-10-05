@@ -586,6 +586,7 @@ Rules:
 - If the site asks for a one-time sign-in or verification code and no code is saved, use "need_code".
 - ${task.allowSubmit ? "You are approved to press the final button this goal needs (submit, save or publish). Press it only after every required file is uploaded and every required field is filled, then capture the confirmation number or message." : "Never press a button that submits, places or finalizes a bid, application or form. If the goal would need that, use done and say what is ready."}
 - Never accept terms, pay fees, change account settings, or delete anything unless the goal says to.
+- If a sign-in page needs an email or password that isn't saved, use "fail" and say the site needs someone signed in. Never ask anyone for a password, credentials or a code, in result or anywhere else.
 - If you are stuck, blocked by a CAPTCHA, or the page is not what the goal expects, use "fail" and say why in result.
 - When the goal is reached, use "done" and put the requested answer in result.${task.rules ? `\n${task.rules}` : ""}`,
     prompt: `GOAL:\n${task.goal}\n\nFILES YOU CAN UPLOAD:\n${files}\n\nSTEPS SO FAR:\n${past}\n\nCURRENT PAGE: ${view.title}\n${view.url}\n\nELEMENTS:\n${els}\n\nPAGE TEXT:\n${view.text}`,
