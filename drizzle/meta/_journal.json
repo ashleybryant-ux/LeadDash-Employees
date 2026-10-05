@@ -218,6 +218,13 @@
       "when": 1791224997039,
       "tag": "0030_team_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791231982230,
+      "tag": "0031_goals_projects",
+      "breakpoints": true
     }
   ]
 }

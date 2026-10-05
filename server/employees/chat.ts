@@ -82,10 +82,14 @@ const ACTIONS: Record<string, string[]> = {
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
 };
-// Every employee has a browser, and can run the Pre-call report skill.
-for (const list of Object.values(ACTIONS)) list.push("browse", "precall_report");
+// Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
+for (const list of Object.values(ACTIONS)) list.push("browse", "precall_report", "task_find", "task_add", "task_change", "goal_update");
 
 const ACTION_HELP: Record<string, string> = {
+  task_find: "task_find: look up tasks in Projects (the app's own folders, lists and tasks): by words in the task or list name, by person, or what's due. Put the words in `target` ('' for all), the person in `to` ('' for anyone), a last due date as YYYY-MM-DD in `date` ('' for any), and \"all\" in `focus` to include finished tasks.",
+  task_add: "task_add: add a task in Projects. Put the task in `title`, details in `notes`, the due date as YYYY-MM-DD in `date` ('' for none), who it's for (a person's or an employee's name, \"me\" for yourself) in `to` ('' for no one), and the list's name in `page` ('' for the newest list).",
+  task_change: "task_change: change a task in Projects: its status (like \"complete\" or \"in progress\"), due date, who it's for, or add a comment. Put words from the task's name in `target`, the new status in `focus` (''), the new due date as YYYY-MM-DD in `date` (''), who to assign in `to` (''), and a comment in `notes` ('').",
+  goal_update: "goal_update: post an update on a goal on the Goals page (\"we're at 13 practices\", \"the webinar is behind\"). Put words from the goal's title in `target`, how it's going in `focus` (on, risk or off), the update in `notes`, and the new number for its main target in `count` (0 when there's no new number).",
   precall_report: "precall_report: run the Pre-call report skill before a meeting with a practice or person (\"run a pre-call report on Bayou Family Therapy\", \"brief me before my call with Dr. Tran\"). Put the person's name in `target`, the practice in `title`, a website in `url` and the meeting date in `date` (YYYY-MM-DD) and `time` (HH:MM) when given. Public business information only; it posts here when ready.",
   cold_campaign: "cold_campaign: write a new cold email campaign for the lead list. Put the angle key in `focus` (switcher, missed_calls, too_many, group_ops, growing or owner_time; pick the closest) and anything else she wants in `notes`. It's a draft until she presses Start.",
   cold_research: "cold_research: research the next best leads on the list (progressive enrichment). Put how many in `count` (default 100, at most 1000) and a state in `target` if she named one.",
@@ -429,6 +433,12 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
   const files = ctx.files ?? [];
   const docText = files.filter((f) => f.kind === "document").map((f) => `${f.name}:\n${f.text.slice(0, 6000)}`).join("\n\n");
   switch (d.action) {
+    case "task_find":
+    case "task_add":
+    case "task_change":
+    case "goal_update": {
+      return projectsAction(emp, d, who);
+    }
     case "precall_report": {
       const precall = await import("./precall");
       const at = d.date ? new Date(`${d.date}T${/^\d{2}:\d{2}$/.test(d.time) ? d.time : "12:00"}:00`) : null;
@@ -1444,7 +1454,7 @@ export function findHold(holds: OutboundItem[], want: { date: string; time: stri
 }
 
 /** Actions that only talk about the work; a project task needs one that does it. */
-const NOT_WORK = new Set(["clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "clickup_bulk", "clickup_undo", "none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
+const NOT_WORK = new Set(["task_find", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "clickup_bulk", "clickup_undo", "none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
 
 /**
  * An employee does a project task Nora assigned, with the same actions their
@@ -1647,5 +1657,77 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[chat] ${emp.name} failed:`, message);
     return { user: userMsg, reply: await reply(`I couldn't do that. ${message}`) };
+  }
+}
+
+
+/** Projects and Goals from chat, for every employee. */
+async function projectsAction(emp: AIEmployee, d: Decision, who: string): Promise<ActionResult> {
+  const org = emp.organizationId;
+  const pj = await import("../work/projects");
+  const g = await import("../work/goals");
+  const by = { type: "employee" as const, id: emp.id, name: emp.name };
+  const people = await g.owners(org);
+  const findOwner = (name: string) => {
+    const n = name.trim().toLowerCase();
+    if (!n) return null;
+    if (n === "me" || n === "myself") return people.find((p) => p.type === "employee" && p.id === emp.id) ?? null;
+    return people.find((p) => p.name.toLowerCase() === n) ?? people.find((p) => p.name.toLowerCase().split(/\s+/)[0] === n.split(/\s+/)[0]) ?? null;
+  };
+  const fmt = (ymd: string) => g.fmtDay(ymd);
+  try {
+    if (d.action === "task_find") {
+      const list = pj.find(org, { words: d.target, who: d.to, dueBy: /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : undefined, includeDone: d.focus.toLowerCase() === "all" });
+      if (!list.length) return { text: "I didn't find any tasks like that in Projects.", cards: [], queries: [] };
+      return { text: `${list.length} task${list.length === 1 ? "" : "s"} in Projects:\n${list.slice(0, 20).map((t) => `- ${t.name} (${t.list}; ${t.assignees.join(", ") || "no one assigned"}; ${t.status}; due ${t.due})`).join("\n")}`, cards: [], queries: [] };
+    }
+    if (d.action === "task_add") {
+      if (!d.title.trim()) return { text: "What should the task say?", cards: [], queries: [] };
+      let list = pj.listNamed(org, d.page) ?? db.work.lists.all(org).sort((a, b) => b.id - a.id)[0] ?? null;
+      if (!list) list = pj.saveList(org, { name: "Tasks", folderId: null });
+      const o = findOwner(d.to);
+      const t = await pj.createTask(org, { listId: list.id, name: d.title, description: d.notes, dueDate: /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : null, assignees: o ? [{ type: o.type, id: o.id, name: o.name }] : [] }, by);
+      return { text: `Added "${t.name}" to ${list.name} in Projects${o ? ` for ${o.name}` : ""}${t.dueDate ? `, due ${fmt(t.dueDate)}` : ""}.${d.to && !o ? ` I couldn't find ${d.to} on the team, so it's unassigned.` : ""}`, cards: [], queries: [] };
+    }
+    if (d.action === "task_change") {
+      const hits = pj.find(org, { words: d.target, includeDone: true });
+      if (!hits.length) return { text: `I couldn't find a task like "${d.target}" in Projects.`, cards: [], queries: [] };
+      if (hits.length > 1 && !hits.some((h) => h.name.toLowerCase() === d.target.toLowerCase())) return { text: `Which one?\n${hits.slice(0, 8).map((h) => `- ${h.name} (${h.list})`).join("\n")}`, cards: [], queries: [] };
+      const hit = hits.find((h) => h.name.toLowerCase() === d.target.toLowerCase()) ?? hits[0];
+      const t = db.work.tasks.get(org, hit.id)!;
+      const list = db.work.lists.get(org, t.listId)!;
+      const patch: Parameters<typeof pj.updateTask>[2] = {};
+      if (d.focus.trim()) {
+        const want = d.focus.trim().toLowerCase();
+        const st = pj.statusesOf(list);
+        const s = st.find((x) => x.name === want) ?? (/done|complete|finish/.test(want) ? st.find((x) => x.type === "done") : null) ?? st.find((x) => x.name.includes(want));
+        if (!s) return { text: `${list.name} has these statuses: ${st.map((x) => x.name).join(", ")}. Which one?`, cards: [], queries: [] };
+        patch.status = s.name;
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d.date)) patch.dueDate = d.date;
+      if (d.to.trim()) {
+        const o = findOwner(d.to);
+        if (!o) return { text: `I couldn't find ${d.to} on the team.`, cards: [], queries: [] };
+        const cur = pj.parse<{ type: "user" | "employee" | "name"; id: number; name: string }[]>(t.assignees, []);
+        if (!cur.some((a) => a.type === o.type && a.id === o.id)) patch.assignees = [...cur, { type: o.type, id: o.id, name: o.name }];
+      }
+      await pj.updateTask(org, t.id, patch, by);
+      if (d.notes.trim()) await pj.comment(org, t.id, d.notes, by);
+      const said = [patch.status && `moved it to ${patch.status}`, patch.dueDate && `set the due date to ${fmt(patch.dueDate)}`, patch.assignees && `assigned ${d.to}`, d.notes.trim() && "added your comment"].filter(Boolean);
+      return { text: `Done: "${t.name}"${said.length ? `, ${said.join(", ")}` : ""}.`, cards: [], queries: [] };
+    }
+    // goal_update
+    const goals = db.work.goals.all(org).filter((x) => x.state === "active");
+    const words = d.target.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+    const goal = goals.find((x) => x.title.toLowerCase() === d.target.toLowerCase()) ?? goals.find((x) => words.length > 0 && words.every((w) => x.title.toLowerCase().includes(w))) ?? goals.find((x) => words.some((w) => x.title.toLowerCase().includes(w)));
+    if (!goal) return { text: goals.length ? `Which goal? ${goals.slice(0, 8).map((x) => x.title).join("; ")}.` : "There are no goals on the Goals page yet.", cards: [], queries: [] };
+    const status = (["on", "risk", "off"] as const).find((x) => x === d.focus.trim().toLowerCase()) ?? null;
+    g.addUpdate(org, goal.id, { authorType: "employee", authorId: emp.id, authorName: emp.name, status, body: d.notes || d.reply || `Update from ${who}` });
+    const main = db.work.targets.where(org, "goalId", goal.id).find((x) => x.kind === "number" || x.kind === "currency");
+    const n = d.count ?? 0;
+    if (main && n > 0) g.setTargetValue(org, main.id, n);
+    return { text: `Posted the update on "${goal.title}"${main && n > 0 ? ` and set ${main.name} to ${n.toLocaleString("en-US")}` : ""}.`, cards: [], queries: [] };
+  } catch (err) {
+    return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
   }
 }

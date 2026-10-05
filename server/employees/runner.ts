@@ -110,6 +110,7 @@ export function startScheduler() {
   void import("./history").then((h) => h.resumeImports()).catch(() => null);
   void import("./web").then((w) => w.failInterrupted()).catch(() => null);
   void import("./drama").then((d) => d.resumeDrama()).catch(() => null);
+  void import("../work/clickupImport").then((c) => c.failInterrupted()).catch(() => null);
   let busy = false;
   const timer = setInterval(async () => {
     if (busy) return;
@@ -143,6 +144,8 @@ export function startScheduler() {
       await (await import("./cold")).coldTicks();
       // Avery: nudges that are due, and the morning brief at its time.
       await (await import("./desk")).briefTick();
+      // Simone on Goals: the Monday read, and next year's draft late in the year.
+      await (await import("../work/simone")).goalsTicks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

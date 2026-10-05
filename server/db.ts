@@ -2118,3 +2118,70 @@ export const team = {
     } else getDb().insert(r).values({ organizationId: orgId, userId, channel, lastReadId: lastId, readAt: new Date() }).run();
   },
 };
+
+// ==========================================
+// Goals and Projects
+// ==========================================
+
+/** Insert, read, change and remove rows of one workspace-owned table, always filtered by workspace. */
+function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports>(t: T) {
+  type Row = T["$inferSelect"];
+  type Ins = T["$inferInsert"];
+  const tt = t as any;
+  return {
+    all(orgId: number): Row[] {
+      return getDb().select().from(tt).where(eq(tt.organizationId, orgId)).all() as Row[];
+    },
+    get(orgId: number, id: number): Row | null {
+      return (getDb().select().from(tt).where(and(eq(tt.organizationId, orgId), eq(tt.id, id))).limit(1).all()[0] as Row) ?? null;
+    },
+    where(orgId: number, col: string, value: number | string | null): Row[] {
+      return getDb().select().from(tt).where(and(eq(tt.organizationId, orgId), value === null ? isNull(tt[col]) : eq(tt[col], value))).all() as Row[];
+    },
+    insert(row: Ins): Row {
+      return (getDb().insert(tt).values(row).returning().all() as any[])[0] as Row;
+    },
+    update(orgId: number, id: number, patch: Partial<Ins>): Row | null {
+      getDb().update(tt).set(patch).where(and(eq(tt.organizationId, orgId), eq(tt.id, id))).run();
+      return (getDb().select().from(tt).where(and(eq(tt.organizationId, orgId), eq(tt.id, id))).limit(1).all()[0] as Row) ?? null;
+    },
+    remove(orgId: number, id: number) {
+      getDb().delete(tt).where(and(eq(tt.organizationId, orgId), eq(tt.id, id))).run();
+    },
+  };
+}
+
+/** ClickUp imports still marked running (across workspaces), for the restart check. */
+export function listAllImportsRunning() {
+  return getDb().select().from(schema.pjImports).where(eq(schema.pjImports.status, "running")).all();
+}
+
+export const work = {
+  goalFolders: crud(schema.goalFolders),
+  goals: crud(schema.goals),
+  targets: crud(schema.goalTargets),
+  updates: crud(schema.goalUpdates),
+  measures: crud(schema.measures),
+  values: crud(schema.measureValues),
+  reads: crud(schema.goalReads),
+  files: crud(schema.itemFiles),
+  folders: crud(schema.pjFolders),
+  lists: crud(schema.pjLists),
+  tasks: crud(schema.pjTasks),
+  comments: crud(schema.pjComments),
+  automations: crud(schema.pjAutomations),
+  imports: crud(schema.pjImports),
+  /** One week's number for a measure, replacing what was there. */
+  setValue(orgId: number, measureId: number, weekStart: string, value: number | null, by: string) {
+    const v = schema.measureValues;
+    getDb().delete(v).where(and(eq(v.organizationId, orgId), eq(v.measureId, measureId), eq(v.weekStart, weekStart))).run();
+    if (value !== null) getDb().insert(v).values({ organizationId: orgId, measureId, weekStart, value, enteredBy: by }).run();
+  },
+  filesFor(orgId: number, itemType: "goal" | "task" | "comment" | "update", itemIds: number[]) {
+    if (!itemIds.length) return [];
+    const f = schema.itemFiles;
+    const links = getDb().select().from(f).where(and(eq(f.organizationId, orgId), eq(f.itemType, itemType), inArray(f.itemId, itemIds))).all();
+    const files = getChatFiles(orgId, links.map((l) => l.fileId));
+    return links.map((l) => ({ link: l, file: files.find((x) => x.id === l.fileId) })).filter((x) => x.file);
+  },
+};

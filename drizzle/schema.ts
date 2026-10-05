@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { integer, real, sqliteTable, text, uniqueIndex, index } from "drizzle-orm/sqlite-core";
 
 /**
  * LeadDash Employees database (SQLite, one file on the server).
@@ -2358,3 +2358,316 @@ export const teamReads = sqliteTable(
   (t) => [uniqueIndex("team_reads_unique").on(t.organizationId, t.userId, t.channel)]
 );
 export type TeamRead = typeof teamReads.$inferSelect;
+
+// ==========================================
+// Goals: each workspace's own, set by the owner and Simone together
+// ==========================================
+
+/** Folders for goals (Revenue, Customers, Speaking...). */
+export const goalFolders = sqliteTable(
+  "goal_folders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    parentId: integer("parentId"),
+    name: text("name").notNull(),
+    color: text("color").notNull().default("#1b6b4a"),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("goal_folders_org_idx").on(t.organizationId)]
+);
+export type GoalFolder = typeof goalFolders.$inferSelect;
+
+/**
+ * A goal. level: company, year, quarter or cycle (a 12-week cycle). parentId is
+ * the goal it rolls up to. ownerType: user or employee. state: active, suggested
+ * (Simone suggests it, waiting for the owner), draft (next year's draft), done,
+ * dismissed or archived. status is the owner's own call (on, risk, off, done);
+ * null means the app works it out from progress and pace.
+ */
+export const goals = sqliteTable(
+  "goals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    folderId: integer("folderId"),
+    parentId: integer("parentId"),
+    level: text("level", { enum: ["company", "year", "quarter", "cycle"] }).notNull().default("quarter"),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    /** "2026", "Q4 2026", "Cycle 1, 2026". */
+    period: text("period").notNull().default(""),
+    startDate: text("startDate").notNull(),
+    dueDate: text("dueDate").notNull(),
+    ownerType: text("ownerType", { enum: ["user", "employee"] }),
+    ownerId: integer("ownerId"),
+    color: text("color").notNull().default("#1b6b4a"),
+    status: text("status", { enum: ["on", "risk", "off", "done"] }),
+    /** Progress the owner set by hand (0 to 100) when the goal has no targets. */
+    manualProgress: integer("manualProgress"),
+    state: text("state", { enum: ["active", "suggested", "draft", "done", "dismissed", "archived"] }).notNull().default("active"),
+    /** Why Simone suggests or drafted it. */
+    why: text("why").notNull().default(""),
+    setBy: text("setBy").notNull().default(""),
+    agreedBy: text("agreedBy").notNull().default(""),
+    agreedAt: integer("agreedAt", { mode: "timestamp" }),
+    sort: integer("sort").notNull().default(0),
+    clickupId: text("clickupId"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("goals_org_idx").on(t.organizationId, t.state)]
+);
+export type Goal = typeof goals.$inferSelect;
+
+/**
+ * What a goal counts. kind: number, currency, boolean (done or not), tasks (a
+ * Projects list or the tasks tied to the goal), or measure (a scorecard measure).
+ * history: JSON [{d: "YYYY-MM-DD", v: number}] of the current value over time.
+ */
+export const goalTargets = sqliteTable(
+  "goal_targets",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    goalId: integer("goalId").notNull(),
+    kind: text("kind", { enum: ["number", "currency", "boolean", "tasks", "measure"] }).notNull().default("number"),
+    name: text("name").notNull(),
+    startValue: integer("startValue").notNull().default(0),
+    currentValue: integer("currentValue").notNull().default(0),
+    targetValue: integer("targetValue").notNull().default(0),
+    done: integer("done", { mode: "boolean" }).notNull().default(false),
+    listId: integer("listId"),
+    measureId: integer("measureId"),
+    history: text("history").notNull().default("[]"),
+    sort: integer("sort").notNull().default(0),
+  },
+  (t) => [index("goal_targets_goal_idx").on(t.organizationId, t.goalId)]
+);
+export type GoalTarget = typeof goalTargets.$inferSelect;
+
+/** A status update on a goal from a person or an employee. */
+export const goalUpdates = sqliteTable(
+  "goal_updates",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    goalId: integer("goalId").notNull(),
+    authorType: text("authorType", { enum: ["user", "employee"] }).notNull(),
+    authorId: integer("authorId"),
+    authorName: text("authorName").notNull(),
+    status: text("status", { enum: ["on", "risk", "off", "done"] }),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("goal_updates_goal_idx").on(t.organizationId, t.goalId)]
+);
+export type GoalUpdate = typeof goalUpdates.$inferSelect;
+
+/**
+ * A scorecard measure. source: manual (the owner types it in each week) or a
+ * number the app counts (practices_contacted, demos_booked, ...). kind: leading
+ * or result. direction: up (more is better) or down (less is better).
+ */
+export const measures = sqliteTable(
+  "measures",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    ownerType: text("ownerType", { enum: ["user", "employee"] }),
+    ownerId: integer("ownerId"),
+    weeklyGoal: real("weeklyGoal"),
+    unit: text("unit", { enum: ["number", "currency", "percent", "hours"] }).notNull().default("number"),
+    direction: text("direction", { enum: ["up", "down"] }).notNull().default("up"),
+    kind: text("kind", { enum: ["leading", "result"] }).notNull().default("leading"),
+    source: text("source").notNull().default("manual"),
+    goalId: integer("goalId"),
+    sort: integer("sort").notNull().default(0),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("measures_org_idx").on(t.organizationId)]
+);
+export type Measure = typeof measures.$inferSelect;
+
+/** One week's number for a measure. weekStart is the Sunday, YYYY-MM-DD. */
+export const measureValues = sqliteTable(
+  "measure_values",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    measureId: integer("measureId").notNull(),
+    weekStart: text("weekStart").notNull(),
+    value: real("value").notNull(),
+    enteredBy: text("enteredBy").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("measure_values_unique").on(t.organizationId, t.measureId, t.weekStart)]
+);
+export type MeasureValue = typeof measureValues.$inferSelect;
+
+/**
+ * Simone's weekly read: JSON items [{status, text, action, goalId?, measureId?}]
+ * plus the one-line scorecard note. Also keeps the workspace's Goals dashboard layout.
+ */
+export const goalReads = sqliteTable(
+  "goal_reads",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    weekStart: text("weekStart").notNull(),
+    note: text("note").notNull().default(""),
+    items: text("items").notNull().default("[]"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("goal_reads_org_idx").on(t.organizationId, t.weekStart)]
+);
+export type GoalRead = typeof goalReads.$inferSelect;
+
+/** Files attached to a goal, a goal update, a task or a task comment (from chat_files). */
+export const itemFiles = sqliteTable(
+  "item_files",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    itemType: text("itemType", { enum: ["goal", "task", "comment", "update"] }).notNull(),
+    itemId: integer("itemId").notNull(),
+    fileId: integer("fileId").notNull(),
+    addedBy: text("addedBy").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("item_files_item_idx").on(t.organizationId, t.itemType, t.itemId)]
+);
+export type ItemFile = typeof itemFiles.$inferSelect;
+
+// ==========================================
+// Projects: folders, lists and tasks (in place of ClickUp)
+// ==========================================
+
+export const pjFolders = sqliteTable(
+  "pj_folders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    color: text("color").notNull().default("#1b6b4a"),
+    sort: integer("sort").notNull().default(0),
+    clickupId: text("clickupId"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_folders_org_idx").on(t.organizationId)]
+);
+export type PjFolder = typeof pjFolders.$inferSelect;
+
+/**
+ * A list of tasks, in a folder or on its own. statuses: JSON [{name, color,
+ * type: open|active|done|closed}] in order. fields: JSON custom fields
+ * [{id, name, type: text|number|dropdown|date|money|checkbox, options?: [{id, name, color}]}].
+ */
+export const pjLists = sqliteTable(
+  "pj_lists",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    folderId: integer("folderId"),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    statuses: text("statuses").notNull(),
+    fields: text("fields").notNull().default("[]"),
+    sort: integer("sort").notNull().default(0),
+    clickupId: text("clickupId"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_lists_org_idx").on(t.organizationId, t.folderId)]
+);
+export type PjList = typeof pjLists.$inferSelect;
+
+/**
+ * A task (or a subtask when parentId is set). assignees: JSON [{type: user|employee|name, id, name}].
+ * Dates are YYYY-MM-DD. fields: JSON {fieldId: value}. checklist: JSON [{text, done}].
+ * priority: urgent, high, normal, low or null.
+ */
+export const pjTasks = sqliteTable(
+  "pj_tasks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    listId: integer("listId").notNull(),
+    parentId: integer("parentId"),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    status: text("status").notNull(),
+    priority: text("priority", { enum: ["urgent", "high", "normal", "low"] }),
+    startDate: text("startDate"),
+    dueDate: text("dueDate"),
+    timeEstimate: integer("timeEstimate"),
+    tags: text("tags").notNull().default("[]"),
+    assignees: text("assignees").notNull().default("[]"),
+    fields: text("fields").notNull().default("{}"),
+    checklist: text("checklist").notNull().default("[]"),
+    goalId: integer("goalId"),
+    sort: integer("sort").notNull().default(0),
+    closedAt: integer("closedAt", { mode: "timestamp" }),
+    createdBy: text("createdBy").notNull().default(""),
+    clickupId: text("clickupId"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("pj_tasks_list_idx").on(t.organizationId, t.listId), index("pj_tasks_due_idx").on(t.organizationId, t.dueDate)]
+);
+export type PjTask = typeof pjTasks.$inferSelect;
+
+/** Comments on a task, and its activity lines (kind = activity). */
+export const pjComments = sqliteTable(
+  "pj_comments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    taskId: integer("taskId").notNull(),
+    kind: text("kind", { enum: ["comment", "activity"] }).notNull().default("comment"),
+    authorType: text("authorType", { enum: ["user", "employee", "system"] }).notNull(),
+    authorId: integer("authorId"),
+    authorName: text("authorName").notNull(),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_comments_task_idx").on(t.organizationId, t.taskId)]
+);
+export type PjComment = typeof pjComments.$inferSelect;
+
+/**
+ * A list's automation. trigger: JSON {on: "status" | "created", to?: status}.
+ * action: JSON {do: "assign" | "priority" | "status" | "comment", value}.
+ * listId null means every list in the workspace.
+ */
+export const pjAutomations = sqliteTable(
+  "pj_automations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    listId: integer("listId"),
+    trigger: text("trigger").notNull(),
+    action: text("action").notNull(),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_automations_org_idx").on(t.organizationId)]
+);
+export type PjAutomation = typeof pjAutomations.$inferSelect;
+
+/** A ClickUp import's progress. picks: JSON [{spaceId, name, mode: projects|goals}]. */
+export const pjImports = sqliteTable("pj_imports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  organizationId: integer("organizationId").notNull(),
+  status: text("status", { enum: ["running", "done", "failed"] }).notNull().default("running"),
+  picks: text("picks").notNull(),
+  progress: text("progress").notNull().default(""),
+  counts: text("counts").notNull().default("{}"),
+  error: text("error"),
+  startedBy: text("startedBy").notNull().default(""),
+  createdAt: createdAt(),
+  finishedAt: integer("finishedAt", { mode: "timestamp" }),
+});
+export type PjImport = typeof pjImports.$inferSelect;

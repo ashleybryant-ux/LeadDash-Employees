@@ -26,6 +26,7 @@ const LIMITS: Record<string, number> = {
   post_media: 250_000_000,
   chat: 20_000_000,
   team: 20_000_000,
+  work: 20_000_000,
   brain_doc: 40_000_000,
   brain_image: 30_000_000,
   history: 400_000_000,
@@ -217,9 +218,9 @@ export function registerUploads(app: Express) {
 
       // A file attached in an employee's chat: photos are described, documents are read.
       // Team chat: a file one person shares with the others. Nothing here goes to the AI.
-      if (slot === "team") {
+      if (slot === "team" || slot === "work") {
         const imageType = sniffImageType(buf);
-        const saved = await storagePut(`org-${orgId}/team/${name}`, buf, imageType ?? mime);
+        const saved = await storagePut(`org-${orgId}/${slot}/${name}`, buf, imageType ?? mime);
         const f = db.createChatFile({ organizationId: orgId, employeeId: 0, userId: user.id, name, mime: imageType ?? mime, size: buf.length, kind: imageType ? "image" : "document", fileUrl: saved.url, text: "", pages: null });
         return res.json({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl });
       }

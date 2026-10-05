@@ -118,6 +118,14 @@ async function weekFacts(orgId: number, updatesFrom: string[]) {
   }
   const card = await scorecard(orgId);
   lines.push(`Scorecard this week: ${card.rows.map((r) => `${r.team} ${r.label}: ${r.thisWeek}${r.goal !== null ? ` (goal ${r.goal})` : ""}`).join("; ")}`);
+  const topics = (await import("../work/simone")).takeTopics(orgId);
+  if (topics.length) lines.push(`Topics the owner added to this meeting (put each on the agenda):\n${topics.map((t) => `- ${t}`).join("\n")}`);
+  try {
+    const { goalFacts } = await import("../work/simone");
+    lines.push((await goalFacts(orgId)).lines.slice(0, 4000));
+  } catch {
+    // Goals are optional.
+  }
   const { factsFor } = await import("./onboarding");
   for (const kind of updatesFrom) {
     const e = emps.find((x) => x.kind === kind);
@@ -435,12 +443,8 @@ function weekStart(d: Date, tz: string) {
   return zonedToUtc(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), 0, 0, tz);
 }
 
-export async function scorecard(orgId: number, weekOf?: Date) {
-  const { ops, tz } = await opsFor(orgId);
-  const start = weekStart(weekOf ?? new Date(), tz);
-  const end = new Date(start.getTime() + 7 * DAY);
-  const prev = new Date(start.getTime() - 7 * DAY);
-  const isCurrent = end.getTime() > Date.now();
+/** Counts one scorecard number over a span of time. Loads the workspace's data once, so it can be asked for many weeks. */
+export async function scoreCounter(orgId: number) {
   const inRange = (d: Date | null | undefined, a: Date, b: Date) => !!d && new Date(d) >= a && new Date(d) < b;
   const out = await db.listOutboundItemsByOrg(orgId);
   const leads = await db.listLeads(orgId);
@@ -478,6 +482,16 @@ export async function scorecard(orgId: number, weekOf?: Date) {
         return null;
     }
   };
+  return value;
+}
+
+export async function scorecard(orgId: number, weekOf?: Date) {
+  const { ops, tz } = await opsFor(orgId);
+  const start = weekStart(weekOf ?? new Date(), tz);
+  const end = new Date(start.getTime() + 7 * DAY);
+  const prev = new Date(start.getTime() - 7 * DAY);
+  const isCurrent = end.getTime() > Date.now();
+  const value = await scoreCounter(orgId);
   const rows = SCORE_ROWS.map((r) => {
     const thisWeek = value(r.key, start, end);
     const lastWeek = r.key === "approvals_waiting" ? null : value(r.key, prev, start);

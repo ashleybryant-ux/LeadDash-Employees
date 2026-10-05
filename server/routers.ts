@@ -158,6 +158,10 @@ function personName(user: User) {
 }
 
 const orgInput = z.object({ organizationId: z.number().int().positive() });
+const ymdZ = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const assigneeZ = z.object({ type: z.enum(["user", "employee", "name"]), id: z.number().int(), name: z.string().max(120) });
+const statusZ = z.object({ name: z.string().max(40), color: z.string().max(9), type: z.enum(["open", "active", "done", "closed"]) });
+const fieldZ = z.object({ id: z.string().max(60), name: z.string().max(80), type: z.enum(["text", "number", "dropdown", "date", "money", "checkbox"]), options: z.array(z.object({ id: z.string().max(60), name: z.string().max(80), color: z.string().max(9) })).max(50).optional() });
 const mediaMeta = z.object({ name: z.string().max(200).optional(), w: z.number().optional(), h: z.number().optional(), seconds: z.number().optional(), size: z.number().optional() });
 
 const SECRET_KEYS = ["clientSecret", "appSecret", "appPassword", "accessToken", "refreshToken", "apiKey"];
@@ -1311,6 +1315,242 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId);
       (await import("./team")).markRead(input.organizationId, ctx.user.id, input.channel, input.lastId);
       return { ok: true };
+    }),
+  }),
+
+  // Goals: each workspace's own, set by the owner and Simone together
+  goals: router({
+    overview: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./work/goals")).overview(input.organizationId);
+    }),
+    updates: protectedProcedure.input(orgInput.extend({ goalId: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./work/goals")).goalUpdates(input.organizationId, input.goalId);
+    }),
+    save: protectedProcedure
+      .input(
+        orgInput.extend({
+          goal: z.object({
+            id: z.number().int().optional(),
+            title: z.string().max(200),
+            description: z.string().max(4000).default(""),
+            level: z.enum(["company", "year", "quarter", "cycle"]),
+            parentId: z.number().int().nullable(),
+            folderId: z.number().int().nullable(),
+            ownerType: z.enum(["user", "employee"]).nullable(),
+            ownerId: z.number().int().nullable(),
+            startDate: ymdZ,
+            dueDate: ymdZ,
+            period: z.string().max(40),
+            color: z.string().max(9),
+            status: z.enum(["on", "risk", "off", "done"]).nullable(),
+            manualProgress: z.number().min(0).max(100).nullable(),
+            targets: z
+              .array(z.object({ id: z.number().int().optional(), kind: z.enum(["number", "currency", "boolean", "tasks", "measure"]), name: z.string().max(120), startValue: z.number(), currentValue: z.number(), targetValue: z.number(), done: z.boolean(), listId: z.number().int().nullable(), measureId: z.number().int().nullable() }))
+              .max(20)
+              .optional(),
+          }),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return (await import("./work/goals")).saveGoal(input.organizationId, input.goal, personName(ctx.user));
+      }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./work/goals")).removeGoal(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    approve: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return (await import("./work/goals")).approveGoal(input.organizationId, input.id, personName(ctx.user));
+    }),
+    dismiss: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      (await import("./work/goals")).dismissGoal(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    addUpdate: protectedProcedure.input(orgInput.extend({ goalId: z.number().int(), status: z.enum(["on", "risk", "off", "done"]).nullable(), body: z.string().max(4000), fileIds: z.array(z.number().int()).max(10).default([]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const g = await import("./work/goals");
+      const u = g.addUpdate(input.organizationId, input.goalId, { authorType: "user", authorId: ctx.user.id, authorName: personName(ctx.user), status: input.status, body: input.body });
+      g.attach(input.organizationId, "update", u.id, input.fileIds, personName(ctx.user));
+      return u;
+    }),
+    setTarget: protectedProcedure.input(orgInput.extend({ targetId: z.number().int(), value: z.number().nullable(), done: z.boolean().optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./work/goals")).setTargetValue(input.organizationId, input.targetId, input.value, input.done);
+    }),
+    saveFolder: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), name: z.string().max(80), color: z.string().max(9), parentId: z.number().int().nullable().default(null) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./work/goals")).saveFolder(input.organizationId, input);
+    }),
+    removeFolder: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./work/goals")).removeFolder(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    saveScorecard: protectedProcedure
+      .input(orgInput.extend({ rows: z.array(z.object({ id: z.number().int().optional(), name: z.string().max(120), ownerType: z.enum(["user", "employee"]).nullable(), ownerId: z.number().int().nullable(), weeklyGoal: z.number().nullable(), unit: z.enum(["number", "currency", "percent", "hours"]), direction: z.enum(["up", "down"]), kind: z.enum(["leading", "result"]), source: z.string().max(60), goalId: z.number().int().nullable() })).max(40) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        (await import("./work/goals")).saveScorecard(input.organizationId, input.rows);
+        return { ok: true };
+      }),
+    setValue: protectedProcedure.input(orgInput.extend({ measureId: z.number().int(), weekStart: ymdZ, value: z.number().nullable() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await (await import("./work/goals")).setMeasureValue(input.organizationId, input.measureId, input.weekStart, input.value, personName(ctx.user));
+      return { ok: true };
+    }),
+    saveLayout: protectedProcedure
+      .input(orgInput.extend({ cards: z.array(z.object({ id: z.string().max(20), type: z.enum(["revenue", "measure", "goals", "scorecard", "chart", "read", "donut", "bars", "funnel"]), span: z.union([z.literal(3), z.literal(4), z.literal(6), z.literal(8), z.literal(12)]), goalId: z.number().int().nullable().optional(), measureIds: z.array(z.number().int()).max(8).optional(), title: z.string().max(80).optional() })).max(30) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        (await import("./work/goals")).saveLayout(input.organizationId, input.cards);
+        return { ok: true };
+      }),
+    attach: protectedProcedure.input(orgInput.extend({ itemType: z.enum(["goal", "task"]), itemId: z.number().int(), fileIds: z.array(z.number().int()).min(1).max(10) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const ok = input.itemType === "goal" ? db.work.goals.get(input.organizationId, input.itemId) : db.work.tasks.get(input.organizationId, input.itemId);
+      if (!ok) throw new TRPCError({ code: "NOT_FOUND", message: "That isn't in this workspace." });
+      return { added: (await import("./work/goals")).attach(input.organizationId, input.itemType, input.itemId, input.fileIds, personName(ctx.user)) };
+    }),
+    detach: protectedProcedure.input(orgInput.extend({ linkId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./work/goals")).detach(input.organizationId, input.linkId);
+      return { ok: true };
+    }),
+    refreshRead: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await (await import("./work/simone")).weeklyRead(input.organizationId);
+      return { ok: true };
+    }),
+    draftYear: protectedProcedure.input(orgInput.extend({ year: z.number().int().min(2024).max(2100) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return { drafted: (await (await import("./work/simone")).draftYear(input.organizationId, input.year)).length };
+    }),
+    addTopic: protectedProcedure.input(orgInput.extend({ text: z.string().min(1).max(300) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return { count: (await import("./work/simone")).addTopic(input.organizationId, input.text, personName(ctx.user)) };
+    }),
+  }),
+
+  // Projects: folders, lists and tasks, in place of ClickUp
+  pj: router({
+    tree: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./work/projects")).tree(input.organizationId, { type: "user", id: ctx.user.id, name: personName(ctx.user) });
+    }),
+    view: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable(), scope: z.enum(["list", "everything", "mine"]), closed: z.boolean().default(false) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./work/projects")).view(input.organizationId, { listId: input.listId, scope: input.scope, me: { type: "user", id: ctx.user.id, name: personName(ctx.user) }, closed: input.closed });
+    }),
+    task: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./work/projects")).detail(input.organizationId, input.id);
+    }),
+    saveFolder: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), name: z.string().max(80), color: z.string().max(9) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./work/projects")).saveFolder(input.organizationId, input);
+    }),
+    removeFolder: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      (await import("./work/projects")).removeFolder(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    saveList: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int().optional(), name: z.string().max(120), folderId: z.number().int().nullable(), description: z.string().max(2000).optional(), statuses: z.array(statusZ).max(20).optional(), fields: z.array(fieldZ).max(30).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return (await import("./work/projects")).saveList(input.organizationId, input);
+      }),
+    removeList: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      (await import("./work/projects")).removeList(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    create: protectedProcedure.input(orgInput.extend({ listId: z.number().int(), parentId: z.number().int().nullable().default(null), name: z.string().min(1).max(300), status: z.string().max(40).optional(), dueDate: ymdZ.nullable().optional(), assignees: z.array(assigneeZ).max(20).optional(), goalId: z.number().int().nullable().optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const { organizationId, ...rest } = input;
+      return (await import("./work/projects")).createTask(organizationId, rest, { type: "user", id: ctx.user.id, name: personName(ctx.user) });
+    }),
+    update: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().int(),
+          patch: z.object({
+            name: z.string().max(300).optional(),
+            description: z.string().max(20_000).optional(),
+            status: z.string().max(40).optional(),
+            priority: z.enum(["urgent", "high", "normal", "low"]).nullable().optional(),
+            startDate: ymdZ.nullable().optional(),
+            dueDate: ymdZ.nullable().optional(),
+            timeEstimate: z.number().int().min(0).max(100_000).nullable().optional(),
+            tags: z.array(z.string().max(40)).max(20).optional(),
+            assignees: z.array(assigneeZ).max(20).optional(),
+            fields: z.record(z.string(), z.unknown()).optional(),
+            checklist: z.array(z.object({ text: z.string().max(300), done: z.boolean() })).max(100).optional(),
+            goalId: z.number().int().nullable().optional(),
+            listId: z.number().int().optional(),
+            sort: z.number().optional(),
+          }),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return (await import("./work/projects")).updateTask(input.organizationId, input.id, input.patch, { type: "user", id: ctx.user.id, name: personName(ctx.user) });
+      }),
+    shiftDates: protectedProcedure.input(orgInput.extend({ id: z.number().int(), startDate: ymdZ.nullable(), dueDate: ymdZ.nullable() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./work/projects")).shiftDates(input.organizationId, input.id, input.startDate, input.dueDate, { type: "user", id: ctx.user.id, name: personName(ctx.user) });
+      return { ok: true };
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./work/projects")).removeTask(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    comment: protectedProcedure.input(orgInput.extend({ taskId: z.number().int(), body: z.string().max(10_000), fileIds: z.array(z.number().int()).max(10).default([]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./work/projects")).comment(input.organizationId, input.taskId, input.body, { type: "user", id: ctx.user.id, name: personName(ctx.user) }, input.fileIds);
+    }),
+    automations: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./work/projects")).automations(input.organizationId, input.listId);
+    }),
+    saveAutomation: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int().optional(), listId: z.number().int().nullable(), trigger: z.object({ on: z.enum(["created", "status"]), to: z.string().max(40).optional() }), action: z.object({ do: z.enum(["assign", "priority", "status", "comment"]), value: z.string().max(500) }), active: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, ...rest } = input;
+        return (await import("./work/projects")).saveAutomation(organizationId, rest);
+      }),
+    removeAutomation: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./work/projects")).removeAutomation(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    // Moving from ClickUp
+    clickupSpaces: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const spaces = await (await import("./work/clickupImport")).spaces(input.organizationId);
+      const orgs = await db.listOrganizationsForUser(ctx.user.id);
+      const mine = [];
+      for (const o of orgs) {
+        const m = await db.getOrganizationMembership(o.id, ctx.user.id);
+        if (m && ["owner", "admin"].includes(m.role)) mine.push({ id: o.id, name: o.name });
+      }
+      return { spaces, workspaces: mine };
+    }),
+    importStatus: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./work/clickupImport")).latestImport(input.organizationId);
+    }),
+    startImport: protectedProcedure.input(orgInput.extend({ picks: z.array(z.object({ spaceId: z.string().max(40), name: z.string().max(200), orgId: z.number().int(), mode: z.enum(["projects", "goals"]) })).min(1).max(20) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      for (const p of input.picks) await requireMember(ctx, p.orgId, "admin");
+      return (await import("./work/clickupImport")).startImport(input.organizationId, input.picks, { id: ctx.user.id, name: personName(ctx.user) });
     }),
   }),
 

@@ -10,11 +10,12 @@ import type { Application, OutboundItem, User } from "../drizzle/schema";
  * Notices never carry a client's name: they say what is waiting and link to it.
  */
 
-export const NOTIFY_EVENTS = ["team_message", "approval", "report", "application", "deadline", "task_failed", "team_due"] as const;
+export const NOTIFY_EVENTS = ["team_message", "task_assigned", "approval", "report", "application", "deadline", "task_failed", "team_due"] as const;
 export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 
 export const EVENT_LABELS: Record<NotifyEvent, string> = {
   team_message: "A teammate messages me",
+  task_assigned: "I'm given a task or mentioned on one",
   approval: "Something is waiting in Approvals",
   report: "An employee sends a report",
   application: "An application is ready to submit",
@@ -28,6 +29,7 @@ export type Prefs = Record<NotifyEvent, { push: boolean; email: boolean; sound: 
 
 export const DEFAULT_PREFS: Prefs = {
   team_message: { push: true, email: false, sound: true },
+  task_assigned: { push: true, email: false, sound: true },
   approval: { push: true, email: false, sound: true },
   report: { push: true, email: false, sound: false },
   application: { push: true, email: false, sound: false },
