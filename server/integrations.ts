@@ -342,23 +342,8 @@ export function authorizeUrl(key: AppKey, state: string, verifier?: string, scop
 }
 
 export function registerOAuth(app: Express) {
-  app.get("/api/oauth/:app/start", async (req, res) => {
-    const key = String(req.params.app) as AppKey;
-    const orgId = Number(req.query.organizationId);
-    if (!APPS[key]) return res.status(404).send("Unknown connection.");
-    if (!appReady(key)) return back(res, { error: `${LABEL[APPS[key].provider]} is not set up on this server yet.` });
-    const { user: signedIn } = await authenticateRequest(req);
-    if (!signedIn) return res.redirect("/signin");
-    const user = Number.isFinite(orgId) && orgId > 0 ? await canManage(req, orgId) : null;
-    if (!user) return back(res, { error: "Only a workspace owner or admin can connect accounts." });
-    sweep();
-    const state = crypto.randomBytes(24).toString("base64url");
-    const verifier = APPS[key].pkce ? crypto.randomBytes(48).toString("base64url") : undefined;
-    pending.set(state, { orgId, userId: user.id, app: key, verifier, exp: Date.now() + 10 * 60_000 });
-    res.redirect(authorizeUrl(key, state, verifier));
-  });
-
   // An extra Google account: same Google app and callback, its own scopes.
+  // Registered before /api/oauth/:app/start, or "link" is taken for an app name ("Unknown connection.").
   app.get("/api/oauth/link/start", async (req, res) => {
     const orgId = Number(req.query.organizationId);
     const purpose = req.query.purpose === "send" ? "send" : "calendar";
@@ -373,6 +358,22 @@ export function registerOAuth(app: Express) {
     const name = String(req.query.name || "").trim().slice(0, 80);
     pending.set(state, { orgId, userId: user.id, app: "google", exp: Date.now() + 10 * 60_000, link: { purpose, name, id } });
     res.redirect(authorizeUrl("google", state, undefined, LINK_SCOPES[purpose]));
+  });
+
+  app.get("/api/oauth/:app/start", async (req, res) => {
+    const key = String(req.params.app) as AppKey;
+    const orgId = Number(req.query.organizationId);
+    if (!APPS[key]) return res.status(404).send("Unknown connection.");
+    if (!appReady(key)) return back(res, { error: `${LABEL[APPS[key].provider]} is not set up on this server yet.` });
+    const { user: signedIn } = await authenticateRequest(req);
+    if (!signedIn) return res.redirect("/signin");
+    const user = Number.isFinite(orgId) && orgId > 0 ? await canManage(req, orgId) : null;
+    if (!user) return back(res, { error: "Only a workspace owner or admin can connect accounts." });
+    sweep();
+    const state = crypto.randomBytes(24).toString("base64url");
+    const verifier = APPS[key].pkce ? crypto.randomBytes(48).toString("base64url") : undefined;
+    pending.set(state, { orgId, userId: user.id, app: key, verifier, exp: Date.now() + 10 * 60_000 });
+    res.redirect(authorizeUrl(key, state, verifier));
   });
 
   app.get("/api/oauth/:app/callback", async (req, res) => {
