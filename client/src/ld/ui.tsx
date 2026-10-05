@@ -134,6 +134,8 @@ export const Icons = {
   approvals: I(<><path d="M9 11l3 3 8-8" /><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" /></>),
   tasks: I(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>),
   calendar: I(<><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4M8 14h2M14 14h2M8 17.5h2" /></>),
+  goals: I(<><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" /></>),
+  projects: I(<><rect x="3.5" y="4" width="17" height="16" rx="2" /><path d="M7.5 9l1.5 1.5L12 7.5M7.5 15l1.5 1.5L12 13.5M14 9h3M14 15h3" /></>),
   brain: I(<><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1z" /><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" /></>),
   workspace: I(<><rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-4h4v4" /></>),
   integrations: I(<><rect x="3" y="11" width="7" height="7" rx="1" /><rect x="11" y="11" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /></>),
@@ -155,7 +157,7 @@ export const Icons = {
 // Rail
 // ==========================================
 
-type RailKey = "chats" | "calendar" | "huddle" | "activity" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
+export type RailKey = "chats" | "calendar" | "goals" | "projects" | "huddle" | "activity" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
 
 export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
@@ -210,10 +212,11 @@ export function Rail({ active }: { active: RailKey }) {
       </button>
       {item("chats", "Chats", "/chats", Icons.chats)}
       {item("calendar", "Calendar", "/calendar", Icons.calendar)}
+      {item("goals", "Goals", "/goals", Icons.goals)}
+      {item("projects", "Projects", "/projects", Icons.projects)}
       {item("huddle", "Huddle", "/huddle", Icons.huddle)}
       {item("activity", "Activity", "/activity", Icons.activity)}
       {item("approvals", "Approvals", "/approvals", Icons.approvals, count)}
-      {item("tasks", "Tasks", "/tasks", Icons.tasks)}
       {item("brain", "Brain", "/brain", Icons.brain)}
       {item("workspace", "Workspace", "/workspace", Icons.workspace)}
       {item("integrations", "Integrations", "/integrations", Icons.integrations)}
@@ -604,7 +607,7 @@ const MoreIcon = I(<><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r=
 
 export function BottomNav({ active }: { active: RailKey }) {
   const count = useApprovalCount();
-  const on = (k: RailKey) => (k === "more" ? ["calendar", "huddle", "activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
+  const on = (k: RailKey) => (k === "more" ? ["calendar", "goals", "tasks", "huddle", "activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
   const item = (key: RailKey, label: string, href: string, icon: React.ReactNode, badge?: number) => (
     <Link key={key} href={href} className={`ld-bn-item ${on(key) ? "on" : ""}`} aria-current={on(key) ? "page" : undefined}>
       <span style={{ position: "relative", display: "flex" }}>
@@ -618,7 +621,7 @@ export function BottomNav({ active }: { active: RailKey }) {
     <nav className="ld-bottomnav" aria-label="Main">
       {item("chats", "Chats", "/chats?list=1", Icons.chats)}
       {item("approvals", "Approvals", "/approvals", Icons.approvals, count)}
-      {item("tasks", "Tasks", "/tasks", Icons.tasks)}
+      {item("projects", "Projects", "/projects", Icons.projects)}
       {item("more", "More", "/more", MoreIcon)}
     </nav>
   );

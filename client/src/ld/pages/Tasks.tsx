@@ -116,7 +116,7 @@ export default function Tasks() {
   };
 
   return (
-    <Page rail="tasks">
+    <Page rail="projects">
       <div className="ld-between">
         <h1 className="ld-h1">Tasks</h1>
         <button

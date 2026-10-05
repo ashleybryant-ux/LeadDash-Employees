@@ -12,6 +12,8 @@ export default function More() {
   const row: React.CSSProperties = { display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderBottom: "1px solid #eef2f0", textDecoration: "none", color: "#14221c", fontSize: 15, fontWeight: 700, background: "none", border: 0, width: "100%", font: "inherit", cursor: "pointer", textAlign: "left" };
   const items: [string, string, React.ReactNode][] = [
     ["Calendar", "/calendar", Icons.calendar],
+    ["Goals", "/goals", Icons.goals],
+    ["Launches", "/tasks", Icons.tasks],
     ["Huddle", "/huddle", Icons.huddle],
     ["Activity", "/activity", Icons.activity],
     ["Brain", "/brain", Icons.brain],

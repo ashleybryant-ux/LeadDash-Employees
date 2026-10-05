@@ -142,6 +142,19 @@ export function takeTopics(orgId: number) {
   return list.map((t) => `${t.text} (added by ${t.by})`);
 }
 
+/** Typed-in measures: the people who own them get a notice when last week's number is missing. */
+export async function askForNumbers(orgId: number, lastWeek: string) {
+  const ms = db.work.measures.all(orgId).filter((m) => m.active && m.source === "manual" && m.ownerType === "user" && m.ownerId);
+  const have = db.work.values.all(orgId).filter((v) => v.weekStart === lastWeek);
+  const missing = new Map<number, string[]>();
+  for (const m of ms) if (!have.some((v) => v.measureId === m.id)) missing.set(m.ownerId!, [...(missing.get(m.ownerId!) ?? []), m.name]);
+  const { notify } = await import("../notify");
+  for (const [userId, names] of Array.from(missing.entries())) {
+    await notify(orgId, "task_assigned", { title: "Scorecard numbers for last week", body: `Enter ${names.join(", ")} for the week of ${fmtDay(lastWeek)}.`, url: "/goals?view=scorecard" }, { only: [userId] }).catch(() => null);
+  }
+  return missing.size;
+}
+
 /** Monday after 7:00: the read, once a week. In November and December: next year's draft, once. */
 export async function goalsTicks() {
   for (const orgId of await db.listAllOrganizationIds()) {
@@ -152,6 +165,7 @@ export async function goalsTicks() {
       const week = sundayOf(todayYmd(tz));
       if (db.work.reads.all(orgId).some((r) => r.weekStart === week)) continue;
       if (!db.work.goals.all(orgId).length && !db.work.measures.all(orgId).some((m) => m.active)) continue;
+      await askForNumbers(orgId, addDays(week, -7));
       await withUsage({ orgId, kind: "coo" }, async () => {
         await weeklyRead(orgId);
         if (p.m >= 11 && !db.work.goals.all(orgId).some((g) => g.level === "year" && g.period === String(p.y + 1))) await draftYear(orgId, p.y + 1);

@@ -1430,6 +1430,13 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId, "admin");
       return { drafted: (await (await import("./work/simone")).draftYear(input.organizationId, input.year)).length };
     }),
+    makeTask: protectedProcedure.input(orgInput.extend({ text: z.string().min(1).max(300), goalId: z.number().int().nullable() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const pjm = await import("./work/projects");
+      const list = pjm.listNamed(input.organizationId, "Goal follow-ups") ?? pjm.saveList(input.organizationId, { name: "Goal follow-ups", folderId: null });
+      const t = await pjm.createTask(input.organizationId, { listId: list.id, name: input.text, goalId: input.goalId }, { type: "user", id: ctx.user.id, name: personName(ctx.user) });
+      return { id: t.id, listId: list.id };
+    }),
     addTopic: protectedProcedure.input(orgInput.extend({ text: z.string().min(1).max(300) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       return { count: (await import("./work/simone")).addTopic(input.organizationId, input.text, personName(ctx.user)) };

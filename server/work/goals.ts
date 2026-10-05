@@ -218,6 +218,8 @@ export function forecastOf(goal: Goal, t: GoalTarget | undefined, today: string)
   hist = hist.filter((h) => ymdOk(h.d) && Number.isFinite(h.v)).sort((a, b) => a.d.localeCompare(b.d));
   if (!hist.length || hist[0].d > goal.startDate) hist.unshift({ d: goal.startDate, v: t.startValue });
   if (hist[hist.length - 1].d < today && today <= goal.dueDate) hist.push({ d: today, v: t.currentValue });
+  // Too early to tell: two weeks in, a pace says more about the first days than the goal.
+  if (daysBetween(goal.startDate, today) < 14) return null;
   const elapsed = Math.max(1, daysBetween(goal.startDate, today));
   const left = Math.max(0, daysBetween(today, goal.dueDate));
   const rate = (t.currentValue - t.startValue) / elapsed;

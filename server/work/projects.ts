@@ -110,7 +110,7 @@ export function removeList(orgId: number, id: number) {
 // ==========================================
 
 export type TaskRow = ReturnType<typeof taskRow>;
-function taskRow(t: PjTask, all: PjTask[], counts: { comments: Map<number, number>; files: Map<number, number> }, goals: Map<number, string>, listName = "") {
+function taskRow(t: PjTask, all: PjTask[], counts: { comments: Map<number, number>; files: Map<number, number>; covers: Map<number, string> }, goals: Map<number, string>, listName = "") {
   const subs = all.filter((x) => x.parentId === t.id);
   const checklist = parse<CheckItem[]>(t.checklist, []);
   return {
@@ -135,6 +135,7 @@ function taskRow(t: PjTask, all: PjTask[], counts: { comments: Map<number, numbe
     checklist: { done: checklist.filter((c) => c.done).length, total: checklist.length },
     comments: counts.comments.get(t.id) ?? 0,
     files: counts.files.get(t.id) ?? 0,
+    cover: counts.covers.get(t.id) ?? null,
     sort: t.sort,
   };
 }
@@ -143,8 +144,16 @@ function counts(orgId: number) {
   const comments = new Map<number, number>();
   for (const c of db.work.comments.all(orgId)) if (c.kind === "comment") comments.set(c.taskId, (comments.get(c.taskId) ?? 0) + 1);
   const files = new Map<number, number>();
-  for (const f of db.work.files.all(orgId)) if (f.itemType === "task") files.set(f.itemId, (files.get(f.itemId) ?? 0) + 1);
-  return { comments, files };
+  const links = db.work.files.all(orgId).filter((f) => f.itemType === "task");
+  for (const f of links) files.set(f.itemId, (files.get(f.itemId) ?? 0) + 1);
+  // The first picture on a task is its card cover on the Board.
+  const pics = db.getChatFiles(orgId, links.map((l) => l.fileId)).filter((f) => f.kind === "image");
+  const covers = new Map<number, string>();
+  for (const l of links.sort((a, b) => a.id - b.id)) {
+    const p = pics.find((x) => x.id === l.fileId);
+    if (p && !covers.has(l.itemId)) covers.set(l.itemId, p.fileUrl);
+  }
+  return { comments, files, covers };
 }
 
 /** A list's tasks (or Everything, or My work) with what every view needs. */
