@@ -547,10 +547,11 @@ export async function finishConnect(orgId: number, key: AppKey, code: string, ve
     handle = me.data.user?.email ?? null;
     settings = { teamId: String(team.id), teamName: team.name ?? null, userId: me.data.user?.id ?? null, userEmail: me.data.user?.email ?? null, spaces: list, spaceId: list[0]?.id ?? null, spaceName: list[0]?.name ?? null };
   } else if (key === "zoom") {
-    const me = await api("https://api.zoom.us/v2/users/me", { token: tokens.accessToken });
-    label = me.data.email || [me.data.first_name, me.data.last_name].filter(Boolean).join(" ") || "Zoom account";
-    handle = me.data.email ?? null;
-    settings = { email: me.data.email ?? null, userId: me.data.id ?? null };
+    // Reading the profile only names the account. Without the user:read:user scope Zoom still connects.
+    const me = await api("https://api.zoom.us/v2/users/me", { token: tokens.accessToken }).catch(() => null);
+    label = me?.data.email || [me?.data.first_name, me?.data.last_name].filter(Boolean).join(" ") || "Zoom account";
+    handle = me?.data.email ?? null;
+    settings = { email: me?.data.email ?? null, userId: me?.data.id ?? null };
   } else if (key === "meta") {
     const me = await api(`${GRAPH}/me?fields=id,name`, { token: tokens.accessToken });
     const pages = await api(`${GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50`, { token: tokens.accessToken });

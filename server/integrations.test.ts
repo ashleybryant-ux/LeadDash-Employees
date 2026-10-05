@@ -44,6 +44,16 @@ describe("one-click connections", () => {
     expect(integrations.readyApps().linkedin).toBe(true);
   });
 
+  it("connects Zoom even when the app wasn't given the profile scope", async () => {
+    process.env.ZOOM_CLIENT_ID = "z-id";
+    process.env.ZOOM_CLIENT_SECRET = "z-secret";
+    const { orgId } = await makeWorkspace("int-zoom");
+    routes.push([/zoom\.us\/oauth\/token/, () => json({ access_token: "z-token", refresh_token: "z-ref", expires_in: 3600 })]);
+    routes.push([/api\.zoom\.us\/v2\/users\/me/, () => json({ code: 4711, message: "Invalid access token, does not contain scopes:[user:read:user:admin, user:read:user]." }, 400)]);
+    expect(await integrations.finishConnect(orgId, "zoom", "code")).toBe("Zoom account");
+    expect((await db.getConnectionByProvider(orgId, "zoom"))?.status).toBe("connected");
+  });
+
   it("connects LinkedIn, then Post on approval publishes and records the link; a second try never posts twice", async () => {
     const { orgId, owner } = await makeWorkspace("int-li");
     routes.push([/linkedin\.com\/oauth\/v2\/accessToken/, () => json({ access_token: "li-token", expires_in: 5184000 })]);
