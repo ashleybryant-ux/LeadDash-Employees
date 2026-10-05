@@ -38,6 +38,9 @@ export const MODELS = {
   portrait: "fal-ai/nano-banana-pro",
   video: "fal-ai/kling-video/v3/pro/image-to-video",
   lipsync: "fal-ai/sync-lipsync/v2",
+  /** Backups when sync.so is down. */
+  lipsyncKling: "fal-ai/kling-video/lipsync/audio-to-video",
+  lipsyncLatent: "fal-ai/latentsync",
   /** The owner's own take (a phone clip of her performing the shot) moved onto the approved still. */
   perform: "fal-ai/kling-video/v3/pro/motion-control",
   /** The second animator, for shots with two or more people. */
@@ -83,6 +86,10 @@ export type Shot = {
   takeSeconds?: number;
   stillUrl?: string | null;
   clipUrl?: string | null;
+  /** A talking shot's animated clip before lip sync, kept so a lip-sync outage never means paying to animate it again. */
+  rawClipUrl?: string | null;
+  /** The spoken line, made once in the character's voice and kept with the raw clip. */
+  lineUrl?: string | null;
   status?: "todo" | "making" | "done" | "failed";
   error?: string | null;
   costCents?: number;
@@ -432,8 +439,8 @@ async function falOnce(url: string, init: { method?: string; body?: unknown }) {
 }
 
 /** One call to fal.ai, tried again with growing waits when fal.ai is busy or briefly down. */
-async function falCall(url: string, init: { method?: string; body?: unknown } = {}) {
-  const tries = init.method === "POST" ? 4 : 6;
+async function falCall(url: string, init: { method?: string; body?: unknown } = {}, triesOverride?: number) {
+  const tries = triesOverride ?? (init.method === "POST" ? 4 : 6);
   for (let i = 0; ; i++) {
     try {
       return await falOnce(url, init);
@@ -482,7 +489,8 @@ export async function falRun(model: string, input: unknown, maxMinutes = 20, wai
         await new Promise((r) => setTimeout(r, pollMs));
       }
       console.log(`[drama] fal ${model} ${sub.request_id} finished in ${Math.round((Date.now() - started) / 1000)} sec`);
-      return await falCall(sub.response_url);
+      // A finished job whose result fails to load usually failed on fal.ai's side: try twice, then send it again.
+      return await falCall(sub.response_url, {}, 2);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[drama] fal ${model}: ${msg}`);
@@ -745,6 +753,37 @@ async function refsFor(orgId: number, s: Shot, look: string) {
   return { refs, extra };
 }
 
+/**
+ * Lip sync with a backup: sync.so first, then Kling's lip sync, then LatentSync.
+ * One service being down (fal.ai's "Downstream service unavailable") moves on
+ * to the next instead of stopping the episode.
+ */
+async function lipSync(clip: string, audio: Buffer, s: Shot, total: number, waiting: (what: string) => FalWait) {
+  const audioIn = dataUri(audio, "audio/mpeg");
+  const secs = (audio.length * 8) / 128_000;
+  const tries: { model: string; input: Record<string, unknown> }[] = [
+    { model: MODELS.lipsync, input: { video_url: clip, audio_url: audioIn, sync_mode: "cut_off" } },
+    // Kling's lip sync needs at least 2 seconds of speech.
+    ...(secs >= 2 ? [{ model: MODELS.lipsyncKling, input: { video_url: clip, audio_url: audioIn } }] : []),
+    { model: MODELS.lipsyncLatent, input: { video_url: clip, audio_url: audioIn } },
+  ];
+  let lastErr = "";
+  for (const t of tries) {
+    try {
+      const res = await falRun(t.model, t.input, 15, waiting(`Shot ${s.n} of ${total}: matching the lips to the voice`));
+      const url = res?.video?.url as string | undefined;
+      if (url) return url;
+      lastErr = "no video came back";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === STOPPED) throw err;
+      lastErr = msg;
+      console.warn(`[drama] lip sync with ${t.model} failed for shot ${s.n}, trying the next one: ${msg}`);
+    }
+  }
+  throw new Error(`The lip sync for shot ${s.n} didn't come back from any lip-sync service (${lastErr}). The animated clip is saved, so Make again only redoes the lip sync`);
+}
+
 export async function makeEpisode(orgId: number, id: number) {
   const series = db.getDramaSeries(orgId);
   const look = series?.look ?? "";
@@ -830,12 +869,16 @@ export async function makeEpisode(orgId: number, id: number) {
     let audio: Buffer | null = null;
     let seconds = s.seconds;
     if (s.line) {
-      const voice = cast.find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId;
-      if (!voice) throw new Error(`${s.line.who} doesn't have a voice yet`);
-      audio = await speak(voice, s.line.text);
+      if (s.lineUrl) audio = await readStored(s.lineUrl).catch(() => null);
+      if (!audio) {
+        const voice = cast.find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId;
+        if (!voice) throw new Error(`${s.line.who} doesn't have a voice yet`);
+        audio = await speak(voice, s.line.text);
+        s.lineUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-line${s.n}.mp3`, audio, "audio/mpeg")).url;
+      }
       seconds = Math.max(seconds, Math.ceil((audio.length * 8) / 128_000) + 1);
     }
-    if (s.vo) {
+    if (s.vo && !s.voUrl) {
       if (!ownerVoice) throw new Error("Pick your voice under Your avatar first");
       const vo = await speak(ownerVoice, s.vo);
       s.voUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-vo${s.n}.mp3`, vo, "audio/mpeg")).url;
@@ -843,35 +886,46 @@ export async function makeEpisode(orgId: number, id: number) {
     }
     seconds = Math.max(3, Math.min(10, seconds));
     const engine = engineFor(s);
-    let clipRes: any;
-    if (engine === "seedance") {
-      seconds = Math.max(4, seconds);
-      const faces = refs.flatMap((r) => r.urls).slice(0, 8);
-      clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(seconds), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
+    let clip: string | undefined;
+    if (s.rawClipUrl) {
+      // Animated on an earlier try; only the lip sync is left.
+      clip = await asInput(s.rawClipUrl);
+      seconds = s.seconds;
     } else {
-      // A shot that carries straight on into the next one ends exactly on the next keyframe, so there's no jump.
-      const nextShot = shots[shots.indexOf(s) + 1];
-      const endOn = s.flow === "continue" && nextShot?.stillUrl && !s.line ? nextShot.stillUrl : null;
-      clipRes = await falRun(MODELS.video, {
-        start_image_url: await asInput(s.stillUrl!),
-        ...(endOn ? { end_image_url: await asInput(endOn) } : {}),
-        prompt: motionPrompt(s, refs),
-        duration: String(seconds),
-        generate_audio: !s.line,
-        negative_prompt: "blur, distortion, low quality, on-screen text, captions, watermark, extra fingers, distorted hands, warped faces, morphing, surreal motion, slow motion",
-        ...(refs.length ? { elements: await Promise.all(refs.map(async (r) => ({ frontal_image_url: await asInput(r.urls[0]), reference_image_urls: await Promise.all((r.urls.length > 1 ? r.urls.slice(1, 4) : r.urls).map(asInput)) }))) } : {}),
-      }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
+      let clipRes: any;
+      if (engine === "seedance") {
+        seconds = Math.max(4, seconds);
+        const faces = refs.flatMap((r) => r.urls).slice(0, 8);
+        clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(seconds), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
+      } else {
+        // A shot that carries straight on into the next one ends exactly on the next keyframe, so there's no jump.
+        const nextShot = shots[shots.indexOf(s) + 1];
+        const endOn = s.flow === "continue" && nextShot?.stillUrl && !s.line ? nextShot.stillUrl : null;
+        clipRes = await falRun(MODELS.video, {
+          start_image_url: await asInput(s.stillUrl!),
+          ...(endOn ? { end_image_url: await asInput(endOn) } : {}),
+          prompt: motionPrompt(s, refs),
+          duration: String(seconds),
+          generate_audio: !s.line,
+          negative_prompt: "blur, distortion, low quality, on-screen text, captions, watermark, extra fingers, distorted hands, warped faces, morphing, surreal motion, slow motion",
+          ...(refs.length ? { elements: await Promise.all(refs.map(async (r) => ({ frontal_image_url: await asInput(r.urls[0]), reference_image_urls: await Promise.all((r.urls.length > 1 ? r.urls.slice(1, 4) : r.urls).map(asInput)) }))) } : {}),
+        }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
+      }
+      clip = clipRes?.video?.url as string | undefined;
+      if (!clip) throw new Error(`No video came back for shot ${s.n}`);
+      s.costCents = (s.costCents ?? 0) + Math.ceil(seconds * (engine === "seedance" ? PRICE.seedancePerSec : s.line ? PRICE.videoSilentPerSec : PRICE.videoSoundPerSec));
+      if (audio) {
+        // Kept before the lip sync, so if the lip-sync service is down the animation isn't paid for twice.
+        s.rawClipUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-shot${s.n}-raw.mp4`, await download(clip), "video/mp4")).url;
+        s.seconds = seconds;
+        save(`Shot ${s.n} of ${shots.length}: animated, matching the lips next`);
+      }
     }
-    let clip = clipRes?.video?.url as string | undefined;
-    if (!clip) throw new Error(`No video came back for shot ${s.n}`);
-    s.costCents = (s.costCents ?? 0) + Math.ceil(seconds * (engine === "seedance" ? PRICE.seedancePerSec : s.line ? PRICE.videoSilentPerSec : PRICE.videoSoundPerSec));
     if (audio) {
-      const synced = await falRun(MODELS.lipsync, { video_url: clip, audio_url: dataUri(audio, "audio/mpeg"), sync_mode: "cut_off" }, 15, waiting(`Shot ${s.n} of ${shots.length}: matching the lips to the voice`));
-      clip = synced?.video?.url as string | undefined;
-      if (!clip) throw new Error(`The lip sync for shot ${s.n} didn't come back`);
-      s.costCents += Math.ceil(seconds * PRICE.lipsyncPerSec);
+      clip = await lipSync(clip!, audio, s, shots.length, waiting);
+      s.costCents = (s.costCents ?? 0) + Math.ceil(seconds * PRICE.lipsyncPerSec);
     }
-    s.clipUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-shot${s.n}.mp4`, await download(clip), "video/mp4")).url;
+    s.clipUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-shot${s.n}.mp4`, await download(clip!), "video/mp4")).url;
     s.seconds = seconds;
     s.status = "done";
     save(`Shot ${s.n} of ${shots.length} done`);
@@ -1147,7 +1201,7 @@ export async function remakeShot(orgId: number, id: number, n: number) {
   const ep = db.getDramaEpisode(id, orgId);
   if (!ep) throw new TRPCError({ code: "NOT_FOUND", message: "That video isn't in this workspace." });
   if (ep.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
-  const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, clipUrl: null, stillUrl: null, voUrl: null, status: "todo" as const, costCents: 0 } : s));
+  const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, clipUrl: null, rawClipUrl: null, lineUrl: null, stillUrl: null, voUrl: null, status: "todo" as const, costCents: 0 } : s));
   db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots) });
   return startEpisode(orgId, id);
 }
@@ -1159,7 +1213,7 @@ export async function animateWith(orgId: number, id: number, n: number, engine: 
   if (ep.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
   if (!shotsOf(ep).some((s) => s.n === n)) throw new TRPCError({ code: "NOT_FOUND", message: "That shot isn't in this video." });
   const approved = Boolean(planOf(ep).approved);
-  const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, engine, ...(approved ? { clipUrl: null, status: "todo" as const } : {}) } : s));
+  const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, engine, ...(approved ? { clipUrl: null, rawClipUrl: null, status: "todo" as const } : {}) } : s));
   const next = db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots) })!;
   return approved && shots.find((s) => s.n === n)!.stillUrl ? startEpisode(orgId, id) : next;
 }
@@ -1189,7 +1243,7 @@ export async function saveTake(orgId: number, id: number, n: number, buf: Buffer
     if (info.duration < 1.5) throw new TRPCError({ code: "BAD_REQUEST", message: "That take is too short. Record at least 2 seconds." });
     const saved = await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-take${n}-${Date.now()}.mp4`, fs.readFileSync(out), "video/mp4");
     const seconds = Math.max(3, Math.min(10, Math.ceil(info.duration)));
-    const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, takeUrl: saved.url, takeSeconds: seconds, clipUrl: null, voUrl: null, status: "todo" as const } : s));
+    const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, takeUrl: saved.url, takeSeconds: seconds, clipUrl: null, rawClipUrl: null, voUrl: null, status: "todo" as const } : s));
     return db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots), ...(ep.status === "ready" ? { status: "failed", error: "Your take is in. Press Make again to animate that shot and cut it again." } : {}) })!;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -1201,7 +1255,7 @@ export function clearTake(orgId: number, id: number, n: number) {
   const ep = db.getDramaEpisode(id, orgId);
   if (!ep) throw new TRPCError({ code: "NOT_FOUND", message: "That video isn't in this workspace." });
   if (ep.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
-  const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, takeUrl: null, takeSeconds: undefined, ...(s.takeUrl ? { clipUrl: null, status: "todo" as const } : {}) } : s));
+  const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, takeUrl: null, takeSeconds: undefined, ...(s.takeUrl ? { clipUrl: null, rawClipUrl: null, status: "todo" as const } : {}) } : s));
   return db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots), ...(ep.status === "ready" ? { status: "failed", error: "Your take was removed. Press Make again to animate that shot and cut it again." } : {}) })!;
 }
 
@@ -1219,7 +1273,7 @@ export function saveScript(orgId: number, id: number, input: { cta: string; shot
     if (vo !== (s.vo ?? "")) {
       changed = true;
       // New words need a new read, and a clip long enough for them.
-      return { ...s, vo, caption, voUrl: null, clipUrl: null, status: "todo" as const };
+      return { ...s, vo, caption, voUrl: null, clipUrl: null, rawClipUrl: null, lineUrl: null, status: "todo" as const };
     }
     if (caption !== (s.caption ?? "")) changed = true;
     return { ...s, caption };

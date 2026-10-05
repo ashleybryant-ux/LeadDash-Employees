@@ -475,6 +475,53 @@ describe("Elena's mini drama studio", () => {
     expect(db.getDramaEpisode(ep.id, orgId)!.status).toBe("failed");
     expect(drama.stopEpisode(orgId, ep.id).status).toBe("failed");
   });
+  it("moves to a backup lip sync when sync.so is down, and never pays to animate a shot twice", async () => {
+    const { orgId, owner } = await makeWorkspace("lipsync");
+    const c = caller(owner);
+    const pic = await storagePut(`org-${orgId}/brain/front.jpg`, Buffer.from("jpeg-bytes"), "image/jpeg");
+    const img = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "Ashley", content: "", fileUrl: pic.url });
+    await c.avatar.saveSettings({ organizationId: orgId, imageId: img.id, voiceId: "voice-ashley", voiceName: "Ashley", quality: "standard", limitCents: 5000 });
+    season = { ...SEASON, episodes: [{ ...SEASON.episodes[0], shots: [shot({ action: "Dr. Ashley Bryant speaks into her phone.", cast: ["Dr. Ashley Bryant"], line_who: "Dr. Ashley Bryant", line_text: "Session ran long. She made a real connection today." })] }] };
+    const w = await drama.writeEpisodes(orgId, { brief: "", count: 1, ownerName: "Ashley" });
+    const id = w.episodes[0].id;
+    await c.drama.make({ organizationId: orgId, id });
+    await waitFor(() => db.getDramaEpisode(id, orgId)!.status === "keyframes");
+
+    const real = globalThis.fetch;
+    let down = new Set(["fal-ai/sync-lipsync/v2"]);
+    vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
+      const u = String(url);
+      if (/\/req\/r\d+\?m=/.test(u) && down.has(decodeURIComponent(u.split("?m=")[1]))) {
+        calls.push({ url: u, init });
+        return Response.json({ detail: "Downstream service unavailable" }, { status: 504 });
+      }
+      return real(url, init);
+    });
+    calls = [];
+    await c.drama.approveKeyframes({ organizationId: orgId, id });
+    await waitFor(() => db.getDramaEpisode(id, orgId)!.status !== "making");
+    expect(db.getDramaEpisode(id, orgId)!.status).toBe("ready");
+    expect(posts(drama.MODELS.video)).toHaveLength(1);
+    expect(posts(drama.MODELS.lipsync).length).toBeGreaterThan(0);
+    expect(posts(drama.MODELS.lipsyncKling)).toHaveLength(1);
+
+    // Every lip-sync service down: it stops, the animated clip is kept, and Make again only redoes the lip sync.
+    await c.drama.remakeShot({ organizationId: orgId, id, n: 1 });
+    await waitFor(() => !["making"].includes(db.getDramaEpisode(id, orgId)!.status));
+    if (db.getDramaEpisode(id, orgId)!.status === "keyframes") await c.drama.approveKeyframes({ organizationId: orgId, id });
+    down = new Set(["fal-ai/sync-lipsync/v2", "fal-ai/kling-video/lipsync/audio-to-video", "fal-ai/latentsync"]);
+    calls = [];
+    await waitFor(() => db.getDramaEpisode(id, orgId)!.status === "failed", 60_000);
+    const failed = drama.shotsOf(db.getDramaEpisode(id, orgId)!)[0];
+    expect(failed.rawClipUrl).toBeTruthy();
+    expect(db.getDramaEpisode(id, orgId)!.error).toMatch(/animated clip is saved/);
+    const animatedOnce = posts(drama.MODELS.video).length;
+    down = new Set();
+    await c.drama.make({ organizationId: orgId, id });
+    await waitFor(() => db.getDramaEpisode(id, orgId)!.status !== "making");
+    expect(db.getDramaEpisode(id, orgId)!.status).toBe("ready");
+    expect(posts(drama.MODELS.video)).toHaveLength(animatedOnce);
+  }, 120_000);
   it("waits out fal.ai's temporary outages instead of stopping, but stops on a real error", async () => {
     const real = globalThis.fetch;
     let downs = 2;
