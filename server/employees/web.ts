@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
-import { extractJson } from "../_core/llm";
+import { lookup } from "node:dns/promises";
+import { extractJson, searchJson } from "../_core/llm";
 import { storagePut } from "../storage";
 import { withUsage } from "../usage";
 import type { AIEmployee, PortalLogin, WebTask } from "../../drizzle/schema";
@@ -87,7 +88,7 @@ export async function startWebTask(emp: AIEmployee, input: { goal: string; url?:
   if (url && !/^https?:\/\//i.test(url)) url = `https://${url.replace(/^\/+/, "")}`;
   const login = findLogin(await db.listPortalLogins(org), input.login ?? "", url);
   const startUrl = url || (login ? startIn(login) : "");
-  if (!startUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Which website? Give me its address, or add its login on Integrations under Website logins." });
+  // No address: the browser looks the site up from the goal before it starts.
   const guard = login ? lockGuard(login) : undefined;
   if (guard && !guard(startUrl)) throw new TRPCError({ code: "FORBIDDEN", message: `That page is outside the ${login!.lockName} sub-account, and this login only opens that one.` });
   const title = (input.title || goal).replace(/\s+/g, " ").slice(0, 90);
@@ -137,13 +138,61 @@ async function saveFiles(orgId: number, res: Pick<BrowserResult, "downloads">) {
   return out;
 }
 
+/** Whether a web address's site exists (its name resolves). */
+export async function siteExists(url: string) {
+  try {
+    await lookup(new URL(url).hostname);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A web address that doesn't exist: the real site, found by searching, or null. Only an address the search actually returned, and that exists, is used. */
+export async function findRealSite(goal: string, badUrl: string) {
+  const host = hostOf(badUrl);
+  const r = await searchJson<{ url: string }>({
+    system: "You find the official website for a task. Return the one web address the task should start on, exactly as it appears in a search result.",
+    prompt: `Task: ${goal.slice(0, 600)}
+The address ${host} does not exist. Find the right one.`,
+    schemaName: "real_site",
+    schema: { type: "object", additionalProperties: false, required: ["url"], properties: { url: { type: "string" } } },
+    maxUses: 3,
+  });
+  const url = (r.data?.url ?? "").trim();
+  if (!/^https?:\/\//i.test(url)) return null;
+  const seen = (r.sources ?? []).some((x) => hostOf(x.url) === hostOf(url));
+  if (!seen || !(await siteExists(url))) return null;
+  return url;
+}
+
+/** Playwright's errors carry color codes and a call log; the owner gets one plain sentence. */
+export function plainNote(note: string, url: string) {
+  const text = note.replace(/\u001b\[[0-9;]*m/g, "").replace(/\[[0-9;]*m/g, "");
+  if (/ERR_NAME_NOT_RESOLVED|ENOTFOUND|EAI_AGAIN/.test(text)) return `there's no website at ${hostOf(url)}`;
+  if (/ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ERR_CONNECTION_TIMED_OUT/.test(text)) return `${hostOf(url)} didn't answer`;
+  if (/Timeout \d+ms exceeded/.test(text)) return `${hostOf(url)} took too long to load`;
+  return text.split(/\n\s*Call log:/)[0].replace(/^page\.\w+:\s*/, "").replace(/\s+/g, " ").trim().slice(0, 300);
+}
+
 export async function runWebTask(orgId: number, id: number) {
-  const t = db.getWebTask(id, orgId);
+  let t = db.getWebTask(id, orgId);
   if (!t) return;
   const emp = await db.getEmployeeForOrg(t.employeeId, orgId);
   if (!emp) return;
   const login = await loginFor(orgId, t.loginId);
   db.updateWebTask(id, orgId, { status: "working" });
+  // A made-up or mistyped address: look up the real site instead of failing on it.
+  if (!login && !(await siteExists(t.startUrl))) {
+    const real = await findRealSite(t.goal, t.startUrl).catch(() => null);
+    if (!real) {
+      const what = t.startUrl ? `There's no website at ${hostOf(t.startUrl)}, and a search didn't turn up the right one.` : "A search didn't turn up the right website.";
+      const next = db.updateWebTask(id, orgId, { status: "failed", note: what })!;
+      await post(emp, `${what} Send me the link and I'll go straight there.`, [webCard(next)]);
+      return;
+    }
+    t = db.updateWebTask(id, orgId, { startUrl: real })!;
+  }
   const liveId = t.liveId || newLiveId();
   const res = await runBrowserTask({
     orgId,
@@ -182,7 +231,7 @@ export async function finishWebTask(emp: AIEmployee, t: WebTask, res: BrowserRes
     return next;
   }
   const next = db.updateWebTask(t.id, orgId, { ...base, status: "failed", note: res.note.slice(0, 900) })!;
-  await post(emp, `I couldn't finish that: ${res.note.replace(/\.$/, "")}. Tell me what to change and I'll try again, or press Take over next time it gets stuck.`, [webCard(next)]);
+  await post(emp, `I couldn't finish that: ${plainNote(res.note, res.url || t.startUrl).replace(/\.$/, "")}. Tell me what to change and I'll try again, or press Take over next time it gets stuck.`, [webCard(next)]);
   return next;
 }
 

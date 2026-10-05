@@ -7,6 +7,9 @@ import * as browser from "./employees/browser";
 import { lockGuard, parseLockId } from "./employees/logins";
 import type { BrowserResult, BrowserTask } from "./employees/browser";
 
+// The test server has no internet: every site name resolves here.
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => ({ address: "127.0.0.1", family: 4 })) }));
+
 const blank = { reply: "", action: "none", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
 const LOC = "AbCdEf1234567890xyz1";
 const OTHER = "ZzLegacy0987654321ab";
