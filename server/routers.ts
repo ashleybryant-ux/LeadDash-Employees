@@ -2310,6 +2310,26 @@ export const appRouter = router({
         return db.listChatMessages(input.organizationId, input.employeeId);
       }),
 
+    /** Presenter notes on one slide of a deck an employee made. */
+    saveSlideNotes: protectedProcedure.input(orgInput.extend({ id: z.number().int(), index: z.number().int().min(0).max(300), notes: z.string().max(6000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      try {
+        await (await import("./employees/talk")).setSlideNotes(input.organizationId, input.id, input.index, input.notes);
+      } catch (err) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+      }
+      return { ok: true };
+    }),
+    newSlidePicture: protectedProcedure.input(orgInput.extend({ id: z.number().int(), index: z.number().int().min(0).max(300), describe: z.string().max(600).default("") })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      try {
+        await (await import("./employees/talk")).newSlidePicture(input.organizationId, input.id, input.index, input.describe);
+      } catch (err) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+      }
+      return { ok: true };
+    }),
+
     /** A file an employee made (a talk script, a deck), to open right in the chat. */
     fileView: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

@@ -65,7 +65,7 @@ export const LAYOUTS = [
 
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -149,6 +149,8 @@ const ACTION_HELP: Record<string, string> = {
   rewrite_outreach: "rewrite_outreach: rewrite every email sequence still waiting for approval (when the owner says they sound off, robotic, like AI, or asks for a rewrite). Put what to change in `notes` ('' if they didn't say).",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
   write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
+  slide_notes: "slide_notes: add to or change the presenter notes on one slide of the deck you built (\"add to the notes on slide 4: ...\"). Put the slide number in `count`, the words in `notes`, and \"replace\" in `focus` when they want the old notes replaced ('' to add to them).",
+  slide_picture: "slide_picture: a new picture on one slide of the deck you built (\"new picture on slide 4, a woman at her desk after work\"). Put the slide number in `count` and what the picture should show in `notes` ('' to make another of the same).",
   show_talk: "show_talk: the person wants to see, open or find a script or slides you ALREADY made (\"put it in the chat\", \"show me the script\", \"where is it\", \"I can't see it\"). Put \"slides\" in `focus` for the deck, '' for the script. It shows the existing one; it never writes a new one.",
   write_talk: "write_talk: write a NEW full word-for-word script (only when there isn't one yet, or they ask for a new version or a different length; to see one you already wrote, use show_talk) for a talk, keynote, workshop or session the owner is giving (\"write my talk\", \"write the script for my SHRM session\"). Put the talk's title in `title`, anything they asked for in `notes`, and its length in minutes in `count`: from what they said, else from the Brain (accepted sessions list their length). Never guess the length: when neither says, put 0 in `count`. It runs in the background and arrives in this chat, where it opens right there.",
   write_slides: "write_slides: build the slide deck (PowerPoint) for a talk (\"build the slides\", \"make the PPT\"). It uses the latest script you wrote, with what she says on each slide in the speaker notes; without a script it builds from the Brain. Put the talk's title in `title` and anything they asked for in `notes`. It arrives in this chat, where she can flip through it right there.",
@@ -1308,6 +1310,22 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         cards: [{ type: "reply", id: h.id, title: h.title, subtitle: `${when} at ${time} · ${where}`, body: d.attendees ? `With ${d.attendees}` : "" }],
         queries: [],
       };
+    }
+    case "slide_notes":
+    case "slide_picture": {
+      const talk = await import("./talk");
+      const deck = talk.latestDeck(org, emp.id);
+      if (!deck) return { text: "I haven't built slides yet. Say \"build the slides\" and I'll make them from the script.", cards: [], queries: [] };
+      const n = Math.round(d.count ?? 0);
+      if (!(n >= 1)) return { text: "Which slide? Tell me the number.", cards: [], queries: [] };
+      try {
+        if (d.action === "slide_notes") await talk.setSlideNotes(org, deck.id, n - 1, d.notes, d.focus.toLowerCase() === "replace" ? "replace" : "add");
+        else await talk.newSlidePicture(org, deck.id, n - 1, d.notes);
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+      const fresh = (await talk.showLatest(emp, "slides"))!;
+      return { text: d.action === "slide_notes" ? `Done. The presenter notes on slide ${n} are updated, in the deck below and the PowerPoint file.` : `Done. Slide ${n} has a new picture${d.notes ? `: ${d.notes.replace(/\.$/, "")}` : ""}. The deck below and the PowerPoint file are updated.`, cards: [fresh.card], queries: [] };
     }
     case "show_talk": {
       const talk = await import("./talk");

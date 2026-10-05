@@ -499,7 +499,7 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
 .ld-slide-huge { font-size: 5.4cqw; font-weight: 800; line-height: 1.15; }
 .ld-slide-body { position: absolute; inset: 0; padding: 5cqw 6cqw; }
 .ld-slide-h2 { font-size: 3.8cqw; font-weight: 800; line-height: 1.2; margin-bottom: 2.4cqw; }
-.ld-slide-body ul { margin: 0; padding-left: 3cqw; }
+.ld-slide-body ul { margin: 0; padding-left: 3cqw; list-style: disc; }
 .ld-slide-body li { font-size: 2.6cqw; line-height: 1.4; margin-bottom: 1.4cqw; }
 .ld-talk-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) 128px; gap: 14px; align-items: center; padding: 14px 16px; }
 .ld-talk-btns { display: flex; flex-direction: column; gap: 8px; }
@@ -520,3 +520,21 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
 @media (max-width: 760px) { .ld-toasts { right: 16px; left: 16px; width: auto; bottom: 80px; } }
 .ld-teamday { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; color: #5b6b64; }
 .ld-teamday::before, .ld-teamday::after { content: ""; flex: 1; height: 1px; background: #e3e9e6; }
+
+/* The deck in the chat: slide, notes, previews, and buttons beside it */
+.ld-talk-deck2 { display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 16px; align-items: start; padding: 16px; }
+.ld-talk-side { display: flex; flex-direction: column; gap: 8px; }
+.ld-talk-stage { outline: none; border-radius: 8px; }
+.ld-talk-stage:fullscreen { background: #000; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.ld-talk-stage:fullscreen .ld-slide { width: min(100vw, calc(100vh * 16 / 9)); border: 0; border-radius: 0; }
+.ld-talk-notes { margin-top: 10px; }
+.ld-talk-notes.editing { background: #fff; border: 1px solid #1b6b4a; }
+.ld-slide-img { position: absolute; object-fit: cover; display: block; }
+.ld-slide-shade { position: absolute; inset: 0; }
+.ld-slide-ai { position: absolute; left: 8px; bottom: 8px; font-size: 11px; font-weight: 700; background: rgba(18, 33, 29, 0.75); color: #fff; border-radius: 999px; padding: 2px 8px; }
+.ld-slide-cover { z-index: 1; }
+@media (max-width: 760px) {
+  .ld-talk-deck2 { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .ld-talk-side { flex-direction: row; }
+  .ld-talk-side > .ld-btn { flex: 1; width: auto; }
+}

@@ -1,6 +1,8 @@
 import * as db from "../db";
 import { generateJson, generateText } from "../_core/llm";
-import { storagePut } from "../storage";
+import fs from "node:fs";
+import path from "node:path";
+import { storagePut, uploadsRoot } from "../storage";
 import type { AIEmployee, ChatMessage } from "../../drizzle/schema";
 import { systemPromptAbout, working } from "./tasks";
 
@@ -14,8 +16,9 @@ import { systemPromptAbout, working } from "./tasks";
 
 type Section = { title: string; minutes: number; slide: string; covers: string };
 type Outline = { title: string; event: string; sections: Section[] };
-export type Slide = { kind: "title" | "points" | "big" | "activity" | "close"; title: string; points: string[]; notes: string };
-export type Deck = { title: string; event: string; slides: Slide[] };
+/** picture: what the photo shows ('' for none). image: the made picture's file. On the title slide the image is her headshot. */
+export type Slide = { kind: "title" | "section" | "points" | "big" | "activity" | "close"; title: string; points: string[]; notes: string; picture?: string; image?: string | null };
+export type Deck = { title: string; event: string; slides: Slide[]; theme?: { dark: string; accent: string }; headshot?: string | null };
 
 const STYLE = `Write the way an experienced human speaker talks: plain, warm, specific, in first person.
 - No em dashes or en dashes. Use periods, commas, parentheses or colons.
@@ -280,6 +283,33 @@ export function startSlides(emp: AIEmployee, input: { title: string; notes: stri
   return { started: true, text: `I'm building ${label} now${script ? ", from the script, with your speaker notes on every slide" : ""}. It'll show up here, and you can flip through it right in this chat.` };
 }
 
+const MAX_PICTURES = 6;
+
+/** Her headshot from the Brain: a photo whose name or note says headshot or portrait. */
+async function headshotUrl(orgId: number) {
+  const photos = (await db.listKnowledgeByOrg(orgId)).filter((k) => k.kind === "image" && k.fileUrl);
+  const hit = photos.find((k) => /head\s*shot|portrait/i.test(`${k.title} ${k.content ?? ""}`));
+  return hit?.fileUrl ?? null;
+}
+
+/** Makes one slide picture. Null when images aren't set up or the picture fails; the slide still works without it. */
+async function makePicture(orgId: number, describe: string, theme: { dark: string; accent: string }) {
+  if (!describe.trim()) return null;
+  try {
+    const { generateImage } = await import("../_core/imageGeneration");
+    const r = await generateImage({
+      prompt: `Realistic editorial photograph for a presentation slide: ${describe}. Natural light, authentic people, warm and calm, with colors that sit well next to ${theme.dark} and ${theme.accent}. No text, letters, numbers, signs or logos anywhere in the image.`,
+      size: "1536x1024",
+      quality: "medium",
+      folder: `org-${orgId}/talks`,
+    });
+    return r.url;
+  } catch (err) {
+    console.warn("[talk] picture failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 export async function buildSlides(emp: AIEmployee, input: { title: string; notes: string; said: string }) {
   return working(emp, async () => {
     const script = latestScript(emp.organizationId, emp.id);
@@ -287,9 +317,10 @@ export async function buildSlides(emp: AIEmployee, input: { title: string; notes
       emp,
       `${input.title} ${input.notes} ${script?.name ?? ""}`,
       `Build the slide deck for a talk the owner is giving${input.title ? `: ${input.title}` : ""}.${script ? " Follow the script you're given: one slide for each part it names, in order, plus a title slide first and a closing slide last." : " Use the session details in the Brain."}
-- kind: title (first slide), points (a heading with 2 to 4 short points), big (one large statement or number), activity (what the room does, with the minutes), close (thanks and contact).
+- kind: title (first slide), section (opens a part of the talk, a short title over a full picture), points (a heading with 2 to 4 short points), big (one large statement or number), activity (what the room does, with the minutes), close (thanks and contact).
 - Slide text is short: points under 12 words each. No em dashes or en dashes.
-- notes: what she says on that slide, taken from the script when there is one (keep its timing line first), else 2 to 4 sentences.
+- notes: the presenter notes, what she says on that slide, taken from the script when there is one (keep its timing line first), else 2 to 4 sentences.
+- picture: for up to ${MAX_PICTURES} slides where a photo helps (section slides, a story, an activity), describe a realistic photo in one sentence (people and setting, no words or signs in it). '' for every other slide, and always '' on title, big and close slides.
 - Use only facts and numbers you were given; write [add source] where a number would need one.
 event: the event, date and room as one line ('' when unknown).`
     );
@@ -309,8 +340,8 @@ event: the event, date and room as one line ('' when unknown).`
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["kind", "title", "points", "notes"],
-              properties: { kind: { type: "string", enum: ["title", "points", "big", "activity", "close"] }, title: { type: "string" }, points: { type: "array", items: { type: "string" } }, notes: { type: "string" } },
+              required: ["kind", "title", "points", "notes", "picture"],
+              properties: { kind: { type: "string", enum: ["title", "section", "points", "big", "activity", "close"] }, title: { type: "string" }, points: { type: "array", items: { type: "string" } }, notes: { type: "string" }, picture: { type: "string" } },
             },
           },
         },
@@ -318,58 +349,137 @@ event: the event, date and room as one line ('' when unknown).`
       maxTokens: 16000,
       timeoutMs: 300_000,
     });
-    const slides = (deck.slides ?? []).filter((s) => s && s.title).map((s) => ({ ...s, title: strip(s.title), points: (s.points ?? []).map(strip).slice(0, 5), notes: strip(s.notes ?? "") }));
-    if (!slides.length) throw new Error("The deck came back empty");
-    const title = deck.title || input.title || "Talk";
     const org = await db.getOrganizationById(emp.organizationId);
     const colors = (org?.brandColors ?? "").match(/#[0-9a-f]{6}/gi) ?? [];
-    const theme = { dark: colors[0] ?? "#0d3b2e", accent: colors[1] ?? "#e88a3a" };
-    const buf = await deckPptxFile(title, deck.event, slides, theme);
-    const name = `${safeName(title)} - slides.pptx`;
-    const saved = await storagePut(`org-${emp.organizationId}/talks/${Date.now()}-${name.replace(/\s+/g, "-")}`, buf, PPTX);
-    const data: Deck & { theme: typeof theme } = { title, event: deck.event ?? "", slides, theme };
-    const file = db.createChatFile({ organizationId: emp.organizationId, employeeId: emp.id, name, mime: PPTX, size: buf.length, kind: "document", fileUrl: saved.url, text: JSON.stringify(data).slice(0, 400_000), pages: slides.length });
+    const theme = { dark: colors[0] ?? "#1E2A44", accent: colors[1] ?? "#E3B457" };
+    let pictures = 0;
+    const slides: Slide[] = (deck.slides ?? [])
+      .filter((x) => x && x.title)
+      .map((x) => {
+        const wants = !["title", "big", "close"].includes(x.kind) && (x.picture ?? "").trim() && pictures < MAX_PICTURES;
+        if (wants) pictures++;
+        return { ...x, title: strip(x.title), points: (x.points ?? []).map(strip).slice(0, 5), notes: strip(x.notes ?? ""), picture: wants ? strip(x.picture!.trim()) : "", image: null };
+      });
+    if (!slides.length) throw new Error("The deck came back empty");
+    // The pictures, a few at a time.
+    const todo = slides.filter((x) => x.picture);
+    for (let i = 0; i < todo.length; i += 3) await Promise.all(todo.slice(i, i + 3).map(async (x) => (x.image = await makePicture(emp.organizationId, x.picture!, theme))));
+    const headshot = await headshotUrl(emp.organizationId);
+    const title = deck.title || input.title || "Talk";
+    const data: Deck = { title, event: deck.event ?? "", slides, theme, headshot };
+    const file = await saveDeck(emp.organizationId, emp.id, null, data);
+    const made = slides.filter((x) => x.image).length;
+    const missed = todo.length - made;
     const msg = await db.createChatMessage({
       organizationId: emp.organizationId,
       employeeId: emp.id,
       role: "employee",
       authorName: emp.name,
-      content: `The slides for "${title}" are ready: ${slides.length} slides${script ? ", with what you say on each one in the speaker notes" : ""}. Press Open to flip through them here. Tell me what to change, like "shorter text on slide 4".`,
-      cards: JSON.stringify([{ type: "deck", id: file.id, title, subtitle: `PowerPoint · ${slides.length} slides` }]),
+      content: `Your slides are ready: ${slides.length} slides${script ? " from the script" : ""}, with what you say on each one in the presenter notes.${made ? ` ${made} ${made === 1 ? "slide has a picture" : "slides have a picture"} I made for ${made === 1 ? "it" : "them"}.` : ""}${headshot ? " Your headshot is on the title slide." : " Add a photo named headshot to the Brain and I'll put it on the title slide."}${missed ? ` ${missed === todo.length ? "Pictures aren't set up on the server yet, so the slides are text only for now." : `${missed} ${missed === 1 ? "picture" : "pictures"} didn't come through; press New picture on ${missed === 1 ? "that slide" : "those slides"}.`}` : ""}`,
+      cards: JSON.stringify([{ type: "deck", id: file.id, title, subtitle: `PowerPoint · ${slides.length} slides${made ? ` · ${made} pictures` : ""}` }]),
     });
     db.attachChatFiles(emp.organizationId, [file.id], msg.id);
     return { file, slides };
   });
 }
 
-async function deckPptxFile(title: string, event: string, slides: Slide[], theme: { dark: string; accent: string }) {
+/** Writes the PowerPoint and keeps the deck with it (new file, or the same file updated). */
+async function saveDeck(orgId: number, empId: number, fileId: number | null, deck: Deck) {
+  const buf = await deckPptxFile(deck);
+  const name = `${safeName(deck.title)} - slides.pptx`;
+  const saved = await storagePut(`org-${orgId}/talks/${Date.now()}-${name.replace(/\s+/g, "-")}`, buf, PPTX);
+  const text = JSON.stringify(deck).slice(0, 400_000);
+  if (fileId) {
+    db.updateChatFile(orgId, fileId, { fileUrl: saved.url, size: buf.length, text, pages: deck.slides.length });
+    return db.getChatFiles(orgId, [fileId])[0];
+  }
+  return db.createChatFile({ organizationId: orgId, employeeId: empId, name, mime: PPTX, size: buf.length, kind: "document", fileUrl: saved.url, text, pages: deck.slides.length });
+}
+
+function readDeck(orgId: number, fileId: number) {
+  const f = db.getChatFiles(orgId, [fileId])[0];
+  if (!f || f.mime !== PPTX) throw new Error("That deck isn't here.");
+  return { f, deck: JSON.parse(f.text) as Deck };
+}
+
+/** Saves a slide's presenter notes (from the chat's Edit, or "add to the notes on slide 4"). */
+export async function setSlideNotes(orgId: number, fileId: number, index: number, notes: string, mode: "replace" | "add" = "replace") {
+  const { f, deck } = readDeck(orgId, fileId);
+  const s = deck.slides[index];
+  if (!s) throw new Error(`There's no slide ${index + 1}.`);
+  const clean = strip(notes.trim()).slice(0, 6000);
+  s.notes = mode === "add" && s.notes ? `${s.notes}\n${clean}` : clean;
+  return saveDeck(orgId, f.employeeId, f.id, deck);
+}
+
+/** A new picture for one slide, from a new description or the old one. */
+export async function newSlidePicture(orgId: number, fileId: number, index: number, describe = "") {
+  const { f, deck } = readDeck(orgId, fileId);
+  const s = deck.slides[index];
+  if (!s) throw new Error(`There's no slide ${index + 1}.`);
+  if (s.kind === "title") throw new Error("The title slide has your headshot. Add a photo named headshot to the Brain to change it.");
+  const what = strip(describe.trim()) || s.picture || `${s.title}. ${s.points.join(". ")}`;
+  const url = await makePicture(orgId, what, deck.theme ?? { dark: "#1E2A44", accent: "#E3B457" });
+  if (!url) throw new Error("The picture didn't come through. Pictures need the OpenAI key on the server; try again in a minute.");
+  s.picture = what;
+  s.image = url;
+  if (s.kind === "big" || s.kind === "close") s.kind = "points";
+  return saveDeck(orgId, f.employeeId, f.id, deck);
+}
+
+/** The picture or headshot as data PowerPoint can hold. */
+function imageData(url: string | null | undefined) {
+  if (!url) return null;
+  const rel = url.replace(/^\/files\//, "");
+  if (rel === url || rel.includes("..")) return null;
+  const full = path.join(uploadsRoot(), rel);
+  if (!fs.existsSync(full)) return null;
+  const ext = path.extname(full).slice(1).toLowerCase().replace("jpg", "jpeg") || "png";
+  return `image/${ext};base64,${fs.readFileSync(full).toString("base64")}`;
+}
+
+async function deckPptxFile(deck: Deck) {
+  const theme = deck.theme ?? { dark: "#1E2A44", accent: "#E3B457" };
   const PptxGenJS = (await import("pptxgenjs")).default as unknown as new () => any;
   const pptx = new PptxGenJS();
-  pptx.layout = "LAYOUT_WIDE";
-  pptx.title = title;
+  pptx.layout = "LAYOUT_WIDE"; // 13.33 x 7.5 in
+  pptx.title = deck.title;
   const dark = theme.dark.slice(1);
   const accent = theme.accent.slice(1);
-  for (const s of slides) {
+  const head = imageData(deck.headshot);
+  for (const s of deck.slides) {
     const slide = pptx.addSlide();
+    const pic = imageData(s.image);
     if (s.kind === "title" || s.kind === "close") {
       slide.background = { color: dark };
-      slide.addText(s.title, { x: 0.8, y: 2.2, w: 11.7, h: 1.6, fontSize: 40, bold: true, color: "FFFFFF", fontFace: "Calibri", valign: "bottom" });
-      const sub = s.points.length ? s.points.join("\n") : s.kind === "title" ? event : "";
-      if (sub) slide.addText(sub, { x: 0.8, y: 3.9, w: 11.7, h: 1.6, fontSize: 20, color: "E6F2EC", fontFace: "Calibri", valign: "top" });
-      slide.addShape("rect", { x: 0.8, y: 3.75, w: 1.2, h: 0.08, fill: { color: accent } });
+      const w = s.kind === "title" && head ? 7.4 : 11.7;
+      slide.addText(s.title, { x: 0.8, y: 1.6, w, h: 2.2, fontSize: 40, bold: true, color: "FFFFFF", fontFace: "Calibri", valign: "bottom" });
+      slide.addShape("rect", { x: 0.8, y: 3.95, w: 1.2, h: 0.08, fill: { color: accent } });
+      const sub = s.points.length ? s.points.join("\n") : s.kind === "title" ? deck.event : "";
+      if (sub) slide.addText(sub, { x: 0.8, y: 4.15, w, h: 1.6, fontSize: 20, color: "E6F2EC", fontFace: "Calibri", valign: "top" });
+      if (s.kind === "title" && head) slide.addImage({ data: head, x: 9.0, y: 1.1, w: 3.5, h: 4.7, sizing: { type: "cover", w: 3.5, h: 4.7 }, rounding: false });
+    } else if (s.kind === "section" && pic) {
+      slide.addImage({ data: pic, x: 0, y: 0, w: 13.33, h: 7.5, sizing: { type: "cover", w: 13.33, h: 7.5 } });
+      slide.addShape("rect", { x: 0, y: 0, w: 8.2, h: 7.5, fill: { color: dark, transparency: 15 } });
+      slide.addText(s.title, { x: 0.8, y: 2.6, w: 7, h: 2.2, fontSize: 40, bold: true, color: "FFFFFF", fontFace: "Calibri", valign: "middle" });
     } else if (s.kind === "big") {
       slide.background = { color: "FFFFFF" };
+      slide.addShape("rect", { x: 0, y: 0, w: 0.18, h: 7.5, fill: { color: accent } });
       slide.addText(s.title, { x: 0.9, y: 1.4, w: 11.5, h: 2.6, fontSize: 44, bold: true, color: dark, fontFace: "Calibri", valign: "middle" });
       if (s.points.length) slide.addText(s.points.join("\n"), { x: 0.9, y: 4.2, w: 11.5, h: 2, fontSize: 22, color: "3D4C45", fontFace: "Calibri", valign: "top" });
-      slide.addShape("rect", { x: 0, y: 0, w: 0.18, h: 7.5, fill: { color: accent } });
     } else {
+      // points, activity, or a section without a picture
       slide.background = { color: s.kind === "activity" ? "F4F8F6" : "FFFFFF" };
-      slide.addShape("rect", { x: 0, y: 0, w: 0.18, h: 7.5, fill: { color: accent } });
-      slide.addText(s.title, { x: 0.7, y: 0.5, w: 12, h: 1, fontSize: 32, bold: true, color: dark, fontFace: "Calibri" });
+      const picLeft = s.kind === "activity";
+      const textX = pic ? (picLeft ? 5.4 : 0.7) : 0.7;
+      const textW = pic ? 7.2 : 12;
+      if (pic) slide.addImage({ data: pic, x: picLeft ? 0 : 7.6, y: 0, w: picLeft ? 4.9 : 5.73, h: 7.5, sizing: { type: "cover", w: picLeft ? 4.9 : 5.73, h: 7.5 } });
+      if (!pic || !picLeft) slide.addShape("rect", { x: 0, y: 0, w: 0.18, h: 7.5, fill: { color: accent } });
+      slide.addText(s.title, { x: textX, y: 0.6, w: textW, h: 1.2, fontSize: 32, bold: true, color: dark, fontFace: "Calibri", valign: "top" });
       if (s.points.length)
         slide.addText(
           s.points.map((b) => ({ text: b, options: { bullet: true, breakLine: true } })),
-          { x: 0.9, y: 1.7, w: 11.6, h: 5.1, fontSize: 24, color: "24332C", fontFace: "Calibri", valign: "top", paraSpaceAfter: 14 }
+          { x: textX + 0.2, y: 1.9, w: textW - 0.2, h: 4.9, fontSize: 24, color: "24332C", fontFace: "Calibri", valign: "top", paraSpaceAfter: 14 }
         );
     }
     if (s.notes) slide.addNotes(s.notes);

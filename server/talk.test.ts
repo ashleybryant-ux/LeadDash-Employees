@@ -39,16 +39,61 @@ describe("Taylor's talk scripts", () => {
     expect(r.file.text).toMatch(/^# The Relational Skills HR Already Has/);
     expect(r.file.text).toMatch(/## 3\. Plan\n\*\*27:00 to 60:00 · Slide: Your next 30 days\*\*/);
 
-    // The slides come from that script, with the speaker notes, and open in the chat too.
+    // The slides come from that script, with presenter notes, pictures and her headshot.
     vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => {
       expect(opts.prompt).toMatch(/The script:\n# The Relational Skills/);
-      return { title: "The Relational Skills HR Already Has", event: "HR2026", slides: [{ kind: "title", title: "The Relational Skills HR Already Has", points: [], notes: "0:00 Welcome" }, { kind: "points", title: "Praise", points: ["Name one win a day"], notes: "5:00 Talk about praise" }] } as any;
+      return {
+        title: "The Relational Skills HR Already Has",
+        event: "HR2026",
+        slides: [
+          { kind: "title", title: "The Relational Skills HR Already Has", points: [], notes: "0:00 Welcome", picture: "should be ignored" },
+          { kind: "section", title: "The week you just had", points: [], notes: "8:00 Think about your week", picture: "An HR director at her desk at dusk" },
+          { kind: "points", title: "Praise", points: ["Name one win a day"], notes: "12:00 Talk about praise", picture: "" },
+          { kind: "big", title: "75% say it is exhausting", points: ["SHRM, 2024"], notes: "", picture: "" },
+        ],
+      } as any;
     });
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+    const { storagePut } = await import("./storage");
+    const head = await storagePut(`org-${orgId}/brain/headshot.png`, png, "image/png");
+    await db.createKnowledgeItem({ organizationId: orgId, title: "Headshot 02014.jpg", category: "mission_profile", kind: "image", content: "", fileUrl: head.url });
+    const images = await import("./_core/imageGeneration");
+    const gen = vi.spyOn(images, "generateImage").mockImplementation(async () => ({ url: (await storagePut(`org-${orgId}/talks/pic.png`, png, "image/png")).url }));
     const d = await talk.buildSlides(taylor, { title: "", notes: "", said: "build the slides" });
+    expect(gen).toHaveBeenCalledTimes(1);
+    expect(gen.mock.calls[0][0].prompt).toMatch(/An HR director at her desk at dusk.*No text, letters/);
     expect(d.file.name).toMatch(/ - slides\.pptx$/);
-    expect(JSON.parse(d.file.text).slides[1]).toMatchObject({ title: "Praise", notes: "5:00 Talk about praise" });
-    const deckMsg = (await db.listChatMessages(orgId, taylor.id, 5)).find((m) => /slides for .* are ready: 2 slides, with what you say on each one/.test(m.content))!;
-    expect(JSON.parse(deckMsg.cards!)[0]).toMatchObject({ type: "deck", id: d.file.id });
+    const saved = JSON.parse(d.file.text);
+    expect(saved.headshot).toBe(head.url);
+    expect(saved.slides[0].image).toBeNull(); // the title slide gets the headshot, not a picture
+    expect(saved.slides[1].image).toMatch(/^\/files\/org-\d+\/talks\/pic_/);
+    const deckMsg = (await db.listChatMessages(orgId, taylor.id, 5)).find((m) => /Your slides are ready: 4 slides from the script, with what you say on each one in the presenter notes\. 1 slide has a picture I made for it\. Your headshot is on the title slide\./.test(m.content))!;
+    expect(JSON.parse(deckMsg.cards!)[0]).toMatchObject({ type: "deck", id: d.file.id, subtitle: "PowerPoint · 4 slides · 1 pictures" });
+
+    // The PowerPoint holds the notes and both images.
+    const unzip = async (fileId: number) => {
+      const f = db.getChatFiles(orgId, [fileId])[0];
+      const { uploadsRoot } = await import("./storage");
+      const JSZip = (await import("jszip")).default;
+      const zip = await JSZip.loadAsync(require("node:fs").readFileSync(require("node:path").join(uploadsRoot(), f.fileUrl.replace(/^\/files\//, ""))));
+      const names = Object.keys(zip.files);
+      const notes = (await Promise.all(names.filter((n) => /notesSlides\/notesSlide\d+\.xml$/.test(n)).map((n) => zip.file(n)!.async("string")))).join(" ");
+      return { names, notes };
+    };
+    let x = await unzip(d.file.id);
+    expect(x.names.filter((n) => n.startsWith("ppt/media/")).length).toBeGreaterThanOrEqual(2);
+    expect(x.notes).toContain("12:00 Talk about praise");
+
+    // Edit in the chat: the notes change in the deck and the PowerPoint.
+    await talk.setSlideNotes(orgId, d.file.id, 2, "12:00 Ask who said one nice thing to themselves this week.");
+    x = await unzip(d.file.id);
+    expect(x.notes).toContain("Ask who said one nice thing to themselves");
+    expect(x.notes).not.toContain("Talk about praise");
+    // A new picture on one slide.
+    await talk.newSlidePicture(orgId, d.file.id, 2, "a woman at her desk after work");
+    expect(gen).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(db.getChatFiles(orgId, [d.file.id])[0].text).slides[2]).toMatchObject({ picture: "a woman at her desk after work", image: expect.stringMatching(/^\/files\//) });
+    await expect(talk.newSlidePicture(orgId, d.file.id, 0)).rejects.toThrow(/headshot/);
   });
 
   it("times the talk from what she said, else from the Brain, never a guess", async () => {

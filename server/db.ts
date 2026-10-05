@@ -1050,6 +1050,9 @@ export function recentChatFiles(orgId: number, employeeId: number, limit = 10) {
   return getDb().select().from(chatFiles).where(and(eq(chatFiles.organizationId, orgId), eq(chatFiles.employeeId, employeeId))).orderBy(desc(chatFiles.id)).limit(limit).all().filter((f) => f.messageId != null);
 }
 
+export function updateChatFile(orgId: number, id: number, data: Partial<typeof chatFiles.$inferInsert>) {
+  getDb().update(chatFiles).set(data).where(and(eq(chatFiles.organizationId, orgId), eq(chatFiles.id, id))).run();
+}
 export function updateChatFileText(orgId: number, id: number, text: string) {
   getDb().update(chatFiles).set({ text }).where(and(eq(chatFiles.organizationId, orgId), eq(chatFiles.id, id))).run();
 }
