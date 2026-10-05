@@ -9,8 +9,8 @@ import { nextRun, partsIn, zonedToUtc } from "./schedule";
  * app, and what the AI team has on, in one Day, Week or Month view. Also the
  * next meeting to join, and who is working on what.
  *
- * Busy-times-only calendars stay that way here: "Busy", with no name, link,
- * place or guests.
+ * People see every event here as Google Calendar shows it, busy-times-only
+ * calendars included. That setting only limits what the employees read.
  */
 
 const DAY = 86_400_000;
@@ -116,7 +116,7 @@ function decorate(orgId: number, items: CalItem[], extras: Map<string, EventExtr
 
 /** Calendar events, plus Simone's meetings that aren't on a connected calendar yet. */
 async function eventsIn(orgId: number, from: Date, to: Date) {
-  const s = await schedule(orgId, from, to).catch(() => ({ events: [], failed: ["Calendars"], sources: 0, tz: "" }));
+  const s = await schedule(orgId, from, to, { full: true }).catch(() => ({ events: [], failed: ["Calendars"], sources: 0, tz: "" }));
   const items: CalItem[] = [];
   const extras = new Map<string, EventExtra | undefined>();
   const sources = new Map<string, Source>();
@@ -320,7 +320,7 @@ export async function nextMeeting(orgId: number, now = new Date()) {
   return { tz, meeting: next };
 }
 
-/** For Start on Zoom: the host's start link when the owner's Zoom account runs the meeting, else the join link. */
+/** For Start on Zoom: the host's start link when the connected Zoom account runs the meeting, else the join link. Anyone in the workspace may start it. */
 export async function startLink(orgId: number, url: string, canStart: boolean) {
   const clean = url.trim();
   if (!/^https:\/\/([\w-]+\.)?(zoom\.us|meet\.google\.com)\//i.test(clean)) return { url: null, started: false };

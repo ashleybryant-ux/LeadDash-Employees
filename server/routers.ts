@@ -1303,9 +1303,9 @@ export const appRouter = router({
       return (await import("./employees/calendarPage")).nextMeeting(input.organizationId);
     }),
     start: protectedProcedure.input(orgInput.extend({ url: z.string().max(600) })).mutation(async ({ ctx, input }) => {
-      const m = await requireMember(ctx, input.organizationId);
-      // Only the owner starts as host; everyone else joins.
-      return (await import("./employees/calendarPage")).startLink(input.organizationId, input.url, m.role === "owner");
+      await requireMember(ctx, input.organizationId);
+      // Anyone in the workspace can start the meeting as host.
+      return (await import("./employees/calendarPage")).startLink(input.organizationId, input.url, true);
     }),
     who: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

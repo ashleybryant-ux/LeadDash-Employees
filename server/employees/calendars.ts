@@ -162,7 +162,7 @@ async function googleEvents(token: string, calendarId: string, from: Date, to: D
     const en = day(e.end, tz);
     const guests = (e.attendees ?? []).filter((a: any) => a?.email && !a.self && !a.resource).slice(0, 30).map((a: any) => String(a.displayName || a.email).slice(0, 120));
     const extra: EventExtra = { eventId: e.id ? String(e.id) : null, meeting: integrations.meetingLinkOf(e), host: Boolean(e.organizer?.self), location: String(e.location ?? "").slice(0, 300), guests };
-    if (s && en) out.push({ start: s.at, end: en.at, allDay: s.allDay, title: String(e.summary || "Busy"), extra });
+    if (s && en) out.push({ start: s.at, end: en.at, allDay: s.allDay, title: String(e.summary || "(No title)"), extra });
   }
   return out;
 }
@@ -184,14 +184,18 @@ export async function icsEvents(url: string, from: Date, to: Date) {
       const location = String((typeof e.location === "string" ? e.location : e.location?.val) ?? "").slice(0, 300);
       const description = String((typeof e.description === "string" ? e.description : e.description?.val) ?? "");
       const extra: EventExtra = { eventId: null, meeting: integrations.meetingLinkOf({ location, description }), host: false, location, guests: [] };
-      if (end > from && start < to) out.push({ start, end, allDay: Boolean(o.isFullDay), title: String(o.summary ?? e.summary ?? "Busy"), extra });
+      if (end > from && start < to) out.push({ start, end, allDay: Boolean(o.isFullDay), title: String(o.summary ?? e.summary ?? "(No title)"), extra });
     }
   }
   return out;
 }
 
 /** Every event on every calendar Avery checks, in order. Calendars that fail are named, not hidden. */
-export async function schedule(orgId: number, from: Date, to: Date) {
+/**
+ * full: the Calendar page, where people see every event as Google shows it.
+ * Without it (everything Avery and the other employees read), a busy-times-only calendar gives "Busy" and nothing else.
+ */
+export async function schedule(orgId: number, from: Date, to: Date, opts: { full?: boolean } = {}) {
   const org = await db.getOrganizationById(orgId);
   const tz = org?.timezone || "America/Chicago";
   const links = db.listAccountLinks(orgId, "calendar");
@@ -225,7 +229,7 @@ export async function schedule(orgId: number, from: Date, to: Date) {
               return all;
             })();
       // Busy times only: no name, link, place or guests leave the calendar.
-      for (const e of got) events.push(l.detail === "busy" ? { start: e.start, end: e.end, allDay: e.allDay, title: "Busy", calendar: l.name, color: l.color, sourceId: l.id } : { ...e, calendar: l.name, color: l.color, sourceId: l.id });
+      for (const e of got) events.push(l.detail === "busy" && !opts.full ? { start: e.start, end: e.end, allDay: e.allDay, title: "Busy", calendar: l.name, color: l.color, sourceId: l.id } : { ...e, calendar: l.name, color: l.color, sourceId: l.id });
       if (l.status === "error") db.updateAccountLink(l.id, orgId, { status: "connected", error: null });
     } catch (err) {
       failed.push(l.name);

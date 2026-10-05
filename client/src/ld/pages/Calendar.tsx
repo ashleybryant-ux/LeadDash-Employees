@@ -547,7 +547,6 @@ function Detail({ item, tz, onClose }: { item: Item; tz: string; onClose: () => 
       {row(item.kind === "task" ? "Who" : "Whose", item.kind !== "event" && item.who ? item.who : null)}
       {row("Notes", notesPill)}
       {row("Prep", item.precallId ? "The pre-call report is ready" : null)}
-      {item.busy && <p className="ld-small ld-muted" style={{ margin: 0 }}>This calendar shows busy times only.</p>}
       {item.kind === "focus" && <p className="ld-small ld-muted" style={{ margin: 0 }}>From Avery's rules. He keeps meetings out of it.</p>}
       <ErrorLine error={start.error ?? setJoin.error} />
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

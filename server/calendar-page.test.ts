@@ -67,7 +67,7 @@ describe("Calendar page", () => {
     expect(r.items.some((i) => i.title === "HR2026 starts")).toBe(false);
   });
 
-  it("hides names, links and guests on a busy-times-only calendar", async () => {
+  it("shows every event as Google has it, busy-times-only calendars too, while employees still read Busy", async () => {
     const { orgId, owner } = await makeWorkspace("calbusy");
     routes.push([/oauth2\.googleapis\.com\/token/, () => json({ access_token: "tok-legacy", refresh_token: "ref", expires_in: 3600 })]);
     routes.push([/openidconnect\.googleapis\.com\/v1\/userinfo/, () => json({ email: "ashley@legacyfs.org" })]);
@@ -76,12 +76,15 @@ describe("Calendar page", () => {
     calendars.saveCalendar(orgId, lg.id, { name: "Legacy", include: ["ashley@legacyfs.org"], detail: "busy", holds: "no" });
     routes.unshift([/calendars\/ashley%40legacyfs\.org\/events/, () => json({ items: [{ id: "s1", summary: "Session with J.R.", location: "https://us02web.zoom.us/j/99999999999", attendees: [{ email: "jr@client.test" }], start: { dateTime: "2026-10-05T13:00:00-05:00" }, end: { dateTime: "2026-10-05T14:00:00-05:00" } }] })]);
     const r = await caller(owner).calendar.range({ organizationId: orgId, from: "2026-10-05", days: 1 });
-    const busy = r.items.find((i) => i.kind === "event")!;
-    expect(busy).toMatchObject({ title: "Busy", busy: true, meeting: null, guests: [], location: "" });
-    expect(JSON.stringify(r)).not.toMatch(/J\.R\.|jr@client|99999999999/);
+    const ev = r.items.find((i) => i.kind === "event")!;
+    expect(ev).toMatchObject({ title: "Session with J.R.", busy: false, meeting: { platform: "zoom", url: "https://us02web.zoom.us/j/99999999999" }, guests: ["jr@client.test"] });
+    // What the employees read (Avery's schedule) stays busy-only.
+    const s = await calendars.schedule(orgId, new Date("2026-10-05T05:00:00Z"), new Date("2026-10-06T05:00:00Z"));
+    expect(s.events[0]).toMatchObject({ title: "Busy" });
+    expect(JSON.stringify(s.events)).not.toMatch(/J\.R\.|jr@client|99999999999/);
   });
 
-  it("gives the next meeting, and Start on Zoom opens the host link for the owner only", async () => {
+  it("gives the next meeting, and Start on Zoom opens the host link for anyone in the workspace", async () => {
     const { orgId, owner } = await setup("calnext");
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-05T15:48:00Z")); // 10:48 AM Central
@@ -94,13 +97,11 @@ describe("Calendar page", () => {
     routes.unshift([/api\.zoom\.us\/v2\/meetings\/81234567890/, () => json({ id: 81234567890, start_url: "https://us02web.zoom.us/s/81234567890?zak=abc" })]);
     const s = await caller(owner).calendar.start({ organizationId: orgId, url: "https://us02web.zoom.us/j/81234567890" });
     expect(s).toEqual({ url: "https://us02web.zoom.us/s/81234567890?zak=abc", started: true });
-    // A team member joins instead; Zoom isn't asked.
+    // A team member starts it too.
     const member = await makeUser("caroline@calnext.test", "user", "Caroline");
-    await db.addOrganizationMember({ organizationId: orgId, userId: member.id, role: "admin" });
-    const before = calls.length;
+    await db.addOrganizationMember({ organizationId: orgId, userId: member.id, role: "member" });
     const j = await caller(member).calendar.start({ organizationId: orgId, url: "https://us02web.zoom.us/j/81234567890" });
-    expect(j).toEqual({ url: "https://us02web.zoom.us/j/81234567890", started: false });
-    expect(calls.slice(before).some((u) => /api\.zoom\.us/.test(u))).toBe(false);
+    expect(j).toEqual({ url: "https://us02web.zoom.us/s/81234567890?zak=abc", started: true });
     // Anything that isn't a Zoom or Meet link is refused.
     expect(await caller(owner).calendar.start({ organizationId: orgId, url: "https://evil.example/j/81234567890" })).toEqual({ url: null, started: false });
   });
