@@ -483,6 +483,26 @@ export async function start(orgId: number, user: { id: number; name: string }, f
   return imp;
 }
 
+/** One upload covers every workspace the person runs (owner or admin): each keeps only the facts about its own business. */
+export async function startEverywhere(orgId: number, user: { id: number; name: string }, fileName: string, filePath: string) {
+  const imp = await start(orgId, user, fileName, filePath);
+  const also: string[] = [];
+  for (const o of await db.listOrganizationsForUser(user.id)) {
+    if (o.id === orgId) continue;
+    const m = await db.getOrganizationMembership(o.id, user.id);
+    if (!m || (m.role !== "owner" && m.role !== "admin")) continue;
+    const copy = holdingPath(o.id);
+    try {
+      await fs.promises.link(filePath, copy).catch(() => fs.promises.copyFile(filePath, copy));
+      await start(o.id, user, fileName, copy);
+      also.push(o.name);
+    } catch (err) {
+      console.warn(`[history] not started in workspace ${o.id}:`, err instanceof Error ? err.message : err);
+    }
+  }
+  return { imp, also };
+}
+
 export function stop(orgId: number, id: number) {
   const imp = db.getHistoryImport(id, orgId);
   if (!imp) throw new TRPCError({ code: "NOT_FOUND", message: "That import is not in this workspace." });

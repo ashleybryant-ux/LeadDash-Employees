@@ -143,4 +143,26 @@ describe("company history from Claude and ChatGPT exports", () => {
     expect(after.items).toEqual([]);
     expect((await db.listKnowledgeByOrg(orgId)).some((k) => k.id === entry.id)).toBe(false);
   });
+
+  it("one upload imports into every workspace the owner runs, and not one where she's only a member", async () => {
+    const a = await makeWorkspace("histall");
+    const b = await makeWorkspace("histallb");
+    const c = await makeWorkspace("histallc");
+    await db.addOrganizationMember({ organizationId: b.orgId, userId: a.owner.id, role: "owner" });
+    await db.addOrganizationMember({ organizationId: c.orgId, userId: a.owner.id, role: "member" });
+    const zip = new JSZip();
+    zip.file("conversations.json", JSON.stringify(claudeExport.slice(0, 1)));
+    const dest = history.holdingPath(a.orgId);
+    fs.writeFileSync(dest, await zip.generateAsync({ type: "nodebuffer" }));
+    const r = await history.startEverywhere(a.orgId, { id: a.owner.id, name: "Ashley" }, "conversations-000.zip", dest);
+    expect(r.also).toEqual(["Workspace histallb"]);
+    for (let i = 0; i < 300; i++) {
+      const done = [a.orgId, b.orgId].every((o) => db.listHistoryImports(o, 1)[0]?.status === "done");
+      if (done) break;
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    expect(db.listHistoryImports(a.orgId, 1)[0].status).toBe("done");
+    expect(db.listHistoryImports(b.orgId, 1)[0].status).toBe("done");
+    expect(db.listHistoryImports(c.orgId, 1)).toHaveLength(0);
+  });
 });

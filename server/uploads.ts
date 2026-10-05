@@ -109,8 +109,8 @@ export function registerUploads(app: Express) {
           out.on("finish", () => resolve());
           req.pipe(out);
         });
-        const imp = await history.start(orgId, { id: user.id, name: who }, name, dest);
-        return res.json({ id: imp.id });
+        const { imp, also } = await history.startEverywhere(orgId, { id: user.id, name: who }, name, dest);
+        return res.json({ id: imp.id, also });
       }
 
       const old = unsupportedNote(name);

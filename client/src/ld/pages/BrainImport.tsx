@@ -20,6 +20,7 @@ export default function BrainImport() {
   const remove = trpc.history.removeFact.useMutation({ onSuccess: () => Promise.all([utils.history.latest.invalidate(), utils.knowledge.invalidate()]) });
   const [uploading, setUploading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+  const [also, setAlso] = React.useState<string[]>([]);
   const file = React.useRef<HTMLInputElement>(null);
   const imp = q.data;
   const live = !!imp && ["reading", "running"].includes(imp.status);
@@ -29,7 +30,8 @@ export default function BrainImport() {
     setErr(null);
     setUploading(true);
     try {
-      await uploadFile("history", f, { organizationId: currentOrgId });
+      const r = (await uploadFile("history", f, { organizationId: currentOrgId })) as { also?: string[] };
+      setAlso(r.also ?? []);
       await utils.history.latest.invalidate();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Upload failed.");
@@ -74,6 +76,12 @@ export default function BrainImport() {
               <span>{imp.items.length} {imp.items.length === 1 ? "fact" : "facts"}</span>
               <span className="ld-strong">Left out</span>
               <span>{imp.skippedClient} with client details · {imp.skippedOther} not about the business</span>
+              {also.length > 0 && (
+                <>
+                  <span className="ld-strong">Also importing</span>
+                  <span>{also.join(", ")}</span>
+                </>
+              )}
             </div>
           ) : (
             <div className="ld-av-kv">
