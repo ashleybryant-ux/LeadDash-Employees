@@ -69,7 +69,49 @@ async function access(req: Request, orgId: number) {
   return user;
 }
 
+/** A history export sent in parts: each part stays under the web server's 300 MB limit, so a large Claude or ChatGPT export still gets through. */
+export const HISTORY_PART = 50_000_000;
+export const HISTORY_MAX = 3_000_000_000;
+
 export function registerUploads(app: Express) {
+  app.post("/api/upload/history-part", async (req: Request, res: Response) => {
+    const orgId = Number(req.query.organizationId);
+    const name = String(req.query.name || "file").slice(0, 200);
+    const uploadId = String(req.query.uploadId || "");
+    const index = Number(req.query.index);
+    const total = Number(req.query.total);
+    const offset = Number(req.query.offset);
+    try {
+      const user = Number.isFinite(orgId) && orgId > 0 ? await access(req, orgId) : null;
+      if (!user) return res.status(403).json({ error: "You cannot upload to this workspace." });
+      if (user.role !== "admin") {
+        const m = await db.getOrganizationMembership(orgId, user.id);
+        if (!m || (m.role !== "owner" && m.role !== "admin")) return res.status(403).json({ error: "Only the workspace owner can import history." });
+      }
+      if (!/\.(zip|json)$/i.test(name)) return res.status(400).json({ error: "Upload the .zip or manifest .json that Claude or ChatGPT sent you." });
+      if (!/^[a-f0-9]{16,64}$/.test(uploadId) || !Number.isInteger(index) || !Number.isInteger(total) || index < 0 || total < 1 || index >= total || !Number.isInteger(offset) || offset < 0) return res.status(400).json({ error: "That upload part is not valid." });
+      if (offset + Number(req.headers["content-length"] || 0) > HISTORY_MAX) return res.status(400).json({ error: `Exports must be under ${HISTORY_MAX / 1_000_000_000} GB.` });
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const history = await import("./employees/history");
+      const dir = path.dirname(history.holdingPath(orgId));
+      const part = path.join(dir, `org-${orgId}-${uploadId}.part`);
+      const have = index === 0 ? 0 : fs.existsSync(part) ? fs.statSync(part).size : -1;
+      if (index === 0 && fs.existsSync(part)) fs.unlinkSync(part);
+      if (have !== offset) return res.status(409).json({ error: "The upload got out of step. Press Upload export and try again." });
+      const body = await readBody(req, HISTORY_PART + 1_000_000);
+      await fs.promises.appendFile(part, body);
+      if (index < total - 1) return res.json({ ok: true, received: offset + body.length });
+      const dest = history.holdingPath(orgId);
+      await fs.promises.rename(part, dest);
+      const who = user.name?.trim() || user.email;
+      const { imp, also } = await history.startEverywhere(orgId, { id: user.id, name: who }, name, dest);
+      return res.json({ id: imp.id, also });
+    } catch (err) {
+      return res.status(400).json({ error: err instanceof Error ? err.message : "Upload failed." });
+    }
+  });
+
   app.post("/api/upload/:slot", async (req: Request, res: Response) => {
     const slot = String(req.params.slot);
     const max = LIMITS[slot];

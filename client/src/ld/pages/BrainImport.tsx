@@ -2,7 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine } from "../ui";
-import { uploadFile } from "../meta";
+import { uploadHistory } from "../meta";
 
 /**
  * The Brain's Import history tab: upload a Claude or ChatGPT data export, watch
@@ -19,6 +19,7 @@ export default function BrainImport() {
   const stop = trpc.history.stop.useMutation({ onSuccess: () => utils.history.latest.invalidate() });
   const remove = trpc.history.removeFact.useMutation({ onSuccess: () => Promise.all([utils.history.latest.invalidate(), utils.knowledge.invalidate()]) });
   const [uploading, setUploading] = React.useState(false);
+  const [progress, setProgress] = React.useState(0);
   const [err, setErr] = React.useState<string | null>(null);
   const [also, setAlso] = React.useState<string[]>([]);
   const file = React.useRef<HTMLInputElement>(null);
@@ -28,9 +29,10 @@ export default function BrainImport() {
   const pick = async (f: File | undefined) => {
     if (!f) return;
     setErr(null);
+    setProgress(0);
     setUploading(true);
     try {
-      const r = (await uploadFile("history", f, { organizationId: currentOrgId })) as { also?: string[] };
+      const r = (await uploadHistory(f, currentOrgId, (sent, total) => setProgress(Math.round((sent / total) * 100)))) as { also?: string[] };
       setAlso(r.also ?? []);
       await utils.history.latest.invalidate();
     } catch (e) {
@@ -98,7 +100,7 @@ export default function BrainImport() {
           {live ? (
             <button type="button" className="ld-btn" disabled={stop.isPending} onClick={() => imp && stop.mutate({ organizationId: currentOrgId, id: imp.id })}>Stop</button>
           ) : (
-            <button type="button" className="ld-btn p" disabled={uploading} onClick={() => file.current?.click()}>{uploading ? "Uploading..." : imp ? "Import another" : "Upload export"}</button>
+            <button type="button" className="ld-btn p" disabled={uploading} onClick={() => file.current?.click()}>{uploading ? `Uploading ${progress}%` : imp ? "Import another" : "Upload export"}</button>
           )}
         </div>
       </div>

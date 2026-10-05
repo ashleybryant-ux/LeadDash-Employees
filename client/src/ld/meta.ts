@@ -258,6 +258,31 @@ export async function uploadFile(slot: string, file: File, params: Record<string
   return data;
 }
 
+/** A Claude or ChatGPT export, sent in 40 MB parts so any size gets past the web server's limit. */
+export async function uploadHistory(file: File, organizationId: number, onProgress?: (sent: number, total: number) => void) {
+  const PART = 40_000_000;
+  const total = Math.max(1, Math.ceil(file.size / PART));
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const uploadId = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  let data: any = null;
+  for (let index = 0; index < total; index++) {
+    const offset = index * PART;
+    const q = new URLSearchParams({ organizationId: String(organizationId), name: file.name, uploadId, index: String(index), total: String(total), offset: String(offset) });
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await fetch(`/api/upload/history-part?${q.toString()}`, { method: "POST", body: file.slice(offset, offset + PART), credentials: "include", headers: { "content-type": "application/octet-stream" } }).catch(() => null);
+      if (res && res.status < 500) break;
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    }
+    if (!res) throw new Error("The connection dropped while uploading. Check your internet and try again.");
+    data = await res.json().catch(() => ({ error: res!.status === 413 ? "That part is too large for the server." : "Upload failed." }));
+    if (!res.ok) throw new Error(data.error || "Upload failed.");
+    onProgress?.(Math.min(file.size, offset + PART), file.size);
+  }
+  return data;
+}
+
 /** Opens a generated download in a new tab. */
 export function openDownload(r: { url: string; name: string }) {
   const a = document.createElement("a");
