@@ -375,6 +375,9 @@ function RowActions({ e }: { e: Ep }) {
       {(e.status === "script" || e.status === "failed") && e.shots.length > 0 && (
         <button type="button" className="ld-btn p" disabled={a.make.isPending} onClick={() => a.make.mutate({ organizationId: a.orgId, id: e.id })}>{e.status === "failed" ? "Make again" : e.plan.approved ? "Make it" : "Make keyframes"}</button>
       )}
+      {e.status === "ready" && e.shots.length > 0 && e.shots.every((s) => s.clipUrl) && (
+        <button type="button" className="ld-btn" disabled={a.make.isPending} onClick={() => a.make.mutate({ organizationId: a.orgId, id: e.id })}>{a.make.isPending ? "Starting..." : "Cut again"}</button>
+      )}
       <ErrorLine error={a.approve.error || a.make.error} />
     </div>
   );

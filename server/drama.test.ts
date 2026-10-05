@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 let decision: any = null;
@@ -153,6 +153,16 @@ describe("Elena's mini drama studio", () => {
     expect(done.error).toBeNull();
     expect(done.status).toBe("ready");
     expect(done.videoUrl).toMatch(/^\/files\/org-\d+\/drama\/drama-\d+-9x16-/);
+    // Cut again: a finished episode is cut over from the clips it already has, nothing is animated again.
+    const clipsBefore = posts(drama.MODELS.video).length;
+    await new Promise((r) => setTimeout(r, 5));
+    const recut = await c.drama.make({ organizationId: orgId, id: ep.id });
+    expect(recut.progress).toBe("Cutting it together");
+    await waitFor(() => db.getDramaEpisode(ep.id, orgId)!.status !== "making");
+    const again = db.getDramaEpisode(ep.id, orgId)!;
+    expect(again.status).toBe("ready");
+    expect(again.videoUrl).not.toBe(done.videoUrl);
+    expect(posts(drama.MODELS.video)).toHaveLength(clipsBefore);
 
     // Renee got a portrait once; her shot and the owner's are matched to their faces.
     expect(posts(drama.MODELS.portrait).filter((b) => /Cinematic portrait photograph of Renee Cole/.test(b.prompt))).toHaveLength(1);
@@ -416,6 +426,29 @@ describe("Elena's mini drama studio", () => {
     expect(p.duration).toBeGreaterThan(4.6);
     expect(p.duration).toBeLessThan(5.3);
     expect(p.audio).toBe(true);
+  }, 120_000);
+  it("keeps every scene in the cut when a clip's picture ends before its sound, as lip sync clips often do", async () => {
+    const ff = createRequire(import.meta.url)("ffmpeg-static") as string;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "drama-short-"));
+    const short = path.join(dir, "s.mp4");
+    execFileSync(ff, ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=576x1024:rate=24:duration=1.2", "-f", "lavfi", "-i", "sine=frequency=330:duration=2", "-c:v", "libx264", "-c:a", "aac", short]);
+    const { orgId } = await makeWorkspace("drama11");
+    const a = await storagePut(`org-${orgId}/drama/s0.mp4`, fs.readFileSync(short), "video/mp4");
+    const saved = await Promise.all([1, 2].map((i) => storagePut(`org-${orgId}/drama/s${i}.mp4`, clip, "video/mp4")));
+    const shots = [
+      { clipUrl: a.url, voUrl: null, caption: "", scene: 1, setting: "Office", flow: "cut" as const },
+      { clipUrl: saved[0].url, voUrl: null, caption: "", scene: 1, setting: "Office", flow: "cut" as const },
+      { clipUrl: saved[1].url, voUrl: null, caption: "", scene: 2, setting: "Hall", flow: "cut" as const },
+    ];
+    const out = await drama.stitch(orgId, "short", shots);
+    const rel = out["9:16"].replace(/^\/files\//, "");
+    const file = [path.join(process.env.UPLOADS_DIR || "uploads", rel), path.resolve("uploads", rel)].find((f) => fs.existsSync(f))!;
+    // How long the picture itself runs, not just the sound.
+    const log = String(spawnSync(ff, ["-hide_banner", "-i", file, "-map", "0:v", "-f", "null", "-"]).stderr);
+    const t = [...log.matchAll(/time=(\d+):(\d+):([\d.]+)/g)].pop()!;
+    const picture = Number(t[1]) * 3600 + Number(t[2]) * 60 + Number(t[3]);
+    // 2 + 1.9 + 1.9 seconds, less a 0.12 and a 0.5 second overlap.
+    expect(picture).toBeGreaterThan(4.8);
   }, 120_000);
   it("waits out fal.ai's temporary outages instead of stopping, but stops on a real error", async () => {
     const real = globalThis.fetch;

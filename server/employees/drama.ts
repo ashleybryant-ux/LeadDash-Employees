@@ -627,8 +627,8 @@ export async function startEpisode(orgId: number, id: number) {
   const estimate = animating ? estimateEpisode(shots) : estimateStills(shots);
   const limit = s0.limitCents;
   const spent = await spentThisMonth(orgId);
-  if (spent + estimate > limit) throw new TRPCError({ code: "BAD_REQUEST", message: `${label(ep)} (about $${(estimate / 100).toFixed(2)} for this step) would go over your $${(limit / 100).toFixed(0)} monthly limit. You've spent $${(spent / 100).toFixed(2)} this month. Raise the limit under Your avatar on the Videos tab.` });
-  const next = db.updateDramaEpisode(id, orgId, { status: "making", error: null, madeAt: ep.madeAt ?? new Date(), progress: animating ? `Animating shot ${(shots.filter((x) => x.clipUrl).length || 0) + 1} of ${shots.length}` : `Keyframe 1 of ${shots.length}` })!;
+  if (estimate > 0 && spent + estimate > limit) throw new TRPCError({ code: "BAD_REQUEST", message: `${label(ep)} (about $${(estimate / 100).toFixed(2)} for this step) would go over your $${(limit / 100).toFixed(0)} monthly limit. You've spent $${(spent / 100).toFixed(2)} this month. Raise the limit under Your avatar on the Videos tab.` });
+  const next = db.updateDramaEpisode(id, orgId, { status: "making", error: null, madeAt: ep.madeAt ?? new Date(), progress: animating ? (shots.every((x) => x.clipUrl) ? "Cutting it together" : `Animating shot ${(shots.filter((x) => x.clipUrl).length || 0) + 1} of ${shots.length}`) : `Keyframe 1 of ${shots.length}` })!;
   active.add(id);
   void makeEpisode(orgId, id)
     .then(() => autoTries.delete(id))
@@ -975,7 +975,9 @@ export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "cl
     files.forEach((_, i) => {
       const d = dur[i].toFixed(3);
       const h = head[i].toFixed(3);
-      parts.push(`[${i}:v]trim=start=${h},setpts=PTS-STARTPTS,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p,setsar=1,settb=AVTB[v${i}]`);
+      // Every shot's picture is made exactly as long as the shot: a clip whose picture ends before its sound
+      // (common after lip sync) holds its last frame, or the transitions after it never happen and the cut ends early.
+      parts.push(`[${i}:v]trim=start=${h},setpts=PTS-STARTPTS,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p,setsar=1,tpad=stop_mode=clone:stop_duration=${d},trim=duration=${d},setpts=PTS-STARTPTS,fps=30,settb=AVTB[v${i}]`);
       // Every shot gets sound exactly as long as its picture: its own, padded or trimmed, or silence.
       const own = shots[i].line ? 1 : 0.7;
       const base = probes[i].audio ? `[${i}:a]aresample=44100,aformat=channel_layouts=stereo,atrim=start=${h},asetpts=PTS-STARTPTS,volume=${own},apad,atrim=0:${d},asetpts=N/SR/TB` : `anullsrc=r=44100:cl=stereo,atrim=0:${d},asetpts=N/SR/TB`;
