@@ -501,6 +501,40 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
 .ld-slide-h2 { font-size: 3.8cqw; font-weight: 800; line-height: 1.2; margin-bottom: 2.4cqw; }
 .ld-slide-body ul { margin: 0; padding-left: 3cqw; list-style: disc; }
 .ld-slide-body li { font-size: 2.6cqw; line-height: 1.4; margin-bottom: 1.4cqw; }
+.ld-g-h { position: absolute; left: 6cqw; right: 6cqw; top: 5cqw; font-size: 3.6cqw; font-weight: 800; line-height: 1.15; }
+.ld-g-row { position: absolute; left: 5cqw; right: 5cqw; display: grid; gap: 1.6cqw; }
+.ld-g-tile { background: #fff; border: 0.25cqw solid #e4dccb; border-radius: 1.4cqw; padding: 2cqw 1cqw; display: flex; flex-direction: column; align-items: center; gap: 1cqw; text-align: center; min-width: 0; }
+.ld-g-tile b { font-size: 2cqw; overflow-wrap: anywhere; }
+.ld-g-tile > span:not(.ld-g-letter) { font-size: 1.5cqw; color: #3d4c45; line-height: 1.35; }
+.ld-g-letter { width: 8cqw; height: 8cqw; border-radius: 999px; font-size: 4.2cqw; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ld-g-ring { position: absolute; left: 7cqw; top: 9cqw; width: 32cqw; height: 32cqw; }
+.ld-g-figure { position: absolute; left: 7cqw; top: 9cqw; width: 32cqw; height: 32cqw; display: flex; align-items: center; justify-content: center; font-weight: 800; line-height: 1; }
+.ld-g-statline { position: absolute; left: 46cqw; right: 6cqw; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; gap: 2cqw; }
+.ld-g-statline span { font-size: 3.6cqw; font-weight: 800; line-height: 1.15; }
+.ld-g-statline small { font-size: 1.8cqw; color: #5b6b64; }
+.ld-g-steps { position: absolute; left: 6cqw; right: 6cqw; top: 20cqw; display: flex; align-items: center; gap: 1.4cqw; }
+.ld-g-step { flex: 1; min-width: 0; background: #F7F2E8; border-radius: 1.4cqw; padding: 2.2cqw; display: flex; flex-direction: column; gap: 1cqw; align-self: stretch; }
+.ld-g-step b { font-size: 2.3cqw; }
+.ld-g-step > span:not(.ld-g-num) { font-size: 1.6cqw; color: #3d4c45; line-height: 1.35; }
+.ld-g-num { width: 5cqw; height: 5cqw; border-radius: 999px; color: #fff; font-weight: 800; font-size: 2.4cqw; display: flex; align-items: center; justify-content: center; }
+.ld-g-arrow { font-size: 4cqw; font-weight: 800; }
+.ld-g-side { background: #fff; border-style: solid; border-radius: 1.4cqw; padding: 2.6cqw; display: flex; flex-direction: column; gap: 1.2cqw; }
+.ld-g-side > span { font-size: 1.5cqw; letter-spacing: 0.14em; font-weight: 800; text-transform: uppercase; }
+.ld-g-side p { margin: 0; font-size: 2.3cqw; color: #3D4658; line-height: 1.4; }
+.ld-g-take { position: absolute; left: 6cqw; right: 6cqw; bottom: 5cqw; border-radius: 1.4cqw; padding: 2cqw 2.6cqw; color: #fff; font-size: 2.1cqw; }
+.ld-g-legend { position: absolute; right: 6cqw; top: 6cqw; display: flex; gap: 2cqw; font-size: 1.5cqw; color: #3d4c45; }
+.ld-g-legend i { display: inline-block; width: 1.4cqw; height: 1.4cqw; border-radius: 0.3cqw; vertical-align: middle; }
+.ld-g-bars { position: absolute; left: 7cqw; right: 7cqw; top: 17cqw; bottom: 9cqw; display: grid; gap: 2.4cqw; align-items: end; border-bottom: 0.2cqw solid #cfd9d4; }
+.ld-g-group { display: flex; gap: 0.6cqw; align-items: flex-end; justify-content: center; height: 100%; }
+.ld-g-col { position: relative; width: 4cqw; border-radius: 0.6cqw 0.6cqw 0 0; min-height: 0.3cqw; }
+.ld-g-col em { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); font-style: normal; font-size: 1.4cqw; color: #3d4c45; padding-bottom: 0.4cqw; white-space: nowrap; }
+.ld-g-cats { position: absolute; left: 7cqw; right: 7cqw; bottom: 4.5cqw; display: grid; gap: 2.4cqw; text-align: center; font-size: 1.5cqw; color: #3d4c45; }
+.ld-g-line { position: absolute; left: 9cqw; right: 9cqw; top: 26cqw; height: 0.4cqw; }
+.ld-g-times { position: absolute; left: 3cqw; right: 3cqw; top: 23.7cqw; display: flex; justify-content: space-between; }
+.ld-g-times > div { width: 12cqw; display: flex; flex-direction: column; align-items: center; gap: 1.2cqw; text-align: center; }
+.ld-g-times b { font-size: 1.7cqw; }
+.ld-g-times > div > span:not(.ld-g-dot) { font-size: 1.6cqw; color: #e6ebf3; line-height: 1.3; }
+.ld-g-dot { width: 5cqw; height: 5cqw; border-radius: 999px; }
 .ld-talk-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) 128px; gap: 14px; align-items: center; padding: 14px 16px; }
 .ld-talk-btns { display: flex; flex-direction: column; gap: 8px; }
 .ld-talk-nav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; text-align: center; }

@@ -9,7 +9,164 @@ import { ErrorLine } from "../ui";
  * Word or PowerPoint file is one click away.
  */
 
-type Slide = { kind: "title" | "section" | "points" | "big" | "activity" | "close"; title: string; points: string[]; notes: string; picture?: string; image?: string | null };
+type GraphicKind = "framework" | "stat" | "steps" | "compare" | "chart" | "timeline";
+type Item = { label: string; text: string; detail?: string; values?: number[] };
+type Slide = {
+  kind: "title" | "section" | "points" | "big" | "activity" | "close" | GraphicKind;
+  title: string;
+  points: string[];
+  notes: string;
+  picture?: string;
+  image?: string | null;
+  style?: "photo" | "illustration";
+  items?: Item[];
+  figure?: string;
+  source?: string;
+  series?: string[];
+  takeaway?: string;
+};
+const GRAPHICS: GraphicKind[] = ["framework", "stat", "steps", "compare", "chart", "timeline"];
+const isGraphic = (k: string): k is GraphicKind => (GRAPHICS as string[]).includes(k);
+const CREAM = "#F7F2E8";
+
+function ringPercent(figure: string | undefined) {
+  const m = (figure ?? "").trim().match(/^(\d+(?:\.\d+)?)\s*%$/);
+  const v = m ? Number(m[1]) : NaN;
+  return v >= 0 && v <= 100 ? v : null;
+}
+
+/** Graphic slides: the same layout the PowerPoint gets, drawn here so the chat shows the slide as it will look. */
+function GraphicFace({ s, theme, small }: { s: Slide; theme: { dark: string; accent: string }; small?: boolean }) {
+  const items = s.items ?? [];
+  const cls = `ld-slide ${small ? "sm" : ""}`;
+  const h = (color: string = theme.dark) => <div className="ld-g-h" style={{ color }}>{s.title}</div>;
+  const bar = <span className="ld-slide-bar" style={{ background: theme.accent }} />;
+  if (s.kind === "framework")
+    return (
+      <div className={cls} style={{ background: CREAM }}>
+        {h()}
+        <div className="ld-g-row" style={{ top: "28%", gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+          {items.map((x, i) => (
+            <div key={i} className="ld-g-tile" style={{ borderColor: i === 0 ? theme.accent : "#e4dccb" }}>
+              <span className="ld-g-letter" style={{ background: theme.dark, color: theme.accent }}>{x.label}</span>
+              <b style={{ color: theme.dark }}>{x.text}</b>
+              {x.detail && <span>{x.detail}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  if (s.kind === "stat") {
+    const pct = ringPercent(s.figure);
+    return (
+      <div className={cls} style={{ background: "#fff" }}>
+        {bar}
+        {pct !== null ? (
+          <svg viewBox="0 0 100 100" className="ld-g-ring" aria-hidden="true">
+            <circle cx="50" cy="50" r="40" fill="none" stroke="#eef2f0" strokeWidth="13" />
+            <circle cx="50" cy="50" r="40" fill="none" stroke={theme.accent} strokeWidth="13" strokeDasharray={`${(pct / 100) * 251.3} 251.3`} transform="rotate(-90 50 50)" />
+          </svg>
+        ) : null}
+        <div className="ld-g-figure" style={{ color: theme.dark, fontSize: pct !== null ? "7cqw" : "11cqw" }}>{s.figure}</div>
+        <div className="ld-g-statline">
+          <span style={{ color: theme.dark }}>{s.title}</span>
+          {s.source && <small>{s.source}</small>}
+        </div>
+      </div>
+    );
+  }
+  if (s.kind === "steps")
+    return (
+      <div className={cls} style={{ background: "#fff" }}>
+        {bar}
+        {h()}
+        <div className="ld-g-steps">
+          {items.map((x, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <span className="ld-g-arrow" style={{ color: theme.accent }}>→</span>}
+              <div className="ld-g-step">
+                <span className="ld-g-num" style={{ background: theme.dark }}>{i + 1}</span>
+                <b style={{ color: theme.dark }}>{x.label}</b>
+                {x.text && <span>{x.text}</span>}
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    );
+  if (s.kind === "compare")
+    return (
+      <div className={cls} style={{ background: CREAM }}>
+        {h()}
+        <div className="ld-g-row" style={{ top: "25%", gridTemplateColumns: "1fr 1fr", gap: "2.4cqw" }}>
+          {items.slice(0, 2).map((x, i) => (
+            <div key={i} className="ld-g-side" style={{ borderColor: i === 1 ? "#8A5A0E" : "#e4dccb", borderWidth: i === 1 ? "0.3cqw" : "0.2cqw" }}>
+              <span style={{ color: i === 1 ? "#8A5A0E" : "#6B7385" }}>{x.label}</span>
+              <p>{x.text}</p>
+            </div>
+          ))}
+        </div>
+        {s.takeaway && (
+          <div className="ld-g-take" style={{ background: theme.dark }}>
+            <b style={{ color: theme.accent }}>Try this:</b> {s.takeaway}
+          </div>
+        )}
+      </div>
+    );
+  if (s.kind === "chart") {
+    const series = s.series?.length ? s.series : ["Value"];
+    const colors = [theme.dark, theme.accent, "#8AA39A"];
+    const max = Math.max(1, ...items.flatMap((x) => x.values ?? []));
+    return (
+      <div className={cls} style={{ background: "#fff" }}>
+        {bar}
+        {h()}
+        {series.length > 1 && (
+          <div className="ld-g-legend">
+            {series.map((n, j) => (
+              <span key={j}><i style={{ background: colors[j] }} /> {n}</span>
+            ))}
+          </div>
+        )}
+        <div className="ld-g-bars" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+          {items.map((x, i) => (
+            <div key={i} className="ld-g-group">
+              {series.map((_, j) => {
+                const v = x.values?.[j] ?? 0;
+                return (
+                  <span key={j} className="ld-g-col" style={{ height: `${(v / max) * 100}%`, background: colors[j] }}>
+                    <em>{v}</em>
+                  </span>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div className="ld-g-cats" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+          {items.map((x, i) => (
+            <span key={i}>{x.label}</span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  // timeline
+  return (
+    <div className={cls} style={{ background: theme.dark }}>
+      {h("#fff")}
+      <span className="ld-g-line" style={{ background: theme.accent }} />
+      <div className="ld-g-times">
+        {items.map((x, i) => (
+          <div key={i}>
+            <span className="ld-g-dot" style={{ background: theme.accent }} />
+            <b style={{ color: theme.accent }}>{x.label}</b>
+            <span>{x.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 type Deck = { title: string; event: string; slides: Slide[]; theme?: { dark: string; accent: string }; headshot?: string | null };
 
 function useFile(id: number, enabled: boolean) {
@@ -110,10 +267,11 @@ export function DocView({ text }: { text: string }) {
 // ==========================================
 
 export function SlideFace({ s, theme, event, headshot, small }: { s: Slide; theme: { dark: string; accent: string }; event?: string; headshot?: string | null; small?: boolean }) {
+  if (isGraphic(s.kind)) return <GraphicFace s={s} theme={theme} small={small} />;
   const dark = s.kind === "title" || s.kind === "close";
   const pic = s.image ?? null;
   // The tag sits on the picture: right side on a points slide, left on an activity or section slide.
-  const tag = pic && !small ? <span className="ld-slide-ai" style={s.kind === "points" ? { left: "auto", right: 8 } : undefined}>AI picture</span> : null;
+  const tag = pic && !small ? <span className="ld-slide-ai" style={s.kind === "points" ? { left: "auto", right: 8 } : undefined}>{s.style === "illustration" ? "AI illustration" : "AI picture"}</span> : null;
   if (s.kind === "section" && pic) {
     return (
       <div className={`ld-slide ${small ? "sm" : ""}`} style={{ background: theme.dark, color: "#fff" }}>
@@ -231,6 +389,7 @@ export function DeckView({ raw, fileId, url, name }: { raw: string; fileId: numb
   const [i, setI] = React.useState(0);
   const stage = React.useRef<HTMLDivElement>(null);
   const picture = trpc.chat.newSlidePicture.useMutation({ onSuccess: () => utils.chat.fileView.invalidate({ organizationId: currentOrgId, id: fileId }) });
+  const graphic = trpc.chat.newSlideGraphic.useMutation({ onSuccess: () => utils.chat.fileView.invalidate({ organizationId: currentOrgId, id: fileId }) });
   if (!deck?.slides?.length) return <p className="ld-small ld-muted" style={{ padding: 16, margin: 0 }}>This deck can't be shown here. Download it to open it.</p>;
   const theme = deck.theme ?? { dark: "#1E2A44", accent: "#E3B457" };
   const n = deck.slides.length;
@@ -238,6 +397,8 @@ export function DeckView({ raw, fileId, url, name }: { raw: string; fileId: numb
   const s = deck.slides[at];
   const go = (k: number) => setI(Math.max(0, Math.min(n - 1, k)));
   const canPicture = s.kind !== "title";
+  const canGraphic = s.kind !== "title" && s.kind !== "close";
+  const busy = picture.isPending || graphic.isPending;
   const full = () => {
     const el = stage.current;
     if (!el) return;
@@ -266,7 +427,9 @@ export function DeckView({ raw, fileId, url, name }: { raw: string; fileId: numb
           <button type="button" className="ld-btn sm" disabled={at >= n - 1} onClick={() => go(at + 1)}>Next</button>
         </div>
         {picture.isPending && <p className="ld-small ld-muted" role="status" style={{ margin: "8px 0 0" }}>Making a new picture for slide {at + 1}. It takes about half a minute.</p>}
+        {graphic.isPending && <p className="ld-small ld-muted" role="status" style={{ margin: "8px 0 0" }}>Making a graphic for slide {at + 1}.</p>}
         <ErrorLine error={picture.error} />
+        <ErrorLine error={graphic.error} />
         <NotesBox fileId={fileId} index={at} notes={s.notes} />
         <div className="ld-talk-strip" role="list" aria-label="All slides">
           {deck.slides.map((x, k) => (
@@ -278,8 +441,13 @@ export function DeckView({ raw, fileId, url, name }: { raw: string; fileId: numb
       </div>
       <div className="ld-talk-side">
         <a className="ld-btn" href={url} download={name}>Download</a>
+        {canGraphic && (
+          <button type="button" className="ld-btn" disabled={busy} onClick={() => { picture.reset(); graphic.mutate({ organizationId: currentOrgId, id: fileId, index: at, ask: "", kind: "" }); }}>
+            {graphic.isPending ? "Making" : "New graphic"}
+          </button>
+        )}
         {canPicture && (
-          <button type="button" className="ld-btn" disabled={picture.isPending} onClick={() => picture.mutate({ organizationId: currentOrgId, id: fileId, index: at, describe: "" })}>
+          <button type="button" className="ld-btn" disabled={busy} onClick={() => { graphic.reset(); picture.mutate({ organizationId: currentOrgId, id: fileId, index: at, describe: "" }); }}>
             {picture.isPending ? "Making" : "New picture"}
           </button>
         )}

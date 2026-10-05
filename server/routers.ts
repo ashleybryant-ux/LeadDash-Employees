@@ -2330,6 +2330,17 @@ export const appRouter = router({
       return { ok: true };
     }),
 
+    /** One slide redrawn as a graphic (Taylor's pick when no kind is given). */
+    newSlideGraphic: protectedProcedure.input(orgInput.extend({ id: z.number().int(), index: z.number().int().min(0).max(300), ask: z.string().max(600).default(""), kind: z.string().max(30).default("") })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      try {
+        await (await import("./employees/talk")).newSlideGraphic(input.organizationId, input.id, input.index, input.ask, input.kind);
+      } catch (err) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: err instanceof Error ? err.message : String(err) });
+      }
+      return { ok: true };
+    }),
+
     /** A file an employee made (a talk script, a deck), to open right in the chat. */
     fileView: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

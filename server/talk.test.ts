@@ -96,6 +96,71 @@ describe("Taylor's talk scripts", () => {
     await expect(talk.newSlidePicture(orgId, d.file.id, 0)).rejects.toThrow(/headshot/);
   });
 
+  it("builds graphics and illustrations into the slides, editable in PowerPoint, and never charts a made-up number", async () => {
+    const { orgId } = await makeWorkspace("talk-graphics");
+    await db.createKnowledgeItem({ organizationId: orgId, title: "HR burnout research", category: "speaking", kind: "fact", content: "In our 2025 member survey, 75% of HR professionals said their work is emotionally exhausting (SHRM State of the Workplace)." });
+    const llm = await import("./_core/llm");
+    const taylor = (await db.getEmployeeByKind(orgId, "speaking"))!;
+    const none = { picture: "", style: "photo", items: [], figure: "", source: "", series: [], takeaway: "" };
+    vi.spyOn(llm, "generateJson").mockResolvedValue({
+      title: "The Relational Skills HR Already Has",
+      event: "",
+      slides: [
+        { ...none, kind: "title", title: "The Relational Skills HR Already Has", points: [], notes: "" },
+        { ...none, kind: "framework", title: "The P.U.L.S.E. Framework, turned inward", points: [], notes: "17:00 The model", items: [{ label: "P", text: "Praise", detail: "Name your own wins", values: [] }, { label: "U", text: "Understand", detail: "Know what drains you", values: [] }, { label: "L", text: "Listen", detail: "Hear your own signals", values: [] }] },
+        { ...none, kind: "stat", title: "of HR professionals say their work is emotionally exhausting", points: [], notes: "", figure: "75%", source: "SHRM, 2025" },
+        { ...none, kind: "stat", title: "of managers skip lunch", points: [], notes: "", figure: "62%", source: "Made up" },
+        { ...none, kind: "chart", title: "Who gets your best skills?", points: [], notes: "", series: ["For others", "For me"], items: [{ label: "Praise", text: "", detail: "", values: [4.6, 1.8] }, { label: "Listen", text: "", detail: "", values: [4.8, 2.1] }] },
+        { ...none, kind: "steps", title: "A 3-minute reset", points: [], notes: "", items: [{ label: "Notice", text: "Name what you feel", detail: "", values: [] }, { label: "Breathe", text: "Four slow breaths", detail: "", values: [] }, { label: "Choose", text: "Pick the next right thing", detail: "", values: [] }] },
+        { ...none, kind: "points", title: "Listen to your own signals", points: ["Tight shoulders"], notes: "", picture: "A woman noticing tension in her shoulders", style: "illustration" },
+      ],
+    } as any);
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+    const { storagePut, uploadsRoot } = await import("./storage");
+    const images = await import("./_core/imageGeneration");
+    const gen = vi.spyOn(images, "generateImage").mockImplementation(async () => ({ url: (await storagePut(`org-${orgId}/talks/pic.png`, png, "image/png")).url }));
+    const d = await talk.buildSlides(taylor, { title: "", notes: "", said: "build the slides" });
+    expect(gen.mock.calls[0][0].prompt).toMatch(/^Flat modern vector illustration.*No text, letters/);
+    const deck = JSON.parse(d.file.text);
+    expect(deck.slides.map((s: any) => s.kind)).toEqual(["title", "framework", "stat", "big", "points", "steps", "points"]);
+    expect(deck.slides[3]).toMatchObject({ title: "of managers skip lunch", points: ["[add source]"] }); // 62% isn't anywhere: no number on the slide
+    expect(deck.slides[4]).toMatchObject({ title: "Who gets your best skills?", points: ["Praise", "Listen"] }); // scores nobody gave: no chart
+    expect(deck.slides[6]).toMatchObject({ style: "illustration", image: expect.stringMatching(/^\/files\//) });
+    const msg = (await db.listChatMessages(orgId, taylor.id, 5)).find((m) => /Your slides are ready/.test(m.content))!;
+    expect(msg.content).toContain("3 slides are graphics (a framework, a statistic, steps) you can edit in PowerPoint. 1 slide has a picture I made for it (an illustration).");
+
+    const unzip = async (fileId: number) => {
+      const f = db.getChatFiles(orgId, [fileId])[0];
+      const JSZip = (await import("jszip")).default;
+      const zip = await JSZip.loadAsync(require("node:fs").readFileSync(require("node:path").join(uploadsRoot(), f.fileUrl.replace(/^\/files\//, ""))));
+      const names = Object.keys(zip.files);
+      const slidesXml = (await Promise.all(names.filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n)).map((n) => zip.file(n)!.async("string")))).join(" ");
+      const charts = await Promise.all(names.filter((n) => /^ppt\/charts\/chart\d+\.xml$/.test(n)).map((n) => zip.file(n)!.async("string")));
+      return { slidesXml, charts };
+    };
+    let x = await unzip(d.file.id);
+    // The framework is real text in shapes; the 75% is a ring chart.
+    expect(x.slidesXml).toContain("Understand");
+    expect(x.slidesXml).toContain("Hear your own signals");
+    expect(x.charts.some((c) => c.includes("doughnutChart"))).toBe(true);
+
+    // "make slide 5 a chart": refused while the numbers aren't real, then built when she gives them.
+    vi.spyOn(llm, "generateJson").mockResolvedValue({ ...none, kind: "chart", title: "Who gets your best skills?", points: [], notes: "ignored", series: ["For others", "For me"], items: [{ label: "Praise", text: "", detail: "", values: [4.6, 1.8] }, { label: "Listen", text: "", detail: "", values: [4.8, 2.1] }] } as any);
+    await expect(talk.newSlideGraphic(orgId, d.file.id, 4, "make it a chart", "chart")).rejects.toThrow(/I left slide 5 as it was\. A chart needs real numbers/);
+    expect(JSON.parse(db.getChatFiles(orgId, [d.file.id])[0].text).slides[4].kind).toBe("points");
+    await talk.newSlideGraphic(orgId, d.file.id, 4, "chart my self-check: praise 4.6 for others and 1.8 for me, listen 4.8 and 2.1", "chart");
+    const now = JSON.parse(db.getChatFiles(orgId, [d.file.id])[0].text).slides[4];
+    expect(now).toMatchObject({ kind: "chart", series: ["For others", "For me"], notes: "" });
+    expect(now.items.map((i: any) => i.values)).toEqual([[4.6, 1.8], [4.8, 2.1]]);
+    expect(talk.slideKindName(orgId, d.file.id, 4)).toBe("a chart");
+    x = await unzip(d.file.id);
+    expect(x.charts.some((c) => c.includes("barChart") && c.includes("For me"))).toBe(true);
+    // No graphics on the title slide; a new picture on a graphic keeps its words.
+    await expect(talk.newSlideGraphic(orgId, d.file.id, 0)).rejects.toThrow(/title slide/);
+    await talk.newSlidePicture(orgId, d.file.id, 5, "");
+    expect(JSON.parse(db.getChatFiles(orgId, [d.file.id])[0].text).slides[5]).toMatchObject({ kind: "points", points: ["Notice: Name what you feel", "Breathe: Four slow breaths", "Choose: Pick the next right thing"], items: [] });
+  });
+
   it("times the talk from what she said, else from the Brain, never a guess", async () => {
     const { orgId } = await makeWorkspace("talk-len");
     await db.createKnowledgeItem({ organizationId: orgId, title: "Company training: SHRM Arkansas (HR2026) proposal", category: "speaking", kind: "fact", content: "The Relational Skills HR Already Has, and Almost Never Uses on Themselves. Length: 60 minutes each, the same session both times." });
