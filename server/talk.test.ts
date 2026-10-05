@@ -60,6 +60,20 @@ describe("Taylor's talk scripts", () => {
     expect(await talk.talkMinutes(orgId, "A brand new keynote", ["write it"], 0)).toBe(0);
   });
 
+  it("shows the script it already wrote when she asks to see it, and only writes a new one when asked", async () => {
+    const { orgId } = await makeWorkspace("talk-show");
+    const taylor = (await db.getEmployeeByKind(orgId, "speaking"))!;
+    expect(await talk.showLatest(taylor, "script")).toBeNull();
+    // A script saved the old way (before it could open in the chat).
+    const f = db.createChatFile({ organizationId: orgId, employeeId: taylor.id, name: "The Relational Skills HR Already Has - script.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 30000, kind: "document", fileUrl: "/files/s.docx", text: "Opening (5 min, slide: Title)\nGood afternoon.\n\nPraise (10 min, slide: Praise)\nLet's talk about praise." });
+    db.attachChatFiles(orgId, [f.id], 1);
+    const r = (await talk.showLatest(taylor, "script"))!;
+    expect(r.card).toMatchObject({ type: "doc", id: f.id, title: "The Relational Skills HR Already Has", subtitle: "Word document · 2 parts" });
+    expect(db.getChatFiles(orgId, [f.id])[0].text).toBe("## 1. Opening\n**0:00 to 5:00 · Slide: Title**\n\nGood afternoon.\n\n## 2. Praise\n**5:00 to 15:00 · Slide: Praise**\n\nLet's talk about praise.");
+    for (const s of ["can you put it in the chat again where i dont have to download it", "show me the script", "where is the talk", "I can't see it, open it here"]) expect(talk.wantsToSee(s)).toBe(true);
+    for (const s of ["write it again as a 45 minute version", "rewrite the opening", "write my SHRM talk", "make a new script"]) expect(talk.wantsToSee(s)).toBe(false);
+  });
+
   it("splits minutes so the parts add up to the talk", () => {
     const parts = talk.fitMinutes(
       [

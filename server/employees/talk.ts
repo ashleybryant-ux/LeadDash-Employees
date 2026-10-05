@@ -219,6 +219,53 @@ async function scriptDocx(title: string, event: string, minutes: number, section
 // The slides
 // ==========================================
 
+// ==========================================
+// Showing what's already made (never rewriting it)
+// ==========================================
+
+export function latestDeck(orgId: number, empId: number) {
+  return db.recentChatFiles(orgId, empId, 30).find((f) => f.mime === PPTX && / - slides\.pptx$/.test(f.name)) ?? null;
+}
+
+/** A script saved before the chat could open it: its "Part (N min, slide: X)" lines become headings. */
+export function upgradeScriptText(text: string) {
+  if (text.startsWith("# ")) return text;
+  let at = 0;
+  let n = 0;
+  return text
+    .split(/\n\s*\n/)
+    .map((block) => {
+      const [first, ...rest] = block.split("\n");
+      const m = first.match(/^(.+?) \((\d+) min, slide: (.+)\)$/);
+      if (!m) return block;
+      const mins = Number(m[2]);
+      const head = `## ${++n}. ${m[1]}\n**${fmt(at)} to ${fmt(at + mins)} · Slide: ${m[3]}**`;
+      at += mins;
+      return rest.length ? `${head}\n\n${rest.join("\n")}` : head;
+    })
+    .join("\n\n");
+}
+
+/** Posts the latest script or deck again as a card that opens in the chat. Null when there isn't one. */
+export async function showLatest(emp: AIEmployee, which: "script" | "slides") {
+  const f = which === "slides" ? latestDeck(emp.organizationId, emp.id) : latestScript(emp.organizationId, emp.id);
+  if (!f) return null;
+  if (which === "script" && !f.text.startsWith("# ")) db.updateChatFileText(emp.organizationId, f.id, upgradeScriptText(f.text));
+  const title = f.name.replace(/ - (script\.docx|slides\.pptx)$/, "");
+  const parts = which === "script" ? (upgradeScriptText(f.text).match(/^## /gm) ?? []).length : f.pages ?? 0;
+  return {
+    text: which === "script" ? `Here's the script. Press Open to read it right here.` : `Here are the slides. Press Open to flip through them right here.`,
+    card: which === "script" ? { type: "doc" as const, id: f.id, title, subtitle: `Word document${parts ? ` · ${parts} parts` : ""}` } : { type: "deck" as const, id: f.id, title, subtitle: `PowerPoint · ${parts} slides` },
+  };
+}
+
+/** "Put it in the chat", "show me the script", "where is it": seeing what's there, not a new one. */
+export function wantsToSee(said: string) {
+  const s = said.toLowerCase();
+  if (/\b(re-?write|redo|new|another|different|fresh|shorter|longer|change|update|\d+[\s-]*min)/.test(s)) return false;
+  return /\b(show|open|see|view|put|where|send|again|pull up|find|read)\b/.test(s);
+}
+
 /** The newest talk script in Taylor's chat, to build the slides from. */
 export function latestScript(orgId: number, empId: number) {
   return db.recentChatFiles(orgId, empId, 30).find((f) => f.mime === DOCX && / - script\.docx$/.test(f.name)) ?? null;

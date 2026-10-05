@@ -65,7 +65,7 @@ export const LAYOUTS = [
 
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  speaking: ["none", "report", "write_talk", "write_slides", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -149,7 +149,8 @@ const ACTION_HELP: Record<string, string> = {
   rewrite_outreach: "rewrite_outreach: rewrite every email sequence still waiting for approval (when the owner says they sound off, robotic, like AI, or asks for a rewrite). Put what to change in `notes` ('' if they didn't say).",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
   write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
-  write_talk: "write_talk: write the full word-for-word script for a talk, keynote, workshop or session the owner is giving (\"write my talk\", \"write the script for my SHRM session\"). Put the talk's title in `title`, anything they asked for in `notes`, and its length in minutes in `count`: from what they said, else from the Brain (accepted sessions list their length). Never guess the length: when neither says, put 0 in `count`. It runs in the background and arrives in this chat, where it opens right there.",
+  show_talk: "show_talk: the person wants to see, open or find a script or slides you ALREADY made (\"put it in the chat\", \"show me the script\", \"where is it\", \"I can't see it\"). Put \"slides\" in `focus` for the deck, '' for the script. It shows the existing one; it never writes a new one.",
+  write_talk: "write_talk: write a NEW full word-for-word script (only when there isn't one yet, or they ask for a new version or a different length; to see one you already wrote, use show_talk) for a talk, keynote, workshop or session the owner is giving (\"write my talk\", \"write the script for my SHRM session\"). Put the talk's title in `title`, anything they asked for in `notes`, and its length in minutes in `count`: from what they said, else from the Brain (accepted sessions list their length). Never guess the length: when neither says, put 0 in `count`. It runs in the background and arrives in this chat, where it opens right there.",
   write_slides: "write_slides: build the slide deck (PowerPoint) for a talk (\"build the slides\", \"make the PPT\"). It uses the latest script you wrote, with what she says on each slide in the speaker notes; without a script it builds from the Brain. Put the talk's title in `title` and anything they asked for in `notes`. It arrives in this chat, where she can flip through it right there.",
   meeting_link: "meeting_link: about a meeting you already booked: the person asks for its Zoom or Meet link, or wants it on Zoom (\"put it on Zoom\", \"did you add it to Zoom?\"). Put words from its title or a guest's name or email in `target`, its date as YYYY-MM-DD in `date` when they say it (''), and \"zoom\" in `focus` when they want it on Zoom ('' when they only want the link). Use this, never calendar_hold or browse, for a meeting that's already booked.",
   calendar_hold: "calendar_hold: the person wants a NEW meeting or hold on their calendar (for one you already booked, use meeting_link). Put \"zoom\" in `focus` when they ask for it on Zoom. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, the agenda in `notes`, and the calendar's name in `target` when they name one ('' for the usual one). It waits for their approval, then goes on that calendar. With guests it is a call: it gets a Zoom link (or Google Meet when Zoom isn't the meeting link) and the invites go out once approved, and Avery sits in to take notes.",
@@ -1308,15 +1309,31 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         queries: [],
       };
     }
+    case "show_talk": {
+      const talk = await import("./talk");
+      const r = await talk.showLatest(emp, d.focus.toLowerCase().includes("slide") ? "slides" : "script");
+      if (!r) return { text: d.focus.toLowerCase().includes("slide") ? "I haven't built slides yet. Say \"build the slides\" and I'll make them from the script." : "I haven't written a script yet. Say \"write the script\" and tell me how long the talk is.", cards: [], queries: [] };
+      return { text: r.text, cards: [r.card], queries: [] };
+    }
     case "write_talk": {
       const talk = await import("./talk");
+      // Asked to see it, not for a new one: show the script that's already there.
+      if (talk.wantsToSee(ctx.said ?? "")) {
+        const shown = await talk.showLatest(emp, "script");
+        if (shown) return { text: shown.text, cards: [shown.card], queries: [] };
+      }
       const mins = await talk.talkMinutes(org, d.title, talk.userLines(ctx.history, ctx.said ?? ""), d.count ?? 0);
       if (!(mins > 0)) return { text: "How long is the talk? I'll time the script to it.", cards: [], queries: [], choices: ["45 minutes", "60 minutes", "90 minutes"] };
       const r = talk.startTalkScript(emp, { title: d.title, minutes: mins, notes: d.notes, said: ctx.said ?? "" });
       return { text: r.text, cards: [], queries: [] };
     }
     case "write_slides": {
-      const r = (await import("./talk")).startSlides(emp, { title: d.title, notes: d.notes, said: ctx.said ?? "" });
+      const talk = await import("./talk");
+      if (talk.wantsToSee(ctx.said ?? "")) {
+        const shown = await talk.showLatest(emp, "slides");
+        if (shown) return { text: shown.text, cards: [shown.card], queries: [] };
+      }
+      const r = talk.startSlides(emp, { title: d.title, notes: d.notes, said: ctx.said ?? "" });
       return { text: r.text, cards: [], queries: [] };
     }
     case "meeting_link": {

@@ -1050,6 +1050,10 @@ export function recentChatFiles(orgId: number, employeeId: number, limit = 10) {
   return getDb().select().from(chatFiles).where(and(eq(chatFiles.organizationId, orgId), eq(chatFiles.employeeId, employeeId))).orderBy(desc(chatFiles.id)).limit(limit).all().filter((f) => f.messageId != null);
 }
 
+export function updateChatFileText(orgId: number, id: number, text: string) {
+  getDb().update(chatFiles).set({ text }).where(and(eq(chatFiles.organizationId, orgId), eq(chatFiles.id, id))).run();
+}
+
 /** Last message and unread count for every employee in a workspace, for one person. */
 export async function chatSummaries(orgId: number, userId: number) {
   const sqlite = (getDb(), _sqlite!);
