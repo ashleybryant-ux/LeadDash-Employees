@@ -28,6 +28,9 @@ export async function learnFact(orgId: number, input: { topic: string; fact: str
   const content = `${fact}\n(${input.who} told ${input.via} on ${day}.)`;
   const title = `${LEARNED}${topic}`;
   const have = (await db.listKnowledgeByOrg(orgId)).find((k) => k.employeeId == null && k.title.toLowerCase() === title.toLowerCase());
+  // Said again with nothing new: leave it, and don't announce it again.
+  const same = (a: string) => a.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (have && same(have.content.split("\n(")[0]) === same(fact)) return null;
   const item = have ? await db.updateKnowledgeItem(have.id, orgId, { content, category, kind: "fact" }) : await db.createKnowledgeItem({ organizationId: orgId, title, category, kind: "fact", content });
   if (item) indexKnowledge(item);
   await db.logAction({ organizationId: orgId, actorType: "employee", actorName: input.via, action: have ? "Updated the Brain" : "Added to the Brain", details: title });

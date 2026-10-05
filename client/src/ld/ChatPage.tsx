@@ -252,7 +252,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <span style={{ fontSize: 12, color: "#5b6b64", fontWeight: 500, marginLeft: 6 }}>{fmtTime(m.createdAt)}</span>
                     </div>
                     {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.role === "user" ? m.content : <Rich text={m.content} />}</div>}
-                    {m.role === "user" && <MessageAttachments raw={m.attachments} />}
+                    <MessageAttachments raw={m.attachments} />
                     {m.spoken && <SpokenTag role={m.role} />}
                   </div>
                   {cards.map((c) =>

@@ -65,7 +65,7 @@ export const LAYOUTS = [
 
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  speaking: ["none", "report", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  speaking: ["none", "report", "write_talk", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -149,6 +149,7 @@ const ACTION_HELP: Record<string, string> = {
   rewrite_outreach: "rewrite_outreach: rewrite every email sequence still waiting for approval (when the owner says they sound off, robotic, like AI, or asks for a rewrite). Put what to change in `notes` ('' if they didn't say).",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
   write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
+  write_talk: "write_talk: write the full word-for-word script for a talk, keynote, workshop or session the owner is giving (\"write my talk\", \"write the script for my SHRM session\"). Put the talk's title in `title`, anything they asked for in `notes`, and its length in minutes in `count`: from what they said, else from the Brain (accepted sessions list their length). Never guess the length: when neither says, put 0 in `count`. It runs in the background and arrives in this chat as a Word file.",
   meeting_link: "meeting_link: about a meeting you already booked: the person asks for its Zoom or Meet link, or wants it on Zoom (\"put it on Zoom\", \"did you add it to Zoom?\"). Put words from its title or a guest's name or email in `target`, its date as YYYY-MM-DD in `date` when they say it (''), and \"zoom\" in `focus` when they want it on Zoom ('' when they only want the link). Use this, never calendar_hold or browse, for a meeting that's already booked.",
   calendar_hold: "calendar_hold: the person wants a NEW meeting or hold on their calendar (for one you already booked, use meeting_link). Put \"zoom\" in `focus` when they ask for it on Zoom. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, the agenda in `notes`, and the calendar's name in `target` when they name one ('' for the usual one). It waits for their approval, then goes on that calendar. With guests it is a call: it gets a Zoom link (or Google Meet when Zoom isn't the meeting link) and the invites go out once approved, and Avery sits in to take notes.",
   check_schedule: "check_schedule: the person asks what's on their calendar or schedule (today, tomorrow, a day, this week, \"am I free Friday at 2\"). Put the first day as YYYY-MM-DD in `date` and how many days in `count` (1 for a day, 7 for a week). You check every calendar connected on Integrations.",
@@ -357,7 +358,8 @@ const TALK = `Talk with the person like a colleague, back and forth, not like a 
 - When the request is unclear in a way that would waste real work if you guessed, choose "none", ask one short question in "reply", and put 2 to 4 short fixed answers in "choices".
 - Otherwise do the job. After you finish or answer, put up to 4 short next steps the person is likely to want in "choices" (each under 6 words, written as what they would say). Leave "choices" empty when nothing obvious comes next.
 - Questions about your work, a result or a score get a plain, specific answer from your facts.
-- When the person tells you plainly what to do, do it now. Don't ask questions first unless a wrong guess would do something that can't be undone. Closing or moving tasks can be undone, so just do it.`;
+- When the person tells you plainly what to do, do it now. Don't ask questions first unless a wrong guess would do something that can't be undone. Closing or moving tasks can be undone, so just do it.
+- Never say you're writing, making, sending or doing something ("I'll have it in a moment", "writing it now") unless you chose the action that does it in this same reply. If none of your actions can do it, say so plainly and say what can.`;
 
 const TALK_BY_KIND: Partial<Record<string, string>> = {
   website: `- Before you build a NEW page, if the person has not picked a layout earlier in this conversation, choose ask_layout. When they answer, choose build_page with their layout in "focus" and where the button goes in "to". To change a page you built, choose change_page with exactly what to change.
@@ -1305,6 +1307,13 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         queries: [],
       };
     }
+    case "write_talk": {
+      const mins = d.count ?? 0;
+      if (!(mins > 0)) return { text: "How long is the talk? I'll time the script to it.", cards: [], queries: [], choices: ["45 minutes", "60 minutes", "90 minutes"] };
+      const talk = await import("./talk");
+      const r = talk.startTalkScript(emp, { title: d.title, minutes: mins, notes: d.notes, said: ctx.said ?? "" });
+      return { text: r.text, cards: [], queries: [] };
+    }
     case "meeting_link": {
       const holds = (await db.listOutboundItemsByOrg(org, "calendar_hold")).filter((i) => i.status !== "cancelled");
       const words = d.target.toLowerCase().split(/[^a-z0-9@.]+/).filter((w) => w.length > 2);
@@ -1417,6 +1426,10 @@ export async function workingOn(orgId: number, emp: AIEmployee): Promise<{ busy:
   if (emp.kind === "website") {
     const building = db.listSitePages(orgId).find((p) => p.status === "building");
     if (building) return { busy: true, what: `${building.progress || "Building"}: ${building.title}` };
+  }
+  if (emp.kind === "speaking") {
+    const t = (await import("./talk")).talkInProgress(orgId);
+    if (t) return { busy: true, what: `Writing the script for ${t}` };
   }
   if (emp.status === "working") return { busy: true, what: "Working on your request" };
   return { busy: false, what: "" };
