@@ -133,6 +133,7 @@ export const Icons = {
   activity: I(<path d="M3 12h4l3-8 4 16 3-8h4" />),
   approvals: I(<><path d="M9 11l3 3 8-8" /><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" /></>),
   tasks: I(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>),
+  calendar: I(<><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4M8 14h2M14 14h2M8 17.5h2" /></>),
   brain: I(<><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1z" /><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" /></>),
   workspace: I(<><rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-4h4v4" /></>),
   integrations: I(<><rect x="3" y="11" width="7" height="7" rx="1" /><rect x="11" y="11" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /></>),
@@ -154,7 +155,7 @@ export const Icons = {
 // Rail
 // ==========================================
 
-type RailKey = "chats" | "huddle" | "activity" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
+type RailKey = "chats" | "calendar" | "huddle" | "activity" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
 
 export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
@@ -208,6 +209,7 @@ export function Rail({ active }: { active: RailKey }) {
         <img src="/brand/icon.png" alt="LeadDash Employees" width={44} height={44} style={{ display: "block", width: 44, height: 44, borderRadius: 11 }} />
       </button>
       {item("chats", "Chats", "/chats", Icons.chats)}
+      {item("calendar", "Calendar", "/calendar", Icons.calendar)}
       {item("huddle", "Huddle", "/huddle", Icons.huddle)}
       {item("activity", "Activity", "/activity", Icons.activity)}
       {item("approvals", "Approvals", "/approvals", Icons.approvals, count)}
@@ -562,7 +564,7 @@ const MoreIcon = I(<><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r=
 
 export function BottomNav({ active }: { active: RailKey }) {
   const count = useApprovalCount();
-  const on = (k: RailKey) => (k === "more" ? ["huddle", "activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
+  const on = (k: RailKey) => (k === "more" ? ["calendar", "huddle", "activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
   const item = (key: RailKey, label: string, href: string, icon: React.ReactNode, badge?: number) => (
     <Link key={key} href={href} className={`ld-bn-item ${on(key) ? "on" : ""}`} aria-current={on(key) ? "page" : undefined}>
       <span style={{ position: "relative", display: "flex" }}>

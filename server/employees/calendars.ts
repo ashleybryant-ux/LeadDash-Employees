@@ -21,7 +21,10 @@ import { zonedToUtc } from "./schedule";
 export const COLORS = ["#1b6b4a", "#3c4a8a", "#a1432a", "#7a3b6e", "#0f6e74", "#6b4f1d", "#8a2f3a", "#2f5d8a"];
 
 export type CalendarEntry = { id: string; name: string; primary: boolean; include: boolean };
-export type Event = { start: Date; end: Date; allDay: boolean; title: string; calendar: string; color: string; sourceId: number };
+/** What the Calendar page shows about an event. Never filled on a busy-times-only calendar. */
+export type EventExtra = { eventId: string | null; meeting: { platform: "zoom" | "meet"; url: string } | null; host: boolean; location: string; guests: string[] };
+export type Event = { start: Date; end: Date; allDay: boolean; title: string; calendar: string; color: string; sourceId: number; extra?: EventExtra };
+type Raw = { start: Date; end: Date; allDay: boolean; title: string; extra?: EventExtra };
 
 const parse = <T,>(raw: string | null | undefined, fallback: T): T => {
   try {
@@ -152,12 +155,14 @@ function day(d: { dateTime?: string; date?: string } | undefined, tz: string) {
 async function googleEvents(token: string, calendarId: string, from: Date, to: Date, tz: string) {
   const q = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "250" });
   const { data } = await integrations.api(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${q}`, { token });
-  const out: { start: Date; end: Date; allDay: boolean; title: string }[] = [];
+  const out: Raw[] = [];
   for (const e of data.items ?? []) {
     if (e.status === "cancelled" || e.transparency === "transparent") continue;
     const s = day(e.start, tz);
     const en = day(e.end, tz);
-    if (s && en) out.push({ start: s.at, end: en.at, allDay: s.allDay, title: String(e.summary || "Busy") });
+    const guests = (e.attendees ?? []).filter((a: any) => a?.email && !a.self && !a.resource).slice(0, 30).map((a: any) => String(a.displayName || a.email).slice(0, 120));
+    const extra: EventExtra = { eventId: e.id ? String(e.id) : null, meeting: integrations.meetingLinkOf(e), host: Boolean(e.organizer?.self), location: String(e.location ?? "").slice(0, 300), guests };
+    if (s && en) out.push({ start: s.at, end: en.at, allDay: s.allDay, title: String(e.summary || "Busy"), extra });
   }
   return out;
 }
@@ -169,14 +174,17 @@ export async function icsEvents(url: string, from: Date, to: Date) {
   if (!/BEGIN:VCALENDAR/i.test(text)) throw new Error("not a calendar");
   const ical = (await import("node-ical")).default;
   const data = ical.sync.parseICS(text);
-  const out: { start: Date; end: Date; allDay: boolean; title: string }[] = [];
+  const out: Raw[] = [];
   for (const e of Object.values(data) as any[]) {
     if (!e || e.type !== "VEVENT" || e.status === "CANCELLED" || e.transparency === "TRANSPARENT") continue;
     const occ = ical.expandRecurringEvent(e, { from, to });
     for (const o of occ as any[]) {
       const start = new Date(o.start);
       const end = new Date(o.end ?? o.start);
-      if (end > from && start < to) out.push({ start, end, allDay: Boolean(o.isFullDay), title: String(o.summary ?? e.summary ?? "Busy") });
+      const location = String((typeof e.location === "string" ? e.location : e.location?.val) ?? "").slice(0, 300);
+      const description = String((typeof e.description === "string" ? e.description : e.description?.val) ?? "");
+      const extra: EventExtra = { eventId: null, meeting: integrations.meetingLinkOf({ location, description }), host: false, location, guests: [] };
+      if (end > from && start < to) out.push({ start, end, allDay: Boolean(o.isFullDay), title: String(o.summary ?? e.summary ?? "Busy"), extra });
     }
   }
   return out;
@@ -216,7 +224,8 @@ export async function schedule(orgId: number, from: Date, to: Date) {
               for (const c of included) all.push(...(await googleEvents(token, c.id, from, to, tz)));
               return all;
             })();
-      for (const e of got) events.push({ ...e, title: l.detail === "busy" ? "Busy" : e.title, calendar: l.name, color: l.color, sourceId: l.id });
+      // Busy times only: no name, link, place or guests leave the calendar.
+      for (const e of got) events.push(l.detail === "busy" ? { start: e.start, end: e.end, allDay: e.allDay, title: "Busy", calendar: l.name, color: l.color, sourceId: l.id } : { ...e, calendar: l.name, color: l.color, sourceId: l.id });
       if (l.status === "error") db.updateAccountLink(l.id, orgId, { status: "connected", error: null });
     } catch (err) {
       failed.push(l.name);

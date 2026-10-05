@@ -414,3 +414,62 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
   .ld-desk-top { grid-template-columns: 28px minmax(0, 1fr) !important; }
   .ld-desk-top > .ld-btn { grid-column: 2; width: 100%; }
 }
+
+/* Calendar: Day, Week, Month, and the next-meeting bar */
+.ld-cal-next { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; background: #12211d; color: #fff; border-radius: 12px; padding: 12px 16px; }
+.ld-cal-badge { background: #e88a3a; color: #1a1209; font-weight: 800; font-size: 13px; border-radius: 999px; padding: 4px 12px; white-space: nowrap; }
+.ld-cal-next-text { font-size: 14px; min-width: 0; }
+.ld-cal-next-btns { display: flex; gap: 8px; }
+.ld .ld-btn.ld-cal-go, .ld a.ld-btn.ld-cal-go { background: #e88a3a; border-color: #e88a3a; color: #1a1209; }
+.ld .ld-btn.ld-cal-go:hover { background: #d67a2c; }
+.ld-cal-legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; font-size: 13px; font-weight: 600; color: #3d4c45; }
+.ld-cal-legend label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.ld-cal-sq { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.ld-cal-wrap { display: flex; gap: 16px; align-items: flex-start; }
+.ld-cal-grid { border: 1px solid #e3e9e6; border-radius: 12px; background: #fff; overflow: hidden; }
+.ld-cal-dh { padding: 10px 8px; border: 0; border-bottom: 1px solid #e3e9e6; border-left: 1px solid #eef2f0; font: inherit; font-size: 13px; font-weight: 700; color: #5b6b64; background: #fff; text-align: left; }
+.ld-cal-dh b { display: block; font-size: 20px; color: #14221c; }
+.ld-cal-dh.today b { color: #fff; background: #1b6b4a; border-radius: 999px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; }
+.ld-cal-ad { border-bottom: 1px solid #e3e9e6; border-left: 1px solid #eef2f0; padding: 6px; display: flex; flex-direction: column; gap: 4px; min-height: 46px; min-width: 0; }
+.ld-cal-tl { font-size: 11px; color: #5b6b64; text-align: right; padding: 0 8px; white-space: nowrap; }
+.ld-cal-col { position: relative; border-left: 1px solid #eef2f0; background: repeating-linear-gradient(to bottom, #fff 0 55px, #eef2f0 55px 56px); }
+.ld-cal-ev { position: absolute; border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px; line-height: 1.3; overflow: hidden; border: 0; border-left: 3px solid; box-sizing: border-box; cursor: pointer; text-align: left; color: #14221c; display: flex; flex-direction: column; }
+.ld-cal-ev b { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ld-cal-ev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #3d4c45; }
+.ld-cal-ev.sel, .ld-cal-chip.sel, .ld-cal-dot.sel { outline: 2px solid #14221c; outline-offset: -1px; }
+.ld-cal-chip { font: inherit; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 3px 6px; border: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; max-width: 100%; }
+.ld-cal-now { position: absolute; left: 0; right: 0; height: 2px; background: #c0392b; pointer-events: none; }
+.ld-cal-mo { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid #e3e9e6; border-radius: 12px; background: #fff; overflow: hidden; }
+.ld-cal-moh { padding: 8px 10px; font-size: 12px; font-weight: 700; color: #5b6b64; border-bottom: 1px solid #e3e9e6; }
+.ld-cal-mc { min-height: 118px; border-left: 1px solid #eef2f0; border-bottom: 1px solid #eef2f0; padding: 6px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ld-cal-mc:nth-child(7n + 1) { border-left: 0; }
+.ld-cal-mn { font: inherit; font-size: 12px; font-weight: 700; color: #3d4c45; border: 0; background: none; padding: 0; cursor: pointer; text-align: left; width: 22px; height: 22px; }
+.ld-cal-mc.out .ld-cal-mn { color: #b8c4be; }
+.ld-cal-mc.today .ld-cal-mn { color: #fff; background: #1b6b4a; border-radius: 999px; display: flex; align-items: center; justify-content: center; }
+.ld-cal-dot { font: inherit; font-size: 11px; display: flex; gap: 4px; align-items: center; white-space: nowrap; overflow: hidden; border: 0; background: none; padding: 1px 2px; cursor: pointer; text-align: left; color: #14221c; border-radius: 4px; }
+.ld-cal-dot i { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; display: inline-block; }
+.ld-cal-more { font: inherit; font-size: 12px; color: #5b6b64; border: 0; background: none; padding: 0 2px; cursor: pointer; text-align: left; }
+.ld-cal-side { width: 340px; flex-shrink: 0; box-sizing: border-box; background: #fff; border: 1px solid #e3e9e6; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.ld-cal-kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; font-size: 14px; }
+.ld-cal-line { display: flex; justify-content: space-between; gap: 8px; align-items: center; font: inherit; font-size: 14px; border: 0; background: none; padding: 0; cursor: pointer; text-align: left; color: #14221c; white-space: nowrap; min-width: 0; }
+.ld-who-cols { grid-template-columns: minmax(0, 200px) minmax(0, 1.4fr) minmax(0, 1fr) 150px 128px; }
+.ld-who-open { display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 16px; padding-top: 4px; }
+.ld-who-kv { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px; font-size: 14px; }
+
+@media (max-width: 1100px) {
+  .ld-cal-wrap { flex-direction: column; align-items: stretch; }
+  .ld-cal-side { width: 100%; }
+}
+@media (max-width: 760px) {
+  .ld-cal-next { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .ld-cal-badge { justify-self: start; }
+  .ld-cal-next-btns > .ld-btn { flex: 1; }
+  .ld-cal-mc { min-height: 64px; padding: 4px; }
+  .ld-cal-mc .ld-cal-dot span { display: none; }
+  .ld-cal-mc .ld-cal-dot { padding: 0; }
+  .ld-cal-more { font-size: 11px; }
+  .ld-who-cols { grid-template-columns: minmax(0, 1fr) auto !important; }
+  .ld-who-cols > :nth-child(2), .ld-who-cols > :nth-child(3), .ld-who-cols > :nth-child(4) { display: none; }
+  .ld-who-open { grid-template-columns: minmax(0, 1fr); }
+  .ld-who-kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}

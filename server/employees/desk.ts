@@ -165,7 +165,8 @@ export async function ownerName(orgId: number) {
   const members = await db.listMembers(orgId);
   const owner = members.find((m) => m.role === "owner");
   const org = await db.getOrganizationById(orgId);
-  return (owner?.name || org?.signerName || "the owner").split(" ")[0];
+  // "Dr. Ashley Bryant" is Ashley, not "Dr.".
+  return (owner?.name || org?.signerName || "the owner").trim().replace(/^(dr|mr|mrs|ms|mx)\.?\s+/i, "").split(" ")[0];
 }
 
 /** Throws unless this role may make a decision of this kind. Owners and LeadDash support always may. */

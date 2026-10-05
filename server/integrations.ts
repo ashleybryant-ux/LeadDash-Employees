@@ -1305,6 +1305,13 @@ export async function createZoomMeeting(orgId: number, m: { topic: string; start
   return { id: String(data.id), joinUrl: String(data.join_url) };
 }
 
+/** The host's start link for a meeting on the connected Zoom account, or null when Zoom doesn't give one. It lasts about two hours. */
+export async function zoomStartUrl(orgId: number, meetingId: string) {
+  const { token } = await accessToken(orgId, "zoom");
+  const { data } = await api(`https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}`, { token });
+  return typeof data.start_url === "string" && /^https:\/\/([\w-]+\.)?zoom\.us\//.test(data.start_url) ? (data.start_url as string) : null;
+}
+
 /** The meeting's transcript text from Zoom cloud recording, or null when there is none yet. */
 export async function zoomTranscript(orgId: number, meetingId: string) {
   const { token } = await accessToken(orgId, "zoom");

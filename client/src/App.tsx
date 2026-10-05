@@ -12,6 +12,7 @@ import Approvals from "./ld/pages/Approvals";
 import Huddle from "./ld/pages/Huddle";
 import Activity from "./ld/pages/Activity";
 import Tasks from "./ld/pages/Tasks";
+import Calendar from "./ld/pages/Calendar";
 import Brain from "./ld/pages/Brain";
 import Workspace from "./ld/pages/Workspace";
 import Integrations from "./ld/pages/Integrations";
@@ -51,6 +52,7 @@ function Router() {
       <Route path="/chats/e/:id/:tab?" component={ChatPage} />
       <Route path="/chats/:kind/app/:appId/:view?" component={ChatPage} />
       <Route path="/chats/:kind/:tab?" component={ChatPage} />
+      <Route path="/calendar" component={Calendar} />
       <Route path="/huddle" component={Huddle} />
       <Route path="/activity" component={Activity} />
       <Route path="/approvals" component={Approvals} />

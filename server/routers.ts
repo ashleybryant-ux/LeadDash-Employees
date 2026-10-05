@@ -1292,6 +1292,27 @@ export const appRouter = router({
     }),
   }),
 
+  // The Calendar page: Day, Week, Month, the next meeting, and who's on what
+  calendar: router({
+    range: protectedProcedure.input(orgInput.extend({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), days: z.number().int().min(1).max(42) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/calendarPage")).calendarRange(input.organizationId, input.from, input.days);
+    }),
+    next: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/calendarPage")).nextMeeting(input.organizationId);
+    }),
+    start: protectedProcedure.input(orgInput.extend({ url: z.string().max(600) })).mutation(async ({ ctx, input }) => {
+      const m = await requireMember(ctx, input.organizationId);
+      // Only the owner starts as host; everyone else joins.
+      return (await import("./employees/calendarPage")).startLink(input.organizationId, input.url, m.role === "owner");
+    }),
+    who: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/calendarPage")).whoView(input.organizationId);
+    }),
+  }),
+
   precall: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
