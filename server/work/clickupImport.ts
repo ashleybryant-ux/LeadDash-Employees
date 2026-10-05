@@ -64,12 +64,25 @@ export function latestImport(orgId: number) {
 
 const running = new Set<number>();
 
-export function startImport(orgId: number, picks: Pick[], by: { id: number; name: string }) {
+/**
+ * The workspace whose ClickUp connection to read from: this one when it has
+ * ClickUp connected, otherwise the first of the person's other workspaces
+ * (where they're an owner or admin) that does. So the import works from any
+ * workspace once ClickUp is connected in one of them.
+ */
+export async function clickupSource(orgId: number, adminOrgs: number[]) {
+  if (await integrations.clickupSettings(orgId)) return orgId;
+  for (const id of adminOrgs) if (id !== orgId && (await integrations.clickupSettings(id))) return id;
+  return null;
+}
+
+/** Starts an import. Progress is kept on this workspace (orgId); ClickUp is read through the source workspace's connection. */
+export function startImport(orgId: number, picks: Pick[], by: { id: number; name: string }, src = orgId) {
   if (running.has(orgId)) throw new TRPCError({ code: "BAD_REQUEST", message: "An import is already running." });
   if (!picks.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick at least one Space." });
   const row = db.work.imports.insert({ organizationId: orgId, picks: JSON.stringify(picks), startedBy: by.name, progress: "Starting" });
   running.add(orgId);
-  void run(orgId, row.id, picks, by)
+  void run(src, row.id, picks, by, orgId)
     .catch((err) => db.work.imports.update(orgId, row.id, { status: "failed", error: (err as Error).message.slice(0, 500), finishedAt: new Date() }))
     .finally(() => running.delete(orgId));
   return row;
@@ -82,9 +95,9 @@ export function failInterrupted() {
 
 type Counts = { folders: number; lists: number; tasks: number; comments: number; files: number; goals: number };
 
-async function run(srcOrg: number, importId: number, picks: Pick[], by: { id: number; name: string }) {
+async function run(srcOrg: number, importId: number, picks: Pick[], by: { id: number; name: string }, statusOrg = srcOrg) {
   const counts: Counts = { folders: 0, lists: 0, tasks: 0, comments: 0, files: 0, goals: 0 };
-  const say = (progress: string) => db.work.imports.update(srcOrg, importId, { progress: progress.slice(0, 300), counts: JSON.stringify(counts) });
+  const say = (progress: string) => db.work.imports.update(statusOrg, importId, { progress: progress.slice(0, 300), counts: JSON.stringify(counts) });
   for (const pick of picks) {
     say(`Reading ${pick.name}`);
     const org = await db.getOrganizationById(pick.orgId);
@@ -154,7 +167,7 @@ async function run(srcOrg: number, importId: number, picks: Pick[], by: { id: nu
       }
     }
   }
-  db.work.imports.update(srcOrg, importId, { status: "done", progress: "Done", counts: JSON.stringify(counts), finishedAt: new Date() });
+  db.work.imports.update(statusOrg, importId, { status: "done", progress: "Done", counts: JSON.stringify(counts), finishedAt: new Date() });
 }
 
 function byClickup<T extends { clickupId: string | null }>(rows: T[], id: string) {

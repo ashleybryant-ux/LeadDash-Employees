@@ -99,6 +99,16 @@ function press_bg(orgId: number, label: string, job: () => Promise<unknown>, qui
     .finally(() => pressBusy.delete(key));
 }
 
+/** The workspaces where this person is an owner or admin. */
+async function adminWorkspaces(userId: number) {
+  const out: { id: number; name: string }[] = [];
+  for (const o of await db.listOrganizationsForUser(userId)) {
+    const m = await db.getOrganizationMembership(o.id, userId);
+    if (m && ["owner", "admin"].includes(m.role)) out.push({ id: o.id, name: o.name });
+  }
+  return out;
+}
+
 async function requireMember(ctx: TrpcContext & { user: User }, organizationId: number, minRole: Role = "reviewer") {
   if (ctx.user.role === "admin") return { role: "owner" as Role, support: true };
   // The app reviewer only ever reaches the demo workspace.
@@ -1928,14 +1938,12 @@ export const appRouter = router({
     // Moving from ClickUp
     clickupSpaces: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "admin");
-      const spaces = await (await import("./work/clickupImport")).spaces(input.organizationId);
-      const orgs = await db.listOrganizationsForUser(ctx.user.id);
-      const mine = [];
-      for (const o of orgs) {
-        const m = await db.getOrganizationMembership(o.id, ctx.user.id);
-        if (m && ["owner", "admin"].includes(m.role)) mine.push({ id: o.id, name: o.name });
-      }
-      return { spaces, workspaces: mine };
+      const mine = await adminWorkspaces(ctx.user.id);
+      const imp = await import("./work/clickupImport");
+      const src = await imp.clickupSource(input.organizationId, mine.map((w) => w.id));
+      if (!src) return { connected: false as const, spaces: [], workspaces: mine, from: null };
+      const spaces = await imp.spaces(src);
+      return { connected: true as const, spaces, workspaces: mine, from: mine.find((w) => w.id === src)?.name ?? null };
     }),
     importStatus: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
@@ -1944,7 +1952,10 @@ export const appRouter = router({
     startImport: protectedProcedure.input(orgInput.extend({ picks: z.array(z.object({ spaceId: z.string().max(40), name: z.string().max(200), orgId: z.number().int(), mode: z.enum(["projects", "goals"]) })).min(1).max(20) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "admin");
       for (const p of input.picks) await requireMember(ctx, p.orgId, "admin");
-      return (await import("./work/clickupImport")).startImport(input.organizationId, input.picks, { id: ctx.user.id, name: personName(ctx.user) });
+      const imp = await import("./work/clickupImport");
+      const src = await imp.clickupSource(input.organizationId, (await adminWorkspaces(ctx.user.id)).map((w) => w.id));
+      if (!src) throw new TRPCError({ code: "BAD_REQUEST", message: "Connect ClickUp first." });
+      return imp.startImport(input.organizationId, input.picks, { id: ctx.user.id, name: personName(ctx.user) }, src);
     }),
   }),
 

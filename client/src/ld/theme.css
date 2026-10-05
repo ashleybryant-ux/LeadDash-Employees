@@ -1137,3 +1137,38 @@ button.gp-ts:hover { background: #f8fbf9; }
 
 .gp-sub.gp-subt { grid-template-columns: 24px minmax(0, 1fr) 120px 110px; }
 @media (max-width: 640px) { .gp-sub.gp-subt { grid-template-columns: 24px minmax(0, 1fr) auto auto; } }
+
+/* Projects sidebar, ClickUp style */
+.gp-ptree .gp-new { width: 100%; justify-content: center; margin: 0 0 10px; }
+.gp-ptree > span:first-child { display: flex; }
+.gp-ptree > span:first-child .gp-menu { min-width: 200px; }
+.gp-tlr { display: flex; align-items: center; border-radius: 7px; }
+.gp-tlr:hover, .gp-tlr.on { background: #f4f8f6; }
+.gp-tlr.on { background: #e6f2ec; }
+.gp-tlr .gp-tl:hover { background: none; }
+.gp-tlr .gp-dots, .gp-tf-acts { opacity: 0; transition: opacity 0.1s; }
+.gp-tlr:hover .gp-dots, .gp-tlr:focus-within .gp-dots, .gp-tf:hover .gp-tf-acts, .gp-tf:focus-within .gp-tf-acts { opacity: 1; }
+.gp-tf-acts { display: inline-flex; align-items: center; gap: 2px; }
+.gp-plus.sm { font-size: 15px; width: 24px; height: 24px; border-radius: 6px; padding: 0; }
+.gp-plus:hover { background: #eef3f1; color: #14221c; }
+.gp-car { width: 12px; font-size: 10px; color: #8a9a93; flex-shrink: 0; }
+.gp-show-sm { display: none !important; }
+.gp-empty-start { padding: 28px; display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
+.gp-drawer-bg { display: none; }
+@media (hover: none) { .gp-tlr .gp-dots, .gp-tf-acts { opacity: 1; } }
+@media (max-width: 760px) {
+  .gp-show-sm { display: inline-flex !important; margin-right: 8px; }
+  .gp-ptree.open { display: flex; position: fixed; left: 0; top: 0; bottom: 0; z-index: 60; width: 290px; height: 100vh; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2); }
+  .gp-drawer-bg { display: block; position: fixed; inset: 0; z-index: 59; background: rgba(15, 25, 20, 0.35); }
+}
+@media (max-width: 760px) {
+  .gp-hrow { flex-wrap: wrap; row-gap: 8px; }
+  .gp-hrow > .gp-ttl { flex: 1 1 100%; }
+  .gp-hrow > .ld-row { max-width: 100%; overflow-x: auto; }
+  .gp-hrow > .ld-row .ld-btn { width: auto; padding: 0 14px; flex-shrink: 0; }
+  .gp-share { grid-template-columns: 34px minmax(0, 1fr) 116px; }
+  .gp-share > :nth-child(4) { grid-column: 2 / -1; justify-self: start; }
+  .gp-share > :nth-child(4):empty { display: none; }
+  .gp-invite { flex-wrap: wrap; }
+  .gp-invite > input { flex: 1 1 100% !important; }
+}

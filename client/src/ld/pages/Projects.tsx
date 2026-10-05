@@ -1,11 +1,11 @@
 import React from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { BottomNav, ErrorLine, Rail } from "../ui";
 import { Menu, ViewTabs } from "../goals/shared";
 import type { Outputs } from "../types";
-import { Tree } from "../projects/Tree";
+import { Tree, type Ask } from "../projects/Tree";
 import { ListView, TableView } from "../projects/ListView";
 import { BoardView } from "../projects/BoardView";
 import { CalendarView, GanttView } from "../projects/TimeViews";
@@ -108,6 +108,9 @@ export default function Projects() {
   const [q, setQ] = React.useState("");
   const [panel, setPanel] = React.useState<"" | "automations" | "settings" | "share" | "saveList" | "fromTemplate">("");
   const [saveTask, setSaveTask] = React.useState<number | null>(null);
+  const [adding, setAdding] = React.useState(false);
+  const [ask, setAsk] = React.useState<Ask>(null);
+  const [drawer, setDrawer] = React.useState(false);
   const guest = !!(currentOrg as { guest?: boolean } | null)?.guest;
   const tree = trpc.pj.tree.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const isList = where.scope === "list" || where.scope === "everything" || where.scope === "mine";
@@ -150,7 +153,7 @@ export default function Projects() {
   }, [data, q, who, priority, me]);
   const level = data?.list?.level ?? (guest ? "view" : "edit");
   const ctx: PjCtx | null = data ? { orgId: currentOrgId, data, tasks, open: setTaskId, refresh, group, listId: where.scope === "list" ? where.listId : null, level } : null;
-  const title = where.scope === "list" ? data?.list?.name ?? "" : where.scope === "mine" ? "My work" : where.scope === "import" ? "Move from ClickUp" : "Everything";
+  const title = where.scope === "list" ? data?.list?.name ?? "" : where.scope === "mine" ? "My work" : where.scope === "import" ? "Import from ClickUp" : "Everything";
   const crumb = where.scope === "list" && data?.list?.folderName ? `${data.list.folderName} /` : "";
   const assignees = Array.from(new Map((data?.tasks ?? []).flatMap((t) => t.assignees).map((a) => [`${a.type}:${a.id}:${a.name}`, a])).values());
   const pick = (w: Where) => {
@@ -162,7 +165,20 @@ export default function Projects() {
   return (
     <div className={`ld ${guest ? "ld-guest" : ""}`}>
       {!guest && <Rail active="projects" />}
-      <Tree orgId={currentOrgId} tree={tree.data} where={where} onPick={pick} refresh={refresh} />
+      <Tree
+        orgId={currentOrgId}
+        tree={tree.data}
+        where={where}
+        onPick={pick}
+        refresh={refresh}
+        ask={ask}
+        drawer={drawer}
+        onCloseDrawer={() => setDrawer(false)}
+        onNewTask={() => {
+          if (!isList) pick({ scope: "everything" });
+          setAdding(true);
+        }}
+      />
       <main className="gp-main">
         {guest && <GuestBar name={currentOrg?.name ?? ""} />}
         {isList || where.scope === "import" ? (
@@ -170,6 +186,7 @@ export default function Projects() {
             <div className="gp-head">
               <div className="gp-hrow">
                 <span className="gp-ttl" style={{ fontSize: 18 }}>
+                  <button type="button" className="ld-btn sm gp-auto gp-show-sm" onClick={() => setDrawer(true)} aria-label="Folders and lists">☰</button>
                   {crumb && <span className="crumb" style={{ fontSize: 14, marginLeft: 0 }}>{crumb}</span>}
                   {title}
                   {data?.list?.private && <span className="gp-chip" title="Only the people it's shared with see it">🔒 Private</span>}
@@ -226,7 +243,7 @@ export default function Projects() {
                 <span className="gp-tool-r">
                   <RunningTimer orgId={currentOrgId} onOpen={setTaskId} />
                   {view !== "workload" && <input className="gp-srch" placeholder="Search tasks" aria-label="Search tasks" value={q} onChange={(e) => setQ(e.target.value)} />}
-                  {ctx && (level === "edit" || level === "full" || where.scope !== "list") && <NewTask c={ctx} guest={guest} onTemplate={() => setPanel("fromTemplate")} />}
+                  {ctx && (level === "edit" || level === "full" || where.scope !== "list") && <NewTask c={ctx} guest={guest} open={adding} setOpen={setAdding} onTemplate={() => setPanel("fromTemplate")} />}
                 </span>
               </div>
             )}
@@ -239,7 +256,7 @@ export default function Projects() {
               ) : (
                 <div className="gp-view">
                   {ctx.data.lists.length === 0 && where.scope !== "list" ? (
-                    guest ? <div className="gp-gl gp-empty">Nothing is shared with you here yet.</div> : <Empty onImport={() => setWhere({ scope: "import" })} />
+                    guest ? <div className="gp-gl gp-empty">Nothing is shared with you here yet.</div> : <Empty onImport={() => setWhere({ scope: "import" })} onFolder={() => setAsk({ kind: "folder", n: Date.now() })} onTask={() => setAdding(true)} />
                   ) : (
                     <>
                       <MyWorkPhone c={ctx} show={where.scope === "mine"} />
@@ -298,21 +315,22 @@ function GuestBar({ name }: { name: string }) {
   );
 }
 
-function Empty({ onImport }: { onImport: () => void }) {
+function Empty({ onImport, onFolder, onTask }: { onImport: () => void; onFolder: () => void; onTask: () => void }) {
   return (
-    <div className="gp-gl" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12, maxWidth: 640 }}>
-      <b style={{ fontSize: 16 }}>No lists yet</b>
-      <span className="ld-small ld-muted">Make a folder and a list on the left, or bring everything over from ClickUp.</span>
-      <span className="ld-row">
-        <button type="button" className="ld-btn p" onClick={onImport}>Move from ClickUp</button>
-        <Link href="/tasks" className="ld-btn">Nora's launches</Link>
+    <div className="gp-gl gp-empty-start">
+      <b style={{ fontSize: 16 }}>Start your first project</b>
+      <span className="ld-small ld-muted">Folders hold lists, and lists hold tasks.</span>
+      <span className="ld-row" style={{ flexWrap: "wrap" }}>
+        <button type="button" className="ld-btn p" onClick={onFolder}>+ New folder</button>
+        <button type="button" className="ld-btn" onClick={onTask}>+ Task</button>
+        <button type="button" className="ld-btn gp-auto" onClick={onImport}>Import from ClickUp</button>
       </span>
     </div>
   );
 }
 
-function NewTask({ c, guest, onTemplate }: { c: PjCtx; guest: boolean; onTemplate: () => void }) {
-  const [open, setOpen] = React.useState(false);
+/** + Task: opens a name box (and a list picker when not in a list). With no lists yet, the task goes in a new "Tasks" list. */
+function NewTask({ c, guest, open, setOpen, onTemplate }: { c: PjCtx; guest: boolean; open: boolean; setOpen: (v: boolean) => void; onTemplate: () => void }) {
   const [name, setName] = React.useState("");
   const [list, setList] = React.useState<number | "">(c.listId ?? "");
   const create = trpc.pj.create.useMutation({
@@ -323,14 +341,22 @@ function NewTask({ c, guest, onTemplate }: { c: PjCtx; guest: boolean; onTemplat
       c.open(t.id);
     },
   });
+  const makeList = trpc.pj.saveList.useMutation();
   const editable = c.data.lists.filter((l) => l.level === "edit" || l.level === "full");
+  const none = !editable.length;
   React.useEffect(() => setList(c.listId ?? editable[0]?.id ?? ""), [c.listId, c.data.lists]); // eslint-disable-line react-hooks/exhaustive-deps
+  const add = async () => {
+    if (!name.trim()) return;
+    let id = list ? Number(list) : 0;
+    if (!id && none && !guest) id = (await makeList.mutateAsync({ organizationId: c.orgId, name: "Tasks", folderId: null }))?.id ?? 0;
+    if (id) create.mutate({ organizationId: c.orgId, listId: id, name });
+  };
   if (!open)
     return guest ? (
-      <button type="button" className="ld-btn p gp-auto" onClick={() => setOpen(true)} disabled={!editable.length}>+ Task</button>
+      <button type="button" className="ld-btn p gp-auto" onClick={() => setOpen(true)} disabled={none}>+ Task</button>
     ) : (
       <span className="gp-split">
-        <button type="button" className="ld-btn p gp-auto" onClick={() => setOpen(true)} disabled={!editable.length}>+ Task</button>
+        <button type="button" className="ld-btn p gp-auto" onClick={() => setOpen(true)}>+ Task</button>
         <Menu label="More ways to add a task" button="▾">
           {(close) => (
             <>
@@ -343,16 +369,17 @@ function NewTask({ c, guest, onTemplate }: { c: PjCtx; guest: boolean; onTemplat
     );
   return (
     <span className="ld-row">
-      {!c.listId && (
+      {!c.listId && !none && (
         <select className="ld-in xs" style={{ width: 160 }} aria-label="List" value={list} onChange={(e) => setList(Number(e.target.value))}>
           {editable.map((l) => (
             <option key={l.id} value={l.id}>{l.name}</option>
           ))}
         </select>
       )}
-      <input className="ld-in xs" style={{ width: 220 }} autoFocus aria-label="New task" placeholder="Task name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && name.trim() && list && create.mutate({ organizationId: c.orgId, listId: Number(list), name })} />
+      <input className="ld-in xs" style={{ width: 220 }} autoFocus aria-label="New task" placeholder="Task name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />
       <button type="button" className="ld-btn sm" onClick={() => setOpen(false)}>Cancel</button>
-      <button type="button" className="ld-btn p sm" disabled={!name.trim() || !list || create.isPending} onClick={() => create.mutate({ organizationId: c.orgId, listId: Number(list), name })}>Add</button>
+      <button type="button" className="ld-btn p sm" disabled={!name.trim() || create.isPending || makeList.isPending} onClick={() => void add()}>Add</button>
+      <ErrorLine error={create.error || makeList.error} />
     </span>
   );
 }

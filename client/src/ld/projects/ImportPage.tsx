@@ -1,9 +1,8 @@
 import React from "react";
-import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { ErrorLine } from "../ui";
 
-/** Moving from ClickUp: pick the Spaces and the workspace each goes to; everything comes over, and ClickUp doesn't change. */
+/** Importing from ClickUp: pick the Spaces and the workspace each goes to; everything comes over, and ClickUp doesn't change. */
 export function ImportPage({ orgId, onDone }: { orgId: number; onDone: () => void }) {
   const q = trpc.pj.clickupSpaces.useQuery({ organizationId: orgId }, { retry: false });
   const status = trpc.pj.importStatus.useQuery({ organizationId: orgId }, { refetchInterval: (d) => ((d as { state?: { data?: { status?: string } } })?.state?.data?.status === "running" ? 2000 : false) });
@@ -19,16 +18,28 @@ export function ImportPage({ orgId, onDone }: { orgId: number; onDone: () => voi
   if (q.error)
     return (
       <div className="gp-gl" style={{ padding: 24, maxWidth: 720, display: "flex", flexDirection: "column", gap: 12 }}>
+        <b style={{ fontSize: 15 }}>ClickUp</b>
         <ErrorLine error={q.error} />
-        <Link href="/integrations" className="ld-btn p" style={{ alignSelf: "flex-start" }}>Integrations</Link>
+        <button type="button" className="ld-btn" style={{ alignSelf: "flex-start" }} onClick={() => void q.refetch()}>Try again</button>
+      </div>
+    );
+  if (q.data && !q.data.connected)
+    return (
+      <div className="gp-gl" style={{ padding: 24, maxWidth: 720, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="ld-between">
+          <b style={{ fontSize: 15 }}>ClickUp</b>
+          <span className="gp-sd">Not connected</span>
+        </div>
+        <span className="ld-small ld-muted">Connect ClickUp once, then come back here and pick what to bring over. Nothing in ClickUp changes.</span>
+        <a className="ld-btn p" style={{ alignSelf: "flex-start" }} href={`/api/oauth/clickup/start?organizationId=${orgId}`}>Connect ClickUp</a>
       </div>
     );
   return (
     <div className="gp-imp">
       <div className="gp-gl" style={{ padding: "16px 18px" }}>
         <div className="ld-between">
-          <b style={{ fontSize: 15 }}>Move from ClickUp</b>
-          <span className="gp-sd s-on">ClickUp connected</span>
+          <b style={{ fontSize: 15 }}>ClickUp</b>
+          {q.data && <span className="gp-sd s-on">{q.data.from ? `Connected in ${q.data.from}` : "Connected"}</span>}
         </div>
         <p className="ld-small ld-muted" style={{ margin: "6px 0 10px" }}>Pick the Spaces to bring over and the workspace each one goes to. Nothing in ClickUp changes.</p>
         <div className="gp-imh">
@@ -38,7 +49,8 @@ export function ImportPage({ orgId, onDone }: { orgId: number; onDone: () => voi
           <span>Goes to</span>
           <span>As</span>
         </div>
-        {!q.data && <p className="ld-small ld-muted">Reading your ClickUp</p>}
+        {!q.data && <p className="ld-small ld-muted">Reading your ClickUp Spaces. This can take a minute.</p>}
+        {q.data?.connected && !q.data.spaces.length && <p className="ld-small ld-muted">No Spaces found in the connected ClickUp.</p>}
         {q.data?.spaces.map((s) => {
           const p = picks[s.id] ?? { on: false, orgId, mode: "projects" as const };
           return (

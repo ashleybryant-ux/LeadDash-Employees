@@ -45,7 +45,7 @@ export function ShareList({ orgId, listId, name, canChange, onClose }: { orgId: 
         <div style={{ padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 4 }}>
           {canChange && (
             <div style={{ position: "relative", marginBottom: 6 }}>
-              <div className="ld-row">
+              <div className="ld-row gp-invite">
                 <input className="ld-in" style={{ flex: 1 }} aria-label="A teammate, an employee, or a guest's email" placeholder="Add a teammate or a guest's email" value={pick ? pick.name : who} onChange={(e) => { setPick(null); setWho(e.target.value); }} onKeyDown={(e) => e.key === "Enter" && invite()} />
                 <select className="ld-in xs" style={{ width: 150 }} aria-label="Access" value={level} onChange={(e) => setLevelPick(e.target.value as Level)}>
                   {LEVELS.map((l) => (

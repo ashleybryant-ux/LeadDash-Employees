@@ -257,4 +257,36 @@ describe("Moving from ClickUp", () => {
     expect(db.work.lists.all(orgId)).toHaveLength(4);
     expect(db.work.comments.where(orgId, "taskId", t1.id).filter((c) => c.kind === "comment")).toHaveLength(1);
   });
+  it("imports from ClickUp connected in another of the owner's workspaces, and says so when none has it", async () => {
+    const { orgId: here, owner } = await makeWorkspace("pj-import-here");
+    const other = await caller((await db.getUserByEmail("staff@leaddash.io"))!).organizations.create({ name: "Workspace with ClickUp", slug: "pj-import-there", plan: "growth", state: "Oklahoma", ownerEmail: owner.email });
+    const there = other.id!;
+    const integrations = await import("./integrations");
+    const me = caller(owner);
+    vi.spyOn(integrations, "clickupSettings").mockResolvedValue(null);
+    expect(await me.pj.clickupSpaces({ organizationId: here })).toMatchObject({ connected: false, spaces: [] });
+    await expect(me.pj.startImport({ organizationId: here, picks: [{ spaceId: "10", name: "Ops", orgId: here, mode: "projects" }] })).rejects.toThrow(/Connect ClickUp/);
+    vi.spyOn(integrations, "clickupSettings").mockImplementation(async (id: number) => (id === there ? { teamId: "1", teamName: "T", userId: 1, userEmail: null, spaces: [], spaceId: null, spaceName: null } : null));
+    const read: number[] = [];
+    vi.spyOn(integrations, "clickup").mockImplementation(async (org: number, path: string) => {
+      read.push(org);
+      if (path === "/team/1/space?archived=false") return { spaces: [{ id: "10", name: "Ops" }] };
+      if (path === "/space/10/folder?archived=false") return { folders: [] };
+      if (path === "/space/10/list?archived=false") return { lists: [{ id: "500", name: "Errands" }] };
+      if (path === "/list/500") return { content: "", statuses: [] };
+      if (path === "/list/500/field") return { fields: [] };
+      if (path.startsWith("/list/500/task")) return { last_page: true, tasks: [{ id: "x1", name: "Call the bank", status: { status: "to do" } }] };
+      if (path.endsWith("/comment")) return { comments: [] };
+      if (path.startsWith("/task/")) return { id: "x1", name: "Call the bank", status: { status: "to do" } };
+      throw new Error(`404: ${path}`);
+    });
+    const s = await me.pj.clickupSpaces({ organizationId: here });
+    expect(s).toMatchObject({ connected: true, from: "Workspace with ClickUp" });
+    expect(s.spaces.map((x) => x.name)).toEqual(["Ops"]);
+    const r = await me.pj.startImport({ organizationId: here, picks: [{ spaceId: "10", name: "Ops", orgId: here, mode: "projects" }] });
+    await waitFor(() => db.work.imports.get(here, r.id)?.status !== "running");
+    expect(db.work.imports.get(here, r.id)!.status).toBe("done");
+    expect(new Set(read)).toEqual(new Set([there]));
+    expect(db.work.tasks.all(here).map((t) => t.name)).toEqual(["Call the bank"]);
+  });
 });
