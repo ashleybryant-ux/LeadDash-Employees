@@ -417,4 +417,20 @@ describe("Elena's mini drama studio", () => {
     expect(p.duration).toBeLessThan(5.3);
     expect(p.audio).toBe(true);
   }, 120_000);
+  it("waits out fal.ai's temporary outages instead of stopping, but stops on a real error", async () => {
+    const real = globalThis.fetch;
+    let downs = 2;
+    vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
+      if (String(url).includes("/status") && downs > 0) {
+        downs--;
+        return Response.json({ detail: "Downstream service unavailable" }, { status: 504 });
+      }
+      return real(url, init);
+    });
+    const out = await drama.falRun("fal-ai/kling-video/v3/pro/image-to-video", { prompt: "x" });
+    expect(out.video.url).toBe("https://fal.media/clip.mp4");
+    expect(downs).toBe(0);
+    expect(drama.TRANSIENT.test("fal.ai said no (504): Downstream service unavailable")).toBe(true);
+    expect(drama.TRANSIENT.test("fal.ai said no (422): image too small")).toBe(false);
+  });
 });

@@ -407,7 +407,10 @@ async function ownerPortrait(orgId: number) {
 // fal.ai and ElevenLabs
 // ==========================================
 
-async function falCall(url: string, init: { method?: string; body?: unknown } = {}) {
+/** fal.ai's busy and temporary errors: worth trying again rather than stopping the video. */
+export const TRANSIENT = /\((408|409|425|429|500|502|503|504|520|522|524)\)|unavailable|timed? ?out|timeout|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|fetch failed|network|took more than/i;
+
+async function falOnce(url: string, init: { method?: string; body?: unknown }) {
   const res = await fetch(url, {
     method: init.method ?? "GET",
     headers: { authorization: `Key ${ENV.falKey}`, ...(init.body ? { "content-type": "application/json" } : {}) },
@@ -428,24 +431,45 @@ async function falCall(url: string, init: { method?: string; body?: unknown } = 
   return data;
 }
 
+/** One call to fal.ai, tried again with growing waits when fal.ai is busy or briefly down. */
+async function falCall(url: string, init: { method?: string; body?: unknown } = {}) {
+  const tries = init.method === "POST" ? 4 : 6;
+  for (let i = 0; ; i++) {
+    try {
+      return await falOnce(url, init);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (i >= tries - 1 || !TRANSIENT.test(msg)) throw err;
+      await new Promise((r) => setTimeout(r, pollMs * [1, 2, 4, 8, 12, 12][i]));
+    }
+  }
+}
+
 let pollMs = 5000;
 export function setPollMs(ms: number) {
   pollMs = ms;
 }
 
-/** Runs one fal.ai model through its queue and returns the result. */
+/** Runs one fal.ai model through its queue and returns the result. A job fal.ai drops is sent once more. */
 export async function falRun(model: string, input: unknown, maxMinutes = 20) {
-  const sub = await falCall(`https://queue.fal.run/${model}`, { method: "POST", body: input });
-  if (!sub.request_id) throw new Error("fal.ai didn't start it.");
-  const until = Date.now() + maxMinutes * 60_000;
-  for (;;) {
-    const st = await falCall(sub.status_url);
-    if (st.status === "COMPLETED") break;
-    if (st.status && st.status !== "IN_QUEUE" && st.status !== "IN_PROGRESS") throw new Error(`fal.ai stopped: ${st.status}`);
-    if (Date.now() > until) throw new Error(`fal.ai took more than ${maxMinutes} minutes`);
-    await new Promise((r) => setTimeout(r, pollMs));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const sub = await falCall(`https://queue.fal.run/${model}`, { method: "POST", body: input });
+      if (!sub.request_id) throw new Error("fal.ai didn't start it.");
+      const until = Date.now() + maxMinutes * 60_000;
+      for (;;) {
+        const st = await falCall(sub.status_url);
+        if (st.status === "COMPLETED") break;
+        if (st.status && st.status !== "IN_QUEUE" && st.status !== "IN_PROGRESS") throw new Error(`fal.ai stopped: ${st.status} (503)`);
+        if (Date.now() > until) throw new Error(`fal.ai took more than ${maxMinutes} minutes`);
+        await new Promise((r) => setTimeout(r, pollMs));
+      }
+      return await falCall(sub.response_url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt >= 1 || !TRANSIENT.test(msg)) throw err;
+    }
   }
-  return falCall(sub.response_url);
 }
 
 function dataUri(buf: Buffer, mime: string) {
@@ -607,10 +631,30 @@ export async function startEpisode(orgId: number, id: number) {
   const next = db.updateDramaEpisode(id, orgId, { status: "making", error: null, madeAt: ep.madeAt ?? new Date(), progress: animating ? `Animating shot ${(shots.filter((x) => x.clipUrl).length || 0) + 1} of ${shots.length}` : `Keyframe 1 of ${shots.length}` })!;
   active.add(id);
   void makeEpisode(orgId, id)
-    .catch((err) => fail(orgId, id, err instanceof Error ? err.message : String(err)))
-    .finally(() => active.delete(id));
+    .then(() => autoTries.delete(id))
+    .catch(async (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      const n = autoTries.get(id) ?? 0;
+      if (TRANSIENT.test(msg) && n < 3) {
+        // A temporary outage: everything made is kept, and she picks back up on her own in a few minutes.
+        autoTries.set(id, n + 1);
+        const wait = pollMs * 24 * (n + 1);
+        db.updateDramaEpisode(id, orgId, { progress: `Waiting for the video service to come back (try ${n + 2} of 4)` });
+        setTimeout(() => {
+          active.delete(id);
+          void startEpisode(orgId, id).catch((e) => fail(orgId, id, e instanceof Error ? e.message : String(e)));
+        }, wait).unref?.();
+        return;
+      }
+      autoTries.delete(id);
+      await fail(orgId, id, n ? `${msg} (after ${n + 1} tries; the video service seems to be down, so try Make again later)` : msg);
+    })
+    .finally(() => {
+      if (!autoTries.has(id)) active.delete(id);
+    });
   return next;
 }
+const autoTries = new Map<number, number>();
 
 async function fail(orgId: number, id: number, message: string) {
   const ep = db.updateDramaEpisode(id, orgId, { status: "failed", error: message.slice(0, 400), progress: null });
