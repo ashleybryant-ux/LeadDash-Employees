@@ -1,6 +1,6 @@
 # Speaking proposals from Dr. Ashley's Claude chats (written March 16, 2026)
 
-Each "## [category] Title" section becomes one Brain entry named "Company training: Title". These are the proposals she wrote with Claude in March 2026. Whether each one was submitted, accepted or presented is not on file: ask her before saying it was.
+Each "## [category] Title" section becomes one Brain entry named "Company training: Title". These are the proposals she wrote with Claude in March 2026. SHRM Arkansas is confirmed below; for the others, whether each was submitted or accepted is not on file, so ask her before saying it was.
 
 ## [speaking] SHRM Arkansas (HR2026) proposal
 
@@ -12,7 +12,12 @@ The proposal she wrote for HR2026, the Arkansas SHRM state conference. Use it wh
 | Speaker form | conference.arshrm.com/speaker-form |
 | Proposal deadline | May 1, 2026 |
 | Session type | Concurrent |
-| Status | [CONFIRM] Submitted, accepted, the date and the room are not on file. Ask her. |
+| Status | Accepted. Cathleen, the 2026 Speaker Chair, asked her to give the session twice (March 2026). |
+| Conference dates | Oct 14 to 16, 2026, Hot Springs Convention Center, Hot Springs, Arkansas |
+| Her sessions | Thursday, Oct 15, 2026: 3:30 to 4:30 PM and 4:30 to 5:30 PM, Room 203-204 (from the published schedule) |
+| Length | 60 minutes each, the same session both times |
+| What they cover | Hotel room night and conference registration (meals, receptions). Concurrent speakers are not paid. |
+| Slides | Built Oct 5, 2026: 18 slides with timed speaker notes |
 
 ### Session title
 
