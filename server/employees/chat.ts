@@ -159,7 +159,7 @@ const ACTION_HELP: Record<string, string> = {
   press_campaign: "press_campaign: she wants a media campaign or a media list for a story, launch or topic (\"build a media list for the LeadDash Employees launch\", \"pitch me on burnout\"). Put what it's about in `notes`. You plan it (goal, story, angles), then match reporters and write pitches; every pitch waits for her approval.",
   press_scout: "press_scout: she wants you to find reporters and stories now (\"who's covering AI in healthcare this week\", \"scout the news\"). Put any focus in `focus`.",
   press_brief: "press_brief: she asks for the weekly press briefing or what's going on with the press desk.",
-  find_events: "find_events: search the web now. Set `oppKind` to speaking (events taking speaker proposals) or media (press: journalist source requests, podcasts booking guests, reporters covering the topic, op-ed and contributed article openings). Put any focus in `focus`.",
+  find_events: "find_events: search the web now for NEW opportunities, only when the person asks you to look for some. A question about a talk, proposal, event or pitch she already has (\"do you have the info on my SHRM Arkansas presentation?\") is never a search: choose none and answer from the Brain, your documents and your Opportunities. Set `oppKind` to speaking (events taking speaker proposals) or media (press: journalist source requests, podcasts booking guests, reporters covering the topic, op-ed and contributed article openings). Put any focus in `focus`.",
   add_link: "add_link: the person gave a link to an opportunity they found. Put the link in `url`.",
   apply: "apply: start the application for an opportunity already found. Put its name (or 'best' for the best fit not yet started) in `target`.",
   find_and_apply: "find_and_apply: search now, then start applications for the best fits (used by scheduled tasks like a morning search). Set `oppKind` and `focus` as for a search.",
@@ -319,6 +319,20 @@ async function teamFacts(emp: AIEmployee) {
     return `${cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : ""}${desk}`;
   }
   return "";
+}
+
+/** Whether the owner's Claude or ChatGPT history is in the Brain yet, so "it's in the Brain" gets an honest answer. */
+export function historyFacts(orgId: number) {
+  const list = db.listHistoryImports(orgId, 20);
+  const running = list.find((i) => i.status === "reading" || i.status === "running");
+  const done = list.filter((i) => i.status === "done");
+  const where = "on the Brain, Import history";
+  const state = running
+    ? `Her Claude or ChatGPT chat history is being imported into the Brain right now (${running.done} of ${running.total || "?"} chats read), so some of what she has worked on isn't in the Brain yet.`
+    : done.length
+      ? "Her Claude or ChatGPT chat history has been imported into the Brain (the \"Learned:\" entries)."
+      : `Her Claude and ChatGPT chat history has NOT been imported into the Brain yet, so past work she did in those chats (proposals, talks, pitches, plans) isn't here. She uploads her export ${where}.`;
+  return `\n${state} When she asks about something she says is in the Brain and you can't find it in the Brain or your documents, say plainly it isn't there${done.length ? "" : `, that it may be in her Claude history, which isn't imported yet (${where})`}, and ask her to attach the file or paste it. Never run a search instead.`;
 }
 
 /** Website logins every employee can use in their browser (names only; passwords never reach the AI). */
@@ -1467,7 +1481,7 @@ export async function sendChatMessage(opts: {
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
-Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${await webFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
+Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${historyFacts(emp.organizationId)}${await webFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
 ${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}\n${REMEMBER}`}${opts.spoken ? `\n${ONE_ON_ONE}` : ""}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
