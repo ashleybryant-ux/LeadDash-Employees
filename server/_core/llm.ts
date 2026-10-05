@@ -86,19 +86,23 @@ export async function generateJson<T>(opts: {
     { role: "system", content: opts.system },
     { role: "user", content: opts.prompt },
   ];
-  const out = await callGateway(
-    {
-      messages,
-      max_tokens: opts.maxTokens ?? 4000,
-      temperature: opts.temperature ?? 0.4,
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: opts.schemaName, schema: opts.schema, strict: true },
+  const ask = (maxTokens: number) =>
+    callGateway(
+      {
+        messages,
+        max_tokens: maxTokens,
+        temperature: opts.temperature ?? 0.4,
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: opts.schemaName, schema: opts.schema, strict: true },
+        },
       },
-    },
-    opts.timeoutMs
-  );
-  const parsed = extractJson(out);
+      opts.timeoutMs
+    );
+  const first = opts.maxTokens ?? 4000;
+  let parsed = extractJson(await ask(first));
+  // Cut off before the JSON closed (the answer ran past the token limit): ask once more with room to finish.
+  if (parsed === undefined) parsed = extractJson(await ask(Math.min(32_000, Math.max(first * 3, 4000))));
   if (parsed === undefined) throw new Error("AI returned something that was not valid JSON");
   return parsed as T;
 }

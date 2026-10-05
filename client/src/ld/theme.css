@@ -480,6 +480,8 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
 .ld-talk-doc h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; }
 .ld-talk-doc h3 { margin: 22px 0 2px; font-size: 17px; font-weight: 800; color: #155c3e; }
 .ld-talk-doc p { margin: 0 0 12px; }
+.ld-talk-doc ul { margin: 0 0 12px; padding-left: 22px; list-style: disc; }
+.ld-talk-doc li { margin-bottom: 8px; }
 .ld-talk-doc .ld-talk-cue { font-size: 13px; color: #3d4c45; margin-bottom: 10px; }
 .ld-talk-doc .ld-talk-meta { font-size: 13px; color: #5b6b64; font-style: italic; }
 .ld-talk-doc .ld-talk-dir { font-style: italic; color: #5b6b64; }

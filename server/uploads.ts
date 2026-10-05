@@ -229,7 +229,11 @@ export function registerUploads(app: Express) {
         const imageType = sniffImageType(buf);
         let text = "";
         let pages: number | null = null;
-        if (!imageType) {
+        if (!imageType && /\.html?$/i.test(name)) {
+          // A web page's own code: kept as markup so the employee can read its structure, images and links.
+          text = (await import("./employees/siteWork")).keepHtml(buf.toString("utf8"));
+          pages = null;
+        } else if (!imageType) {
           const read = await readFile(buf, name, mime);
           text = read.text.slice(0, 3_000_000);
           pages = read.pages;

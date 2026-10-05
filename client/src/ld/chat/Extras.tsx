@@ -20,7 +20,7 @@ type Staged = { key: string; name: string; size: number; file?: Attached; error?
 
 export const MAX_FILES = 10;
 export const MAX_BYTES = 20_000_000;
-const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv";
+const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.html,.htm";
 
 export function fileSize(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} MB`;

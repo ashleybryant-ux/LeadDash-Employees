@@ -69,7 +69,7 @@ const ACTIONS: Record<string, string[]> = {
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  website: ["none", "report", "site_audit", "mockup_site", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -176,6 +176,8 @@ const ACTION_HELP: Record<string, string> = {
   schedule_posts: "schedule_posts: the person wants upcoming posts put on the calendar for an account (for example \"schedule the next 12 posts on Facebook\"). Put the one account in `platforms` (facebook, instagram, linkedin, x or threads) and how many posts in `count` (default 8). You suggest the days and time; they confirm with a button.",
   write_article: "write_article: write a blog article. Put the title in `title` and points to cover in `notes`.",
   plan_page: "plan_page: only when the person asks for a plan or outline of a page (not the page itself). Put the page name in `page` and its goal in `goal`.",
+  site_audit: "site_audit: read a page of the owner's existing website (its real HTML, words, buttons and images) and write an audit of what to change, add and cut, as a document that opens in the chat. Use it for any website audit, review, critique or read-through, never browse. Put the page's address in `url` when it's in this conversation or on a handoff ('' to use the workspace's website and find the page from `topic`), which page or offer it is in `topic` (like \"299 dollar founding member offer page\"), and the audience in `target` (like \"cold therapist audience\").",
+  mockup_site: "mockup_site: mock up a new version of a page of the owner's existing website (\"mock up my website\", \"mock it up\", \"redesign this page\", \"show me what the page should look like\"): you read the page's real HTML, words and images and build the new version as a live preview in the chat with the HTML to copy, using her images, photos from the Brain, and pictures and graphics you make. Put the address in `url` ('' for the page you audited last, else the workspace's website), the page or offer in `topic`, `landing` or `website` in `target`, \"audit\" in `focus` when they want the audit's changes made (always after an audit unless they say otherwise), and anything else they asked for in `notes`.",
   build_page: "build_page: build a landing page or website page as HTML. Put the page name or offer in `page`, the goal in `goal`, `landing` or `website` in `target` (landing unless they say website or a page of their site), the layout they picked in `focus`, where the button goes in `to`, and everything else they told you about the page in `notes`.",
   change_page: "change_page: change a page you already built. Put the page's name in `target` ('' for the most recent page) and exactly what to change in `notes`.",
   draft_reply: "draft_reply: the person pasted a message they received. Put the sender in `from`, the subject in `subject` (make one up from the content if missing) and the full pasted message in `message`.",
@@ -835,6 +837,13 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       }
     }
     case "browse": {
+      // Jordan reads and reviews websites from their real HTML, not by clicking around a browser.
+      if (emp.kind === "website" && !d.target && /\b(audit|review|critique|read|look (?:at|over)|feedback|flag|assess|evaluate)\b/i.test(`${d.goal} ${d.notes} ${d.title}`)) {
+        const sw = await import("./siteWork");
+        const goal = d.goal || d.notes || d.message;
+        const text = await sw.startSiteAudit(emp, { url: d.url, about: d.title || goal, audience: (goal.match(/\bfor (?:a |an |the )?([^,.;]{3,60}?audience)\b/i) ?? [])[1] ?? "", said: goal, html: sw.htmlFiles(files) });
+        return { text, cards: [], queries: [] };
+      }
       const web = await import("./web");
       try {
         const { task, login } = await web.startWebTask(emp, { goal: d.goal || d.notes || d.message, url: d.url, login: d.target, title: d.title });
@@ -1217,6 +1226,21 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         cards: [{ type: "article", id: a.id, title: a.title, body: (a.body ?? "").replace(/[#*_>]/g, "").slice(0, 280), imageUrl: a.imageUrl }],
         queries: [],
       };
+    }
+    case "site_audit": {
+      const sw = await import("./siteWork");
+      const text = await sw.startSiteAudit(emp, { url: d.url, about: d.topic || d.page || d.title, audience: d.target, said: [ctx.said, d.notes].filter(Boolean).join("\n"), html: sw.htmlFiles(files) });
+      return { text, cards: [], queries: [] };
+    }
+    case "mockup_site": {
+      const sw = await import("./siteWork");
+      const photos = files.filter((f) => f.kind === "image").map((f) => ({ url: pages.publicLink(org, f.fileUrl), text: f.text, name: f.name }));
+      try {
+        const r = await sw.startSiteMockup(emp, { url: d.url, about: d.topic || d.page || d.title, said: ctx.said ?? "", notes: d.notes, pageType: /landing/i.test(d.target) ? "landing" : "website", html: sw.htmlFiles(files), photos, useAudit: /audit/i.test(d.focus) || !!sw.latestAudit(org, emp.id) && !/without|ignore|skip/i.test(`${d.focus} ${ctx.said ?? ""}`) });
+        return { text: r.text, cards: [], queries: [], refs: r.pageId ? [{ kind: "page", id: r.pageId }] : [] };
+      } catch (err) {
+        return { text: `${err instanceof Error ? err.message : String(err)}. Attach the page's HTML file here and I'll build from that.`, cards: [], queries: [] };
+      }
     }
     case "build_page": {
       const photos = files.filter((f) => f.kind === "image").map((f) => ({ url: pages.publicLink(org, f.fileUrl), text: f.text, name: f.name }));

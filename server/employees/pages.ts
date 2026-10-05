@@ -17,6 +17,7 @@ import { employeeFor, systemPromptAbout, working, actor } from "./tasks";
  */
 
 const MAX_STOCK = 3;
+const MAX_GRAPHICS = 3;
 
 export const PAGE_DESIGN = `How to build the page (follow every point):
 - Output ONLY an HTML fragment: optionally one Google Fonts <link>, then one <style> block, then one <div class="{WRAP}"> holding the whole page. No <html>, <head>, <body> or <script>. Every CSS selector starts with .{WRAP} so nothing leaks in or out. Reset margins inside the wrapper and set the font, colors and box-sizing on it.
@@ -24,7 +25,8 @@ export const PAGE_DESIGN = `How to build the page (follow every point):
 - Layout: max content width about 1120px, CSS grid and flex, section padding about 96px on desktop and 56px on phone, one breakpoint at 768px where columns stack. Buttons at least 44px tall with clear hover states. Rounded corners 12 to 20px, soft shadows used sparingly.
 - Type: one display font and one body font from Google Fonts (from the brand guide when the Brain has one). Headlines about 48 to 60px on desktop and 32 to 38px on phone; body 17 to 18px with line height about 1.6.
 - Color: the workspace's brand colors from the Brain or company training. One accent color for buttons and highlights. Text contrast at least 4.5:1.
-- Images: every page has at least one strong image. For pages about the owner or the company, use the owner's photos from the Brain with {{photo:ID}}. For other images, write {{stock:a specific description of a realistic photo}} (at most ${MAX_STOCK}); describe real-looking people and settings that match the audience, never people in distress, never clinical stereotypes. Every <img> has alt text and object-fit: cover.
+- Images: every page has at least one strong image. For pages about the owner or the company, use the owner's images from the Brain with {{photo:ID}} (her photos, logo and graphics). For other photos, write {{stock:a specific description of a realistic photo}} (at most ${MAX_STOCK}); describe real-looking people and settings that match the audience, never people in distress, never clinical stereotypes. Every <img> has alt text and object-fit: cover.
+- Graphics: draw icons, diagrams, steps, timelines, comparison tables, number callouts and simple charts in the page itself with inline SVG and CSS in the brand colors, so the words stay real text. For an illustration a photo can't show (a feeling, a metaphor, a concept), write {{graphic:a specific description of a flat modern illustration}} (at most ${MAX_GRAPHICS}); it is made without any words in it.
 - The main button links to {{button_url}}. Where a form belongs, put {{form}} on its own line inside a section.
 - Never: walls of text, everything centered, generic purple gradients, emoji, clip art, lorem ipsum, invented testimonials, invented statistics, invented logos. Placeholders like [YOUR PRICE] where a fact is missing.`;
 
@@ -77,6 +79,26 @@ async function fill(orgId: number, page: SitePage, html: string, onProgress: (s:
     });
   }
   out = out.replace(/\{\{stock:[^}]*\}\}/g, "");
+  const graphics = Array.from(new Set(Array.from(out.matchAll(/\{\{graphic:([^}]{3,400})\}\}/g)).map((m) => m[1].trim()))).slice(0, MAX_GRAPHICS);
+  if (graphics.length) {
+    onProgress(`Making ${graphics.length} graphic${graphics.length === 1 ? "" : "s"}`);
+    const colors = ((await db.getOrganizationById(orgId))?.brandColors ?? "").match(/#[0-9a-f]{6}/gi) ?? [];
+    const made = await Promise.all(
+      graphics.map(async (desc) => {
+        try {
+          const img = await generateImage({ prompt: `Flat modern vector illustration for a professional website section: ${desc}. Simple rounded shapes, no outlines, a soft light background${colors.length ? `, using mainly ${colors.slice(0, 3).join(", ")} and warm neutrals` : ""}. No text, letters, numbers or logos anywhere in the image.`, size: "1536x1024", quality: "medium", folder: `org-${orgId}/pages` });
+          return publicLink(orgId, img.url);
+        } catch (err) {
+          console.warn("[pages] graphic failed:", err instanceof Error ? err.message : err);
+          return "";
+        }
+      })
+    );
+    graphics.forEach((desc, i) => {
+      out = out.split(`{{graphic:${desc}}}`).join(made[i]);
+    });
+  }
+  out = out.replace(/\{\{graphic:[^}]*\}\}/g, "");
   out = out.split("{{button_url}}").join(page.buttonUrl || "#");
   out = out.split("{{form}}").join(page.embedCode || "");
   return out;
@@ -85,13 +107,13 @@ async function fill(orgId: number, page: SitePage, html: string, onProgress: (s:
 async function brief(emp: AIEmployee, page: SitePage) {
   const photos = await photosOnFile(emp.organizationId);
   const photoList = photos.length
-    ? `\nPhotos on file (use {{photo:ID}}):\n${photos.slice(0, 40).map((p) => `- ${p.id}: ${p.title}${p.content ? `: ${p.content}` : ""}`).join("\n")}`
+    ? `\nImages on file in the Brain (photos, logo, graphics; use {{photo:ID}}):\n${photos.slice(0, 40).map((p) => `- ${p.id}: ${p.title}${p.content ? `: ${p.content}` : ""}`).join("\n")}`
     : "\nNo photos on file: use {{stock:...}} images.";
   return `${PAGE_DESIGN.split("{WRAP}").join(wrapClass(page.id))}${photoList}`;
 }
 
 /** What the owner chose in chat before the first build: the layout, where the button goes, notes and attached photos. */
-export type BuildExtra = { layout?: string; button?: string; notes?: string; photos?: { url: string; text: string; name: string }[] };
+export type BuildExtra = { layout?: string; button?: string; notes?: string; photos?: { url: string; text: string; name: string }[]; source?: string };
 
 const LAYOUT_GUIDE: Record<string, string> = {
   split: "Layout: split hero with the photo beside the headline; the photo carries the page.",
@@ -156,6 +178,7 @@ async function build(emp: AIEmployee, page: SitePage, request: string | null, ex
             layoutLine(extra.layout),
             extra.photos?.length ? `Photos the owner attached for this page (use these first, with the link as the img src):\n${extra.photos.map((p) => `- ${p.url}: ${p.text || p.name}`).join("\n")}` : "",
             extra.notes ? `What the owner told you and gave you:\n${extra.notes.slice(0, 12000)}` : "",
+            extra.source ? `\n${extra.source}` : "",
           ].filter(Boolean).join("\n");
       return clean(await generateText({ system, prompt, maxTokens: 16000, temperature: 0.7, timeoutMs: 290_000 }));
     });

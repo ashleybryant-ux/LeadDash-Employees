@@ -239,27 +239,53 @@ function inline(t: string) {
 }
 
 export function DocView({ text }: { text: string }) {
-  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
-  return (
-    <div className="ld-talk-doc">
-      {blocks.map((b, i) => {
-        if (b.startsWith("# ")) return <h2 key={i}>{b.slice(2)}</h2>;
-        if (b.startsWith("## ")) {
-          const [head, ...rest] = b.split("\n");
-          return (
-            <React.Fragment key={i}>
-              <h3>{head.slice(3)}</h3>
-              {rest.length > 0 && <p className="ld-talk-cue">{inline(rest.join(" "))}</p>}
-            </React.Fragment>
-          );
+  // Line by line: headings, the cue under a heading, meta lines, stage directions, bullet lists and paragraphs.
+  const out: React.ReactNode[] = [];
+  let k = 0;
+  for (const block of text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean)) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    let para: string[] = [];
+    let list: string[] = [];
+    const flush = () => {
+      if (para.length) out.push(<p key={k++}>{inline(para.join(" "))}</p>);
+      if (list.length) out.push(<ul key={k++}>{list.map((li, i) => <li key={i}>{inline(li)}</li>)}</ul>);
+      para = [];
+      list = [];
+    };
+    lines.forEach((l, i) => {
+      if (/^[-*] /.test(l)) {
+        if (para.length) {
+          out.push(<p key={k++}>{inline(para.join(" "))}</p>);
+          para = [];
         }
-        if (/^_.*_$/.test(b)) return <p key={i} className="ld-talk-meta">{b.slice(1, -1)}</p>;
-        if (/^\*\*.*\*\*$/.test(b)) return <p key={i} className="ld-talk-cue">{inline(b)}</p>;
-        if (/^\[.*\]$/.test(b)) return <p key={i} className="ld-talk-dir">{b}</p>;
-        return <p key={i}>{inline(b)}</p>;
-      })}
-    </div>
-  );
+        list.push(l.slice(2));
+        return;
+      }
+      if (list.length) flush();
+      if (l.startsWith("# ")) {
+        flush();
+        out.push(<h2 key={k++}>{l.slice(2)}</h2>);
+      } else if (l.startsWith("## ")) {
+        flush();
+        out.push(<h3 key={k++}>{l.slice(3)}</h3>);
+      } else if (/^_.*_$/.test(l)) {
+        flush();
+        out.push(<p key={k++} className="ld-talk-meta">{l.slice(1, -1)}</p>);
+      } else if (/^\*\*[^*]+\*\*$/.test(l) && i > 0 && lines[i - 1].startsWith("## ")) {
+        out.push(<p key={k++} className="ld-talk-cue">{inline(l)}</p>);
+      } else if (/^\*\*.*\*\*$/.test(l) && lines.length === 1) {
+        out.push(<p key={k++} className="ld-talk-cue">{inline(l)}</p>);
+      } else if (/^\[.*\]$/.test(l) && lines.length === 1) {
+        out.push(<p key={k++} className="ld-talk-dir">{l}</p>);
+      } else if (i > 0 && lines[i - 1].startsWith("# ")) {
+        out.push(<p key={k++} className="ld-talk-meta">{l}</p>);
+      } else {
+        para.push(l);
+      }
+    });
+    flush();
+  }
+  return <div className="ld-talk-doc">{out}</div>;
 }
 
 // ==========================================

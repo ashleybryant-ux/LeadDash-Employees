@@ -102,7 +102,7 @@ const EMPLOYEES = [
   ["speaking", "Taylor", "Speaking", "Finds conferences and events and writes the speaking pitches."],
   ["social", "Sienna", "Social media", "Writes posts for LinkedIn, Facebook, Instagram and X, with images."],
   ["blog", "Theo", "Blog", "Writes articles and saves them as drafts on your website."],
-  ["website", "Jordan", "Website", "Plans website pages, sections and copy."],
+  ["website", "Jordan", "Website", "Audits your website and mocks up new pages."],
   ["video", "Elena", "Video", "Finds video ideas and trends and plans short videos."],
   ["inbox", "Avery", "Inbox and calendar", "Drafts emails and meeting invites for you to approve."],
   ["hiring", "Quinn", "Hiring", "Writes job posts, screens applicants and drafts outreach."],

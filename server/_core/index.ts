@@ -94,7 +94,19 @@ async function startServer() {
   // Stored files (W-9s, licenses, RFPs, videos, downloads, images). Keys are
   // random, and every request must also come from a signed-in person on the
   // workspace the file belongs to (org-<id>/...). LeadDash staff have support access.
-  const files = express.static(uploadsRoot(), { fallthrough: false, maxAge: "1h", dotfiles: "deny" });
+  // Web pages and SVGs people upload are never run on this site: they download as text.
+  const files = express.static(uploadsRoot(), {
+    fallthrough: false,
+    maxAge: "1h",
+    dotfiles: "deny",
+    setHeaders: (res, filePath) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      if (/\.(html?|xhtml|svg|xml)$/i.test(filePath)) {
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Content-Disposition", "attachment");
+      }
+    },
+  });
   app.use("/files", async (req, res, next) => {
     try {
       const { user } = await authenticateRequest(req);

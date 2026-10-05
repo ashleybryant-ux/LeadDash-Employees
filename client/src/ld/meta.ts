@@ -56,7 +56,7 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
   leads: ["How many meetings this week?", "Any new leads?", "Ask Jada who replied"],
   social: ["Write a post for this week", "Schedule my drafts", "Plan next month"],
   blog: ["Write an article about intake mistakes", "Suggest five article topics", "Write a how-to article"],
-  website: ["Build a landing page", "Build a website page", "Change my last page"],
+  website: ["Audit my website", "Mock up my website", "Build a landing page", "Change my last page"],
   video: ["Find video ideas for this week", "Find trends for practice owners", "Plan a 30-second video"],
   inbox: ["Paste an email and I'll draft the reply", "Email someone to set a meeting", "Put a meeting on my calendar"],
   hiring: ["Find LPCs for outreach", "Check hiring status", "Write a job post", "What licenses expire soon?"],

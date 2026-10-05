@@ -246,6 +246,19 @@ export async function renderText(url: string) {
   }
 }
 
+/** The page's HTML after its scripts run, with the address it ended on (for sites built with JavaScript). */
+export async function renderHtml(url: string) {
+  const b = await launch();
+  try {
+    const page = await b.newPage({ userAgent: DESKTOP_UA });
+    await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 }).catch(() => page.goto(url, { waitUntil: "load", timeout: 30_000 }));
+    await page.waitForTimeout(800);
+    return { html: ((await page.content()) as string).slice(0, 1_000_000), url: page.url(), title: (await page.title()) as string };
+  } finally {
+    await b.close();
+  }
+}
+
 async function launch() {
   const { chromium } = await import("playwright-core");
   const executablePath = process.env.CHROMIUM_PATH || undefined;
@@ -588,11 +601,11 @@ Rules:
 - Never accept terms, pay fees, change account settings, or delete anything unless the goal says to.
 - If a sign-in page needs an email or password that isn't saved, use "fail" and say the site needs someone signed in. Never ask anyone for a password, credentials or a code, in result or anywhere else.
 - If you are stuck, blocked by a CAPTCHA, or the page is not what the goal expects, use "fail" and say why in result.
-- When the goal is reached, use "done" and put the requested answer in result.${task.rules ? `\n${task.rules}` : ""}`,
+- When the goal is reached, use "done" and put the requested answer in result, in under 400 words: the facts and findings the goal asks for, not a long write-up.${task.rules ? `\n${task.rules}` : ""}`,
     prompt: `GOAL:\n${task.goal}\n\nFILES YOU CAN UPLOAD:\n${files}\n\nSTEPS SO FAR:\n${past}\n\nCURRENT PAGE: ${view.title}\n${view.url}\n\nELEMENTS:\n${els}\n\nPAGE TEXT:\n${view.text}`,
     schemaName: "browser_action",
     schema: ACTION_SCHEMA,
-    maxTokens: 1500,
+    maxTokens: 3000,
     timeoutMs: 90_000,
   });
 }

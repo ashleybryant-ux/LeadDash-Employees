@@ -73,7 +73,7 @@ export function htmlToText(html: string) {
     .trim();
 }
 
-export async function fetchWebpage(raw: string): Promise<{ title: string; text: string; url: string }> {
+export async function fetchWebpage(raw: string): Promise<{ title: string; text: string; url: string; html: string }> {
   let url = await assertPublicUrl(raw);
   let res: Response | null = null;
   for (let hop = 0; hop < 4; hop++) {
@@ -109,7 +109,7 @@ export async function fetchWebpage(raw: string): Promise<{ title: string; text: 
   const html = Buffer.concat(chunks).toString("utf8");
   const title = htmlToText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").slice(0, 200) || url.hostname;
   const text = type.includes("text/plain") ? html : htmlToText(html);
-  return { title, text: text.slice(0, 20_000), url: url.toString() };
+  return { title, text: text.slice(0, 20_000), url: url.toString(), html: html.slice(0, 1_000_000) };
 }
 
 // ---------- Uploads ----------
