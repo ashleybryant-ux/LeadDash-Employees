@@ -20,6 +20,14 @@ describe("company training", () => {
     expect(s.some((x) => /\u2014/.test(x.content))).toBe(false);
   });
 
+  it("the speaking proposals from her Claude chats parse, with SHRM Arkansas first", () => {
+    const s = parseTraining(fs.readFileSync("deploy/training/speaking-proposals.md", "utf8"));
+    expect(s.map((x) => x.title)).toEqual(["Company training: SHRM Arkansas (HR2026) proposal", "Company training: SHRM Arkansas audience research", "Company training: Other 2026 proposals she drafted"]);
+    expect(s[0].content).toContain("The Relational Skills HR Already Has");
+    expect(s.every((x) => x.category === "speaking" && x.content.length > 100 && x.content.length < 6000)).toBe(true);
+    expect(s.some((x) => /[\u2014\u2013]/.test(x.content))).toBe(false);
+  });
+
   it("loads into one workspace's Brain, and loading again updates instead of duplicating", async () => {
     const { orgId } = await makeWorkspace("training");
     const text = fs.readFileSync("deploy/training/leaddash.md", "utf8");
