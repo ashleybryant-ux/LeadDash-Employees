@@ -115,3 +115,6 @@ client/public/__manus__/version.json
 
 # App data (database, generated images, backups)
 /data/
+
+# Upload parts the history import tests leave behind
+imports/
