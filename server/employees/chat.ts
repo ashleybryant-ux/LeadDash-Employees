@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
-import type { AIEmployee, ChatFile, ChatMessage } from "../../drizzle/schema";
+import type { AIEmployee, ChatFile, ChatMessage, OutboundItem } from "../../drizzle/schema";
 import { generateJson, generateText, type JsonSchema } from "../_core/llm";
 import * as tasks from "./tasks";
 import * as apply from "./apply";
@@ -70,7 +70,7 @@ const ACTIONS: Record<string, string[]> = {
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "sat_in_notes", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -149,7 +149,8 @@ const ACTION_HELP: Record<string, string> = {
   rewrite_outreach: "rewrite_outreach: rewrite every email sequence still waiting for approval (when the owner says they sound off, robotic, like AI, or asks for a rewrite). Put what to change in `notes` ('' if they didn't say).",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
   write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
-  calendar_hold: "calendar_hold: the person wants a meeting or hold on their calendar. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, the agenda in `notes`, and the calendar's name in `target` when they name one ('' for the usual one). It waits for their approval, then goes on that calendar. With guests it is a call: it gets a Zoom link (or Google Meet when Zoom isn't the meeting link) and the invites go out once approved, and Avery sits in to take notes.",
+  meeting_link: "meeting_link: about a meeting you already booked: the person asks for its Zoom or Meet link, or wants it on Zoom (\"put it on Zoom\", \"did you add it to Zoom?\"). Put words from its title or a guest's name or email in `target`, its date as YYYY-MM-DD in `date` when they say it (''), and \"zoom\" in `focus` when they want it on Zoom ('' when they only want the link). Use this, never calendar_hold or browse, for a meeting that's already booked.",
+  calendar_hold: "calendar_hold: the person wants a NEW meeting or hold on their calendar (for one you already booked, use meeting_link). Put \"zoom\" in `focus` when they ask for it on Zoom. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, the agenda in `notes`, and the calendar's name in `target` when they name one ('' for the usual one). It waits for their approval, then goes on that calendar. With guests it is a call: it gets a Zoom link (or Google Meet when Zoom isn't the meeting link) and the invites go out once approved, and Avery sits in to take notes.",
   check_schedule: "check_schedule: the person asks what's on their calendar or schedule (today, tomorrow, a day, this week, \"am I free Friday at 2\"). Put the first day as YYYY-MM-DD in `date` and how many days in `count` (1 for a day, 7 for a week). You check every calendar connected on Integrations.",
   report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
   find_people: "find_people: search the web for professionals to reach out to for an open role. Put the role or any focus (city, license, specialty) in `focus`.",
@@ -1269,7 +1270,15 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const pick = cal.holdCalendarFor(org, d.target || "");
       if (pick.refused) return { text: pick.refused.kind === "link" ? `I can read ${pick.refused.name} but can't add to it. Want it on another calendar?` : `${pick.refused.name} is set to never take holds. Want it on another calendar, or change that on Integrations?`, cards: [], queries: [] };
       const time = d.time || "9:00 AM";
-      const h = await tasks.createCalendarHold(org, { title: d.title || "Meeting", date: d.date, time, attendees: d.attendees || "", agenda: d.notes || "", linkId: pick.link?.id ?? null });
+      const wantsZoom = d.focus.toLowerCase() === "zoom" || /\bzoom\b/i.test(`${d.title} ${d.notes}`);
+      // The same meeting asked for again (same day, time and guests) isn't booked twice.
+      const same = findHold(await db.listOutboundItemsByOrg(org, "calendar_hold"), { date: d.date, time, attendees: d.attendees || "" });
+      if (same) {
+        const integ = await import("../integrations");
+        const r = await integ.meetingOnHold(org, same, wantsZoom ? "zoom" : "any").catch((err) => ({ text: `I couldn't get the link: ${err instanceof Error ? err.message : String(err)}`, url: null }));
+        return { text: `That's the same meeting as "${same.title}", so I didn't book it twice. ${r.text}`, cards: [], queries: [] };
+      }
+      const h = await tasks.createCalendarHold(org, { title: d.title || "Meeting", date: d.date, time, attendees: d.attendees || "", agenda: d.notes || "", linkId: pick.link?.id ?? null, video: wantsZoom ? "zoom" : null });
       const when = new Date(`${d.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
       // Is that hour open on every calendar?
       let check = "";
@@ -1296,6 +1305,27 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         queries: [],
       };
     }
+    case "meeting_link": {
+      const holds = (await db.listOutboundItemsByOrg(org, "calendar_hold")).filter((i) => i.status !== "cancelled");
+      const words = d.target.toLowerCase().split(/[^a-z0-9@.]+/).filter((w) => w.length > 2);
+      const metaOf = (i: (typeof holds)[number]) => JSON.parse(i.metadata || "{}") as { date?: string; attendees?: string[] };
+      const scored = holds
+        .map((i) => {
+          const m = metaOf(i);
+          const hay = `${i.title} ${(m.attendees ?? []).join(" ")}`.toLowerCase();
+          return { i, score: words.filter((w) => hay.includes(w)).length + (d.date && m.date === d.date ? 3 : 0) };
+        })
+        .sort((a, b) => b.score - a.score || b.i.id - a.i.id);
+      const hit = scored[0] && (scored[0].score > 0 || (!words.length && !d.date)) ? scored[0].i : null;
+      if (!hit) return { text: "I don't see a meeting I booked that matches. Which one do you mean?", cards: [], queries: [] };
+      const integ = await import("../integrations");
+      try {
+        const r = await integ.meetingOnHold(org, hit, d.focus.toLowerCase() === "zoom" ? "zoom" : "any");
+        return { text: r.text, cards: [], queries: [] };
+      } catch (err) {
+        return { text: `I couldn't change "${hit.title}": ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
+    }
     case "draft_reply": {
       if (!d.message.trim() && docText) d.message = docText;
       if (!d.message.trim()) return { text: "Paste the message you got and I'll draft the reply.", cards: [], queries: [] };
@@ -1310,6 +1340,21 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
     default:
       return { text: "", cards: [], queries: [] };
   }
+}
+
+/** A hold already booked for the same day, time and guests (or the same day and time with no guests on either). */
+export function findHold(holds: OutboundItem[], want: { date: string; time: string; attendees: string }) {
+  const norm = (t: string) => t.replace(/\s+/g, "").toUpperCase();
+  const people = want.attendees.toLowerCase().split(",").map((a) => a.trim()).filter(Boolean);
+  return (
+    holds.find((i) => {
+      if (i.status === "cancelled") return false;
+      const m = JSON.parse(i.metadata || "{}") as { date?: string; time?: string; attendees?: string[] };
+      if (m.date !== want.date || norm(m.time ?? "") !== norm(want.time)) return false;
+      const theirs = (m.attendees ?? []).map((a) => a.toLowerCase());
+      return people.length === 0 && theirs.length === 0 ? true : people.some((p) => theirs.some((t) => t.includes(p) || p.includes(t)));
+    }) ?? null
+  );
 }
 
 /** Actions that only talk about the work; a project task needs one that does it. */

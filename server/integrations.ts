@@ -1140,7 +1140,7 @@ async function addToCalendar(orgId: number, item: OutboundItem) {
   const attendees = (meta.attendees ?? []).map((a: string) => emailIn(a)).filter(Boolean).map((email: string) => ({ email }));
   // A hold with guests is a call: it gets a video link (Zoom when that's the workspace's meeting link and Zoom is connected, else Google Meet) and the invites go out.
   const call = attendees.length > 0;
-  const video = call ? await holdVideo(orgId, item.title, start, tz, item.body ?? "") : null;
+  const video = call ? await holdVideo(orgId, item.title, start, tz, item.body ?? "", meta.video === "zoom") : null;
   const description = video?.zoomUrl ? `Join on Zoom: ${video.zoomUrl}\n\n${item.body ?? ""}` : item.body ?? "";
   const { data } = await api(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=${call ? "all&conferenceDataVersion=1" : "none"}`, {
     method: "POST",
@@ -1148,15 +1148,84 @@ async function addToCalendar(orgId: number, item: OutboundItem) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ summary: item.title, description, start: { dateTime: start, timeZone: tz }, end: { dateTime: end, timeZone: tz }, attendees, ...(video?.zoomUrl ? { location: video.zoomUrl } : video ? { conferenceData: { createRequest: { requestId: crypto.randomBytes(10).toString("hex"), conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {}) }),
   });
+  // Remember the event and its link, so Avery can give the link or move it to Zoom later.
+  const link = video?.zoomUrl ? { platform: "zoom" as const, url: video.zoomUrl } : meetingLinkOf(data);
+  await db.updateOutboundItem(item.id, orgId, { metadata: JSON.stringify({ ...meta, eventId: data.id ?? null, calendarId, meeting: link }) });
   return data.htmlLink ?? null;
 }
 
+/** A hold that went on the calendar before its event was remembered: find it there by its time and title. */
+async function findBookedEvent(orgId: number, item: OutboundItem, meta: any) {
+  const start = toLocalDateTime(meta.date, meta.time);
+  if (!start) return null;
+  const { holdTarget } = await import("./employees/calendars");
+  const target = await holdTarget(orgId, meta.linkId ?? null).catch(() => null);
+  const token = target ? target.token : (await accessToken(orgId, "google_workspace")).token;
+  const calendarId = target ? target.calendarId : "primary";
+  const org = await db.getOrganizationById(orgId);
+  const tz = org?.timezone || "America/Chicago";
+  const { zonedToUtc } = await import("./employees/schedule");
+  const [Y, M, D] = start.slice(0, 10).split("-").map(Number);
+  const [h, mi] = start.slice(11, 16).split(":").map(Number);
+  const at = zonedToUtc(Y, M, D, h, mi, tz);
+  const q = new URLSearchParams({ timeMin: new Date(at.getTime() - 60_000).toISOString(), timeMax: new Date(at.getTime() + 60 * 60_000).toISOString(), singleEvents: "true", maxResults: "20" });
+  const { data } = await api(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${q}`, { token });
+  const ev = (data.items ?? []).find((e: any) => e.summary === item.title && e.status !== "cancelled");
+  if (!ev?.id) return null;
+  const found = { eventId: String(ev.id), calendarId, meeting: meetingLinkOf(ev) };
+  await db.updateOutboundItem(item.id, orgId, { metadata: JSON.stringify({ ...meta, ...found }) });
+  return found;
+}
+
+/** A meeting Avery booked: its Zoom or Meet link, or (want "zoom") the meeting moved to Zoom, with updated invites. */
+export async function meetingOnHold(orgId: number, item: OutboundItem, want: "zoom" | "any"): Promise<{ text: string; url: string | null }> {
+  let meta = JSON.parse(item.metadata || "{}");
+  if (!meta.eventId && item.status === "published") meta = { ...meta, ...((await findBookedEvent(orgId, item, meta)) ?? {}) };
+  const zoomOn = (await db.getConnectionByProvider(orgId, "zoom"))?.status === "connected";
+  const noZoom = "Zoom isn't connected yet, so I can't make a Zoom link. Connect it on Integrations and ask me again.";
+  if (!meta.eventId) {
+    // Not on the calendar yet: it waits for approval.
+    if (want === "zoom") {
+      await db.updateOutboundItem(item.id, orgId, { metadata: JSON.stringify({ ...meta, video: "zoom" }) });
+      if (!zoomOn) return { text: `I set "${item.title}" to use Zoom. ${noZoom}`, url: null };
+      return { text: `"${item.title}" will be on Zoom. The Zoom link is made and sent to the guests the moment you approve it in Approvals.`, url: null };
+    }
+    return { text: `"${item.title}" isn't on the calendar yet, so it doesn't have a link. It gets one when you approve it in Approvals.`, url: null };
+  }
+  const have = meta.meeting as { platform: "zoom" | "meet"; url: string } | null;
+  if (have && (want === "any" || have.platform === "zoom")) return { text: `Here's the ${have.platform === "zoom" ? "Zoom" : "Google Meet"} link for "${item.title}": ${have.url}`, url: have.url };
+  if (!zoomOn) return { text: have ? `"${item.title}" is on Google Meet: ${have.url}
+
+${noZoom}` : `"${item.title}" doesn't have a meeting link. ${noZoom}`, url: have?.url ?? null };
+  const { holdTarget } = await import("./employees/calendars");
+  const target = await holdTarget(orgId, meta.linkId ?? null);
+  const token = target ? target.token : (await accessToken(orgId, "google_workspace")).token;
+  const calendarId = meta.calendarId || (target ? target.calendarId : "primary");
+  const org = await db.getOrganizationById(orgId);
+  const tz = org?.timezone || "America/Chicago";
+  const start = toLocalDateTime(meta.date, meta.time);
+  if (!start) return { text: `I couldn't read the time on "${item.title}".`, url: null };
+  const { zonedToUtc } = await import("./employees/schedule");
+  const [Y, M, D] = start.slice(0, 10).split("-").map(Number);
+  const [h, mi] = start.slice(11, 16).split(":").map(Number);
+  const z = await createZoomMeeting(orgId, { topic: item.title, start: zonedToUtc(Y, M, D, h, mi, tz), minutes: 60, tz, agenda: item.body ?? "" });
+  // Zoom replaces Meet on the event, and the guests get the updated invite.
+  await api(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(meta.eventId)}?sendUpdates=all&conferenceDataVersion=1`, {
+    method: "PATCH",
+    token,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ location: z.joinUrl, description: `Join on Zoom: ${z.joinUrl}\n\n${item.body ?? ""}`, conferenceData: null }),
+  });
+  await db.updateOutboundItem(item.id, orgId, { metadata: JSON.stringify({ ...meta, video: "zoom", meeting: { platform: "zoom", url: z.joinUrl }, zoomMeetingId: z.id }) });
+  return { text: `"${item.title}" is on Zoom now, and the guests got the updated invite. Here's the link: ${z.joinUrl}`, url: z.joinUrl };
+}
+
 /** The video link for a call Avery books: a Zoom meeting when Zoom is the workspace's meeting link and connected, else Google Meet. */
-export async function holdVideo(orgId: number, title: string, localStart: string, tz: string, agenda: string): Promise<{ zoomUrl: string | null }> {
+export async function holdVideo(orgId: number, title: string, localStart: string, tz: string, agenda: string, wantZoom = false): Promise<{ zoomUrl: string | null }> {
   const { opsFor } = await import("./employees/ops");
   const { ops } = await opsFor(orgId);
   const zoomOn = (await db.getConnectionByProvider(orgId, "zoom"))?.status === "connected";
-  if (ops.meetingLink !== "zoom" || !zoomOn) return { zoomUrl: null };
+  if ((ops.meetingLink !== "zoom" && !wantZoom) || !zoomOn) return { zoomUrl: null };
   const { zonedToUtc } = await import("./employees/schedule");
   const [Y, M, D] = localStart.slice(0, 10).split("-").map(Number);
   const [h, mi] = localStart.slice(11, 16).split(":").map(Number);

@@ -338,7 +338,7 @@ export async function composeEmail(organizationId: number, input: { to: string; 
 
 export async function createCalendarHold(
   organizationId: number,
-  input: { title: string; date: string; time: string; attendees: string; agenda: string; linkId?: number | null }
+  input: { title: string; date: string; time: string; attendees: string; agenda: string; linkId?: number | null; video?: "zoom" | null }
 ) {
   const emp = await employeeFor(organizationId, "inbox");
   const created = await db.createOutboundItem({
@@ -354,6 +354,7 @@ export async function createCalendarHold(
       time: input.time,
       attendees: input.attendees.split(",").map((a) => a.trim()).filter(Boolean),
       linkId: input.linkId ?? null,
+      ...(input.video ? { video: input.video } : {}),
     }),
   });
   await db.logAction({
