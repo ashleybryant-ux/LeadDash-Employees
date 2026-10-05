@@ -66,7 +66,7 @@ export function AttachmentChip({ f, onRemove, busy, error }: { f: { name: string
 }
 
 /** The paperclip and the files waiting to go with the next message. Files upload as soon as they are picked. */
-export function useAttachments(orgId: number, employeeId: number) {
+export function useAttachments(orgId: number, employeeId: number, slot: "chat" | "team" = "chat") {
   const [staged, setStaged] = React.useState<Staged[]>([]);
   const [note, setNote] = React.useState<string | null>(null);
   const input = React.useRef<HTMLInputElement>(null);
@@ -84,7 +84,7 @@ export function useAttachments(orgId: number, employeeId: number) {
         continue;
       }
       setStaged((s) => [...s, { key, name: file.name, size: file.size }]);
-      uploadFile("chat", file, { organizationId: orgId, employeeId })
+      uploadFile(slot, file, { organizationId: orgId, employeeId })
         .then((r: Attached) => setStaged((s) => s.map((x) => (x.key === key ? { ...x, file: r } : x))))
         .catch((err: Error) => setStaged((s) => s.map((x) => (x.key === key ? { ...x, error: err.message } : x))));
     }

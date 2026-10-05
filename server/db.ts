@@ -2077,3 +2077,37 @@ export const desk = {
     return getDb().select().from(schema.chatMessages).where(and(eq(schema.chatMessages.organizationId, orgId), eq(schema.chatMessages.role, "user"), gt(schema.chatMessages.createdAt, since))).orderBy(desc(schema.chatMessages.id)).limit(300).all();
   },
 };
+
+// ==========================================
+// Team chat
+// ==========================================
+
+export const team = {
+  messages(orgId: number, channel: string, limit = 200) {
+    const t = schema.teamMessages;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.channel, channel))).orderBy(desc(t.id)).limit(limit).all().reverse();
+  },
+  /** The newest message in each channel the person can see. */
+  latest(orgId: number, channels: string[]) {
+    const t = schema.teamMessages;
+    return channels.map((c) => getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.channel, c))).orderBy(desc(t.id)).limit(1).all()[0] ?? null);
+  },
+  unread(orgId: number, userId: number, channel: string, afterId: number) {
+    const t = schema.teamMessages;
+    return getDb().select({ id: t.id, userId: t.userId }).from(t).where(and(eq(t.organizationId, orgId), eq(t.channel, channel), gt(t.id, afterId))).all().filter((m) => m.userId !== userId).length;
+  },
+  send(row: typeof schema.teamMessages.$inferInsert) {
+    return getDb().insert(schema.teamMessages).values(row).returning().all()[0];
+  },
+  read(orgId: number, userId: number, channel: string) {
+    const r = schema.teamReads;
+    return getDb().select().from(r).where(and(eq(r.organizationId, orgId), eq(r.userId, userId), eq(r.channel, channel))).limit(1).all()[0] ?? null;
+  },
+  markRead(orgId: number, userId: number, channel: string, lastId: number) {
+    const r = schema.teamReads;
+    const have = team.read(orgId, userId, channel);
+    if (have) {
+      if (lastId > have.lastReadId) getDb().update(r).set({ lastReadId: lastId, readAt: new Date() }).where(eq(r.id, have.id)).run();
+    } else getDb().insert(r).values({ organizationId: orgId, userId, channel, lastReadId: lastId, readAt: new Date() }).run();
+  },
+};

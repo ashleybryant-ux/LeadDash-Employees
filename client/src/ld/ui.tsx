@@ -410,6 +410,7 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
         </Link>
         {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 88, top: 52 }} />}
       </div>
+      <TeamGroup activeKind={activeKind} />
       {GROUP_ORDER.map((group) => {
         const people = sorted.filter((e) => KIND_META[(e.kind as Kind) ?? "custom"].group === group);
         if (people.length === 0) return null;
@@ -446,6 +447,45 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
       {list.length === 0 && <div className="ld-empty">No employees in this workspace yet.</div>}
       <HoursSaved />
     </aside>
+  );
+}
+
+/** The people in this workspace: the Everyone channel and a direct message with each person. */
+function TeamGroup({ activeKind }: { activeKind: string | null }) {
+  const { currentOrgId } = useTenant();
+  const q = trpc.teamChat.channels.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 10_000 });
+  const list = q.data ?? [];
+  if (!list.length) return null;
+  return (
+    <div>
+      <div style={{ padding: "10px 18px 4px 18px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5b6b64" }}>Team</div>
+      {list.map((c) => {
+        const on = activeKind === `team:${c.key}`;
+        const preview = c.last ? `${c.last.mine ? "You" : c.last.author.split(" ")[0]}: ${c.last.text}` : c.kind === "channel" ? "Everyone in this workspace" : c.sub;
+        return (
+          <Link key={c.key} href={`/chats/team/${c.key}`} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 14px", margin: "2px 8px", borderRadius: 12, textDecoration: "none", color: "#14221c", background: on ? "#eef3f0" : "transparent" }}>
+            {c.kind === "channel" ? (
+              <span aria-hidden="true" style={{ width: 46, height: 46, borderRadius: 12, background: "#1b6b4a", color: "#fff", fontSize: 20, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>#</span>
+            ) : (
+              <span style={{ position: "relative", display: "flex", flexShrink: 0 }}>
+                <PersonAvatar name={c.name} src={c.avatarUrl} size={46} />
+                {c.online && <span aria-label="Online" style={{ position: "absolute", right: 0, bottom: 0, width: 11, height: 11, borderRadius: 999, background: "#22a06b", border: "2px solid #fff" }} />}
+              </span>
+            )}
+            <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
+              <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontWeight: 800, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
+                <span style={{ fontSize: 12, color: "#5b6b64", whiteSpace: "nowrap" }}>{c.last ? fmtWhen(c.last.at) : ""}</span>
+              </span>
+              <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13, color: "#3d4c45", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview}</span>
+                {c.unread > 0 && !on ? <span style={{ background: "#c2410c", color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "0 7px", lineHeight: "18px" }}>{c.unread}</span> : null}
+              </span>
+            </span>
+          </Link>
+        );
+      })}
+    </div>
   );
 }
 

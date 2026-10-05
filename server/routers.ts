@@ -70,7 +70,7 @@ import { opsFor, saveOps, MEETING_MINUTES } from "./employees/ops";
 import { KPI_SOURCES } from "../drizzle/schema";
 import { postProblems, SOCIAL_CHANNELS, TIKTOK_PRIVACY, type SocialChannel } from "@shared/post-model";
 import { isStaffEmail } from "./_core/auth";
-import { EVENT_LABELS, NOTIFY_EVENTS, pushReady, pushTo, readPrefs, type Prefs } from "./notify";
+import { EVENT_LABELS, NOTIFY_EVENTS, SOUNDS, notify, pingsFor, pushReady, pushTo, readPrefs, readSound, type Prefs, type SoundSettings } from "./notify";
 
 // ==========================================
 // Access rules
@@ -1289,6 +1289,28 @@ export const appRouter = router({
     undo: protectedProcedure.input(orgInput.extend({ logId: z.number().int() })).mutation(async ({ ctx, input }) => {
       await requireDecide(ctx, input.organizationId, "guideline");
       return desk.undoGuideline(input.organizationId, input.logId, personName(ctx.user));
+    }),
+  }),
+
+  // Team chat: the people in a workspace, one channel for everyone and a direct message between any two
+  teamChat: router({
+    channels: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).channels(input.organizationId, ctx.user.id);
+    }),
+    messages: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).messages(input.organizationId, ctx.user.id, input.channel);
+    }),
+    send: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40), content: z.string().max(8000), attachmentIds: z.array(z.number().int()).max(10).default([]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const m = await (await import("./team")).send(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channel, input.content, input.attachmentIds);
+      return { id: m.id };
+    }),
+    markRead: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40), lastId: z.number().int().min(0) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      (await import("./team")).markRead(input.organizationId, ctx.user.id, input.channel, input.lastId);
+      return { ok: true };
     }),
   }),
 
@@ -2769,6 +2791,7 @@ export const appRouter = router({
         email: me.email,
         staff: me.role === "admin",
         prefs: readPrefs(me.notifyPrefs),
+        sound: readSound(me.notifyPrefs),
         events: NOTIFY_EVENTS.map((k) => ({ key: k, label: EVENT_LABELS[k] })),
         pushReady: pushReady(),
         vapidPublicKey: ENV.vapidPublicKey || null,
@@ -2777,14 +2800,27 @@ export const appRouter = router({
     }),
 
     savePrefs: protectedProcedure
-      .input(z.object(Object.fromEntries(NOTIFY_EVENTS.map((k) => [k, z.object({ push: z.boolean(), email: z.boolean() }).optional()]))))
+      .input(
+        z.object({
+          ...Object.fromEntries(NOTIFY_EVENTS.map((k) => [k, z.object({ push: z.boolean(), email: z.boolean(), sound: z.boolean().optional() }).optional()])),
+          sound: z.object({ kind: z.enum(SOUNDS), volume: z.number().int().min(0).max(100) }).optional(),
+        })
+      )
       .mutation(async ({ ctx, input }) => {
-        const clean = Object.fromEntries(Object.entries(input).filter(([, v]) => v)) as Partial<Prefs>;
+        const { sound, ...events } = input as Record<string, unknown> & { sound?: SoundSettings };
+        const clean = Object.fromEntries(Object.entries(events).filter(([, v]) => v)) as Partial<Prefs>;
         const me = (await db.getUserById(ctx.user.id)) ?? ctx.user;
-        const prefs = { ...readPrefs(me.notifyPrefs), ...clean };
-        await db.updateUser(ctx.user.id, { notifyPrefs: JSON.stringify(prefs) });
+        const before = readPrefs(me.notifyPrefs);
+        const prefs = { ...before } as Prefs;
+        for (const [k, v] of Object.entries(clean) as [keyof Prefs, Prefs[keyof Prefs]][]) prefs[k] = { ...before[k], ...v, sound: v.sound ?? before[k].sound };
+        await db.updateUser(ctx.user.id, { notifyPrefs: JSON.stringify({ ...prefs, _sound: sound ?? readSound(me.notifyPrefs) }) });
         return prefs;
       }),
+
+    /** New in-app notices since the last one the app saw, for the pop-up and the sound. */
+    pings: protectedProcedure.input(z.object({ after: z.number().int().min(0) })).query(async ({ ctx, input }) => {
+      return pingsFor(ctx.user.id, input.after);
+    }),
 
     subscribe: protectedProcedure
       .input(

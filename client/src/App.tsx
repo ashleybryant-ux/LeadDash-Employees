@@ -8,6 +8,7 @@ import { TenantProvider, useTenant } from "./contexts/TenantContext";
 import { useAuth } from "./_core/hooks/useAuth";
 import SignIn from "./pages/SignIn";
 import ChatPage from "./ld/ChatPage";
+import TeamChatPage from "./ld/TeamChat";
 import Approvals from "./ld/pages/Approvals";
 import Huddle from "./ld/pages/Huddle";
 import Activity from "./ld/pages/Activity";
@@ -22,6 +23,7 @@ import More from "./ld/pages/More";
 import Handbook from "./ld/pages/Handbook";
 import BaseInstructions from "./ld/pages/BaseInstructions";
 import { Rail, Switcher } from "./ld/ui";
+import Notices from "./ld/Notices";
 import "./ld/theme.css";
 import { useEffect } from "react";
 
@@ -49,6 +51,7 @@ function Router() {
     <Switch>
       <Route path="/">{() => <Redirect to="/chats" />}</Route>
       <Route path="/chats" component={ChatPage} />
+      <Route path="/chats/team/:channel" component={TeamChatPage} />
       <Route path="/chats/e/:id/:tab?" component={ChatPage} />
       <Route path="/chats/:kind/app/:appId/:view?" component={ChatPage} />
       <Route path="/chats/:kind/:tab?" component={ChatPage} />
@@ -87,6 +90,7 @@ function Gate() {
     <TenantProvider>
       {user.reviewer && <ReviewBar />}
       <Router />
+      <Notices />
     </TenantProvider>
   );
 }

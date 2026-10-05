@@ -167,7 +167,7 @@ describe("push notifications", () => {
     expect(a.pushReady).toBe(false);
     expect(a.prefs.approval.push).toBe(true);
     await c.account.savePrefs({ approval: { push: false, email: true } } as any);
-    expect((await c.account.get()).prefs.approval).toEqual({ push: false, email: true });
+    expect((await c.account.get()).prefs.approval).toEqual({ push: false, email: true, sound: true });
     await expect(c.account.subscribe({ endpoint: "https://push.example.com/abc", keys: { p256dh: "x".repeat(20), auth: "yyyyyyyy" }, device: "iPhone" })).rejects.toThrow(/not set up/);
   });
 });

@@ -6,8 +6,11 @@ import { ErrorLine, Page, PersonAvatar } from "../ui";
 import { fmtDate, fmtTime } from "../meta";
 import { useTenant } from "@/contexts/TenantContext";
 import { currentSubscription, needsHomeScreen, pushSupported, subscribe, unsubscribeHere } from "../push";
+import { playSound, type SoundKind } from "../sounds";
 
-type Prefs = Record<string, { push: boolean; email: boolean }>;
+type Prefs = Record<string, { push: boolean; email: boolean; sound: boolean }>;
+type Sound = { kind: SoundKind; volume: number };
+const SOUND_LABEL: Record<SoundKind, string> = { chime: "Chime", knock: "Soft knock", bell: "Bell" };
 
 /** My account: name, push notifications on this device, and what to be told about. */
 export default function Account() {
@@ -31,7 +34,7 @@ export default function Account() {
           {a.staff && <ReviewCard />}
           <PushCard pushReady={a.pushReady} vapid={a.vapidPublicKey} devices={a.devices} />
           <ConnectorCard />
-          <PrefsCard prefs={a.prefs as Prefs} events={a.events} />
+          <PrefsCard prefs={a.prefs as Prefs} sound={a.sound as Sound} events={a.events} />
           <section className="ld-card ld-between" style={{ padding: "14px 18px" }}>
             <span className="ld-strong">Sign out of this device</span>
             <button type="button" className="ld-btn" onClick={() => logout()}>Sign out</button>
@@ -198,10 +201,11 @@ function PushCard({ pushReady, vapid, devices }: { pushReady: boolean; vapid: st
   );
 }
 
-function PrefsCard({ prefs, events }: { prefs: Prefs; events: { key: string; label: string }[] }) {
+function PrefsCard({ prefs, sound, events }: { prefs: Prefs; sound: Sound; events: { key: string; label: string }[] }) {
   const utils = trpc.useUtils();
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState<Prefs>(prefs);
+  const [snd, setSnd] = React.useState<Sound>(sound);
   const save = trpc.account.savePrefs.useMutation({
     onSuccess: async () => {
       setEditing(false);
@@ -209,45 +213,78 @@ function PrefsCard({ prefs, events }: { prefs: Prefs; events: { key: string; lab
     },
   });
   const cell = (on: boolean) => <span style={{ fontWeight: 700, color: on ? "#155c3e" : "#5b6b64" }}>{on ? "On" : "Off"}</span>;
-  const COLS = "minmax(0,1fr) 64px 64px";
+  const COLS = "minmax(0,1fr) 64px 64px 64px";
+  const open = () => {
+    setDraft(prefs);
+    setSnd(sound);
+    setEditing(true);
+  };
+  const box = (label: string, on: boolean, set: (v: boolean) => void) => <input type="checkbox" checked={on} aria-label={label} onChange={(ev) => set(ev.target.checked)} style={{ width: 20, height: 20, accentColor: "#1b6b4a" }} />;
   return (
     <section className={`ld-card ${editing ? "editing" : ""}`}>
       <div className="ld-sh">
         <span className="ld-st">Tell me when</span>
         {editing ? (
           <span className="ld-row">
-            <button type="button" className="ld-btn sm" onClick={() => { setEditing(false); setDraft(prefs); }}>Cancel</button>
-            <button type="button" className="ld-btn p sm" disabled={save.isPending} onClick={() => save.mutate(draft as never)}>Save</button>
+            <button type="button" className="ld-btn sm" onClick={() => setEditing(false)}>Cancel</button>
+            <button type="button" className="ld-btn p sm" disabled={save.isPending} onClick={() => save.mutate({ ...(draft as never as object), sound: snd } as never)}>Save</button>
           </span>
         ) : (
-          <button type="button" className="ld-btn sm" onClick={() => { setDraft(prefs); setEditing(true); }}>Edit</button>
+          <button type="button" className="ld-btn sm" onClick={open}>Edit</button>
         )}
       </div>
-      <div style={{ padding: "6px 18px 12px 18px" }}>
+      <div style={{ padding: "6px 18px 14px 18px" }}>
         <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 12, padding: "8px 0", borderBottom: "1px solid #eef2f0" }} className="ld-lbl ld-keep">
           <span />
           <span>Push</span>
           <span>Email</span>
+          <span>Sound</span>
         </div>
         {events.map((e) => {
-          const v = (editing ? draft : prefs)[e.key] ?? { push: false, email: false };
+          const v = (editing ? draft : prefs)[e.key] ?? { push: false, email: false, sound: false };
+          const set = (k: "push" | "email" | "sound") => (on: boolean) => setDraft((d) => ({ ...d, [e.key]: { ...v, [k]: on } }));
           return (
             <div key={e.key} className="ld-keep" style={{ display: "grid", gridTemplateColumns: COLS, gap: 12, padding: "10px 0", borderBottom: "1px solid #eef2f0", fontSize: 14, alignItems: "center" }}>
               <span>{e.label}</span>
               {editing ? (
                 <>
-                  <input type="checkbox" checked={v.push} aria-label={`${e.label}: push`} onChange={(ev) => setDraft((d) => ({ ...d, [e.key]: { ...v, push: ev.target.checked } }))} style={{ width: 20, height: 20 }} />
-                  <input type="checkbox" checked={v.email} aria-label={`${e.label}: email`} onChange={(ev) => setDraft((d) => ({ ...d, [e.key]: { ...v, email: ev.target.checked } }))} style={{ width: 20, height: 20 }} />
+                  {box(`${e.label}: push`, v.push, set("push"))}
+                  {box(`${e.label}: email`, v.email, set("email"))}
+                  {box(`${e.label}: sound`, v.sound, set("sound"))}
                 </>
               ) : (
                 <>
                   {cell(v.push)}
                   {cell(v.email)}
+                  {cell(v.sound)}
                 </>
               )}
             </div>
           );
         })}
+        {editing ? (
+          <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: "100px minmax(0,1fr)", gap: "10px 14px", alignItems: "center", fontSize: 14, paddingTop: 12 }}>
+            <b>Sound</b>
+            <span className="ld-seg" role="radiogroup" aria-label="Sound" style={{ justifySelf: "start" }}>
+              {(Object.keys(SOUND_LABEL) as SoundKind[]).map((k) => (
+                <button key={k} type="button" role="radio" aria-checked={snd.kind === k} className={snd.kind === k ? "on" : ""} onClick={() => { setSnd((x) => ({ ...x, kind: k })); playSound(k, snd.volume); }}>
+                  {SOUND_LABEL[k]}
+                </button>
+              ))}
+            </span>
+            <b>Volume</b>
+            <span className="ld-row" style={{ gap: 10 }}>
+              <input type="range" min={0} max={100} step={5} value={snd.volume} aria-label="Volume" onChange={(ev) => setSnd((x) => ({ ...x, volume: Number(ev.target.value) }))} style={{ width: 180, accentColor: "#1b6b4a" }} />
+              <button type="button" className="ld-btn sm" onClick={() => playSound(snd.kind, snd.volume)}>Play</button>
+            </span>
+          </div>
+        ) : (
+          <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: "100px minmax(0,1fr)", gap: 14, fontSize: 14, paddingTop: 12 }}>
+            <b>Sound</b>
+            <span>{SOUND_LABEL[sound.kind]}, {sound.volume}% volume</span>
+          </div>
+        )}
+        <p className="ld-small ld-muted" style={{ margin: "8px 0 0" }}>Sounds play on this device while the app is open.</p>
         <ErrorLine error={save.error} />
       </div>
     </section>

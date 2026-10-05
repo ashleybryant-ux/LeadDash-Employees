@@ -1,0 +1,82 @@
+import { describe, expect, it } from "vitest";
+import { caller, makeUser, makeWorkspace } from "./test/helpers";
+import * as db from "./db";
+import { pingsFor, readSound } from "./notify";
+
+async function setup(slug: string) {
+  const ws = await makeWorkspace(slug);
+  const caroline = await makeUser(`caroline@${slug}.test`, "user", "Caroline Jones");
+  await db.addOrganizationMember({ organizationId: ws.orgId, userId: caroline.id, role: "admin" });
+  return { ...ws, caroline };
+}
+
+describe("Team chat", () => {
+  it("has an Everyone channel and a direct message with each person, with unread counts and Seen", async () => {
+    const { orgId, owner, caroline } = await setup("tc-basic");
+    const me = caller(owner);
+    const her = caller(caroline);
+    const list = await me.teamChat.channels({ organizationId: orgId });
+    expect(list.map((c) => c.name)).toEqual(["Everyone", "Caroline Jones"]); // the reviewer isn't in team chat
+    expect(list[0].sub).toBe("You and Caroline Jones");
+
+    const before = pingsFor(caroline.id, 0).latest;
+    await me.teamChat.send({ organizationId: orgId, channel: "everyone", content: "Can you look at Sienna's posts before 3?" });
+    let hers = await her.teamChat.channels({ organizationId: orgId });
+    expect(hers[0]).toMatchObject({ key: "everyone", unread: 1, last: { author: owner.name, text: "Can you look at Sienna's posts before 3?" } });
+    // She gets the pop-up (and the sound, by her settings); the sender doesn't.
+    expect(pingsFor(caroline.id, before).pings.map((p) => [p.event, p.title, p.url])).toEqual([["team_message", `${owner.name} in Everyone`, "/chats/team/everyone"]]);
+    expect(pingsFor(owner.id, before).pings).toHaveLength(0);
+
+    const msgs = await her.teamChat.messages({ organizationId: orgId, channel: "everyone" });
+    await her.teamChat.markRead({ organizationId: orgId, channel: "everyone", lastId: msgs.messages.at(-1)!.id });
+    hers = await her.teamChat.channels({ organizationId: orgId });
+    expect(hers[0].unread).toBe(0);
+
+    // A direct message, then Seen once she reads it.
+    const dm = hers.find((c) => c.kind === "dm")!;
+    expect(dm.name).toBe(owner.name);
+    await her.teamChat.send({ organizationId: orgId, channel: dm.key, content: "I'll send the promo copy by 4." });
+    let mine = await me.teamChat.messages({ organizationId: orgId, channel: dm.key });
+    expect(mine.title).toBe("Caroline Jones");
+    expect(mine.seenAt).toBeNull();
+    await me.teamChat.markRead({ organizationId: orgId, channel: dm.key, lastId: mine.messages.at(-1)!.id });
+    const herView = await her.teamChat.messages({ organizationId: orgId, channel: dm.key });
+    expect(herView.seenAt).not.toBeNull();
+    // She's online: she just checked in.
+    mine = await me.teamChat.messages({ organizationId: orgId, channel: dm.key });
+    expect(mine.online).toBe(true);
+  });
+
+  it("keeps direct messages between the two people and each workspace to itself", async () => {
+    const { orgId, owner, caroline } = await setup("tc-private");
+    const angela = await makeUser("angela@tc-private.test", "user", "Angela St. Ville");
+    await db.addOrganizationMember({ organizationId: orgId, userId: angela.id, role: "member" });
+    const key = `dm:${Math.min(owner.id, caroline.id)}-${Math.max(owner.id, caroline.id)}`;
+    await caller(owner).teamChat.send({ organizationId: orgId, channel: key, content: "Just between us." });
+    await expect(caller(angela).teamChat.messages({ organizationId: orgId, channel: key })).rejects.toThrow(/isn't in this workspace/);
+    await expect(caller(angela).teamChat.send({ organizationId: orgId, channel: key, content: "hi" })).rejects.toThrow(/isn't in this workspace/);
+    const other = await makeWorkspace("tc-other");
+    await expect(caller(other.owner).teamChat.messages({ organizationId: orgId, channel: "everyone" })).rejects.toThrow();
+    // Files are shared from the person's own uploads only.
+    const f = db.createChatFile({ organizationId: orgId, employeeId: 0, userId: owner.id, name: "notes.pdf", mime: "application/pdf", size: 10, kind: "document", fileUrl: "/files/notes.pdf", text: "" });
+    await caller(owner).teamChat.send({ organizationId: orgId, channel: "everyone", content: "", attachmentIds: [f.id] });
+    const m = await caller(caroline).teamChat.messages({ organizationId: orgId, channel: "everyone" });
+    expect(JSON.parse(m.messages.at(-1)!.attachments!)[0]).toMatchObject({ name: "notes.pdf", url: "/files/notes.pdf" });
+    await expect(caller(caroline).teamChat.send({ organizationId: orgId, channel: "everyone", content: "", attachmentIds: [f.id] })).rejects.toThrow(/Write a message/);
+  });
+
+  it("saves a sound per notice, which sound, and how loud", async () => {
+    const { owner } = await setup("tc-sound");
+    const me = caller(owner);
+    let a = await me.account.get();
+    expect(a.events[0]).toEqual({ key: "team_message", label: "A teammate messages me" });
+    expect(a.prefs.team_message).toEqual({ push: true, email: false, sound: true });
+    expect(a.sound).toEqual({ kind: "chime", volume: 70 });
+    await me.account.savePrefs({ team_message: { push: true, email: false, sound: false }, report: { push: false, email: true }, sound: { kind: "bell", volume: 40 } });
+    a = await me.account.get();
+    expect(a.prefs.team_message.sound).toBe(false);
+    expect(a.prefs.report).toEqual({ push: false, email: true, sound: false });
+    expect(a.sound).toEqual({ kind: "bell", volume: 40 });
+    expect(readSound('{"_sound":{"kind":"siren","volume":900}}')).toEqual({ kind: "chime", volume: 100 });
+  });
+});

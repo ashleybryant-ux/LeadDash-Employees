@@ -2321,3 +2321,40 @@ export const deskSettings = sqliteTable("desk_settings", {
   updatedAt: integer("updatedAt", { mode: "timestamp" }),
 });
 export type DeskSettings = typeof deskSettings.$inferSelect;
+
+// ==========================================
+// Team chat: the people in a workspace talking to each other (no AI employees)
+// ==========================================
+
+/** channel: "everyone", or "dm:<lower user id>-<higher user id>" for two people. */
+export const teamMessages = sqliteTable(
+  "team_messages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    channel: text("channel").notNull(),
+    userId: integer("userId").notNull(),
+    authorName: text("authorName").notNull(),
+    content: text("content").notNull().default(""),
+    /** JSON [{id, name, size, kind, url}] from chat_files. */
+    attachments: text("attachments"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("team_messages_org_channel_idx").on(t.organizationId, t.channel, t.id)]
+);
+export type TeamMessage = typeof teamMessages.$inferSelect;
+
+/** How far each person has read in each team channel, for unread counts and "Seen". */
+export const teamReads = sqliteTable(
+  "team_reads",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    userId: integer("userId").notNull(),
+    channel: text("channel").notNull(),
+    lastReadId: integer("lastReadId").notNull().default(0),
+    readAt: integer("readAt", { mode: "timestamp" }),
+  },
+  (t) => [uniqueIndex("team_reads_unique").on(t.organizationId, t.userId, t.channel)]
+);
+export type TeamRead = typeof teamReads.$inferSelect;
