@@ -2288,6 +2288,14 @@ export const appRouter = router({
         return db.listChatMessages(input.organizationId, input.employeeId);
       }),
 
+    /** A file an employee made (a talk script, a deck), to open right in the chat. */
+    fileView: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const f = db.getChatFiles(input.organizationId, [input.id])[0];
+      if (!f) throw new TRPCError({ code: "NOT_FOUND", message: "That file isn't in this workspace." });
+      return { id: f.id, name: f.name, url: f.fileUrl, mime: f.mime, size: f.size, text: f.text };
+    }),
+
     markRead: protectedProcedure
       .input(orgInput.extend({ employeeId: z.number() }))
       .mutation(async ({ ctx, input }) => {

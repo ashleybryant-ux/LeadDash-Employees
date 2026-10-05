@@ -36,6 +36,7 @@ import type { Outputs } from "./types";
 import { SpokenTag, TalkButton, VoiceBar, useOneOnOne } from "./chat/OneOnOne";
 import { AvatarVideoCard } from "./chat/Avatar";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
+import { DeckCard, DocCard } from "./chat/Talk";
 
 export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
 
@@ -104,7 +105,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck";
   items?: BriefItem[];
   counts?: { decisions: number; meetings: number; waiting: number; handled: number };
   id: number;
@@ -282,6 +283,10 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <ColdReviewCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "avery_brief" ? (
                       <AveryBriefCard key={`${c.type}-${c.id}`} items={c.items ?? []} counts={c.counts} />
+                    ) : c.type === "doc" ? (
+                      <DocCard key={`${c.type}-${c.id}`} id={c.id} title={c.title} subtitle={c.subtitle} />
+                    ) : c.type === "deck" ? (
+                      <DeckCard key={`${c.type}-${c.id}`} id={c.id} title={c.title} subtitle={c.subtitle} />
                     ) : c.type === "precall" ? (
                       <PrecallCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "press_campaign" ? (

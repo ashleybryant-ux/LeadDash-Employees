@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck";
   id: number;
   /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -65,7 +65,7 @@ export const LAYOUTS = [
 
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  speaking: ["none", "report", "write_talk", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  speaking: ["none", "report", "write_talk", "write_slides", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -149,7 +149,8 @@ const ACTION_HELP: Record<string, string> = {
   rewrite_outreach: "rewrite_outreach: rewrite every email sequence still waiting for approval (when the owner says they sound off, robotic, like AI, or asks for a rewrite). Put what to change in `notes` ('' if they didn't say).",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
   write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
-  write_talk: "write_talk: write the full word-for-word script for a talk, keynote, workshop or session the owner is giving (\"write my talk\", \"write the script for my SHRM session\"). Put the talk's title in `title`, anything they asked for in `notes`, and its length in minutes in `count`: from what they said, else from the Brain (accepted sessions list their length). Never guess the length: when neither says, put 0 in `count`. It runs in the background and arrives in this chat as a Word file.",
+  write_talk: "write_talk: write the full word-for-word script for a talk, keynote, workshop or session the owner is giving (\"write my talk\", \"write the script for my SHRM session\"). Put the talk's title in `title`, anything they asked for in `notes`, and its length in minutes in `count`: from what they said, else from the Brain (accepted sessions list their length). Never guess the length: when neither says, put 0 in `count`. It runs in the background and arrives in this chat, where it opens right there.",
+  write_slides: "write_slides: build the slide deck (PowerPoint) for a talk (\"build the slides\", \"make the PPT\"). It uses the latest script you wrote, with what she says on each slide in the speaker notes; without a script it builds from the Brain. Put the talk's title in `title` and anything they asked for in `notes`. It arrives in this chat, where she can flip through it right there.",
   meeting_link: "meeting_link: about a meeting you already booked: the person asks for its Zoom or Meet link, or wants it on Zoom (\"put it on Zoom\", \"did you add it to Zoom?\"). Put words from its title or a guest's name or email in `target`, its date as YYYY-MM-DD in `date` when they say it (''), and \"zoom\" in `focus` when they want it on Zoom ('' when they only want the link). Use this, never calendar_hold or browse, for a meeting that's already booked.",
   calendar_hold: "calendar_hold: the person wants a NEW meeting or hold on their calendar (for one you already booked, use meeting_link). Put \"zoom\" in `focus` when they ask for it on Zoom. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, the agenda in `notes`, and the calendar's name in `target` when they name one ('' for the usual one). It waits for their approval, then goes on that calendar. With guests it is a call: it gets a Zoom link (or Google Meet when Zoom isn't the meeting link) and the invites go out once approved, and Avery sits in to take notes.",
   check_schedule: "check_schedule: the person asks what's on their calendar or schedule (today, tomorrow, a day, this week, \"am I free Friday at 2\"). Put the first day as YYYY-MM-DD in `date` and how many days in `count` (1 for a day, 7 for a week). You check every calendar connected on Integrations.",
@@ -1308,10 +1309,14 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       };
     }
     case "write_talk": {
-      const mins = d.count ?? 0;
-      if (!(mins > 0)) return { text: "How long is the talk? I'll time the script to it.", cards: [], queries: [], choices: ["45 minutes", "60 minutes", "90 minutes"] };
       const talk = await import("./talk");
+      const mins = await talk.talkMinutes(org, d.title, talk.userLines(ctx.history, ctx.said ?? ""), d.count ?? 0);
+      if (!(mins > 0)) return { text: "How long is the talk? I'll time the script to it.", cards: [], queries: [], choices: ["45 minutes", "60 minutes", "90 minutes"] };
       const r = talk.startTalkScript(emp, { title: d.title, minutes: mins, notes: d.notes, said: ctx.said ?? "" });
+      return { text: r.text, cards: [], queries: [] };
+    }
+    case "write_slides": {
+      const r = (await import("./talk")).startSlides(emp, { title: d.title, notes: d.notes, said: ctx.said ?? "" });
       return { text: r.text, cards: [], queries: [] };
     }
     case "meeting_link": {
@@ -1429,7 +1434,7 @@ export async function workingOn(orgId: number, emp: AIEmployee): Promise<{ busy:
   }
   if (emp.kind === "speaking") {
     const t = (await import("./talk")).talkInProgress(orgId);
-    if (t) return { busy: true, what: `Writing the script for ${t}` };
+    if (t) return { busy: true, what: `Working on ${t}` };
   }
   if (emp.status === "working") return { busy: true, what: "Working on your request" };
   return { busy: false, what: "" };

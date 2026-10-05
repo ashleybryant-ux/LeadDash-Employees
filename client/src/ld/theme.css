@@ -473,3 +473,41 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
   .ld-who-open { grid-template-columns: minmax(0, 1fr); }
   .ld-who-kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
+
+/* Files an employee made, opened in the chat: a talk script and a slide deck */
+.ld-talk-ic { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
+.ld-talk-doc { padding: 20px 24px 24px; max-height: 70vh; overflow-y: auto; font-size: 15px; line-height: 1.65; color: #14221c; }
+.ld-talk-doc h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; }
+.ld-talk-doc h3 { margin: 22px 0 2px; font-size: 17px; font-weight: 800; color: #155c3e; }
+.ld-talk-doc p { margin: 0 0 12px; }
+.ld-talk-doc .ld-talk-cue { font-size: 13px; color: #3d4c45; margin-bottom: 10px; }
+.ld-talk-doc .ld-talk-meta { font-size: 13px; color: #5b6b64; font-style: italic; }
+.ld-talk-doc .ld-talk-dir { font-style: italic; color: #5b6b64; }
+.ld-talk-deck { padding: 16px; display: flex; flex-direction: column; gap: 12px; outline: none; }
+.ld-talk-notes { background: #f4f8f6; border-radius: 10px; padding: 12px 14px; }
+.ld-talk-notes p { margin: 6px 0 0; font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.ld-talk-strip { display: grid; grid-auto-flow: column; grid-auto-columns: 132px; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.ld-talk-strip button { border: 2px solid transparent; border-radius: 8px; padding: 0; background: none; cursor: pointer; }
+.ld-talk-strip button.on { border-color: #1b6b4a; }
+.ld-slide { position: relative; aspect-ratio: 16 / 9; width: 100%; border-radius: 8px; overflow: hidden; border: 1px solid #e3e9e6; container-type: inline-size; box-sizing: border-box; text-align: left; }
+.ld-slide-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 1.4cqw; }
+.ld-slide-cover { position: absolute; inset: 0; padding: 0 6cqw; display: flex; flex-direction: column; justify-content: center; gap: 1.6cqw; }
+.ld-slide-h1 { font-size: 5cqw; font-weight: 800; line-height: 1.15; }
+.ld-slide-rule { width: 9cqw; height: 0.7cqw; border-radius: 1cqw; }
+.ld-slide-sub { font-size: 2.3cqw; line-height: 1.35; opacity: 0.92; }
+.ld-slide-big { position: absolute; inset: 0; padding: 0 7cqw; display: flex; flex-direction: column; justify-content: center; gap: 2cqw; }
+.ld-slide-huge { font-size: 5.4cqw; font-weight: 800; line-height: 1.15; }
+.ld-slide-body { position: absolute; inset: 0; padding: 5cqw 6cqw; }
+.ld-slide-h2 { font-size: 3.8cqw; font-weight: 800; line-height: 1.2; margin-bottom: 2.4cqw; }
+.ld-slide-body ul { margin: 0; padding-left: 3cqw; }
+.ld-slide-body li { font-size: 2.6cqw; line-height: 1.4; margin-bottom: 1.4cqw; }
+.ld-talk-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) 128px; gap: 14px; align-items: center; padding: 14px 16px; }
+.ld-talk-btns { display: flex; flex-direction: column; gap: 8px; }
+.ld-talk-nav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; text-align: center; }
+@media (max-width: 760px) {
+  .ld-talk-head { grid-template-columns: 44px minmax(0, 1fr); }
+  .ld-talk-btns { grid-column: 1 / -1; flex-direction: row; }
+  .ld-talk-btns > .ld-btn { flex: 1; width: auto; }
+  .ld-talk-nav .ld-btn.sm { width: 84px; }
+  .ld-talk-doc { padding: 16px; }
+}
