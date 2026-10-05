@@ -49,9 +49,14 @@ export function Due({ t, today }: { t: TaskRow; today: string }) {
 }
 
 export function Counts({ t }: { t: TaskRow }) {
-  const bits = [t.subtasks ? `⤷ ${t.subtasksDone}/${t.subtasks}` : "", t.checklist.total ? `☑ ${t.checklist.done}/${t.checklist.total}` : "", t.files ? `📎 ${t.files}` : "", t.comments ? `💬 ${t.comments}` : ""].filter(Boolean);
-  if (!bits.length) return null;
-  return <span className="gp-meta">{bits.join(" · ")}</span>;
+  const bits = [t.repeat ? "↻" : "", t.subtasks ? `⤷ ${t.subtasksDone}/${t.subtasks}` : "", t.checklist.total ? `☑ ${t.checklist.done}/${t.checklist.total}` : "", t.files ? `📎 ${t.files}` : "", t.comments ? `💬 ${t.comments}` : ""].filter(Boolean);
+  if (!bits.length && !t.blocked) return null;
+  return (
+    <span className="gp-meta">
+      {t.blocked && <span className="gp-wait" title="Waiting on another task">Waiting</span>}
+      {bits.join(" · ")}
+    </span>
+  );
 }
 
 /** The round check: marks the task done (the list's first done status), or open again. */

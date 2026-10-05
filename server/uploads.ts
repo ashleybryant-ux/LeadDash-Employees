@@ -125,7 +125,12 @@ export function registerUploads(app: Express) {
     const name = String(req.query.name || "file").slice(0, 200);
     const mime = String(req.headers["content-type"] || "application/octet-stream").split(";")[0];
     try {
-      const user = Number.isFinite(orgId) && orgId > 0 ? await access(req, orgId) : null;
+      let user = Number.isFinite(orgId) && orgId > 0 ? await access(req, orgId) : null;
+      // A guest on a shared Projects list can attach files to its tasks.
+      if (!user && slot === "work" && Number.isFinite(orgId)) {
+        const { user: u } = await authenticateRequest(req);
+        if (u && db.guestSharesForUser(u.id).some((g) => g.organizationId === orgId && g.level !== "view")) user = u;
+      }
       if (!user) return res.status(403).json({ error: "You cannot upload to this workspace." });
       const who = user.name?.trim() || user.email;
 
@@ -364,7 +369,7 @@ export function registerUploads(app: Express) {
   });
 }
 
-function sniffImageType(buf: Buffer) {
+export function sniffImageType(buf: Buffer) {
   if (buf[0] === 0x89 && buf.subarray(1, 4).toString() === "PNG") return "image/png";
   if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
   if (buf.subarray(0, 4).toString() === "RIFF" && buf.subarray(8, 12).toString() === "WEBP") return "image/webp";

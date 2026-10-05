@@ -35,7 +35,7 @@ export function isOnline(orgId: number, userId: number) {
 }
 
 /** The people who can chat: everyone in the workspace except the app reviewer. */
-async function people(orgId: number) {
+export async function people(orgId: number) {
   return (await db.listMembers(orgId)).filter((m) => m.role !== "reviewer");
 }
 

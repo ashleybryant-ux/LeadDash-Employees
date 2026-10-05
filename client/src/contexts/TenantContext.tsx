@@ -20,6 +20,8 @@ export interface Organization {
   fonts?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Only a guest on shared Projects lists here. */
+  guest?: boolean;
 }
 
 interface TenantContextType {

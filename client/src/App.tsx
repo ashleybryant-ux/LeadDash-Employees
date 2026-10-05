@@ -46,9 +46,17 @@ function NoWorkspace() {
 }
 
 function Router() {
-  const { organizations, isLoading } = useTenant();
+  const { organizations, isLoading, currentOrg } = useTenant();
   if (isLoading) return <Spinner />;
   if (organizations.length === 0) return <NoWorkspace />;
+  // A guest on shared Projects lists sees those lists and nothing else.
+  if ((currentOrg as { guest?: boolean } | null)?.guest)
+    return (
+      <Switch>
+        <Route path="/projects" component={Projects} />
+        <Route>{() => <Redirect to="/projects" />}</Route>
+      </Switch>
+    );
   return (
     <Switch>
       <Route path="/">{() => <Redirect to="/chats" />}</Route>

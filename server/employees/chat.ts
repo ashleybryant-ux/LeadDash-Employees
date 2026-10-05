@@ -1667,6 +1667,8 @@ async function projectsAction(emp: AIEmployee, d: Decision, who: string): Promis
   const pj = await import("../work/projects");
   const g = await import("../work/goals");
   const by = { type: "employee" as const, id: emp.id, name: emp.name };
+  // An employee sees the lists that aren't private, and private ones shared with it.
+  const me = { kind: "employee" as const, employeeId: emp.id, name: emp.name };
   const people = await g.owners(org);
   const findOwner = (name: string) => {
     const n = name.trim().toLowerCase();
@@ -1677,20 +1679,21 @@ async function projectsAction(emp: AIEmployee, d: Decision, who: string): Promis
   const fmt = (ymd: string) => g.fmtDay(ymd);
   try {
     if (d.action === "task_find") {
-      const list = pj.find(org, { words: d.target, who: d.to, dueBy: /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : undefined, includeDone: d.focus.toLowerCase() === "all" });
+      const list = pj.find(org, { words: d.target, who: d.to, dueBy: /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : undefined, includeDone: d.focus.toLowerCase() === "all" }, me);
       if (!list.length) return { text: "I didn't find any tasks like that in Projects.", cards: [], queries: [] };
       return { text: `${list.length} task${list.length === 1 ? "" : "s"} in Projects:\n${list.slice(0, 20).map((t) => `- ${t.name} (${t.list}; ${t.assignees.join(", ") || "no one assigned"}; ${t.status}; due ${t.due})`).join("\n")}`, cards: [], queries: [] };
     }
     if (d.action === "task_add") {
       if (!d.title.trim()) return { text: "What should the task say?", cards: [], queries: [] };
-      let list = pj.listNamed(org, d.page) ?? db.work.lists.all(org).sort((a, b) => b.id - a.id)[0] ?? null;
+      const acc = await import("../work/pjAccess");
+      let list = pj.listNamed(org, d.page, me) ?? acc.visibleLists(org, me).map((x) => x.list).sort((a, b) => b.id - a.id)[0] ?? null;
       if (!list) list = pj.saveList(org, { name: "Tasks", folderId: null });
       const o = findOwner(d.to);
       const t = await pj.createTask(org, { listId: list.id, name: d.title, description: d.notes, dueDate: /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : null, assignees: o ? [{ type: o.type, id: o.id, name: o.name }] : [] }, by);
       return { text: `Added "${t.name}" to ${list.name} in Projects${o ? ` for ${o.name}` : ""}${t.dueDate ? `, due ${fmt(t.dueDate)}` : ""}.${d.to && !o ? ` I couldn't find ${d.to} on the team, so it's unassigned.` : ""}`, cards: [], queries: [] };
     }
     if (d.action === "task_change") {
-      const hits = pj.find(org, { words: d.target, includeDone: true });
+      const hits = pj.find(org, { words: d.target, includeDone: true }, me);
       if (!hits.length) return { text: `I couldn't find a task like "${d.target}" in Projects.`, cards: [], queries: [] };
       if (hits.length > 1 && !hits.some((h) => h.name.toLowerCase() === d.target.toLowerCase())) return { text: `Which one?\n${hits.slice(0, 8).map((h) => `- ${h.name} (${h.list})`).join("\n")}`, cards: [], queries: [] };
       const hit = hits.find((h) => h.name.toLowerCase() === d.target.toLowerCase()) ?? hits[0];

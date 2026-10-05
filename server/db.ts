@@ -2124,7 +2124,7 @@ export const team = {
 // ==========================================
 
 /** Insert, read, change and remove rows of one workspace-owned table, always filtered by workspace. */
-function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports>(t: T) {
+function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports | typeof schema.pjLinks | typeof schema.pjTime | typeof schema.pjTemplates | typeof schema.pjDocs | typeof schema.pjDocComments | typeof schema.pjBoards | typeof schema.pjForms | typeof schema.pjFormAnswers | typeof schema.pjDashboards | typeof schema.pjShares | typeof schema.pjSettings>(t: T) {
   type Row = T["$inferSelect"];
   type Ins = T["$inferInsert"];
   const tt = t as any;
@@ -2151,6 +2151,24 @@ function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof
   };
 }
 
+/** Lists shared with a person as a guest, across workspaces (a guest signs in to these only). */
+export function guestSharesForUser(userId: number) {
+  const t = schema.pjShares;
+  return getDb().select().from(t).where(and(eq(t.userId, userId), eq(t.kind, "guest"))).all();
+}
+/** A form by its public link key, in any workspace. */
+export function formByToken(token: string) {
+  return getDb().select().from(schema.pjForms).where(eq(schema.pjForms.token, token)).limit(1).all()[0] ?? null;
+}
+/** A list by its view-only link key, in any workspace. */
+export function listByShareToken(token: string) {
+  return getDb().select().from(schema.pjLists).where(eq(schema.pjLists.shareToken, token)).limit(1).all()[0] ?? null;
+}
+/** Workspaces with Projects rows, for the scheduled Projects checks. */
+export function orgsWithProjects() {
+  return Array.from(new Set(getDb().select({ o: schema.pjLists.organizationId }).from(schema.pjLists).all().map((r) => r.o)));
+}
+
 /** ClickUp imports still marked running (across workspaces), for the restart check. */
 export function listAllImportsRunning() {
   return getDb().select().from(schema.pjImports).where(eq(schema.pjImports.status, "running")).all();
@@ -2171,6 +2189,36 @@ export const work = {
   comments: crud(schema.pjComments),
   automations: crud(schema.pjAutomations),
   imports: crud(schema.pjImports),
+  links: crud(schema.pjLinks),
+  time: crud(schema.pjTime),
+  templates: crud(schema.pjTemplates),
+  docs: crud(schema.pjDocs),
+  docComments: crud(schema.pjDocComments),
+  boards: crud(schema.pjBoards),
+  forms: crud(schema.pjForms),
+  answers: crud(schema.pjFormAnswers),
+  dashboards: crud(schema.pjDashboards),
+  shares: crud(schema.pjShares),
+  /** A small Projects setting (weekly hours, markers); null when unset. */
+  setting(orgId: number, key: string): string | null {
+    const t = schema.pjSettings;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.key, key))).limit(1).all()[0]?.value ?? null;
+  },
+  settingsLike(orgId: number, prefix: string) {
+    const t = schema.pjSettings;
+    return getDb().select().from(t).where(eq(t.organizationId, orgId)).all().filter((r) => r.key.startsWith(prefix));
+  },
+  setSetting(orgId: number, key: string, value: string | null) {
+    const t = schema.pjSettings;
+    getDb().delete(t).where(and(eq(t.organizationId, orgId), eq(t.key, key))).run();
+    if (value !== null) getDb().insert(t).values({ organizationId: orgId, key, value }).run();
+  },
+  /** Marks a one-time event (an automation that fired); false when it was already marked. */
+  markOnce(orgId: number, key: string): boolean {
+    const t = schema.pjSettings;
+    const r = getDb().insert(t).values({ organizationId: orgId, key, value: "1" }).onConflictDoNothing().run();
+    return r.changes > 0;
+  },
   /** One week's number for a measure, replacing what was there. */
   setValue(orgId: number, measureId: number, weekStart: string, value: number | null, by: string) {
     const v = schema.measureValues;

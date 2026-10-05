@@ -146,6 +146,8 @@ export function startScheduler() {
       await (await import("./desk")).briefTick();
       // Simone on Goals: the Monday read, and next year's draft late in the year.
       await (await import("../work/simone")).goalsTicks();
+      // Projects: due-date and scheduled automations, and tasks that repeat on schedule.
+      await (await import("../work/pjTicks")).projectsTicks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

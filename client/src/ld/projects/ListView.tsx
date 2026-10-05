@@ -1,5 +1,6 @@
 import React from "react";
 import { fmtYmd } from "../goals/shared";
+import { fieldText } from "./fields";
 import { AddInline, Check, Counts, Due, Flag, People, PRIORITY_TEXT, statusColor, StatusTag } from "./bits";
 import type { PjCtx, TaskRow } from "../pages/Projects";
 
@@ -68,15 +69,8 @@ export function ListView({ c }: { c: PjCtx }) {
 /** Table view: one row per task, every field as a column, like a spreadsheet. Changes are made in the task. */
 export function TableView({ c }: { c: PjCtx }) {
   const fields = c.data.list?.fields ?? [];
-  const show = (t: TaskRow, f: (typeof fields)[number]) => {
-    const v = t.fields[f.id];
-    if (v === undefined || v === null || v === "") return "";
-    if (f.type === "dropdown") return f.options?.find((o) => o.id === v)?.name ?? "";
-    if (f.type === "date") return fmtYmd(String(v));
-    if (f.type === "checkbox") return v ? "Yes" : "No";
-    if (f.type === "money") return `$${Number(v).toLocaleString("en-US")}`;
-    return String(v);
-  };
+  const show = (t: TaskRow, f: (typeof fields)[number]) => fieldText(f, fields, t, c.tasks);
+  const hm = (m: number) => (m ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}` : "");
   return (
     <div className="gp-gl gp-tablewrap">
       <table className="gp-table">
@@ -89,6 +83,7 @@ export function TableView({ c }: { c: PjCtx }) {
             <th>Due</th>
             <th>Priority</th>
             <th>Estimate</th>
+            <th>Tracked</th>
             <th>Tags</th>
             {fields.map((f) => (
               <th key={f.id}>{f.name}</th>
@@ -107,6 +102,7 @@ export function TableView({ c }: { c: PjCtx }) {
               <td><Due t={t} today={c.data.today} /></td>
               <td>{t.priority ? PRIORITY_TEXT[t.priority] : ""}</td>
               <td>{t.timeEstimate ? `${Math.round((t.timeEstimate / 60) * 10) / 10} h` : ""}</td>
+              <td>{hm(t.minutes)}</td>
               <td>{t.tags.join(", ")}</td>
               {fields.map((f) => (
                 <td key={f.id}>{show(t, f)}</td>

@@ -152,6 +152,9 @@ export const VIEW_ICONS: Record<string, React.ReactNode> = {
   people: I(<><circle cx="6" cy="6" r="2.5" /><path d="M1.5 14c.5-2.5 2.3-4 4.5-4s4 1.5 4.5 4M11 3.5a2.3 2.3 0 0 1 0 4.5M12.5 10c1.2.6 1.9 2 2 4" /></>),
   today: I(<><rect x="2" y="3" width="12" height="11" rx="2" /><path d="M2 7h12M5 1.5v3M11 1.5v3" /></>),
   calendar: I(<><rect x="2" y="3" width="12" height="11" rx="2" /><path d="M2 7h12M5 1.5v3M11 1.5v3" /></>),
+  workload: I(<><circle cx="6" cy="6" r="2.5" /><path d="M1.5 14c.5-2.5 2.3-4 4.5-4s4 1.5 4.5 4M11 3.5a2.3 2.3 0 0 1 0 4.5M12.5 10c1.2.6 1.9 2 2 4" /></>),
+  timeline: I(<path d="M2 14V8M6 14V4M10 14V9M14 14V2" />),
+  mindmap: I(<><circle cx="3" cy="8" r="1.8" /><circle cx="13" cy="3.5" r="1.8" /><circle cx="13" cy="12.5" r="1.8" /><path d="M4.6 7.3 11.4 4.2M4.6 8.7l6.8 3.1" /></>),
 };
 
 export function ViewTabs<T extends string>({ views, value, onChange }: { views: { key: T; label: string }[]; value: T; onChange: (v: T) => void }) {
@@ -234,7 +237,7 @@ export function AddFiles({ orgId, onAdded, label = "+ Add", disabled }: { orgId:
 }
 
 /** A small menu that opens from a "···" button. */
-export function Menu({ label, children, align = "right", button }: { label: string; children: (close: () => void) => React.ReactNode; align?: "left" | "right"; button?: string }) {
+export function Menu({ label, children, align = "right", button, buttonClass }: { label: string; children: (close: () => void) => React.ReactNode; align?: "left" | "right"; button?: string; buttonClass?: string }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLSpanElement>(null);
   React.useEffect(() => {
@@ -247,7 +250,7 @@ export function Menu({ label, children, align = "right", button }: { label: stri
   }, [open]);
   return (
     <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
-      <button type="button" className={button ? "ld-btn p gp-auto" : "gp-dots"} aria-label={button ? undefined : label} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+      <button type="button" className={buttonClass ?? (button ? "ld-btn p gp-auto" : "gp-dots")} aria-label={button && button.length > 2 ? undefined : label} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {button ?? "···"}
       </button>
       {open && (

@@ -62,15 +62,38 @@ export function CalendarView({ c }: { c: PjCtx }) {
   );
 }
 
+/** The longest chain of waiting-on links, ending at the latest-due linked task: if any of these slip, the end slips. */
+export function criticalPath(tasks: TaskRow[], links: { from: number; to: number }[]) {
+  const by = new Map(tasks.map((t) => [t.id, t]));
+  const linked = new Set(links.flatMap((l) => [l.from, l.to]));
+  const ends = tasks.filter((t) => linked.has(t.id) && !links.some((l) => l.from === t.id) && t.dueDate).sort((a, b) => (b.dueDate ?? "").localeCompare(a.dueDate ?? ""));
+  const out = new Set<number>();
+  let cur = ends[0];
+  for (let i = 0; cur && i < 200; i++) {
+    out.add(cur.id);
+    const before = links.filter((l) => l.to === cur!.id).map((l) => by.get(l.from)).filter((t): t is TaskRow => !!t && !out.has(t.id));
+    cur = before.sort((a, b) => (b.dueDate ?? b.startDate ?? "").localeCompare(a.dueDate ?? a.startDate ?? ""))[0];
+  }
+  return out.size > 1 ? out : new Set<number>();
+}
+
 export function GanttView({ c }: { c: PjCtx }) {
   const weeks = 9;
   const [from, setFrom] = React.useState(() => addDays(c.data.today, -wd(c.data.today) - 7));
+  const [crit, setCrit] = React.useState(true);
   const days = weeks * 7;
   const lane = React.useRef<HTMLDivElement>(null);
+  const firstRow = React.useRef<HTMLDivElement>(null);
+  const [rowH, setRowH] = React.useState(43);
+  React.useLayoutEffect(() => {
+    if (firstRow.current) setRowH(firstRow.current.getBoundingClientRect().height);
+  });
   const shift = trpc.pj.shiftDates.useMutation({ onSuccess: () => c.refresh() });
   const [drag, setDrag] = React.useState<{ id: number; mode: "move" | "end"; x0: number; delta: number } | null>(null);
   const rows = c.tasks.filter((t) => t.dueDate || t.startDate).sort((a, b) => (a.startDate ?? a.dueDate ?? "").localeCompare(b.startDate ?? b.dueDate ?? ""));
   const none = c.tasks.filter((t) => !t.dueDate && !t.startDate);
+  const links = c.data.links.filter((l) => rows.some((r) => r.id === l.from) && rows.some((r) => r.id === l.to));
+  const critical = crit ? criticalPath(rows, links) : new Set<number>();
   const dayW = () => (lane.current?.clientWidth ?? 700) / days;
   const span = (t: TaskRow) => {
     const s = t.startDate ?? t.dueDate!;
@@ -99,6 +122,7 @@ export function GanttView({ c }: { c: PjCtx }) {
     }
   };
   const todayAt = daysBetween(from, c.data.today);
+  const H = rows.length * rowH;
   return (
     <div className="gp-gl">
       <div className="gp-sec">
@@ -106,8 +130,13 @@ export function GanttView({ c }: { c: PjCtx }) {
           <button type="button" className="ld-btn sm" onClick={() => setFrom(addDays(from, -28))}>Earlier</button>
           <button type="button" className="ld-btn sm" onClick={() => setFrom(addDays(c.data.today, -wd(c.data.today) - 7))}>Today</button>
           <button type="button" className="ld-btn sm" onClick={() => setFrom(addDays(from, 28))}>Later</button>
+          {links.length > 0 && (
+            <button type="button" className={`gp-fb ${crit ? "sel" : ""}`} aria-pressed={crit} onClick={() => setCrit(!crit)}>
+              Critical path: {crit ? "on" : "off"}
+            </button>
+          )}
         </span>
-        <span className="ld-small ld-muted">Drag a bar to move its dates; drag its end to change how long it runs.</span>
+        <span className="ld-small ld-muted">{links.length ? "Arrows show what waits on what. Moving a task moves the ones waiting on it." : "Drag a bar to move its dates; drag its end to change how long it runs."}</span>
       </div>
       <ErrorLine error={shift.error} />
       <div className="gp-gantt">
@@ -119,42 +148,67 @@ export function GanttView({ c }: { c: PjCtx }) {
             ))}
           </div>
         </div>
-        {rows.map((t, i) => {
-          const { a, b } = span(t);
-          const left = Math.max(0, a);
-          const right = Math.min(days, b);
-          const show = right > 0 && left < days;
-          const a0 = t.assignees[0];
-          return (
-            <div key={t.id} className="grw">
-              <button type="button" className="nm" onClick={() => c.open(t.id)}>
-                {a0 ? <OwnerAvatar o={c.data.people.find((p) => p.type === a0.type && p.id === a0.id) ?? { type: "name", id: 0, name: a0.name }} size={22} /> : <span style={{ width: 22 }} />}
-                <span className="gp-ell">{t.name}</span>
-              </button>
-              <div className="lane" ref={i === 0 ? lane : undefined} style={{ backgroundSize: `${100 / weeks}% 100%` }}>
-                {i === 0 && todayAt >= 0 && todayAt < days && <span className="now" style={{ left: `${((todayAt + 0.5) / days) * 100}%`, height: `${rows.length * 42}px` }} />}
-                {show && (
-                  <span
-                    className={`bar ${t.closed ? "done" : ""}`}
-                    style={{ left: `${(left / days) * 100}%`, width: `${Math.max(1.4, ((right - left) / days) * 100)}%`, background: statusColor(c, t) }}
-                    onPointerDown={(e) => {
-                      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                      setDrag({ id: t.id, mode: (e.target as HTMLElement).classList.contains("end") ? "end" : "move", x0: e.clientX, delta: 0 });
-                    }}
-                    onPointerMove={(e) => drag?.id === t.id && setDrag({ ...drag, delta: Math.round((e.clientX - drag.x0) / dayW()) })}
-                    onPointerUp={() => done(t)}
-                    title={`${fmtYmd(t.startDate ?? t.dueDate)} to ${fmtYmd(t.dueDate ?? t.startDate)}`}
-                  >
-                    <span className="lb">{right - left > 4 ? t.name : ""}</span>
-                    <span className="end" aria-hidden="true" />
-                  </span>
-                )}
+        <div style={{ position: "relative" }}>
+          {rows.map((t, i) => {
+            const { a, b } = span(t);
+            const left = Math.max(0, a);
+            const right = Math.min(days, b);
+            const show = right > 0 && left < days;
+            const a0 = t.assignees[0];
+            return (
+              <div key={t.id} className="grw" ref={i === 0 ? firstRow : undefined}>
+                <button type="button" className="nm" onClick={() => c.open(t.id)}>
+                  {a0 ? <OwnerAvatar o={c.data.people.find((p) => p.type === a0.type && p.id === a0.id) ?? { type: "name", id: 0, name: a0.name }} size={22} /> : <span style={{ width: 22 }} />}
+                  <span className="gp-ell">{t.name}</span>
+                </button>
+                <div className="lane" ref={i === 0 ? lane : undefined} style={{ backgroundSize: `${100 / weeks}% 100%` }}>
+                  {i === 0 && todayAt >= 0 && todayAt < days && <span className="now" style={{ left: `${((todayAt + 0.5) / days) * 100}%`, height: `${H}px` }} />}
+                  {show && (
+                    <span
+                      className={`bar ${t.closed ? "done" : ""} ${critical.has(t.id) ? "crit" : ""}`}
+                      style={{ left: `${(left / days) * 100}%`, width: `${Math.max(1.4, ((right - left) / days) * 100)}%`, background: statusColor(c, t) }}
+                      onPointerDown={(e) => {
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setDrag({ id: t.id, mode: (e.target as HTMLElement).classList.contains("end") ? "end" : "move", x0: e.clientX, delta: 0 });
+                      }}
+                      onPointerMove={(e) => drag?.id === t.id && setDrag({ ...drag, delta: Math.round((e.clientX - drag.x0) / dayW()) })}
+                      onPointerUp={() => done(t)}
+                      title={`${fmtYmd(t.startDate ?? t.dueDate)} to ${fmtYmd(t.dueDate ?? t.startDate)}`}
+                    >
+                      <span className="lb">{right - left > 4 ? t.name : ""}</span>
+                      <span className="end" aria-hidden="true" />
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+          {links.length > 0 && rows.length > 0 && (
+            <svg className="gp-arrows" viewBox={`0 0 ${days * 10} ${H}`} preserveAspectRatio="none" style={{ height: H }} aria-hidden="true">
+              {links.map((l) => {
+                const fi = rows.findIndex((r) => r.id === l.from);
+                const ti = rows.findIndex((r) => r.id === l.to);
+                const fs = span(rows[fi]);
+                const ts = span(rows[ti]);
+                const x1 = Math.min(days, Math.max(0, fs.b)) * 10;
+                const x2 = Math.min(days, Math.max(0, ts.a)) * 10;
+                const y1 = fi * rowH + rowH / 2;
+                const y2 = ti * rowH + rowH / 2;
+                const mid = Math.max(x1 + 6, Math.min(x2 - 6, x1 + 12));
+                const red = critical.has(l.from) && critical.has(l.to);
+                return (
+                  <g key={`${l.from}-${l.to}`} stroke={red ? "#c2253c" : "#5b6b64"} fill="none">
+                    <path d={`M${x1} ${y1} H${mid} V${y2} H${x2 - 1}`} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                    <path d={`M${x2 - 8} ${y2 - 4} L${x2} ${y2} L${x2 - 8} ${y2 + 4}`} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                  </g>
+                );
+              })}
+            </svg>
+          )}
+        </div>
         {!rows.length && <div className="gp-empty">No tasks with dates yet. Give a task a start or due date and it shows here.</div>}
       </div>
+      {critical.size > 0 && <div className="ld-small ld-muted" style={{ padding: "10px 18px 0" }}>Outlined in red: the critical path. If any of these slip, {rows.find((r) => critical.has(r.id) && !c.data.links.some((l) => l.from === r.id))?.name ?? "the last one"} slips too.</div>}
       {none.length > 0 && <div className="ld-small ld-muted" style={{ padding: "10px 18px" }}>{none.length} task{none.length === 1 ? "" : "s"} without dates aren't shown.</div>}
     </div>
   );

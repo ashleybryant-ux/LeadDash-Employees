@@ -2553,6 +2553,8 @@ export const pjFolders = sqliteTable(
     organizationId: integer("organizationId").notNull(),
     name: text("name").notNull(),
     color: text("color").notNull().default("#1b6b4a"),
+    /** Custom fields every list in the folder has, same shape as a list's fields. */
+    fields: text("fields").notNull().default("[]"),
     sort: integer("sort").notNull().default(0),
     clickupId: text("clickupId"),
     createdAt: createdAt(),
@@ -2576,6 +2578,10 @@ export const pjLists = sqliteTable(
     description: text("description").notNull().default(""),
     statuses: text("statuses").notNull(),
     fields: text("fields").notNull().default("[]"),
+    /** Private: only the people it's shared with (and owners and admins) see it. */
+    private: integer("private", { mode: "boolean" }).notNull().default(false),
+    /** A view-only link anyone can open; null when off. */
+    shareToken: text("shareToken"),
     sort: integer("sort").notNull().default(0),
     clickupId: text("clickupId"),
     createdAt: createdAt(),
@@ -2608,6 +2614,10 @@ export const pjTasks = sqliteTable(
     fields: text("fields").notNull().default("{}"),
     checklist: text("checklist").notNull().default("[]"),
     goalId: integer("goalId"),
+    /** How it repeats: JSON {every, unit: day|week|month|year, days?, mode: done|schedule, ends, count, until, keep, made, spawned}; "" when it doesn't. */
+    repeat: text("repeat").notNull().default(""),
+    /** People and employees who follow it without being assigned: JSON like assignees. */
+    watchers: text("watchers").notNull().default("[]"),
     sort: integer("sort").notNull().default(0),
     closedAt: integer("closedAt", { mode: "timestamp" }),
     createdBy: text("createdBy").notNull().default(""),
@@ -2648,6 +2658,8 @@ export const pjAutomations = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
     listId: integer("listId"),
+    /** When set (and listId is null), the rule covers every list in this folder. */
+    folderId: integer("folderId"),
     trigger: text("trigger").notNull(),
     action: text("action").notNull(),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
@@ -2671,3 +2683,206 @@ export const pjImports = sqliteTable("pj_imports", {
   finishedAt: integer("finishedAt", { mode: "timestamp" }),
 });
 export type PjImport = typeof pjImports.$inferSelect;
+
+
+/** Links between tasks: kind "waits" means taskId waits on otherId; "link" relates them both ways. */
+export const pjLinks = sqliteTable(
+  "pj_links",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    taskId: integer("taskId").notNull(),
+    otherId: integer("otherId").notNull(),
+    kind: text("kind", { enum: ["waits", "link"] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_links_task_idx").on(t.organizationId, t.taskId), index("pj_links_other_idx").on(t.organizationId, t.otherId)]
+);
+export type PjLink = typeof pjLinks.$inferSelect;
+
+/** Time on a task. A running timer has minutes null and startedAt set. day is YYYY-MM-DD. */
+export const pjTime = sqliteTable(
+  "pj_time",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    taskId: integer("taskId").notNull(),
+    whoType: text("whoType", { enum: ["user", "employee"] }).notNull(),
+    whoId: integer("whoId").notNull(),
+    whoName: text("whoName").notNull(),
+    day: text("day").notNull(),
+    minutes: integer("minutes"),
+    startedAt: integer("startedAt", { mode: "timestamp" }),
+    note: text("note").notNull().default(""),
+    billable: integer("billable", { mode: "boolean" }).notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_time_task_idx").on(t.organizationId, t.taskId), index("pj_time_day_idx").on(t.organizationId, t.day)]
+);
+export type PjTime = typeof pjTime.$inferSelect;
+
+/** A saved task, list or doc to reuse. data: JSON snapshot. */
+export const pjTemplates = sqliteTable(
+  "pj_templates",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    kind: text("kind", { enum: ["task", "list", "doc"] }).notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    folderName: text("folderName").notNull().default(""),
+    data: text("data").notNull(),
+    createdBy: text("createdBy").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_templates_org_idx").on(t.organizationId)]
+);
+export type PjTemplate = typeof pjTemplates.$inferSelect;
+
+/**
+ * A doc page in a folder; parentId makes it a page inside another doc.
+ * blocks: JSON [{id, type: h1|h2|p|bullet|number|check|quote|table|image|task, text, done?, rows?, url?, taskId?}].
+ * taskIds: JSON linked task ids.
+ */
+export const pjDocs = sqliteTable(
+  "pj_docs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    folderId: integer("folderId"),
+    parentId: integer("parentId"),
+    title: text("title").notNull(),
+    blocks: text("blocks").notNull().default("[]"),
+    taskIds: text("taskIds").notNull().default("[]"),
+    editedBy: text("editedBy").notNull().default(""),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("pj_docs_org_idx").on(t.organizationId, t.folderId)]
+);
+export type PjDoc = typeof pjDocs.$inferSelect;
+
+/** Comments on a doc; quote is the text they were about. */
+export const pjDocComments = sqliteTable(
+  "pj_doc_comments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    docId: integer("docId").notNull(),
+    quote: text("quote").notNull().default(""),
+    body: text("body").notNull(),
+    authorName: text("authorName").notNull(),
+    authorId: integer("authorId"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_doc_comments_doc_idx").on(t.organizationId, t.docId)]
+);
+export type PjDocComment = typeof pjDocComments.$inferSelect;
+
+/** A whiteboard in a folder. items: JSON [{id, kind: sticky|rect|circle|text|pen|arrow|task|frame, x, y, w, h, color, text, from?, to?, taskId?, path?}]. */
+export const pjBoards = sqliteTable(
+  "pj_boards",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    folderId: integer("folderId"),
+    title: text("title").notNull(),
+    items: text("items").notNull().default("[]"),
+    editedBy: text("editedBy").notNull().default(""),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("pj_boards_org_idx").on(t.organizationId, t.folderId)]
+);
+export type PjBoard = typeof pjBoards.$inferSelect;
+
+/**
+ * A form whose answers become tasks. questions: JSON [{id, label, type, required, options?, mapTo}].
+ * settings: JSON {status, assignTo, ask, thanks, intro}. token: the public link's key.
+ */
+export const pjForms = sqliteTable(
+  "pj_forms",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    folderId: integer("folderId"),
+    listId: integer("listId"),
+    title: text("title").notNull(),
+    questions: text("questions").notNull().default("[]"),
+    settings: text("settings").notNull().default("{}"),
+    token: text("token").notNull(),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_forms_org_idx").on(t.organizationId), uniqueIndex("pj_forms_token_idx").on(t.token)]
+);
+export type PjForm = typeof pjForms.$inferSelect;
+
+/** One answer to a form: answers JSON {questionId: value}; the task it made. */
+export const pjFormAnswers = sqliteTable(
+  "pj_form_answers",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    formId: integer("formId").notNull(),
+    taskId: integer("taskId"),
+    answers: text("answers").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_form_answers_form_idx").on(t.organizationId, t.formId)]
+);
+export type PjFormAnswer = typeof pjFormAnswers.$inferSelect;
+
+/** A Projects dashboard. cards: JSON [{id, type, title, scope, size, options}]. */
+export const pjDashboards = sqliteTable(
+  "pj_dashboards",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    cards: text("cards").notNull().default("[]"),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_dashboards_org_idx").on(t.organizationId)]
+);
+export type PjDashboard = typeof pjDashboards.$inferSelect;
+
+/**
+ * Who a list is shared with and how: kind user (a teammate), employee, or guest
+ * (someone outside the workspace who sees only the lists shared with them).
+ * level: full, edit, comment or view.
+ */
+export const pjShares = sqliteTable(
+  "pj_shares",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    listId: integer("listId").notNull(),
+    kind: text("kind", { enum: ["user", "employee", "guest"] }).notNull(),
+    userId: integer("userId"),
+    employeeId: integer("employeeId"),
+    level: text("level", { enum: ["full", "edit", "comment", "view"] }).notNull().default("edit"),
+    invitedBy: text("invitedBy").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_shares_list_idx").on(t.organizationId, t.listId), index("pj_shares_user_idx").on(t.userId)]
+);
+export type PjShare = typeof pjShares.$inferSelect;
+
+/** Small Projects settings and markers: weekly hours per person, automations already fired. */
+export const pjSettings = sqliteTable(
+  "pj_settings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    key: text("key").notNull(),
+    value: text("value").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("pj_settings_key_idx").on(t.organizationId, t.key)]
+);
+export type PjSetting = typeof pjSettings.$inferSelect;

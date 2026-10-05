@@ -225,6 +225,13 @@
       "when": 1791231982230,
       "tag": "0031_goals_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791236482131,
+      "tag": "0032_clickup_parity",
+      "breakpoints": true
     }
   ]
 }

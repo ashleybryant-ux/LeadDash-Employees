@@ -6,7 +6,7 @@ import { appRouter } from "../routers";
 import { authenticateRequest, createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { ENV } from "./env";
-import { getDb, getOrganizationMembership, publicFileByToken, purgeExpiredAuthRecords } from "../db";
+import { getDb, getOrganizationMembership, guestSharesForUser, publicFileByToken, purgeExpiredAuthRecords } from "../db";
 import path from "node:path";
 import { uploadsRoot } from "../storage";
 import { aiStatus } from "./llm";
@@ -21,6 +21,7 @@ import { pushReady, startNotifications } from "../notify";
 import { readyApps, registerOAuth } from "../integrations";
 import { registerPublicPages } from "../public-pages";
 import { registerSalesPages } from "../sales-pages";
+import { registerProjectPages } from "../project-pages";
 
 async function startServer() {
   // Open the database and run any pending migrations before taking traffic.
@@ -113,7 +114,9 @@ async function startServer() {
       if (!user) return res.status(401).send("Sign in to open this file.");
       const org = decodeURIComponent(req.path).match(/^\/org-(\d+)\//)?.[1];
       if (org && user.role !== "admin" && !(await getOrganizationMembership(Number(org), user.id))) {
-        return res.status(403).send("This file belongs to another workspace.");
+        // A guest on a shared Projects list can open the files on its tasks (their names carry a random key).
+        const guest = /^\/org-\d+\/work\//.test(decodeURIComponent(req.path)) && guestSharesForUser(user.id).some((g) => g.organizationId === Number(org));
+        if (!guest) return res.status(403).send("This file belongs to another workspace.");
       }
       res.setHeader("Cache-Control", "private, max-age=3600");
       return files(req, res, next);
@@ -126,6 +129,7 @@ async function startServer() {
   registerOAuth(app);
   registerPublicPages(app);
   registerSalesPages(app);
+  registerProjectPages(app);
 
   app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
 
