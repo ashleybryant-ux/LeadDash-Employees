@@ -450,6 +450,31 @@ describe("Elena's mini drama studio", () => {
     // 2 + 1.9 + 1.9 seconds, less a 0.12 and a 0.5 second overlap.
     expect(picture).toBeGreaterThan(4.8);
   }, 120_000);
+  it("says what fal.ai is doing while it waits, stops when asked, and picks up an episode nothing is working on", async () => {
+    const real = globalThis.fetch;
+    let polls = 0;
+    vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
+      if (/\/status/.test(String(url)) && polls < 3) {
+        polls++;
+        return Response.json({ status: polls === 1 ? "IN_QUEUE" : "IN_PROGRESS" });
+      }
+      return real(url, init);
+    });
+    const seen: string[] = [];
+    await drama.falRun("fal-ai/kling-video/v3/pro/image-to-video", { prompt: "x" }, 20, { onWait: (_m, st) => seen.push(st) });
+    expect(seen).toEqual(["IN_QUEUE", "IN_PROGRESS"]);
+    await expect(drama.falRun("fal-ai/kling-video/v3/pro/image-to-video", { prompt: "x" }, 20, { stop: () => true })).rejects.toThrow(drama.STOPPED);
+
+    // An episode left "making" with nothing working on it (a restart mid-shot) is picked back up after 10 quiet minutes.
+    const { orgId } = await makeWorkspace("drama12");
+    const ep = db.createDramaEpisode({ organizationId: orgId, number: 9, kind: "drama", title: "Left behind", status: "making", costCents: 0, madeAt: new Date(), shots: "[]", plan: "{}" });
+    await drama.dramaTicks(Date.now());
+    expect(db.getDramaEpisode(ep.id, orgId)!.status).toBe("making");
+    await drama.dramaTicks(Date.now() + 11 * 60_000);
+    // No shots, so picking it up ends right away with a clear reason instead of hanging.
+    expect(db.getDramaEpisode(ep.id, orgId)!.status).toBe("failed");
+    expect(drama.stopEpisode(orgId, ep.id).status).toBe("failed");
+  });
   it("waits out fal.ai's temporary outages instead of stopping, but stops on a real error", async () => {
     const real = globalThis.fetch;
     let downs = 2;

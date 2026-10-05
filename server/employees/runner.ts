@@ -131,6 +131,8 @@ export function startScheduler() {
       await (await import("./bids")).bidsTick();
       // Elena's avatar videos: save each one fal.ai has finished.
       await (await import("./avatar")).avatarTicks();
+      // Elena's episodes: one that nothing is working on picks back up.
+      await (await import("./drama")).dramaTicks();
       // Kai: notice when Claude finishes a change.
       await (await import("./dev")).devTicks();
       // Taylor: reporter requests from the press inbox, every 15 minutes.

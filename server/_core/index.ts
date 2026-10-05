@@ -124,7 +124,8 @@ async function startServer() {
   }
 
   // Scheduled tasks (checks once a minute).
-  if (process.env.NODE_ENV !== "test") startScheduler();
+  // The deploy's boot check runs on a copy of the database with NO_SCHEDULER=1, so it never starts paid work.
+  if (process.env.NODE_ENV !== "test" && process.env.NO_SCHEDULER !== "1") startScheduler();
 
   // Clear expired sign-in codes and sessions every hour.
   setInterval(() => purgeExpiredAuthRecords().catch(() => {}), 3600_000).unref();

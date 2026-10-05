@@ -450,24 +450,43 @@ export function setPollMs(ms: number) {
   pollMs = ms;
 }
 
+export const STOPPED = "You stopped it.";
+
+export type FalWait = { onWait?: (minutes: number, status: string) => void; stop?: () => boolean };
+
 /** Runs one fal.ai model through its queue and returns the result. A job fal.ai drops is sent once more. */
-export async function falRun(model: string, input: unknown, maxMinutes = 20) {
+export async function falRun(model: string, input: unknown, maxMinutes = 20, wait: FalWait = {}) {
   for (let attempt = 0; ; attempt++) {
     try {
+      if (wait.stop?.()) throw new Error(STOPPED);
       const sub = await falCall(`https://queue.fal.run/${model}`, { method: "POST", body: input });
       if (!sub.request_id) throw new Error("fal.ai didn't start it.");
-      const until = Date.now() + maxMinutes * 60_000;
+      console.log(`[drama] fal ${model} started ${sub.request_id}${attempt ? " (second try)" : ""}`);
+      const started = Date.now();
+      const until = started + maxMinutes * 60_000;
+      let told = 0;
+      let last = "";
       for (;;) {
+        if (wait.stop?.()) throw new Error(STOPPED);
         const st = await falCall(sub.status_url);
         if (st.status === "COMPLETED") break;
         if (st.status && st.status !== "IN_QUEUE" && st.status !== "IN_PROGRESS") throw new Error(`fal.ai stopped: ${st.status} (503)`);
         if (Date.now() > until) throw new Error(`fal.ai took more than ${maxMinutes} minutes`);
+        const mins = Math.floor((Date.now() - started) / 60_000);
+        if (st.status !== last || mins > told) {
+          if (st.status !== last) console.log(`[drama] fal ${model} ${sub.request_id}: ${st.status} after ${mins} min`);
+          last = st.status ?? "";
+          told = mins;
+          wait.onWait?.(mins, last);
+        }
         await new Promise((r) => setTimeout(r, pollMs));
       }
+      console.log(`[drama] fal ${model} ${sub.request_id} finished in ${Math.round((Date.now() - started) / 1000)} sec`);
       return await falCall(sub.response_url);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (attempt >= 1 || !TRANSIENT.test(msg)) throw err;
+      console.warn(`[drama] fal ${model}: ${msg}`);
+      if (msg === STOPPED || attempt >= 1 || !TRANSIENT.test(msg)) throw err;
     }
   }
 }
@@ -630,11 +649,18 @@ export async function startEpisode(orgId: number, id: number) {
   if (estimate > 0 && spent + estimate > limit) throw new TRPCError({ code: "BAD_REQUEST", message: `${label(ep)} (about $${(estimate / 100).toFixed(2)} for this step) would go over your $${(limit / 100).toFixed(0)} monthly limit. You've spent $${(spent / 100).toFixed(2)} this month. Raise the limit under Your avatar on the Videos tab.` });
   const next = db.updateDramaEpisode(id, orgId, { status: "making", error: null, madeAt: ep.madeAt ?? new Date(), progress: animating ? (shots.every((x) => x.clipUrl) ? "Cutting it together" : `Animating shot ${(shots.filter((x) => x.clipUrl).length || 0) + 1} of ${shots.length}`) : `Keyframe 1 of ${shots.length}` })!;
   active.add(id);
+  stopping.delete(id);
   void makeEpisode(orgId, id)
     .then(() => autoTries.delete(id))
     .catch(async (err) => {
       const msg = err instanceof Error ? err.message : String(err);
       const n = autoTries.get(id) ?? 0;
+      if (msg === STOPPED || stopping.has(id)) {
+        autoTries.delete(id);
+        stopping.delete(id);
+        db.updateDramaEpisode(id, orgId, { status: "failed", error: `${STOPPED} Everything already made is kept, so Make again picks up where it stopped.`, progress: null });
+        return;
+      }
       if (TRANSIENT.test(msg) && n < 3) {
         // A temporary outage: everything made is kept, and she picks back up on her own in a few minutes.
         autoTries.set(id, n + 1);
@@ -642,6 +668,12 @@ export async function startEpisode(orgId: number, id: number) {
         db.updateDramaEpisode(id, orgId, { progress: `Waiting for the video service to come back (try ${n + 2} of 4)` });
         setTimeout(() => {
           active.delete(id);
+          if (stopping.has(id)) {
+            stopping.delete(id);
+            autoTries.delete(id);
+            db.updateDramaEpisode(id, orgId, { status: "failed", error: `${STOPPED} Everything already made is kept, so Make again picks up where it stopped.`, progress: null });
+            return;
+          }
           void startEpisode(orgId, id).catch((e) => fail(orgId, id, e instanceof Error ? e.message : String(e)));
         }, wait).unref?.();
         return;
@@ -655,6 +687,36 @@ export async function startEpisode(orgId: number, id: number) {
   return next;
 }
 const autoTries = new Map<number, number>();
+/** Episodes the owner asked to stop: the shot in progress is abandoned at the next check. */
+const stopping = new Set<number>();
+
+/** Stop: the work in progress stops within a few seconds; everything already made is kept. */
+export function stopEpisode(orgId: number, id: number) {
+  const ep = db.getDramaEpisode(id, orgId);
+  if (!ep) throw new TRPCError({ code: "NOT_FOUND", message: "That video isn't in this workspace." });
+  if (ep.status !== "making") return ep;
+  if (active.has(id)) {
+    stopping.add(id);
+    return db.updateDramaEpisode(id, orgId, { progress: "Stopping after this step" })!;
+  }
+  return db.updateDramaEpisode(id, orgId, { status: "failed", error: `${STOPPED} Everything already made is kept, so Make again picks up where it stopped.`, progress: null })!;
+}
+
+/**
+ * Every minute: an episode marked "making" that nothing is working on (the
+ * server restarted, or a step died without a word) picks back up on its own.
+ * Progress is saved at least once a minute while fal.ai works, so a quiet
+ * episode for 10 minutes is a dead one.
+ */
+export async function dramaTicks(now = Date.now()) {
+  for (const e of db.listMakingDramaEpisodes()) {
+    if (active.has(e.id) || autoTries.has(e.id)) continue;
+    const quiet = now - new Date(e.updatedAt ?? e.madeAt ?? e.createdAt).getTime();
+    if (quiet < 10 * 60_000) continue;
+    console.warn(`[drama] episode ${e.id} was quiet for ${Math.round(quiet / 60_000)} min; picking it back up`);
+    await startEpisode(e.organizationId, e.id).catch((err) => fail(e.organizationId, e.id, err instanceof Error ? err.message : String(err)));
+  }
+}
 
 async function fail(orgId: number, id: number, message: string) {
   const ep = db.updateDramaEpisode(id, orgId, { status: "failed", error: message.slice(0, 400), progress: null });
@@ -694,6 +756,11 @@ export async function makeEpisode(orgId: number, id: number) {
     ep = db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots), progress, costCents: shots.reduce((t, x) => t + (x.costCents ?? 0), 0) + shots.filter((x) => !x.clipUrl).reduce((t, x) => t + estimateShot(x), 0) })!;
   };
   const props = await propImages(orgId);
+  // While fal.ai works on a shot, the progress says so every minute, so a slow queue never looks stuck.
+  const waiting = (what: string): FalWait => ({
+    stop: () => stopping.has(id),
+    onWait: (mins, status) => save(`${what}: ${status === "IN_QUEUE" ? "waiting in fal.ai's line" : "fal.ai is working on it"}${mins ? ` (${mins} min)` : ""}`),
+  });
 
   // 1. Keyframes: a still for every shot (the image model decides who is in it and how it looks).
   let newStills = 0;
@@ -710,8 +777,8 @@ export async function makeEpisode(orgId: number, id: number) {
     const prevStill = i > 0 && sceneOf(shots[i - 1]) === sceneOf(s) ? shots[i - 1].stillUrl ?? null : null;
     const all = [...[...refs.flatMap((r) => r.urls), ...shown.map((p) => p.url)].slice(0, 13), ...(prevStill ? [prevStill] : [])];
     const res = all.length
-      ? await falRun(MODELS.still, { prompt: stillPrompt(s, look, refs, shown, !!prevStill), image_urls: await Promise.all(all.map(asInput)), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5)
-      : await falRun(MODELS.portrait, { prompt: stillPrompt(s, look, refs), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5);
+      ? await falRun(MODELS.still, { prompt: stillPrompt(s, look, refs, shown, !!prevStill), image_urls: await Promise.all(all.map(asInput)), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`))
+      : await falRun(MODELS.portrait, { prompt: stillPrompt(s, look, refs), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`));
     const still = res?.images?.[0]?.url as string | undefined;
     if (!still) throw new Error(`No picture came back for shot ${s.n}`);
     s.stillUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-shot${s.n}-${Date.now()}.png`, await download(still), "image/png")).url;
@@ -749,7 +816,7 @@ export async function makeEpisode(orgId: number, id: number) {
       // Her own take: her movement, expressions and real voice, moved onto the approved still.
       save(`Shot ${s.n} of ${shots.length}: moving your take onto the keyframe`);
       const secs = Math.max(3, Math.min(10, Math.ceil(s.takeSeconds || s.seconds)));
-      const res = await falRun(MODELS.perform, { image_url: await asInput(s.stillUrl!), video_url: await asInput(s.takeUrl), prompt: takePrompt(s), character_orientation: "image", keep_original_sound: true }, 25);
+      const res = await falRun(MODELS.perform, { image_url: await asInput(s.stillUrl!), video_url: await asInput(s.takeUrl), prompt: takePrompt(s), character_orientation: "image", keep_original_sound: true }, 25, waiting(`Shot ${s.n} of ${shots.length}`));
       const out = res?.video?.url as string | undefined;
       if (!out) throw new Error(`No video came back for shot ${s.n}`);
       s.costCents = (s.costCents ?? 0) + Math.ceil(secs * PRICE.performPerSec);
@@ -780,7 +847,7 @@ export async function makeEpisode(orgId: number, id: number) {
     if (engine === "seedance") {
       seconds = Math.max(4, seconds);
       const faces = refs.flatMap((r) => r.urls).slice(0, 8);
-      clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(seconds), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25);
+      clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(seconds), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
     } else {
       // A shot that carries straight on into the next one ends exactly on the next keyframe, so there's no jump.
       const nextShot = shots[shots.indexOf(s) + 1];
@@ -793,13 +860,13 @@ export async function makeEpisode(orgId: number, id: number) {
         generate_audio: !s.line,
         negative_prompt: "blur, distortion, low quality, on-screen text, captions, watermark, extra fingers, distorted hands, warped faces, morphing, surreal motion, slow motion",
         ...(refs.length ? { elements: await Promise.all(refs.map(async (r) => ({ frontal_image_url: await asInput(r.urls[0]), reference_image_urls: await Promise.all((r.urls.length > 1 ? r.urls.slice(1, 4) : r.urls).map(asInput)) }))) } : {}),
-      }, 25);
+      }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
     }
     let clip = clipRes?.video?.url as string | undefined;
     if (!clip) throw new Error(`No video came back for shot ${s.n}`);
     s.costCents = (s.costCents ?? 0) + Math.ceil(seconds * (engine === "seedance" ? PRICE.seedancePerSec : s.line ? PRICE.videoSilentPerSec : PRICE.videoSoundPerSec));
     if (audio) {
-      const synced = await falRun(MODELS.lipsync, { video_url: clip, audio_url: dataUri(audio, "audio/mpeg"), sync_mode: "cut_off" }, 15);
+      const synced = await falRun(MODELS.lipsync, { video_url: clip, audio_url: dataUri(audio, "audio/mpeg"), sync_mode: "cut_off" }, 15, waiting(`Shot ${s.n} of ${shots.length}: matching the lips to the voice`));
       clip = synced?.video?.url as string | undefined;
       if (!clip) throw new Error(`The lip sync for shot ${s.n} didn't come back`);
       s.costCents += Math.ceil(seconds * PRICE.lipsyncPerSec);

@@ -61,6 +61,7 @@ function useActions() {
   return {
     orgId: currentOrgId,
     make: trpc.drama.make.useMutation({ onSuccess: refresh }),
+    stop: trpc.drama.stop.useMutation({ onSuccess: refresh }),
     remake: trpc.drama.remakeShot.useMutation({ onSuccess: refresh }),
     approve: trpc.drama.approveKeyframes.useMutation({ onSuccess: refresh }),
     pick: trpc.drama.pickDirection.useMutation({ onSuccess: refresh }),
@@ -375,10 +376,13 @@ function RowActions({ e }: { e: Ep }) {
       {(e.status === "script" || e.status === "failed") && e.shots.length > 0 && (
         <button type="button" className="ld-btn p" disabled={a.make.isPending} onClick={() => a.make.mutate({ organizationId: a.orgId, id: e.id })}>{e.status === "failed" ? "Make again" : e.plan.approved ? "Make it" : "Make keyframes"}</button>
       )}
+      {e.status === "making" && (
+        <button type="button" className="ld-btn" disabled={a.stop.isPending || e.progress === "Stopping after this step"} onClick={() => a.stop.mutate({ organizationId: a.orgId, id: e.id })}>{e.progress === "Stopping after this step" ? "Stopping..." : "Stop"}</button>
+      )}
       {e.status === "ready" && e.shots.length > 0 && e.shots.every((s) => s.clipUrl) && (
         <button type="button" className="ld-btn" disabled={a.make.isPending} onClick={() => a.make.mutate({ organizationId: a.orgId, id: e.id })}>{a.make.isPending ? "Starting..." : "Cut again"}</button>
       )}
-      <ErrorLine error={a.approve.error || a.make.error} />
+      <ErrorLine error={a.approve.error || a.make.error || a.stop.error} />
     </div>
   );
 }
@@ -401,6 +405,8 @@ function EpisodeRow({ e, open, onToggle }: { e: Ep; open: boolean; onToggle: () 
         <div className="ld-av-exp" style={{ gridTemplateColumns: "minmax(0,1fr) 128px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
             {e.status === "ready" && <Versions e={e} />}
+            {e.status === "making" && <span style={{ fontSize: 14, fontWeight: 700, color: "#8a4510" }}>{e.progress ?? "Starting"}.</span>}
+            {e.status === "failed" && e.error && <span style={{ fontSize: 14, color: "#9b1c1c" }}>{e.error}</span>}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span className="ld-lbl">Beats</span>
               {e.beats.map((b, i) => (
@@ -532,6 +538,7 @@ function CampaignRow({ e, open, onToggle }: { e: Ep; open: boolean; onToggle: ()
             ) : (
               <>
                 {e.status === "ready" && <Versions e={e} />}
+                {e.status === "making" && <span style={{ fontSize: 14, fontWeight: 700, color: "#8a4510" }}>{e.progress ?? "Starting"}.</span>}
                 {editing ? <ScriptEditor e={e} onDone={() => setEditing(false)} /> : <Timeline e={e} />}
                 <ShotList e={e} />
               </>

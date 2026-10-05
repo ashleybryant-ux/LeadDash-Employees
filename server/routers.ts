@@ -949,6 +949,11 @@ export const appRouter = router({
       const dr = await import("./employees/drama");
       return dr.episodeView(await dr.startEpisode(input.organizationId, input.id));
     }),
+    stop: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const dr = await import("./employees/drama");
+      return dr.episodeView(dr.stopEpisode(input.organizationId, input.id));
+    }),
     remakeShot: protectedProcedure.input(orgInput.extend({ id: z.number(), n: z.number().int().min(1).max(30) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       const dr = await import("./employees/drama");

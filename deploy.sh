@@ -61,7 +61,7 @@ echo "== boot check on port $PORT_CHECK (copy of the database)"
 TMP=$(mktemp -d)
 [ -f data/employees.db ] && cp data/employees.db "$TMP/employees.db"
 set +e
-PORT=$PORT_CHECK DATABASE_PATH="$TMP/employees.db" UPLOADS_DIR="$TMP/uploads" NODE_ENV=production node dist/index.js > "$TMP/boot.log" 2>&1 &
+PORT=$PORT_CHECK DATABASE_PATH="$TMP/employees.db" UPLOADS_DIR="$TMP/uploads" NODE_ENV=production NO_SCHEDULER=1 node dist/index.js > "$TMP/boot.log" 2>&1 &
 PID=$!
 OK=0
 for i in $(seq 1 20); do
