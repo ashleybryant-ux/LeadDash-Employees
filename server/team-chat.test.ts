@@ -79,4 +79,27 @@ describe("Team chat", () => {
     expect(a.sound).toEqual({ kind: "bell", volume: 40 });
     expect(readSound('{"_sound":{"kind":"siren","volume":900}}')).toEqual({ kind: "chime", volume: 100 });
   });
+  it("shows a direct message in every workspace both people share, and keeps Everyone to its own workspace", async () => {
+    const { orgId: a, owner, caroline } = await setup("tc-two-a");
+    const staff = (await db.getUserByEmail("staff@leaddash.io"))!;
+    const b = (await caller(staff).organizations.create({ name: "Second workspace", slug: "tc-two-b", plan: "growth", state: "Oklahoma", ownerEmail: owner.email })).id!;
+    await db.addOrganizationMember({ organizationId: b, userId: caroline.id, role: "member" });
+    const me = caller(owner);
+    const her = caller(caroline);
+    const key = (await me.teamChat.channels({ organizationId: b })).find((c) => c.kind === "dm")!.key;
+    await me.teamChat.send({ organizationId: b, channel: key, content: "Did you see the webinar slides?" });
+    await me.teamChat.send({ organizationId: b, channel: "everyone", content: "Only in the second workspace" });
+    // Caroline is looking at the first workspace: the DM is there, unread.
+    const hers = await her.teamChat.channels({ organizationId: a });
+    expect(hers.find((c) => c.key === key)).toMatchObject({ unread: 1, last: { text: "Did you see the webinar slides?" } });
+    expect(hers.find((c) => c.key === "everyone")).toMatchObject({ unread: 0, last: null });
+    const msgs = await her.teamChat.messages({ organizationId: a, channel: key });
+    expect(msgs.messages.map((m) => m.content)).toEqual(["Did you see the webinar slides?"]);
+    await her.teamChat.markRead({ organizationId: a, channel: key, lastId: msgs.messages[0].id });
+    expect((await her.teamChat.channels({ organizationId: b })).find((c) => c.key === key)!.unread).toBe(0);
+    expect((await me.teamChat.messages({ organizationId: b, channel: key })).seenAt).not.toBeNull();
+    // Her reply from the first workspace reaches the owner in the second.
+    await her.teamChat.send({ organizationId: a, channel: key, content: "Yes, they look good." });
+    expect((await me.teamChat.messages({ organizationId: b, channel: key })).messages.map((m) => m.content)).toEqual(["Did you see the webinar slides?", "Yes, they look good."]);
+  });
 });

@@ -2089,26 +2089,36 @@ export const desk = {
 // Team chat
 // ==========================================
 
+/** One workspace, or several (a direct message shows in every workspace both people share). */
+type Orgs = number | number[];
+const inOrgs = (col: any, o: Orgs) => (Array.isArray(o) ? inArray(col, o.length ? o : [-1]) : eq(col, o));
+
 export const team = {
-  messages(orgId: number, channel: string, limit = 200) {
+  messages(orgs: Orgs, channel: string, limit = 200) {
     const t = schema.teamMessages;
-    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.channel, channel))).orderBy(desc(t.id)).limit(limit).all().reverse();
+    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel))).orderBy(desc(t.id)).limit(limit).all().reverse();
+  },
+  /** The newest message in a channel. */
+  last(orgs: Orgs, channel: string) {
+    const t = schema.teamMessages;
+    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel))).orderBy(desc(t.id)).limit(1).all()[0] ?? null;
   },
   /** The newest message in each channel the person can see. */
   latest(orgId: number, channels: string[]) {
-    const t = schema.teamMessages;
-    return channels.map((c) => getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.channel, c))).orderBy(desc(t.id)).limit(1).all()[0] ?? null);
+    return channels.map((c) => team.last(orgId, c));
   },
-  unread(orgId: number, userId: number, channel: string, afterId: number) {
+  unread(orgs: Orgs, userId: number, channel: string, afterId: number) {
     const t = schema.teamMessages;
-    return getDb().select({ id: t.id, userId: t.userId }).from(t).where(and(eq(t.organizationId, orgId), eq(t.channel, channel), gt(t.id, afterId))).all().filter((m) => m.userId !== userId).length;
+    return getDb().select({ id: t.id, userId: t.userId }).from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel), gt(t.id, afterId))).all().filter((m) => m.userId !== userId).length;
   },
   send(row: typeof schema.teamMessages.$inferInsert) {
     return getDb().insert(schema.teamMessages).values(row).returning().all()[0];
   },
-  read(orgId: number, userId: number, channel: string) {
+  /** How far the person has read; across several workspaces, the furthest. */
+  read(orgs: Orgs, userId: number, channel: string) {
     const r = schema.teamReads;
-    return getDb().select().from(r).where(and(eq(r.organizationId, orgId), eq(r.userId, userId), eq(r.channel, channel))).limit(1).all()[0] ?? null;
+    const rows = getDb().select().from(r).where(and(inOrgs(r.organizationId, orgs), eq(r.userId, userId), eq(r.channel, channel))).all();
+    return rows.sort((a, b) => b.lastReadId - a.lastReadId)[0] ?? null;
   },
   markRead(orgId: number, userId: number, channel: string, lastId: number) {
     const r = schema.teamReads;

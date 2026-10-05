@@ -5,8 +5,10 @@ import { notify } from "./notify";
 /**
  * Team chat: the people in a workspace talking to each other. One channel for
  * everyone, and a direct message between any two people. No AI employees read
- * or write here. Each workspace has its own, so the LeadDash team and the
- * Legacy team never see each other's messages.
+ * or write here. Each workspace has its own Everyone channel, so the LeadDash
+ * team and the Legacy team never see each other's channel. A direct message is
+ * between two people, so it shows in every workspace they're both in: a DM
+ * sent from one workspace is never hidden from someone looking in another.
  */
 
 export const EVERYONE = "everyone";
@@ -39,6 +41,24 @@ export async function people(orgId: number) {
   return (await db.listMembers(orgId)).filter((m) => m.role !== "reviewer");
 }
 
+/** The workspaces where both people can chat (not as the app reviewer). Always includes this one. */
+async function sharedOrgs(orgId: number, a: number, b: number) {
+  const out = [orgId];
+  for (const o of await db.listOrganizationsForUser(a)) {
+    if (o.id === orgId) continue;
+    const ma = await db.getOrganizationMembership(o.id, a);
+    const mb = await db.getOrganizationMembership(o.id, b);
+    if (ma && mb && ma.role !== "reviewer" && mb.role !== "reviewer") out.push(o.id);
+  }
+  return out;
+}
+
+/** Where a channel's messages live: this workspace for Everyone; every shared workspace for a DM. */
+async function scopeOf(orgId: number, me: number, channel: string) {
+  const other = dmOther(channel, me);
+  return other == null ? orgId : sharedOrgs(orgId, me, other);
+}
+
 async function assertChannel(orgId: number, me: number, channel: string) {
   if (channel === EVERYONE) return null;
   const other = dmOther(channel, me);
@@ -53,29 +73,31 @@ export async function channels(orgId: number, me: number) {
   markSeen(orgId, me);
   const list = await people(orgId);
   const others = list.filter((p) => p.userId !== me);
-  const keys = [EVERYONE, ...others.map((p) => dmKey(me, p.userId))];
-  const latest = db.team.latest(orgId, keys);
-  const row = (key: string, i: number) => {
-    const last = latest[i];
-    const read = db.team.read(orgId, me, key);
-    return { last: last ? { text: last.content || (last.attachments ? "Sent a file" : ""), author: last.authorName, mine: last.userId === me, at: last.createdAt } : null, unread: db.team.unread(orgId, me, key, read?.lastReadId ?? 0) };
+  const row = async (key: string) => {
+    const orgs = await scopeOf(orgId, me, key);
+    const last = db.team.last(orgs, key);
+    const read = db.team.read(orgs, me, key);
+    return { last: last ? { text: last.content || (last.attachments ? "Sent a file" : ""), author: last.authorName, mine: last.userId === me, at: last.createdAt } : null, unread: db.team.unread(orgs, me, key, read?.lastReadId ?? 0) };
   };
-  return [
-    { key: EVERYONE, kind: "channel" as const, name: "Everyone", sub: list.length === 2 ? `You and ${others[0]?.name || others[0]?.email}` : `${list.length} people`, userId: null, avatarUrl: null, online: false, ...row(EVERYONE, 0) },
-    ...others.map((p, i) => ({ key: keys[i + 1], kind: "dm" as const, name: p.name || p.email, sub: ROLE[p.role] ?? p.role, userId: p.userId, avatarUrl: p.avatarUrl, online: isOnline(orgId, p.userId), ...row(keys[i + 1], i + 1) })),
-  ];
+  const dms = [];
+  for (const p of others) {
+    const key = dmKey(me, p.userId);
+    dms.push({ key, kind: "dm" as const, name: p.name || p.email, sub: ROLE[p.role] ?? p.role, userId: p.userId, avatarUrl: p.avatarUrl, online: isOnline(orgId, p.userId), ...(await row(key)) });
+  }
+  return [{ key: EVERYONE, kind: "channel" as const, name: "Everyone", sub: list.length === 2 ? `You and ${others[0]?.name || others[0]?.email}` : `${list.length} people`, userId: null, avatarUrl: null, online: false, ...(await row(EVERYONE)) }, ...dms];
 }
 
 export async function messages(orgId: number, me: number, channel: string) {
   markSeen(orgId, me);
   const other = await assertChannel(orgId, me, channel);
   const list = await people(orgId);
-  const rows = db.team.messages(orgId, channel);
+  const orgs = await scopeOf(orgId, me, channel);
+  const rows = db.team.messages(orgs, channel);
   // "Seen": the other person has read past my last message.
   let seenAt: Date | null = null;
   if (other) {
     const mineLast = [...rows].reverse().find((m) => m.userId === me);
-    const theirs = db.team.read(orgId, other.userId, channel);
+    const theirs = db.team.read(orgs, other.userId, channel);
     if (mineLast && theirs && theirs.lastReadId >= mineLast.id) seenAt = theirs.readAt ?? null;
   }
   return {
