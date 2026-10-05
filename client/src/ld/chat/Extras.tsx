@@ -96,7 +96,7 @@ export function useAttachments(orgId: number, employeeId: number) {
   const button = (
     <>
       <input ref={input} type="file" multiple accept={ACCEPT} style={{ display: "none" }} onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
-      <button type="button" className="ld-clip" aria-label="Attach files" onClick={() => input.current?.click()} disabled={staged.length >= MAX_FILES}>
+      <button type="button" className="ld-attach-btn" aria-label="Attach files" onClick={() => input.current?.click()} disabled={staged.length >= MAX_FILES}>
         {CLIP}
       </button>
     </>

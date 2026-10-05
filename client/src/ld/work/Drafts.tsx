@@ -31,7 +31,7 @@ type HoldMeta = { date?: string; time?: string; attendees?: string[] };
 const DATE_RE = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/;
 
 /** Avery's Work tab: email drafts and calendar holds. */
-export default function Drafts({ emp }: { emp: EmployeeRow }) {
+export default function Drafts({ emp, embedded = false }: { emp: EmployeeRow; embedded?: boolean }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const [tab, setTab] = React.useState<"email" | "holds">("email");
@@ -112,8 +112,9 @@ export default function Drafts({ emp }: { emp: EmployeeRow }) {
     setOpen(id);
   };
 
+  const Shell = embedded ? "div" : "main";
   return (
-    <main className="ld-main" style={{ padding: "28px 36px" }}>
+    <Shell className={embedded ? undefined : "ld-main"} style={embedded ? { display: "flex", flexDirection: "column", gap: 16 } : { padding: "28px 36px" }}>
       <form
         className="ld-card"
         style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}
@@ -144,18 +145,28 @@ export default function Drafts({ emp }: { emp: EmployeeRow }) {
         <ErrorLine error={draftReply.error} />
       </form>
 
-      <UnderlineTabs
-        value={tab}
-        onChange={(k) => {
-          setTab(k);
-          setOpen(null);
-          setEditing(null);
-        }}
-        tabs={[
-          { key: "email", label: `Email drafts (${emails.length})` },
-          { key: "holds", label: `Calendar holds (${holds.length})` },
-        ]}
-      />
+      {embedded ? (
+        <div className="ld-ftabs" role="tablist" style={{ marginBottom: -16 }}>
+          {([["email", `Email drafts (${emails.length})`], ["holds", `Calendar holds (${holds.length})`]] as const).map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} className={`ld-ft ${tab === k ? "on" : ""}`} onClick={() => { setTab(k); setOpen(null); setEditing(null); }}>
+              {l}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <UnderlineTabs
+          value={tab}
+          onChange={(k) => {
+            setTab(k);
+            setOpen(null);
+            setEditing(null);
+          }}
+          tabs={[
+            { key: "email", label: `Email drafts (${emails.length})` },
+            { key: "holds", label: `Calendar holds (${holds.length})` },
+          ]}
+        />
+      )}
 
       {tab === "email" ? (
         <div className="ld-card" style={{ overflow: "hidden" }}>
@@ -273,7 +284,7 @@ export default function Drafts({ emp }: { emp: EmployeeRow }) {
           </div>
         </>
       )}
-    </main>
+    </Shell>
   );
 }
 

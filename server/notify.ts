@@ -85,11 +85,11 @@ export async function pushTo(userIds: number[], notice: Notice) {
 }
 
 /** Tells everyone on a workspace about something, following each person's choices. */
-export async function notify(orgId: number, event: NotifyEvent, notice: Notice, opts: { channel?: "push" | "email" | "chat" } = {}) {
+export async function notify(orgId: number, event: NotifyEvent, notice: Notice, opts: { channel?: "push" | "email" | "chat"; only?: number[] } = {}) {
   if (opts.channel === "chat") return;
   // The app review demo workspace never sends notices.
   if (db.getReviewAccess()?.organizationId === orgId) return;
-  const people: User[] = await db.notifyRecipients(orgId);
+  const people: User[] = (await db.notifyRecipients(orgId)).filter((p) => !opts.only || opts.only.includes(p.id));
   const org = await db.getOrganizationById(orgId);
   const pushIds: number[] = [];
   for (const p of people) {

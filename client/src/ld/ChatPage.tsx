@@ -10,10 +10,11 @@ import ApplyWork from "./apply/ApplyWork";
 import PressWork from "./press/PressWork";
 import { PressBriefCard, PressCampaignCard, PressStoryCard } from "./chat/Press";
 import { ColdHotCard, ColdReviewCard, PrecallCard } from "./chat/Cold";
+import { AveryBriefCard, type BriefItem } from "./chat/Desk";
+import AveryDesk from "./desk/AveryDesk";
 import ColdWork from "./cold/ColdWork";
 import ApplicationPage from "./apply/ApplicationPage";
 import Knowledge from "./apply/Knowledge";
-import Drafts from "./work/Drafts";
 import Posts from "./work/Posts";
 import Articles from "./work/Articles";
 import Pages from "./work/Pages";
@@ -41,7 +42,7 @@ export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
 const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   grants: ApplyWork,
   speaking: PressWork,
-  inbox: Drafts,
+  inbox: AveryDesk,
   social: Posts,
   blog: Articles,
   website: Pages,
@@ -103,7 +104,9 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief";
+  items?: BriefItem[];
+  counts?: { decisions: number; meetings: number; waiting: number; handled: number };
   id: number;
   title: string;
   subtitle?: string;
@@ -277,6 +280,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <ColdHotCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "cold_review" ? (
                       <ColdReviewCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "avery_brief" ? (
+                      <AveryBriefCard key={`${c.type}-${c.id}`} items={c.items ?? []} counts={c.counts} />
                     ) : c.type === "precall" ? (
                       <PrecallCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "press_campaign" ? (

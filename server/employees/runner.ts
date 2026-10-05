@@ -139,6 +139,8 @@ export function startScheduler() {
       await (await import("./newsroom")).newsroomTicks();
       // Jada's cold email: replies every 5 minutes, inboxes hourly, the day's batch, Monday review.
       await (await import("./cold")).coldTicks();
+      // Avery: nudges that are due, and the morning brief at its time.
+      await (await import("./desk")).briefTick();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {

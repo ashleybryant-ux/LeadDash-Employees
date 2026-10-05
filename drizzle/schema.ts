@@ -379,6 +379,10 @@ export const auditLogs = sqliteTable(
     actorName: text("actorName").notNull(),
     action: text("action").notNull(),
     details: text("details"),
+    /** The person who did it, when a person did. */
+    userId: integer("userId"),
+    /** JSON: what Activity's People tab needs to show and undo it, e.g. {kind: "guideline", employeeId, section, before, after}. */
+    data: text("data"),
     createdAt: createdAt(),
   },
   (t) => [index("audit_logs_org_idx").on(t.organizationId)]
@@ -2225,3 +2229,95 @@ export const precallReports = sqliteTable(
   (t) => [index("precall_org_idx").on(t.organizationId)]
 );
 export type PrecallReport = typeof precallReports.$inferSelect;
+
+// ==========================================
+// Avery's desk: one queue for everything that needs the owner or the team
+// ==========================================
+
+/** A decision an employee needs from a person. Employees' approvals (posts, pitches, keyframes) are read live; these are the rest. */
+export const deskDecisions = sqliteTable(
+  "desk_decisions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    title: text("title").notNull(),
+    why: text("why").notNull().default(""),
+    /** What kind of decision it is (price, contract, press, legal, clinical, spend, event, keyframes, guideline, post, reply, email, hiring, other). Decides who may make it. */
+    category: text("category").notNull().default("other"),
+    urgency: text("urgency", { enum: ["now", "today", "week"] }).notNull().default("week"),
+    dueAt: integer("dueAt", { mode: "timestamp" }),
+    /** JSON employee kinds that asked. Repeats from other employees are merged here. */
+    fromKinds: text("fromKinds").notNull().default("[]"),
+    project: text("project").notNull().default(""),
+    minutes: integer("minutes"),
+    amountCents: integer("amountCents"),
+    /** JSON [{label, text, source}]. */
+    options: text("options").notNull().default("[]"),
+    /** Index into options Avery suggests, or null. */
+    suggested: integer("suggested"),
+    suggestedWhy: text("suggestedWhy").notNull().default(""),
+    /** JSON [{by, text, at}]: notes from the people who looked at it. */
+    notes: text("notes").notNull().default("[]"),
+    /** Where the work is in the app. */
+    link: text("link"),
+    /** Dedupe key from the source (task:12, meeting:4:2). */
+    sourceKey: text("sourceKey"),
+    status: text("status", { enum: ["open", "decided", "sent_back", "later"] }).notNull().default("open"),
+    choice: text("choice"),
+    decidedBy: text("decidedBy"),
+    decidedAt: integer("decidedAt", { mode: "timestamp" }),
+    laterUntil: integer("laterUntil", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("desk_decisions_org_idx").on(t.organizationId)]
+);
+export type DeskDecision = typeof deskDecisions.$inferSelect;
+export type InsertDeskDecision = typeof deskDecisions.$inferInsert;
+
+/** Something someone owes the owner (owed), or something the owner said she would do (promise). */
+export const deskWaiting = sqliteTable(
+  "desk_waiting",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    kind: text("kind", { enum: ["owed", "promise"] }).notNull(),
+    /** Owed: who owes it. Promise: who it was promised to. */
+    who: text("who").notNull(),
+    email: text("email").notNull().default(""),
+    what: text("what").notNull(),
+    /** What it holds up. */
+    blocks: text("blocks").notNull().default(""),
+    /** Owed: avery, nora, outreach, speaking. Promise: who is on it (an employee kind, or "you"). */
+    owner: text("owner").notNull().default("avery"),
+    /** Where it was heard ("Demo notes, Oct 5, 2026"), and the words. */
+    heardIn: text("heardIn").notNull().default(""),
+    plan: text("plan").notNull().default(""),
+    askedAt: integer("askedAt", { mode: "timestamp" }),
+    expectedAt: integer("expectedAt", { mode: "timestamp" }),
+    nudgeAt: integer("nudgeAt", { mode: "timestamp" }),
+    escalateAt: integer("escalateAt", { mode: "timestamp" }),
+    nudgeSubject: text("nudgeSubject").notNull().default(""),
+    nudgeBody: text("nudgeBody").notNull().default(""),
+    nudgedAt: integer("nudgedAt", { mode: "timestamp" }),
+    sourceKey: text("sourceKey"),
+    status: text("status", { enum: ["open", "done", "dismissed"] }).notNull().default("open"),
+    doneBy: text("doneBy"),
+    doneAt: integer("doneAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [index("desk_waiting_org_idx").on(t.organizationId)]
+);
+export type DeskWaiting = typeof deskWaiting.$inferSelect;
+export type InsertDeskWaiting = typeof deskWaiting.$inferInsert;
+
+/** Avery's rules for a workspace: who decides, what she does on her own, the owner's time, who comes first, the brief. */
+export const deskSettings = sqliteTable("desk_settings", {
+  organizationId: integer("organizationId").primaryKey(),
+  /** JSON DeskRules. */
+  rules: text("rules").notNull().default("{}"),
+  lastBrief: text("lastBrief"),
+  updatedAt: integer("updatedAt", { mode: "timestamp" }),
+});
+export type DeskSettings = typeof deskSettings.$inferSelect;

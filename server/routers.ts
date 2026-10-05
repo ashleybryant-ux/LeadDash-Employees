@@ -59,6 +59,7 @@ import * as avatar from "./employees/avatar";
 import * as newsroom from "./employees/newsroom";
 import * as cold from "./employees/cold";
 import * as coldreply from "./employees/coldreply";
+import * as desk from "./employees/desk";
 import * as precall from "./employees/precall";
 import * as pitching from "./employees/pitching";
 import * as presslib from "./employees/presslib";
@@ -120,6 +121,13 @@ async function requireMember(ctx: TrpcContext & { user: User }, organizationId: 
 /** The app reviewer can look around the demo workspace but cannot change its team. */
 function blockReviewer(ctx: TrpcContext & { user: User }) {
   if (review.isReviewUser(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "The review account cannot change the team." });
+}
+
+/** A member who may make this kind of decision (some are the owner's only, per Avery's Rules). */
+async function requireDecide(ctx: TrpcContext & { user: User }, organizationId: number, category: string, minRole: Role = "member") {
+  const m = await requireMember(ctx, organizationId, minRole);
+  await desk.assertDecide(organizationId, m.role, category);
+  return m;
 }
 
 /** The employee for a member of the workspace, or NOT_FOUND. */
@@ -783,7 +791,7 @@ export const appRouter = router({
     submit: protectedProcedure
       .input(orgInput.extend({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
+        await requireDecide(ctx, input.organizationId, "contract");
         return apply.submitApplication(input.organizationId, input.id, personName(ctx.user));
       }),
 
@@ -963,7 +971,7 @@ export const appRouter = router({
       return dr.episodeView(await dr.startEpisode(input.organizationId, planned.id));
     }),
     approveKeyframes: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      await requireDecide(ctx, input.organizationId, "keyframes");
       const dr = await import("./employees/drama");
       return dr.episodeView(await dr.approveKeyframes(input.organizationId, input.id));
     }),
@@ -1166,7 +1174,7 @@ export const appRouter = router({
       return { success: true };
     }),
     sendReply: protectedProcedure.input(orgInput.extend({ id: z.number().int(), text: z.string().max(6000).optional() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      await requireDecide(ctx, input.organizationId, "reply");
       await coldreply.send(input.organizationId, input.id, input.text ?? null, personName(ctx.user));
       return { success: true };
     }),
@@ -1193,6 +1201,92 @@ export const appRouter = router({
   }),
 
   // The Pre-call report: a skill any employee can run before a meeting.
+  // Avery's desk: Today, Decisions, Waiting and Rules, and the People tab on Activity.
+  desk: router({
+    today: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return desk.today(input.organizationId);
+    }),
+    decisions: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const m = await requireMember(ctx, input.organizationId);
+      await desk.syncFromNora(input.organizationId).catch(() => null);
+      const open = await desk.queue(input.organizationId);
+      const may = (who: string) => m.role === "owner" || (who === "team" && m.role !== "reviewer");
+      const owner = await desk.ownerName(input.organizationId);
+      const others = (await db.listMembers(input.organizationId)).filter((x) => x.userId !== ctx.user.id && x.role !== "reviewer").map((x) => (x.name || x.email).split(" ")[0]);
+      const label = (who: string) => (who === "you" ? (m.role === "owner" ? "Only you" : `Only ${owner}`) : others.length && others.length <= 2 ? `You or ${others.join(" or ")}` : "Anyone on the team");
+      return { open: open.map((d) => ({ ...d, canDecide: may(d.who), whoLabel: label(d.who) })), decided: await desk.decidedToday(input.organizationId), owner, role: m.role };
+    }),
+    decide: protectedProcedure.input(orgInput.extend({ id: z.number().int(), choice: z.string().max(200).optional() })).mutation(async ({ ctx, input }) => {
+      const m = await requireMember(ctx, input.organizationId, "member");
+      return desk.decide(input.organizationId, input.id, { choice: input.choice, by: personName(ctx.user), role: m.role, userId: ctx.user.id });
+    }),
+    sendBack: protectedProcedure.input(orgInput.extend({ id: z.number().int(), note: z.string().max(600).default("") })).mutation(async ({ ctx, input }) => {
+      const m = await requireMember(ctx, input.organizationId, "member");
+      return desk.sendBack(input.organizationId, input.id, { note: input.note, by: personName(ctx.user), role: m.role, userId: ctx.user.id });
+    }),
+    later: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return desk.later(input.organizationId, input.id, personName(ctx.user));
+    }),
+    note: protectedProcedure.input(orgInput.extend({ id: z.number().int(), text: z.string().max(600) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "reviewer");
+      return desk.addNote(input.organizationId, input.id, personName(ctx.user), input.text);
+    }),
+    waiting: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      await desk.syncFromNora(input.organizationId).catch(() => null);
+      return desk.waitingView(input.organizationId);
+    }),
+    addWaiting: protectedProcedure
+      .input(orgInput.extend({ kind: z.enum(["owed", "promise"]), who: z.string().trim().min(1).max(160), email: z.string().trim().max(200).default(""), what: z.string().trim().min(1).max(300), blocks: z.string().max(300).default(""), expectedAt: z.string().max(40).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const exp = input.expectedAt ? new Date(input.expectedAt) : null;
+        return desk.addWaiting(input.organizationId, { kind: input.kind, who: input.who, email: input.email, what: input.what, blocks: input.blocks, expectedAt: exp && !Number.isNaN(exp.getTime()) ? exp : null, heardIn: `Added by ${personName(ctx.user)}` });
+      }),
+    saveWaiting: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), who: z.string().max(160).optional(), email: z.string().max(200).optional(), what: z.string().max(300).optional(), blocks: z.string().max(300).optional(), expectedAt: z.string().max(40).nullable().optional(), nudgeAt: z.string().max(40).nullable().optional(), nudgeSubject: z.string().max(200).optional(), nudgeBody: z.string().max(4000).optional(), plan: z.string().max(600).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const when = (v: string | null | undefined) => (v === undefined ? undefined : v === null || v === "" ? null : Number.isNaN(new Date(v).getTime()) ? undefined : new Date(v));
+        const { organizationId, id, expectedAt, nudgeAt, ...rest } = input;
+        return desk.saveWaiting(organizationId, id, { ...rest, expectedAt: when(expectedAt), nudgeAt: when(nudgeAt) });
+      }),
+    finishWaiting: protectedProcedure.input(orgInput.extend({ id: z.number().int(), how: z.enum(["done", "dismissed", "mine"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return desk.finishWaiting(input.organizationId, input.id, input.how, personName(ctx.user));
+    }),
+    sendNudge: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireDecide(ctx, input.organizationId, "reply");
+      const r = await desk.sendNudge(input.organizationId, input.id, personName(ctx.user));
+      return { sent: r.sent };
+    }),
+    rules: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const m = await requireMember(ctx, input.organizationId);
+      const team = (await db.listMembers(input.organizationId)).filter((x) => x.role !== "owner" && x.role !== "reviewer").map((x) => (x.name || x.email).split(" ")[0]);
+      return { rules: desk.rulesOf(input.organizationId), categories: desk.CATEGORIES, duties: desk.DUTIES, never: desk.NEVER, owner: await desk.ownerName(input.organizationId), role: m.role, team };
+    }),
+    saveRules: protectedProcedure.input(orgInput.extend({ rules: z.record(z.string(), z.unknown()) })).mutation(async ({ ctx, input }) => {
+      const m = await requireMember(ctx, input.organizationId, "admin");
+      const r = input.rules as Partial<desk.DeskRules>;
+      const cur = desk.rulesOf(input.organizationId);
+      const changesWho = (r.onlyYou !== undefined && JSON.stringify([...r.onlyYou].sort()) !== JSON.stringify([...cur.onlyYou].sort())) || (r.spendLimitCents !== undefined && r.spendLimitCents !== cur.spendLimitCents);
+      if (changesWho && m.role !== "owner") throw new TRPCError({ code: "FORBIDDEN", message: `Only ${await desk.ownerName(input.organizationId)} can change who decides.` });
+      const saved = desk.saveRules(input.organizationId, r);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), userId: ctx.user.id, action: "Changed Avery's rules", details: changesWho ? "Who decides" : "Rules" });
+      return saved;
+    }),
+    people: protectedProcedure.input(orgInput.extend({ person: z.string().max(160).nullable().optional() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return desk.peopleView(input.organizationId, input.person ?? null);
+    }),
+    undo: protectedProcedure.input(orgInput.extend({ logId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireDecide(ctx, input.organizationId, "guideline");
+      return desk.undoGuideline(input.organizationId, input.logId, personName(ctx.user));
+    }),
+  }),
+
   precall: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
@@ -1367,7 +1461,7 @@ export const appRouter = router({
       return { started: true };
     }),
     approveReady: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      await requireDecide(ctx, input.organizationId, "press");
       return pitching.approveReady(input.organizationId, input.id, personName(ctx.user));
     }),
     finishCampaign: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
@@ -1388,7 +1482,7 @@ export const appRouter = router({
       return pitching.pitchView(input.organizationId, await pitching.editPitch(input.organizationId, input.id, input));
     }),
     approvePitch: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      await requireDecide(ctx, input.organizationId, "press");
       return pitching.pitchView(input.organizationId, await pitching.approvePitch(input.organizationId, input.id, personName(ctx.user)));
     }),
     replies: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
@@ -1400,7 +1494,7 @@ export const appRouter = router({
       return pitching.replyView(input.organizationId, await pitching.editReply(input.organizationId, input.id, input.draft));
     }),
     approveReply: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      await requireDecide(ctx, input.organizationId, "press");
       return pitching.replyView(input.organizationId, await pitching.approveReply(input.organizationId, input.id, personName(ctx.user)));
     }),
     doneReply: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
@@ -2061,6 +2155,9 @@ export const appRouter = router({
         if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Outbound item not found in this organization." });
         if (item.status === "published") throw new TRPCError({ code: "BAD_REQUEST", message: "This has already gone out." });
         const reviewer = personName(ctx.user);
+        if (input.action === "approve_for_dispatch" || input.action === "approve_only") {
+          await desk.assertDecide(input.organizationId, (await requireMember(ctx, input.organizationId, "reviewer")).role, desk.categoryOfItem(item.kind));
+        }
 
         if (input.action === "request_revisions" || input.action === "cancel") {
           const status = input.action === "request_revisions" ? "changes_requested" : "cancelled";
@@ -3284,7 +3381,16 @@ export const appRouter = router({
       .input(orgInput.extend({ employeeId: z.number(), section: z.string().max(40), lines: z.array(z.object({ id: z.string().max(40).optional(), text: z.string().max(1500) })).max(40) }))
       .mutation(async ({ ctx, input }) => {
         const emp = await empFor(ctx, input.organizationId, input.employeeId);
-        return interview.guidelinesView(await interview.saveGuideSection(emp, input.section, input.lines));
+        await requireDecide(ctx, input.organizationId, "guideline", "reviewer");
+        const beforeView = interview.guidelinesView(emp);
+        const sec = beforeView.sections.find((x) => x.key === input.section);
+        const saved = await interview.saveGuideSection(emp, input.section, input.lines);
+        const before = (sec?.items ?? []).map((i) => i.text);
+        const after = (interview.guidelinesView(saved).sections.find((x) => x.key === input.section)?.items ?? []).map((i) => i.text);
+        if (before.join("\n") !== after.join("\n")) {
+          await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), userId: ctx.user.id, action: "Changed a guideline", details: `${emp.name}, ${sec?.title ?? input.section}`, data: JSON.stringify({ kind: "guideline", employeeId: emp.id, section: input.section, sectionTitle: sec?.title ?? input.section, before, after }) });
+        }
+        return interview.guidelinesView(saved);
       }),
     learn: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
       const emp = await empFor(ctx, input.organizationId, input.employeeId);

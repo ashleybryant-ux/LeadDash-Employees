@@ -14,7 +14,7 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
   blog: { color: "#2f5d8a", work: "Articles", group: "Marketing" },
   website: { color: "#4a5a1e", work: "Pages", group: "Marketing" },
   video: { color: "#8a2f3a", work: "Videos", group: "Marketing" },
-  inbox: { color: "#3c4a8a", work: "Drafts", group: "Operations" },
+  inbox: { color: "#3c4a8a", work: "Desk", group: "Operations" },
   hiring: { color: "#0f6e74", work: "Hiring", group: "Operations" },
   developer: { color: "#3b4a6b", work: "Changes", group: "Operations" },
   onboarding: { color: "#7a3e6b", work: null, group: "Operations" },

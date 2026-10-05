@@ -11,7 +11,7 @@ import { KNOWLEDGE_CATEGORIES, type Opportunity, type OppKind } from "../../driz
 import { learnFact } from "./learn";
 import { channelName, planSchedule, postNow, type Plan } from "../social";
 import * as sales from "./sales";
-import { askTeammate, gate } from "./team";
+import { askTeammate, findTeammate, gate, handoff } from "./team";
 import * as projects from "./projects";
 import * as coo from "./coo";
 import * as notetaker from "./notetaker";
@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief";
   id: number;
   /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -46,6 +46,9 @@ export type ChatCard = {
   before?: string;
   /** A schedule card: each event, already worded for the workspace's time zone. */
   events?: { when: string; day?: string; title: string; calendar: string; color: string; clash?: boolean }[];
+  /** Avery's brief: the top three and the day's counts. */
+  items?: { key: string; title: string; body: string; button: string; link: string | null; decisionKey: string | null }[];
+  counts?: { decisions: number; meetings: number; waiting: number; handled: number };
 };
 
 /** Quick replies under an employee's message: fixed answers the person taps instead of typing. */
@@ -67,7 +70,7 @@ const ACTIONS: Record<string, string[]> = {
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   website: ["none", "report", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
@@ -88,6 +91,12 @@ const ACTION_HELP: Record<string, string> = {
   cold_research: "cold_research: research the next best leads on the list (progressive enrichment). Put how many in `count` (default 100, at most 1000) and a state in `target` if she named one.",
   cold_review: "cold_review: she asks how cold email is doing, what's working, or for the weekly review now.",
   cold_replies: "cold_replies: check Instantly for new replies now.",
+  desk_brief: "desk_brief: the person asks what needs them, for the brief, for their decisions or what you handled (\"what needs me?\", \"show all decisions\", \"what did you handle?\"). Put \"handled\" in `focus` when they ask what was handled, else \"\".",
+  decide: "decide: the person makes a decision on your desk in chat (\"approve option B\", \"go with A for the price\"). Put words from the decision's title in `target` and the option label they picked in `focus` ('' to take your suggestion).",
+  send_back: "send_back: the person says no to a decision on your desk or wants it changed. Put words from its title in `target` and what they said in `notes`.",
+  add_waiting: "add_waiting: someone owes the owner something (\"Dana owes me the W-9 by Wednesday\"). Put who in `target`, their email in `to` if given, what they owe in `title`, the date it's expected in `date` (YYYY-MM-DD) and what it holds up in `notes`.",
+  add_promise: "add_promise: the owner promised someone something (\"I told Obsidian I'd send pricing Friday\"). Put who it's for in `target`, what in `title` and the date in `date` (YYYY-MM-DD).",
+  to_nora: "to_nora: the person wants an employee to do some work (\"get Kai to fix the booking page today\"). Nora runs the team's work, so it goes to her as a task. Put the task in `title`, the employee's job key or name in `teammate`, the due date in `date` (YYYY-MM-DD, '' if none) and details in `notes`.",
   browse: "browse: do something on a website in your own browser: read a page, look something up on a site, check a portal or account, fill in a form. Put the whole job in `goal`, with exactly what to bring back. Put the web address in `url` ('' when a saved Website login covers it), the saved login's name in `target` ('' for none), and a short title in `title`. You do everything up to a Save, Submit, Send or Publish button and the owner presses Finish it to approve it. Use it instead of saying you can't open a website.",
   audit_workflows: "audit_workflows: open every workflow in the LeadDash platform, read the trigger and each step, change nothing, and list what needs fixing with one exact fix each.",
   fix_workflow: "fix_workflow: make the fix for a finding you listed, only when the owner says to (\"fix it\", \"fix the first two\", \"fix the reminders one\"). Put words from the workflow's name in `target` ('' when they gave a count), and in `focus` put fix_now (every one marked Fix now), all (every open one), or how many from the top (\"2\"); '' for one.",
@@ -306,7 +315,8 @@ async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "speaking") return `${(await import("./press")).pressFacts(emp.organizationId)}${await (await import("./newsroom")).newsroomFacts(emp.organizationId)}`;
   if (emp.kind === "inbox") {
     const cals = db.listAccountLinks(emp.organizationId, "calendar");
-    return cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : "";
+    const desk = await (await import("./desk")).deskFacts(emp.organizationId).catch(() => "");
+    return `${cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : ""}${desk}`;
   }
   return "";
 }
@@ -344,6 +354,10 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 TALK_BY_KIND.speaking = `${TALK_BY_KIND.grants}
 - You are also the publicist, running this workspace's press desk in a newsroom the owner may share across her workspaces. A media campaign or media list for a story is press_campaign; finding reporters and stories now is press_scout; "what's happening with press" is press_brief. Speaking events stay find_events.
 - Never invent a reporter, an article, an email, a quote or a statistic. Every pitch waits for her approval (unless she raised the sending level), and a reporter another desk pitched in the cooling period is left alone.`;
+TALK_BY_KIND.inbox = `- You are the owner's executive assistant. You protect her time and attention: you sort what comes in, decide whether she needs it, and keep the one list of decisions for her and her team.
+- Lead with a recommendation, not a pile of options: "Nov 17 works and Nov 19 clashes with your board call. I suggest Nov 17 and can confirm it."
+- Some decisions only the owner makes (see your desk); anyone on the team can make the rest, and you always say who decided.
+- You don't do another employee's job: work for an employee goes to Nora (to_nora), sales follow-ups to Jada, speaking and press to Taylor.`;
 TALK_BY_KIND.outreach = `- You run two kinds of outreach: warm sequences for prospects Riley finds (from Gmail), and cold email to the owner's lead list through Instantly. Cold email work is cold_campaign, cold_research, cold_review and cold_replies.
 - Cold email rules: business facts only, never personal details. Never claim a price, offer, migration, result or statistic that isn't in the playbook, the Brain or the website pricing. Opt-outs are honored at once. Every email carries the mailing address and an opt-out line.
 - Any employee can run the Pre-call report (precall_report) before a meeting; you run it on your own when a lead books.`;
@@ -383,7 +397,7 @@ function worth(n: number, total: number) {
 /** Where an action's output lives, so Nora can follow a task's work until it is approved. */
 type Ref = projects.WorkRef;
 type ActionResult = { text: string; cards: ChatCard[]; queries: string[]; refs?: Ref[]; choices?: string[] };
-type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[]; said?: string };
+type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[]; said?: string; userId?: number | null };
 
 async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promise<ActionResult> {
   const org = emp.organizationId;
@@ -415,6 +429,57 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const r = await cold.weeklyReview(org);
       if (!r) return { text: "Nothing has gone out yet, so there's nothing to review. Start a campaign on my Campaigns tab first.", cards: [], queries: [] };
       return { text: "Here's the review.", cards: [], queries: [] };
+    }
+    case "desk_brief": {
+      const desk = await import("./desk");
+      if (d.focus === "handled") {
+        const t = await desk.today(org);
+        const rows = t.handled.rows;
+        return { text: rows.length ? `Since ${t.handled.since}: ${rows.map((r) => r.text).join("; ")}. Each one is under Handled for you on my Today tab.` : `Nothing new since ${t.handled.since}.`, cards: [], queries: [] };
+      }
+      const { t, head, tail } = await desk.briefText(org);
+      return { text: `${head}${tail ? `\n\n${tail}` : ""}`, cards: [{ type: "avery_brief", id: 0, title: t.date, items: t.top, counts: t.counts }], queries: [], choices: ["Show all decisions", "What did you handle?"] };
+    }
+    case "decide":
+    case "send_back": {
+      const desk = await import("./desk");
+      if (!ctx.userId) return { text: "A person has to make that call, so I left it on the Decisions tab.", cards: [], queries: [] };
+      const m = await db.getOrganizationMembership(org, ctx.userId);
+      const role = m?.role ?? ((await db.getUserById(ctx.userId))?.role === "admin" ? "owner" : "reviewer");
+      const item = await desk.findDecision(org, d.target || d.title);
+      if (!item || item.id === null) return { text: "There's nothing on my Decisions tab like that. Everything waiting is on the Decisions tab.", cards: [], queries: [] };
+      const who = ctx.who ?? "You";
+      if (d.action === "send_back") {
+        await desk.sendBack(org, item.id, { note: d.notes, by: who, role, userId: ctx.userId });
+        return { text: `Sent back "${item.title}"${item.from.length ? ` to ${item.from.join(", ")}` : ""}${d.notes ? ` with your note` : ""}.`, cards: [], queries: [] };
+      }
+      const done = await desk.decide(org, item.id, { choice: d.focus || undefined, by: who, role, userId: ctx.userId });
+      return { text: `Done. "${item.title}": ${done.choice}.${item.from.length ? ` I told ${item.from.join(", ")}.` : ""}`, cards: [], queries: [] };
+    }
+    case "add_waiting":
+    case "add_promise": {
+      const desk = await import("./desk");
+      const when = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? new Date(`${d.date}T17:00:00`) : null;
+      const w = desk.addWaiting(org, { kind: d.action === "add_waiting" ? "owed" : "promise", who: d.target || "Someone", email: /@/.test(d.to) ? d.to : "", what: d.title || d.notes, blocks: d.action === "add_waiting" ? d.notes : "", expectedAt: when, heardIn: `Chat with ${ctx.who ?? "you"}`, owner: d.action === "add_waiting" ? "avery" : "you" });
+      const tz = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
+      const fmtD = (x: Date) => x.toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" });
+      return {
+        text:
+          w.kind === "owed"
+            ? `Got it. ${w.who} owes ${w.what}${w.expectedAt ? ` by ${fmtD(new Date(w.expectedAt))}` : ""}. ${w.email ? `I'll nudge them${w.nudgeAt ? ` on ${fmtD(new Date(w.nudgeAt))}` : ""} if it hasn't come in.` : "Add their email on my Waiting tab and I'll nudge them if it doesn't come in."}`
+            : `Added to your promises: ${w.what} to ${w.who}${w.expectedAt ? ` by ${fmtD(new Date(w.expectedAt))}` : ""}. It's on my Waiting tab.`,
+        cards: [],
+        queries: [],
+      };
+    }
+    case "to_nora": {
+      const mate = d.teammate ? await findTeammate(org, d.teammate) : null;
+      const owner = mate?.kind ?? (d.teammate || "projects");
+      const due = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? new Date(`${d.date}T17:00:00`) : undefined;
+      await projects.addActionItems(org, [{ text: d.title || d.notes, owner, due }], `Avery, for ${ctx.who ?? "the owner"}`);
+      const nora = await db.getEmployeeByKind(org, "projects");
+      await handoff(org, "inbox", "projects", `${ctx.who ?? "The owner"} asked for this${mate ? ` from ${mate.name}` : ""}: ${d.title || d.notes}${due ? `, due ${fmtYmd(d.date)}` : ""}.${d.notes && d.title ? ` ${d.notes}` : ""}`).catch(() => null);
+      return { text: `I sent it to ${nora?.name ?? "Nora"}, since she runs ${mate ? `${mate.name}'s` : "the team's"} work. It's on her task list${due ? ` for ${fmtYmd(d.date)}` : ""}, and she'll tell me when it's done.`, cards: [], queries: [] };
     }
     case "cold_replies": {
       const r = await (await import("./coldreply")).checkReplies(org);
@@ -1424,7 +1489,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
       return { user: userMsg, reply: await reply(`${decision.reply || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
     }
-    const result = await runAction(emp, decision, { who: opts.authorName, files: sent.length ? sent : files, history, said: opts.text });
+    const result = await runAction(emp, decision, { who: opts.authorName, files: sent.length ? sent : files, history, said: opts.text, userId: opts.userId ?? null });
     const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];
     return { user: userMsg, reply: await reply(`${result.text || decision.reply}${learned}`, cards, result.queries) };
   } catch (err) {

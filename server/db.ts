@@ -2029,3 +2029,51 @@ export const cold = {
     return getDb().select().from(schema.coldInboxes).where(and(eq(schema.coldInboxes.organizationId, orgId), eq(schema.coldInboxes.email, email.toLowerCase()))).limit(1).all()[0] ?? null;
   },
 };
+
+// ==========================================
+// Avery's desk
+// ==========================================
+
+export const desk = {
+  decisions: orgCrud<typeof schema.deskDecisions>(schema.deskDecisions),
+  waiting: orgCrud<typeof schema.deskWaiting>(schema.deskWaiting),
+  getSettings(orgId: number) {
+    return getDb().select().from(schema.deskSettings).where(eq(schema.deskSettings.organizationId, orgId)).limit(1).all()[0] ?? null;
+  },
+  saveSettings(orgId: number, data: Partial<typeof schema.deskSettings.$inferInsert>) {
+    const now = new Date();
+    if (desk.getSettings(orgId)) getDb().update(schema.deskSettings).set({ ...data, updatedAt: now }).where(eq(schema.deskSettings.organizationId, orgId)).run();
+    else getDb().insert(schema.deskSettings).values({ organizationId: orgId, ...data, updatedAt: now }).run();
+    return desk.getSettings(orgId)!;
+  },
+  decisionBySource(orgId: number, key: string) {
+    const t = schema.deskDecisions;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.sourceKey, key))).limit(1).all()[0] ?? null;
+  },
+  waitingBySource(orgId: number, key: string) {
+    const t = schema.deskWaiting;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.sourceKey, key))).limit(1).all()[0] ?? null;
+  },
+  /** What people did since a time: audit lines written by a person. */
+  peopleLog(orgId: number, since: Date) {
+    return getDb().select().from(auditLogs).where(and(eq(auditLogs.organizationId, orgId), eq(auditLogs.actorType, "human_user"), gt(auditLogs.createdAt, since))).orderBy(desc(auditLogs.id)).limit(500).all();
+  },
+  auditLine(orgId: number, id: number) {
+    return getDb().select().from(auditLogs).where(and(eq(auditLogs.organizationId, orgId), eq(auditLogs.id, id))).limit(1).all()[0] ?? null;
+  },
+  markUndone(orgId: number, id: number) {
+    const l = desk.auditLine(orgId, id);
+    if (!l) return;
+    let data: Record<string, unknown> = {};
+    try {
+      data = JSON.parse(l.data || "{}");
+    } catch {
+      data = {};
+    }
+    getDb().update(auditLogs).set({ data: JSON.stringify({ ...data, undone: true }) }).where(and(eq(auditLogs.organizationId, orgId), eq(auditLogs.id, id))).run();
+  },
+  /** People's chat messages to employees since a time. */
+  peopleChats(orgId: number, since: Date) {
+    return getDb().select().from(schema.chatMessages).where(and(eq(schema.chatMessages.organizationId, orgId), eq(schema.chatMessages.role, "user"), gt(schema.chatMessages.createdAt, since))).orderBy(desc(schema.chatMessages.id)).limit(300).all();
+  },
+};

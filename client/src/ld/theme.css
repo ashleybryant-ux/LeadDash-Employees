@@ -263,8 +263,8 @@ html.ld-review .ld-emphead { top: 34px !important; }
 .ld-att .sz { color: #5b6b64; font-weight: 500; font-size: 12px; white-space: nowrap; }
 .ld-att .x { width: 26px; height: 26px; border: 0; background: transparent; color: #5b6b64; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; }
 .ld-att .x:hover { background: #eef2f0; }
-.ld-clip { width: 40px; height: 40px; border: 1px solid #cfd9d4; border-radius: 9px; background: #fff; color: #3d4c45; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
-.ld-clip:hover { background: #f4f8f6; }
+.ld-attach-btn { width: 40px; height: 40px; border: 1px solid #cfd9d4; border-radius: 9px; background: #fff; color: #3d4c45; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
+.ld-attach-btn:hover { background: #f4f8f6; }
 .ld-opt { border: 1px solid #cfd9d4; border-radius: 12px; background: #fff; padding: 10px; display: flex; flex-direction: column; gap: 8px; width: 200px; cursor: pointer; font: inherit; text-align: left; color: #14221c; }
 .ld-opt:hover:not(:disabled) { border-color: #1b6b4a; }
 .ld-opt:disabled { cursor: default; opacity: .7; }
@@ -403,3 +403,14 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
   .ld-main .ld-rw > .ld-cold-m { display: block; }
 }
 .ld-cold-m { display: none; }
+
+/* Avery's Desk on a phone */
+@media (max-width: 760px) {
+  .ld-desk-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .ld-desk-lane { grid-template-columns: minmax(0, 1fr) !important; gap: 2px 0 !important; }
+  .ld-desk-lane > b { margin-top: 8px; }
+  .ld-desk-opt { grid-template-columns: 20px minmax(0, 1fr) !important; }
+  .ld-desk-opt > :nth-child(n + 3) { grid-column: 2; }
+  .ld-desk-top { grid-template-columns: 28px minmax(0, 1fr) !important; }
+  .ld-desk-top > .ld-btn { grid-column: 2; width: 100%; }
+}
