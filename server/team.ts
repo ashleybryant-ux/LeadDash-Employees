@@ -46,9 +46,11 @@ export async function people(orgId: number) {
   return (await db.listMembers(orgId)).filter((m) => m.role !== "reviewer");
 }
 
+/** The workspace's owner or an admin, or LeadDash staff (a platform admin, who can reach every workspace). */
 async function isAdmin(orgId: number, me: number) {
   const m = await db.getOrganizationMembership(orgId, me);
-  return !!m && (m.role === "owner" || m.role === "admin");
+  if (m && (m.role === "owner" || m.role === "admin")) return true;
+  return (await db.getUserById(me))?.role === "admin";
 }
 
 /** The workspaces where both people can chat (not as the app reviewer). Always includes this one. */
