@@ -48,6 +48,35 @@ describe("Team chat", () => {
     expect(mine.online).toBe(true);
   });
 
+  it("puts LeadDash staff on the team when they write in a workspace's chat, so their direct messages can be read", async () => {
+    const { orgId, caroline, staff } = await setup("tc-staff");
+    // Before: the staff member reaches the workspace as support, not as a team member, so Caroline has no conversation with them.
+    expect(await db.getOrganizationMembership(orgId, staff.id)).toBeNull();
+    const key = `dm:${Math.min(staff.id, caroline.id)}-${Math.max(staff.id, caroline.id)}`;
+    await expect(caller(caroline).teamChat.messages({ organizationId: orgId, channel: key })).rejects.toThrow(/isn't in this workspace/);
+
+    await caller(staff).teamChat.send({ organizationId: orgId, channel: key, content: "Can you take Sienna's posts this week?" });
+    // Sending put them on the team as an admin (the workspace already has an owner).
+    expect((await db.getOrganizationMembership(orgId, staff.id))?.role).toBe("admin");
+    const hers = await caller(caroline).teamChat.channels({ organizationId: orgId });
+    expect(hers.dms.find((d) => d.key === key)).toMatchObject({ name: "LeadDash Support", unread: 1, last: { text: "Can you take Sienna's posts this week?" } });
+    const view = await caller(caroline).teamChat.messages({ organizationId: orgId, channel: key });
+    expect(view.messages.map((m) => m.content)).toEqual(["Can you take Sienna's posts this week?"]);
+
+    // Messages written before this fix are repaired the next time anyone opens the chat.
+    const ws2 = await setup("tc-staff2");
+    const key2 = `dm:${Math.min(ws2.staff.id, ws2.caroline.id)}-${Math.max(ws2.staff.id, ws2.caroline.id)}`;
+    db.team.send({ organizationId: ws2.orgId, channel: key2, userId: ws2.staff.id, authorName: "LeadDash Support", content: "Old message" });
+    expect(await db.getOrganizationMembership(ws2.orgId, ws2.staff.id)).toBeNull();
+    const list = await caller(ws2.caroline).teamChat.channels({ organizationId: ws2.orgId });
+    expect(list.dms.find((d) => d.key === key2)).toMatchObject({ last: { text: "Old message" } });
+    expect((await db.getOrganizationMembership(ws2.orgId, ws2.staff.id))?.role).toBe("admin");
+
+    // A workspace made with no owner named: the staff member who made it is its owner.
+    const r = await caller(staff).organizations.create({ name: "Workspace tc-staff-own", slug: "tc-staff-own", plan: "growth" });
+    expect((await db.getOrganizationMembership(r.id!, staff.id))?.role).toBe("owner");
+  });
+
   it("keeps direct messages between the two people and each workspace to itself", async () => {
     const { orgId, owner, caroline } = await setup("tc-private");
     const angela = await makeUser("angela@tc-private.test", "user", "Angela St. Ville");

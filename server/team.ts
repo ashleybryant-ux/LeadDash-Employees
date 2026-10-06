@@ -52,6 +52,27 @@ export async function chatOnly(orgId: number, me: number) {
   return (await db.getOrganizationMembership(orgId, me))?.role === "chat";
 }
 
+/**
+ * LeadDash staff (users.role = admin) reach every workspace without being on its team.
+ * Team chat is between people on the team, so a staff member who talks in a workspace's
+ * chat joins its team: as its owner when it has none, else as an admin. Without this,
+ * the people they write to can't see the conversation, because it isn't between two members.
+ */
+export async function ensureOnTeam(orgId: number, me: number) {
+  if (await db.getOrganizationMembership(orgId, me)) return false;
+  const u = await db.getUserById(me);
+  if (u?.role !== "admin") return false;
+  const members = await db.listMembers(orgId);
+  const role = members.some((m) => m.role === "owner") ? "admin" : "owner";
+  await db.addOrganizationMember({ organizationId: orgId, userId: me, role, title: role === "owner" ? "Owner" : "LeadDash" });
+  return true;
+}
+
+/** Staff who already wrote in this workspace's chat before joining its team: put them on it now. */
+async function repairStaff(orgId: number) {
+  for (const userId of db.team.authors(orgId)) await ensureOnTeam(orgId, userId).catch(() => null);
+}
+
 /** The workspace's owner or an admin, or LeadDash staff (a platform admin, who can reach every workspace). */
 async function isAdmin(orgId: number, me: number) {
   const m = await db.getOrganizationMembership(orgId, me);
@@ -228,6 +249,7 @@ export function joinable(orgId: number, me: number) {
 
 export async function channels(orgId: number, me: number) {
   markSeen(orgId, me);
+  await repairStaff(orgId);
   const list = await people(orgId);
   const others = list.filter((p) => p.userId !== me);
   const rowOf = async (key: string) => {
@@ -344,6 +366,7 @@ export type ShapedMessage = ReturnType<typeof shape>[number];
 
 export async function messages(orgId: number, me: number, key: string) {
   markSeen(orgId, me);
+  await repairStaff(orgId);
   const where = await channelFor(orgId, me, key);
   const list = await people(orgId);
   const orgs = await scopeOf(orgId, me, key);
@@ -431,6 +454,7 @@ export async function settled() {
 }
 
 export async function send(orgId: number, me: Me, key: string, content: string, attachmentIds: number[], opts: { threadOf?: number | null; alsoToChannel?: boolean } = {}) {
+  await ensureOnTeam(orgId, me.id);
   const where = await channelFor(orgId, me.id, key);
   const text = content.trim().slice(0, 8000);
   const files = db.getChatFiles(orgId, attachmentIds.slice(0, 10)).filter((f) => f.employeeId === 0 && f.userId === me.id && f.messageId == null);

@@ -384,6 +384,8 @@ export const appRouter = router({
           if (!owner) owner = await db.createUser({ email: input.ownerEmail });
           await db.addOrganizationMember({ organizationId: org.id, userId: owner.id, role: "owner", title: "Owner" });
         }
+        // No owner named: the person making it is the owner, on its team, so team chat and "notes for <owner>" work from day one.
+        if (!input.ownerEmail && !(await db.getOrganizationMembership(org.id, ctx.user.id))) await db.addOrganizationMember({ organizationId: org.id, userId: ctx.user.id, role: "owner", title: "Owner" });
         await deployRoster(org.id);
         await db.logAction({
           organizationId: org.id,

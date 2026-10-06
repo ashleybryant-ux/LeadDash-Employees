@@ -2282,6 +2282,11 @@ export const team = {
   send(row: typeof schema.teamMessages.$inferInsert) {
     return getDb().insert(schema.teamMessages).values(row).returning().all()[0];
   },
+  /** The people (not employees) who have written in this workspace's chat. */
+  authors(orgId: number) {
+    const t = schema.teamMessages;
+    return getDb().selectDistinct({ userId: t.userId }).from(t).where(and(eq(t.organizationId, orgId), gt(t.userId, 0))).all().map((r) => r.userId);
+  },
   update(id: number, patch: Partial<typeof schema.teamMessages.$inferInsert>) {
     return getDb().update(schema.teamMessages).set(patch).where(eq(schema.teamMessages.id, id)).returning().all()[0];
   },
