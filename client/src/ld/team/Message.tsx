@@ -43,6 +43,89 @@ export function Files({ raw }: { raw: string | null }) {
   );
 }
 
+type Preview = Msg["previews"][number];
+
+const fmtLen = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * The card under a link: a video (Loom, YouTube, Vimeo) with Play here, a
+ * Google file by name, or a page with its picture, title and description.
+ * Hide preview takes the card away for everyone; the link itself stays.
+ */
+export function LinkPreview({ p, onHide, hiding }: { p: Preview; onHide: () => void; hiding?: boolean }) {
+  const [playing, setPlaying] = React.useState(false);
+  const act = (label: string, onClick: () => void, key: string) => (
+    <button key={key} type="button" className="tc-lp-act" onClick={onClick}>{label}</button>
+  );
+  const link = (label: string) => (
+    <a key="open" className="tc-lp-act" href={p.url} target="_blank" rel="noreferrer noopener">{label}</a>
+  );
+  const hide = act("Hide preview", onHide, "hide");
+  if (p.kind === "video") {
+    const title = p.title ?? `Video on ${p.site}`;
+    return (
+      <div className="tc-lp">
+        <span className="site">{p.site}{p.duration ? ` · ${fmtLen(p.duration)}` : ""}</span>
+        <a className="t" href={p.url} target="_blank" rel="noreferrer noopener">{title}</a>
+        {playing && p.embed ? (
+          <iframe className="tc-lp-player" src={`${p.embed}${p.embed.includes("?") ? "&" : "?"}autoplay=1`} title={title} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
+        ) : (
+          <button type="button" className="tc-lp-thumb" onClick={() => p.embed && setPlaying(true)} aria-label={`Play ${title} here`} disabled={!p.embed}>
+            {p.image && <img src={p.image} alt="" loading="lazy" />}
+            <i aria-hidden="true">▶</i>
+            {p.duration ? <span>{fmtLen(p.duration)}</span> : null}
+          </button>
+        )}
+        <div className="acts">
+          {!playing && p.embed && act("Play here", () => setPlaying(true), "play")}
+          {link(`Open in ${p.site}`)}
+          {!hiding && hide}
+        </div>
+      </div>
+    );
+  }
+  if (p.kind === "file") {
+    return (
+      <div className="tc-lp">
+        <span className="site">{p.site}</span>
+        <div className="row">
+          <div style={{ minWidth: 0 }}>
+            <a className="t" href={p.url} target="_blank" rel="noreferrer noopener">{p.title ?? "Shared file"}</a>
+            <div className="d">{hostOf(p.url)}{p.title ? " · shared with the team" : " · opens for the people it is shared with"}</div>
+          </div>
+        </div>
+        <div className="acts">
+          {link("Open")}
+          {!hiding && hide}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="tc-lp">
+      <span className="site">{p.site || hostOf(p.url)}</span>
+      <div className="row">
+        {p.image && <img src={p.image} alt="" loading="lazy" />}
+        <div style={{ minWidth: 0 }}>
+          <a className="t" href={p.url} target="_blank" rel="noreferrer noopener">{p.title ?? hostOf(p.url)}</a>
+          {p.description && <div className="d">{p.description}</div>}
+        </div>
+      </div>
+      <div className="acts">
+        {link("Open")}
+        {!hiding && hide}
+      </div>
+    </div>
+  );
+}
+
 export function Who({ m, people, employees, size = 36 }: { m: { userId: number; employeeId: number | null; authorName: string }; people: Person[]; employees: Emp[]; size?: number }) {
   const e = m.employeeId ? employees.find((x) => x.id === m.employeeId) : null;
   if (e) return <Avatar name={e.name} kind={e.kind} src={e.avatar} size={size} />;
@@ -108,6 +191,7 @@ export function Message({ m, people, employees, names, who, inThread, onOpenThre
   const save = trpc.teamChat.save.useMutation({ onSuccess: refresh });
   const edit = trpc.teamChat.edit.useMutation({ onSuccess: () => { setEditing(false); refresh(); } });
   const remove = trpc.teamChat.remove.useMutation({ onSuccess: refresh });
+  const hidePreview = trpc.teamChat.hidePreview.useMutation({ onSuccess: refresh });
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(m.content);
   const [emoji, setEmoji] = React.useState(false);
@@ -173,6 +257,9 @@ export function Message({ m, people, employees, names, who, inThread, onOpenThre
           <>
             {m.content && <TeamText text={m.content} names={names} />}
             <Files raw={m.attachments} />
+            {(m.previews ?? []).map((p) => (
+              <LinkPreview key={p.url} p={p} hiding={hidePreview.isPending} onHide={() => hidePreview.mutate({ organizationId: org, messageId: m.id, url: p.url })} />
+            ))}
           </>
         )}
         {!editing && m.reactions.length > 0 && <Reactions m={m} onReact={quick} />}
@@ -197,7 +284,7 @@ export function Message({ m, people, employees, names, who, inThread, onOpenThre
             <ErrorLine error={remove.error} />
           </div>
         )}
-        <ErrorLine error={react.error ?? pin.error ?? save.error} />
+        <ErrorLine error={react.error ?? pin.error ?? save.error ?? hidePreview.error} />
       </div>
     </div>
   );

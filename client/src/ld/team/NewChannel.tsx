@@ -24,7 +24,7 @@ export function Toggle({ on, onChange, label, sub, disabled }: { on: boolean; on
 }
 
 export function NewChannel({ onClose, onMade, editing }: { onClose: () => void; onMade: (key: string) => void; editing?: Editing | null }) {
-  const { currentOrgId } = useTenant();
+  const { currentOrgId, chatOnly } = useTenant();
   const utils = trpc.useUtils();
   const list = trpc.teamChat.channels.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const [name, setName] = React.useState(editing?.name ?? "");
@@ -124,7 +124,7 @@ export function NewChannel({ onClose, onMade, editing }: { onClose: () => void; 
               </div>
             </div>
           )}
-          <Toggle on={ai} onChange={setAi} label="Let AI employees in" sub="mention @Nora or @Simone here and they can answer in a thread" />
+          {!chatOnly && <Toggle on={ai} onChange={setAi} label="Let AI employees in" sub="mention @Nora or @Simone here and they can answer in a thread" />}
           <div className="ld-row" style={{ justifyContent: "flex-end", paddingTop: 4 }}>
             <button type="button" className="ld-btn sm" onClick={onClose}>Cancel</button>
             <button type="button" className="ld-btn p gp-auto" disabled={!slug || busy} onClick={go}>{editing ? "Save" : "Create channel"}</button>

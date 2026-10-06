@@ -1460,3 +1460,22 @@ button.gp-ts:hover { background: #f8fbf9; }
 .ld-pjhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
 .ld-pjform { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 @media (max-width: 1100px) { .ld-pjwrap { grid-template-columns: 1fr; } }
+
+/* Team chat: the card under a link (Loom, YouTube, a Google file, a page). */
+.tc-lp { margin-top: 8px; border-left: 3px solid #dbe4df; padding-left: 12px; display: flex; flex-direction: column; gap: 4px; max-width: 520px; }
+.tc-lp .site { font-size: 12px; font-weight: 800; color: #5b6b64; }
+.tc-lp .t { font-size: 14px; font-weight: 800; color: #1b6b4a; text-decoration: none; overflow-wrap: anywhere; }
+.tc-lp .t:hover { text-decoration: underline; }
+.tc-lp .d { font-size: 13px; color: #3d4c45; line-height: 1.4; }
+.tc-lp .row { display: flex; gap: 10px; align-items: flex-start; }
+.tc-lp .row img { width: 120px; height: 68px; border-radius: 8px; object-fit: cover; background: #dfe6e2; flex-shrink: 0; }
+.tc-lp-thumb { position: relative; width: 360px; max-width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; background: #1f2a26; margin-top: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 0; padding: 0; cursor: pointer; }
+.tc-lp-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.tc-lp-thumb i { position: relative; width: 56px; height: 56px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); display: flex; align-items: center; justify-content: center; font-style: normal; color: #1b6b4a; font-size: 22px; }
+.tc-lp-thumb span { position: absolute; left: 10px; bottom: 8px; color: #fff; font-size: 12px; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
+.tc-lp-thumb:disabled { cursor: default; }
+.tc-lp-player { width: 520px; max-width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; background: #111; border: 0; margin-top: 4px; display: block; }
+.tc-lp .acts { display: flex; gap: 8px; margin-top: 2px; flex-wrap: wrap; }
+.tc-lp-act, a.tc-lp-act { font: inherit; font-size: 12px; font-weight: 700; color: #5b6b64; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: none; }
+.tc-lp-act:hover, a.tc-lp-act:hover { color: #1b6b4a; text-decoration: underline; }
+.tc-lp .acts > * + *::before { content: "·"; margin-right: 8px; color: #9aa8a2; }

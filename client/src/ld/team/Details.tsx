@@ -16,7 +16,7 @@ import type { Mentionable } from "./Composer";
 const fmtAt = (d: Date | string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 export function Details({ channel, onClose, onLeft, people, employees, names, who, admin, onOpenThread }: { channel: string; onClose: () => void; onLeft: () => void; people: Person[]; employees: Emp[]; names: Names; who: Mentionable; admin: boolean; onOpenThread: (id: number) => void }) {
-  const { currentOrgId } = useTenant();
+  const { currentOrgId, chatOnly } = useTenant();
   const utils = trpc.useUtils();
   const q = trpc.teamChat.details.useQuery({ organizationId: currentOrgId, channel }, { enabled: currentOrgId > 0, refetchInterval: 15_000 });
   const refresh = () => Promise.all([utils.teamChat.details.invalidate(), utils.teamChat.channels.invalidate(), utils.teamChat.messages.invalidate()]);
@@ -40,7 +40,7 @@ export function Details({ channel, onClose, onLeft, people, employees, names, wh
           <button type="button" className="ld-btn sm" onClick={onClose}>Close</button>
         </div>
         {isChannel && <span className="ld-small ld-muted">{d.purpose || "No purpose yet."}</span>}
-        {isChannel && d.aiAllowed && <span className="ld-small ld-muted">AI employees answer @mentions here.</span>}
+        {isChannel && d.aiAllowed && !chatOnly && <span className="ld-small ld-muted">AI employees answer @mentions here.</span>}
         {isChannel && (
           <div className="ld-row" style={{ flexWrap: "wrap" }}>
             {d.canEdit && <button type="button" className="ld-btn sm" onClick={() => setEdit(true)}>Edit</button>}

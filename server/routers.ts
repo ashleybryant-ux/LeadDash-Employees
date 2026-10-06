@@ -76,8 +76,10 @@ import { EVENT_LABELS, NOTIFY_EVENTS, SOUNDS, notify, pingsFor, pushReady, pushT
 // Access rules
 // ==========================================
 
-type Role = "owner" | "admin" | "member" | "reviewer";
-const RANK: Record<Role, number> = { reviewer: 1, member: 2, admin: 3, owner: 4 };
+type Role = "owner" | "admin" | "member" | "chat" | "reviewer";
+/** chat (team chat only) sits below every other role: it reaches the team chat, the Team page and the person's own account, nothing else. */
+const RANK: Record<Role, number> = { chat: 0, reviewer: 1, member: 2, admin: 3, owner: 4 };
+const ROLE_WORD: Record<Role, string> = { owner: "an owner", admin: "an admin", member: "a member", chat: "team chat only", reviewer: "a reviewer" };
 
 /**
  * Throws unless the signed-in person belongs to the workspace (with at least
@@ -323,9 +325,12 @@ export const appRouter = router({
       if (ctx.user.role === "admin") return (await db.listOrganizations()).map((o) => ({ ...o, guest: false }));
       const mine = await db.listOrganizationsForUser(ctx.user.id);
       if (review.isReviewUser(ctx.user)) return mine.filter((o) => review.isDemoOrg(o.id)).map((o) => ({ ...o, guest: false }));
+      // Each workspace carries the person's role there, so the app knows what to show (team chat only people see the chat, the Team page and their account).
+      const withRole = [] as (typeof mine[number] & { guest: boolean; role?: string })[];
+      for (const o of mine) withRole.push({ ...o, guest: false, role: (await db.getOrganizationMembership(o.id, ctx.user.id))?.role ?? "member" });
       // Workspaces where this person is only a guest on shared Projects lists.
       const guestOf = await (await import("./work/pjAccess")).guestWorkspaces(ctx.user.id);
-      return [...mine.map((o) => ({ ...o, guest: false })), ...guestOf.map((o) => ({ ...o, guest: true }))];
+      return [...withRole, ...guestOf.map((o) => ({ ...o, guest: true }))];
     }),
 
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
@@ -443,7 +448,7 @@ export const appRouter = router({
   // ==========================================
   members: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return db.listMembers(input.organizationId);
     }),
 
@@ -452,7 +457,7 @@ export const appRouter = router({
         orgInput.extend({
           email: z.string().trim().email(),
           name: z.string().trim().max(120).optional(),
-          role: z.enum(["admin", "member", "reviewer"]).default("member"),
+          role: z.enum(["admin", "member", "chat", "reviewer"]).default("member"),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -468,20 +473,20 @@ export const appRouter = router({
         void sendEmail(
           user.email,
           `You've been added to ${org?.name ?? "a workspace"} on LeadDash Employees`,
-          `${personName(ctx.user)} added you to ${org?.name ?? "a workspace"} on LeadDash Employees as ${input.role}.\n\nSign in with this email address at ${ENV.appUrl}/signin`
+          `${personName(ctx.user)} added you to ${org?.name ?? "a workspace"} on LeadDash Employees (${ROLE_WORD[input.role]}).${input.role === "chat" ? " You can read and write in the team channels and direct messages." : ""}\n\nSign in with this email address at ${ENV.appUrl}/signin`
         ).catch((err) => console.error("[team] invite email failed:", err));
         await db.logAction({
           organizationId: input.organizationId,
           actorType: "human_user",
           actorName: personName(ctx.user),
           action: "Team member added",
-          details: `Added ${input.name || input.email} as ${input.role}.`,
+          details: `Added ${input.name || input.email} (${ROLE_WORD[input.role]}).`,
         });
         return { success: true };
       }),
 
     updateRole: protectedProcedure
-      .input(orgInput.extend({ userId: z.number(), role: z.enum(["owner", "admin", "member", "reviewer"]) }))
+      .input(orgInput.extend({ userId: z.number(), role: z.enum(["owner", "admin", "member", "chat", "reviewer"]) }))
       .mutation(async ({ ctx, input }) => {
         blockReviewer(ctx);
         const members = await db.listMembers(input.organizationId).catch(() => []);
@@ -498,7 +503,7 @@ export const appRouter = router({
           actorType: "human_user",
           actorName: personName(ctx.user),
           action: "Team role changed",
-          details: `${target.name || target.email} is now ${input.role}.`,
+          details: `${target.name || target.email} is now ${ROLE_WORD[input.role]}.`,
         });
         return { success: true };
       }),
@@ -1308,7 +1313,7 @@ export const appRouter = router({
       const open = await desk.queue(input.organizationId);
       const may = (who: string) => m.role === "owner" || (who === "team" && m.role !== "reviewer");
       const owner = await desk.ownerName(input.organizationId);
-      const others = (await db.listMembers(input.organizationId)).filter((x) => x.userId !== ctx.user.id && x.role !== "reviewer").map((x) => (x.name || x.email).split(" ")[0]);
+      const others = (await db.listMembers(input.organizationId)).filter((x) => x.userId !== ctx.user.id && x.role !== "reviewer" && x.role !== "chat").map((x) => (x.name || x.email).split(" ")[0]);
       const label = (who: string) => (who === "you" ? (m.role === "owner" ? "Only you" : `Only ${owner}`) : others.length && others.length <= 2 ? `You or ${others.join(" or ")}` : "Anyone on the team");
       return { open: open.map((d) => ({ ...d, canDecide: may(d.who), whoLabel: label(d.who) })), decided: await desk.decidedToday(input.organizationId), owner, role: m.role };
     }),
@@ -1385,99 +1390,103 @@ export const appRouter = router({
   // Team chat: channels, direct messages and threads in a workspace, like Slack
   teamChat: router({
     channels: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).channels(input.organizationId, ctx.user.id);
     }),
     messages: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40) })).query(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).messages(input.organizationId, ctx.user.id, input.channel);
     }),
     thread: protectedProcedure.input(orgInput.extend({ messageId: z.number().int() })).query(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).thread(input.organizationId, ctx.user.id, input.messageId);
     }),
     details: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40) })).query(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).details(input.organizationId, ctx.user.id, input.channel);
     }),
     send: protectedProcedure
       .input(orgInput.extend({ channel: z.string().max(40), content: z.string().max(8000), attachmentIds: z.array(z.number().int()).max(10).default([]), threadOf: z.number().int().nullable().optional(), alsoToChannel: z.boolean().optional() }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId);
+        await requireMember(ctx, input.organizationId, "chat");
         const m = await (await import("./team")).send(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channel, input.content, input.attachmentIds, { threadOf: input.threadOf ?? null, alsoToChannel: !!input.alsoToChannel });
         return { id: m.id };
       }),
     edit: protectedProcedure.input(orgInput.extend({ messageId: z.number().int(), content: z.string().max(8000) })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       await (await import("./team")).edit(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId, input.content);
       return { ok: true };
     }),
     remove: protectedProcedure.input(orgInput.extend({ messageId: z.number().int() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       await (await import("./team")).remove(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId);
       return { ok: true };
     }),
+    hidePreview: protectedProcedure.input(orgInput.extend({ messageId: z.number().int(), url: z.string().max(2000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      return (await import("./team")).hidePreview(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId, input.url);
+    }),
     react: protectedProcedure.input(orgInput.extend({ messageId: z.number().int(), emoji: z.string().max(16) })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).react(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId, input.emoji);
     }),
     pin: protectedProcedure.input(orgInput.extend({ messageId: z.number().int() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).pin(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId);
     }),
     save: protectedProcedure.input(orgInput.extend({ messageId: z.number().int() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).save(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId);
     }),
     markRead: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40), lastId: z.number().int().min(0) })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       (await import("./team")).markRead(input.organizationId, ctx.user.id, input.channel, input.lastId);
       return { ok: true };
     }),
     createChannel: protectedProcedure
       .input(orgInput.extend({ name: z.string().max(80), purpose: z.string().max(300).default(""), private: z.boolean().default(false), memberIds: z.array(z.number().int()).max(200).default([]), aiAllowed: z.boolean().default(true) }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId);
+        await requireMember(ctx, input.organizationId, "chat");
         const ch = await (await import("./team")).createChannel(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input);
         return { id: ch.id, key: ch.key, name: ch.name };
       }),
     updateChannel: protectedProcedure
       .input(orgInput.extend({ channelId: z.number().int(), name: z.string().max(80).optional(), purpose: z.string().max(300).optional(), aiAllowed: z.boolean().optional(), private: z.boolean().optional() }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId);
+        await requireMember(ctx, input.organizationId, "chat");
         const { channelId, organizationId, ...patch } = input;
         const ch = await (await import("./team")).updateChannel(organizationId, { id: ctx.user.id, name: personName(ctx.user) }, channelId, patch);
         return { id: ch.id, key: ch.key, name: ch.name };
       }),
     archiveChannel: protectedProcedure.input(orgInput.extend({ channelId: z.number().int() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       await (await import("./team")).archiveChannel(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId);
       return { ok: true };
     }),
     addMembers: protectedProcedure.input(orgInput.extend({ channelId: z.number().int(), userIds: z.array(z.number().int()).max(200) })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).addMembers(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId, input.userIds);
     }),
     leaveChannel: protectedProcedure.input(orgInput.extend({ channelId: z.number().int() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).leaveChannel(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId);
     }),
     joinChannel: protectedProcedure.input(orgInput.extend({ channelId: z.number().int() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).joinChannel(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId);
     }),
     setNotify: protectedProcedure.input(orgInput.extend({ channelId: z.number().int(), notify: z.enum(["all", "mentions", "none"]), muted: z.boolean() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).setNotify(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId, input.notify, input.muted);
     }),
     search: protectedProcedure
       .input(orgInput.extend({ q: z.string().max(200), from: z.number().int().nullable().optional(), in: z.string().max(40).nullable().optional(), files: z.boolean().optional(), days: z.number().int().nullable().optional() }))
       .query(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId);
+        await requireMember(ctx, input.organizationId, "chat");
         return (await import("./team")).search(input.organizationId, ctx.user.id, input.q, { from: input.from, in: input.in, files: input.files, days: input.days });
       }),
     view: protectedProcedure.input(orgInput.extend({ kind: z.enum(["unreads", "mentions", "saved"]) })).query(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
+      await requireMember(ctx, input.organizationId, "chat");
       const t = await import("./team");
       if (input.kind === "unreads") return { kind: "unreads" as const, groups: await t.unreads(input.organizationId, ctx.user.id) };
       if (input.kind === "mentions") return { kind: "mentions" as const, messages: await t.mentions(input.organizationId, ctx.user.id) };
@@ -1489,10 +1498,17 @@ export const appRouter = router({
       return (await import("./teamImport")).plan(input.organizationId, input.token);
     }),
     slackImport: protectedProcedure
-      .input(orgInput.extend({ token: z.string().max(80), channels: z.array(z.object({ id: z.string().max(40), take: z.boolean(), name: z.string().max(80) })).max(500), people: z.array(z.object({ id: z.string().max(40), userId: z.number().int().nullable() })).max(2000) }))
+      .input(
+        orgInput.extend({
+          token: z.string().max(80),
+          channels: z.array(z.object({ id: z.string().max(40), take: z.boolean(), name: z.string().max(80) })).max(500),
+          people: z.array(z.object({ id: z.string().max(40), userId: z.number().int().nullable() })).max(2000),
+          dms: z.array(z.object({ id: z.string().max(40), take: z.boolean() })).max(5000).default([]),
+        })
+      )
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "admin");
-        return (await import("./teamImport")).run(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.token, input.channels, input.people);
+        return (await import("./teamImport")).run(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.token, input.channels, input.people, input.dms);
       }),
   }),
 

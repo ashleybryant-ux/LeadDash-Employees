@@ -20,6 +20,7 @@ export default function SlackImportPage() {
   const [plan, setPlan] = React.useState<Plan | null>(null);
   const [channels, setChannels] = React.useState<{ id: string; take: boolean; name: string }[]>([]);
   const [people, setPeople] = React.useState<{ id: string; userId: number | null }[]>([]);
+  const [dms, setDms] = React.useState<{ id: string; take: boolean }[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const run = trpc.teamChat.slackImport.useMutation({ onSuccess: () => Promise.all([utils.teamChat.channels.invalidate(), utils.teamChat.messages.invalidate()]) });
@@ -37,6 +38,7 @@ export default function SlackImportPage() {
       setPlan(p);
       setChannels(p.channels.map((c) => ({ id: c.id, take: c.take, name: c.becomes })));
       setPeople(p.people.map((x) => ({ id: x.id, userId: x.userId })));
+      setDms(p.dms.map((d) => ({ id: d.id, take: d.take })));
       run.reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed.");
@@ -46,6 +48,20 @@ export default function SlackImportPage() {
   };
   const pick = (id: string) => channels.find((c) => c.id === id)!;
   const taking = channels.filter((c) => c.take).length;
+  // A direct message needs both people on the team here; a group one needs at least two. Picks on the People table count.
+  const matched = (slackId: string) => {
+    const p = people.find((y) => y.id === slackId);
+    if (p?.userId) return plan?.members.find((m) => m.userId === p.userId)?.name ?? null;
+    return null;
+  };
+  const dmState = (d: Plan["dms"][number]) => {
+    const here = d.members.map(matched);
+    const n = here.filter(Boolean).length;
+    const missing = d.names.filter((_, i) => !here[i]);
+    const ready = d.group ? n >= 2 : n === 2 && d.members.length === 2;
+    return { ready, missing, here: here.filter(Boolean) as string[] };
+  };
+  const takingDms = plan ? plan.dms.filter((d) => dms.find((x) => x.id === d.id)?.take && dmState(d).ready).length : 0;
   const r = run.data;
 
   return (
@@ -72,7 +88,7 @@ export default function SlackImportPage() {
             <span className="ld-small ld-muted">In Slack: Workspace settings, Import/Export data, Export, then download the zip. Upload it here. Nothing in Slack changes.</span>
             {plan && (
               <span style={{ fontSize: 13 }}>
-                {plan.counts.channels} channels · {plan.counts.messages} messages · {plan.counts.reactions} reactions · {plan.counts.replies} thread replies · {plan.counts.files} files · {plan.counts.active} people still in Slack, {plan.counts.left} who left
+                {plan.counts.channels} channels · {plan.counts.dms} direct messages · {plan.counts.messages} messages · {plan.counts.reactions} reactions · {plan.counts.replies} thread replies · {plan.counts.files} files · {plan.counts.active} people still in Slack, {plan.counts.left} who left
               </span>
             )}
             <span className="ld-row">
@@ -134,14 +150,40 @@ export default function SlackImportPage() {
                 })}
               </div>
               <div className="ld-card tc-card">
+                <b>Direct messages</b>
+                {plan.dms.length === 0 ? (
+                  <span className="ld-small ld-muted">None in this export. Direct messages come only in a full export (Slack: Export all conversations, on Business+ and up). Upload that one and they show here.</span>
+                ) : (
+                  <>
+                    <div className="tc-imp h"><span>In Slack</span><span>Messages</span><span>Becomes</span><span></span></div>
+                    {plan.dms.map((d) => {
+                      const st = dmState(d);
+                      const t = dms.find((x) => x.id === d.id)?.take ?? false;
+                      return (
+                        <div key={d.id} className="tc-imp">
+                          <label className="ld-row" style={{ gap: 8 }}>
+                            <input type="checkbox" checked={t && st.ready} disabled={!st.ready} onChange={(e) => setDms((l) => l.map((x) => (x.id === d.id ? { ...x, take: e.target.checked } : x)))} />
+                            <span className="gp-ell">{d.names.join(", ")}</span>
+                          </label>
+                          <span>{d.messages}</span>
+                          <span className="gp-ell">{d.group ? `Private channel for ${st.here.length ? st.here.join(", ") : "its people"}${d.existing ? " (exists)" : ""}` : "Their direct message here"}</span>
+                          <span className="ld-small ld-muted gp-ell">{st.ready ? "ready" : `${st.missing.join(", ")} ${st.missing.length === 1 ? "is" : "are"} not on the team here`}</span>
+                        </div>
+                      );
+                    })}
+                    <span className="ld-small ld-muted">A direct message needs both people on this team; add someone as Team chat only on the Team page, then run the export again. A group message becomes a private channel for the people who are here.</span>
+                  </>
+                )}
+              </div>
+              <div className="ld-card tc-card">
                 <b>What comes over</b>
                 <span className="ld-small ld-muted">
-                  Messages with their dates, who wrote them, @mentions, reactions, threads, pins and edits. Links to Loom, Google Drive and the web stay links. Files Slack stored itself ({plan.counts.files} of them) can&apos;t be pulled from the export: they show by name with a note, and you can re-attach the ones you still need. Channel join notices and bot posts are left out. Running it again updates instead of copying twice. Imported history starts as read for everyone.
+                  Messages with their dates, who wrote them, @mentions, reactions, threads, pins and edits. Links to Loom, Google Drive and the web stay links and get a preview. Files Slack stored itself ({plan.counts.files} of them) can&apos;t be pulled from the export: they show by name with a note, and you can re-attach the ones you still need. Channel join notices and bot posts are left out. Running it again updates instead of copying twice. Imported history starts as read for everyone.
                 </span>
               </div>
               <div className="ld-row">
-                <button type="button" className="ld-btn p gp-auto" disabled={run.isPending || !taking} onClick={() => run.mutate({ organizationId: currentOrgId, token: plan.token, channels, people })}>
-                  {run.isPending ? "Importing" : `Import ${taking} ${taking === 1 ? "channel" : "channels"}`}
+                <button type="button" className="ld-btn p gp-auto" disabled={run.isPending || (!taking && !takingDms)} onClick={() => run.mutate({ organizationId: currentOrgId, token: plan.token, channels, people, dms })}>
+                  {run.isPending ? "Importing" : `Import ${taking} ${taking === 1 ? "channel" : "channels"}${takingDms ? ` and ${takingDms} direct ${takingDms === 1 ? "message" : "messages"}` : ""}`}
                 </button>
                 <button type="button" className="ld-btn gp-auto" disabled={run.isPending} onClick={() => setPlan(null)}>Cancel</button>
               </div>
@@ -153,7 +195,7 @@ export default function SlackImportPage() {
             <div className="ld-card tc-card">
               <b>Done</b>
               <span style={{ fontSize: 14 }}>
-                {r.added} messages added{r.updated ? `, ${r.updated} updated` : ""}, {r.channelsMade} {r.channelsMade === 1 ? "channel" : "channels"} made, {r.reactions} reactions, {r.files} files by name.
+                {r.added} messages added{r.updated ? `, ${r.updated} updated` : ""}, {r.channelsMade} {r.channelsMade === 1 ? "channel" : "channels"} made, {r.dms} direct {r.dms === 1 ? "message" : "messages"}, {r.reactions} reactions, {r.files} files by name.
               </span>
               <ul className="ld-small ld-muted" style={{ margin: 0, paddingLeft: 18 }}>
                 {r.log.map((l) => (

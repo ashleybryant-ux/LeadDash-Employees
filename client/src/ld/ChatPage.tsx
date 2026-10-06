@@ -65,8 +65,11 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
   const tab = (params.appId ? "work" : params.tab === "work" || params.tab === "guidelines" || params.tab === "knowledge" || params.tab === "onboarding" ? params.tab : "chat") as "chat" | "work" | "knowledge" | "onboarding" | "guidelines";
 
   const mobile = useIsMobile();
+  const { chatOnly } = useTenant();
   // On a phone, /chats is the list of employees; on a computer it opens the first chat.
   const listOnly = !params.kind && !params.id && mobile;
+  // Team chat only people open the general channel.
+  if (chatOnly && !listOnly) return <Redirect to="/chats/team/everyone" />;
   if (!params.kind && !params.id && list.length > 0 && !listOnly) {
     const first = list.find((e) => e.kind === "grants") ?? list[0];
     return <Redirect to={first.kind === "custom" ? `/chats/e/${first.id}` : `/chats/${first.kind}`} />;

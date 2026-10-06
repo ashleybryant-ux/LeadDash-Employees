@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
+import * as links from "./teamLinks";
 import { notify } from "./notify";
 
 /**
@@ -39,11 +40,16 @@ export function isOnline(orgId: number, userId: number) {
 }
 
 type Me = { id: number; name: string };
-const ROLE: Record<string, string> = { owner: "Owner", admin: "Admin", member: "Member" };
+const ROLE: Record<string, string> = { owner: "Owner", admin: "Admin", member: "Member", chat: "Team chat only" };
 
-/** The people who can chat: everyone in the workspace except the app reviewer. */
+/** The people who can chat: everyone in the workspace except the app reviewer (team chat only people included). */
 export async function people(orgId: number) {
   return (await db.listMembers(orgId)).filter((m) => m.role !== "reviewer");
+}
+
+/** True for a team chat only person: they chat with people, never with the AI employees, so no AI employee is offered or answers them. */
+export async function chatOnly(orgId: number, me: number) {
+  return (await db.getOrganizationMembership(orgId, me))?.role === "chat";
 }
 
 /** The workspace's owner or an admin, or LeadDash staff (a platform admin, who can reach every workspace). */
@@ -291,6 +297,17 @@ function shape(rows: db.TeamMessageRow[], me: number, orgs: number | number[]) {
   const reactions = db.team.reactions(ids);
   const threads = db.team.threadInfo(orgs, ids);
   const saved = db.team.savedIds(me, ids);
+  // Link cards: what each link's site said, less the ones someone hid under that message.
+  const allUrls = new Set<string>();
+  for (const m of rows) if (!m.deletedAt) for (const u of links.urlsIn(m.content)) allUrls.add(u);
+  const previews = links.previewsFor(Array.from(allUrls));
+  const hidden = (m: db.TeamMessageRow): string[] => {
+    try {
+      return m.hiddenPreviews ? (JSON.parse(m.hiddenPreviews) as string[]) : [];
+    } catch {
+      return [];
+    }
+  };
   return rows.map((m) => {
     const mine = reactions.filter((r) => r.messageId === m.id);
     const grouped = new Map<string, { emoji: string; count: number; me: boolean; names: string[] }>();
@@ -318,6 +335,7 @@ function shape(rows: db.TeamMessageRow[], me: number, orgs: number | number[]) {
       saved: saved.has(m.id),
       reactions: Array.from(grouped.values()),
       thread: t ? { count: t.count, lastAt: t.lastAt, who: t.who } : null,
+      previews: m.deletedAt ? [] : links.urlsIn(m.content).filter((u) => !hidden(m).includes(u)).map((u) => previews.get(u)).filter((p): p is links.Preview => !!p),
       createdAt: m.createdAt,
     };
   });
@@ -358,7 +376,7 @@ export async function messages(orgId: number, me: number, key: string) {
     members: members.slice(0, 6).map((p) => ({ userId: p.userId, name: p.name || p.email, avatarUrl: p.avatarUrl })),
     pinnedCount: ch ? db.team.pinned(orgs, key).length : 0,
     people: list.map((p) => ({ userId: p.userId, name: p.name || p.email, avatarUrl: p.avatarUrl })),
-    employees: ch?.aiAllowed ? await employeesFor(orgId) : [],
+    employees: ch?.aiAllowed && !(await chatOnly(orgId, me)) ? await employeesFor(orgId) : [],
     lastReadId: read?.lastReadId ?? 0,
     messages: shape(rows, me, orgs),
     seenAt,
@@ -408,6 +426,7 @@ async function messageFor(orgId: number, me: number, id: number) {
 // The AI employees' answers run after the message is saved; tests wait on them.
 const pending = new Set<Promise<unknown>>();
 export async function settled() {
+  await links.settled();
   await Promise.all(Array.from(pending));
 }
 
@@ -424,12 +443,13 @@ export async function send(orgId: number, me: Me, key: string, content: string, 
     if (parent.threadOf) parent = db.team.get(orgs, parent.threadOf) ?? parent;
   }
   const list = await people(orgId);
-  const emps = where.channel?.aiAllowed ? await employeesFor(orgId) : [];
+  const emps = where.channel?.aiAllowed && !(await chatOnly(orgId, me.id)) ? await employeesFor(orgId) : [];
   const mentions = findMentions(text, { users: list.map((p) => ({ id: p.userId, name: p.name || p.email })), employees: emps.filter((e) => e.status !== "paused") });
   const attachments = files.length ? JSON.stringify(files.map((f) => ({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl }))) : null;
   const row = { organizationId: orgId, channel: key, userId: me.id, authorName: me.name, content: text, attachments, mentions: mentions.users.length || mentions.employees.length ? JSON.stringify(mentions) : null };
   const msg = db.team.send({ ...row, threadOf: parent?.id ?? null });
   if (parent && opts.alsoToChannel) db.team.send(row);
+  links.want(text);
   if (files.length) db.attachChatFiles(orgId, files.map((f) => f.id), -msg.id);
   db.team.markRead(orgId, me.id, key, parent ? db.team.last(orgs, key)?.id ?? msg.id : msg.id);
   markSeen(orgId, me.id);
@@ -486,7 +506,23 @@ export async function edit(orgId: number, me: Me, id: number, content: string) {
   if (m.userId !== me.id) throw new TRPCError({ code: "FORBIDDEN", message: "You can only edit your own messages." });
   const text = content.trim().slice(0, 8000);
   if (!text && !m.attachments) throw new TRPCError({ code: "BAD_REQUEST", message: "Write something, or delete the message instead." });
+  links.want(text);
   return db.team.update(id, { content: text, editedAt: new Date() });
+}
+
+/** Hides a link's card under a message for everyone who sees it; the link itself stays. */
+export async function hidePreview(orgId: number, me: Me, id: number, url: string) {
+  const { m } = await messageFor(orgId, me.id, id);
+  const have = (() => {
+    try {
+      return m.hiddenPreviews ? (JSON.parse(m.hiddenPreviews) as string[]) : [];
+    } catch {
+      return [];
+    }
+  })();
+  if (!have.includes(url)) have.push(url);
+  db.team.update(id, { hiddenPreviews: JSON.stringify(have) });
+  return { ok: true };
 }
 
 export async function remove(orgId: number, me: Me, id: number) {

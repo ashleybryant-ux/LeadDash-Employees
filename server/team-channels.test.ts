@@ -13,6 +13,25 @@ import * as db from "./db";
 import { pingsFor } from "./notify";
 import { settled } from "./team";
 import { hold, _test } from "./teamImport";
+import { urlsIn, _test as linkTest } from "./teamLinks";
+
+// The sites links point at, as the preview reader sees them. Anything else is unreachable.
+const SITES: Record<string, { type: string; body: string; status?: number }> = {
+  "https://www.loom.com/v1/oembed?url=https%3A%2F%2Fwww.loom.com%2Fshare%2Ff03c9f35fd9641a8a5b05f8c2351c68d": { type: "application/json", body: JSON.stringify({ title: "Role play: handling phone calls", duration: 372.4, thumbnail_url: "https://cdn.loom.com/sessions/thumbnails/f03c.jpg", html: "<iframe></iframe>" }) },
+  "https://www.youtube.com/oembed?url=https%3A%2F%2Fyoutu.be%2FdQw4w9WgXcQ&format=json": { type: "application/json", body: JSON.stringify({ title: "Front desk training", thumbnail_url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" }) },
+  "https://docs.google.com/spreadsheets/d/1a2b/edit": { type: "text/html", body: "<html><head><title>Accepted insurance list - Google Sheets</title></head></html>" },
+  "https://docs.google.com/document/d/private/edit": { type: "text/html", body: "<html><head><title>Google Docs: Sign-in</title></head></html>" },
+  "https://leaddash.io/": { type: "text/html; charset=utf-8", body: '<html><head><meta content="LeadDash EHR: one platform for your EHR, billing, phone, fax, and marketing" property="og:title"><meta property="og:description" content="Most practices pay for five or six separate tools. LeadDash replaces them with one login &amp; one bill."><meta property="og:image" content="/img/home.png"><meta property="og:site_name" content="LeadDash"></head><body></body></html>' },
+  "https://example.test/nothing": { type: "text/html", body: "<html><body>no title here</body></html>" },
+  "https://example.test/file.pdf": { type: "application/pdf", body: "%PDF" },
+};
+const fetchMock = vi.fn(async (input: string | URL) => {
+  const url = String(input);
+  const hit = SITES[url];
+  if (!hit) return new Response("", { status: 404 });
+  return new Response(hit.body, { status: hit.status ?? 200, headers: { "content-type": hit.type } });
+});
+vi.stubGlobal("fetch", fetchMock);
 
 async function setup(slug: string) {
   const ws = await makeWorkspace(slug);
@@ -170,6 +189,92 @@ describe("Team chat channels", () => {
     expect((await me.teamChat.messages({ organizationId: orgId, channel: "everyone" })).employees.map((e) => e.name)).toContain("Nora");
   });
 
+  it("team chat only people reach the channels, direct messages, the team and their account, nothing else", async () => {
+    const { orgId, owner, caroline } = await setup("tch-chatonly");
+    const me = caller(owner);
+    await me.members.add({ organizationId: orgId, email: "delicia@tch-chatonly.test", name: "Delicia Porter", role: "chat" });
+    const delicia = (await db.getUserByEmail("delicia@tch-chatonly.test"))!;
+    const her = caller(delicia);
+    // Her workspace list says what she is there; the team shows her role.
+    expect((await her.organizations.list()).map((o) => [o.id, (o as { role?: string }).role])).toEqual([[orgId, "chat"]]);
+    expect((await her.members.list({ organizationId: orgId })).find((m) => m.userId === delicia.id)?.role).toBe("chat");
+    expect((await me.members.list({ organizationId: orgId })).map((m) => m.role)).toContain("chat");
+    // She counts as a member of general and gets its messages, direct messages, threads and search.
+    const hers = await her.teamChat.channels({ organizationId: orgId });
+    expect(hers.channels.map((c) => c.name)).toEqual(["general"]);
+    expect(hers.dms.map((d) => d.name)).toContain("Caroline Jones");
+    const b = pingsFor(delicia.id, 0).latest;
+    await me.teamChat.send({ organizationId: orgId, channel: "everyone", content: "@Delicia the front desk is covered until 2." });
+    expect(pingsFor(delicia.id, b).pings.map((p) => p.title)).toEqual([`${owner.name} in #general`]);
+    const sent = await her.teamChat.send({ organizationId: orgId, channel: "everyone", content: "Thanks. @Nora what is due Thursday?" });
+    await settled();
+    // Nora is not offered to her and does not answer her, even in a channel that lets AI employees in.
+    expect((await her.teamChat.messages({ organizationId: orgId, channel: "everyone" })).employees).toEqual([]);
+    expect((await me.teamChat.messages({ organizationId: orgId, channel: "everyone" })).messages.find((m) => m.id === sent.id)?.mentions).toEqual({ users: [], employees: [] });
+    expect((await me.teamChat.thread({ organizationId: orgId, messageId: sent.id })).replies).toEqual([]);
+    const members = (await me.teamChat.messages({ organizationId: orgId, channel: "everyone" })).memberCount;
+    expect(members).toBe(4);
+    const dm = hers.dms.find((d) => d.name === "Caroline Jones")!;
+    await her.teamChat.send({ organizationId: orgId, channel: dm.key, content: "Lunch at noon?" });
+    expect((await caller(caroline).teamChat.messages({ organizationId: orgId, channel: dm.key })).messages.map((m) => m.content)).toEqual(["Lunch at noon?"]);
+    expect((await her.teamChat.search({ organizationId: orgId, q: "front desk" })).hits).toHaveLength(1);
+    // Everything else is closed to her: AI employees, Projects, Goals, approvals, the Brain, the team's settings.
+    await expect(her.employees.list({ organizationId: orgId })).rejects.toThrow(/cannot do that/);
+    await expect(her.chat.list({ organizationId: orgId, employeeId: (await db.getEmployeeByKind(orgId, "projects"))!.id })).rejects.toThrow(/cannot do that/);
+    await expect(her.projects.launches({ organizationId: orgId })).rejects.toThrow(/cannot do that/);
+    await expect(her.publishing.listApprovalQueue({ organizationId: orgId })).rejects.toThrow(/cannot do that/);
+    await expect(her.members.add({ organizationId: orgId, email: "x@tch-chatonly.test", role: "member" })).rejects.toThrow(/cannot do that/);
+    await expect(her.teamChat.slackPlan({ organizationId: orgId, token: "x" })).rejects.toThrow(/cannot do that/);
+    // The owner can make her a member later, and back.
+    await me.members.updateRole({ organizationId: orgId, userId: delicia.id, role: "member" });
+    expect((await her.employees.list({ organizationId: orgId })).length).toBeGreaterThan(0);
+    await me.members.updateRole({ organizationId: orgId, userId: delicia.id, role: "chat" });
+    await expect(her.employees.list({ organizationId: orgId })).rejects.toThrow(/cannot do that/);
+  });
+
+  it("shows a card under a link: Loom and YouTube with a player, Google files by name, pages by their tags; Hide preview hides it for everyone", async () => {
+    const { orgId, owner, caroline } = await setup("tch-links");
+    const me = caller(owner);
+    expect(urlsIn("See https://a.test/x, https://a.test/x and (https://b.test/y). Then https://c.test https://d.test https://e.test")).toEqual(["https://a.test/x", "https://b.test/y", "https://c.test"]);
+    expect(linkTest.videoOf(new URL("https://www.loom.com/share/f03c9f35fd9641a8a5b05f8c2351c68d?sid=1"))?.embed).toBe("https://www.loom.com/embed/f03c9f35fd9641a8a5b05f8c2351c68d");
+    expect(linkTest.videoOf(new URL("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))?.embed).toBe("https://www.youtube.com/embed/dQw4w9WgXcQ");
+    expect(linkTest.videoOf(new URL("https://youtube.com/shorts/abc123def"))?.site).toBe("YouTube");
+    expect(linkTest.googleOf(new URL("https://docs.google.com/presentation/d/1/edit"))).toBe("Google Slides");
+    expect(linkTest.meta('<meta name="description" content="A &amp; B">', "description")).toBe("A & B");
+
+    const loom = await me.teamChat.send({ organizationId: orgId, channel: "everyone", content: "Here is a role play on how to handle phone calls: https://www.loom.com/share/f03c9f35fd9641a8a5b05f8c2351c68d" });
+    const yt = await me.teamChat.send({ organizationId: orgId, channel: "everyone", content: "https://youtu.be/dQw4w9WgXcQ" });
+    const sheet = await caller(caroline).teamChat.send({ organizationId: orgId, channel: "everyone", content: "The insurance list is here: https://docs.google.com/spreadsheets/d/1a2b/edit and the private one https://docs.google.com/document/d/private/edit" });
+    const page = await caller(caroline).teamChat.send({ organizationId: orgId, channel: "everyone", content: "New homepage is live: https://leaddash.io" });
+    const none = await me.teamChat.send({ organizationId: orgId, channel: "everyone", content: "Nothing to show: https://example.test/nothing or https://example.test/file.pdf or http://localhost:4000/x or https://gone.test/404" });
+    await settled();
+    const list = (await me.teamChat.messages({ organizationId: orgId, channel: "everyone" })).messages;
+    const by = (id: number) => list.find((m) => m.id === id)!;
+    expect(by(loom.id).previews).toEqual([{ url: "https://www.loom.com/share/f03c9f35fd9641a8a5b05f8c2351c68d", kind: "video", site: "Loom", title: "Role play: handling phone calls", description: null, image: "https://cdn.loom.com/sessions/thumbnails/f03c.jpg", embed: "https://www.loom.com/embed/f03c9f35fd9641a8a5b05f8c2351c68d", duration: 372 }]);
+    expect(by(yt.id).previews).toEqual([{ url: "https://youtu.be/dQw4w9WgXcQ", kind: "video", site: "YouTube", title: "Front desk training", description: null, image: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg", embed: "https://www.youtube.com/embed/dQw4w9WgXcQ", duration: null }]);
+    expect(by(sheet.id).previews).toEqual([
+      { url: "https://docs.google.com/spreadsheets/d/1a2b/edit", kind: "file", site: "Google Sheets", title: "Accepted insurance list", description: null, image: null, embed: null, duration: null },
+      { url: "https://docs.google.com/document/d/private/edit", kind: "file", site: "Google Docs", title: null, description: null, image: null, embed: null, duration: null },
+    ]);
+    expect(by(page.id).previews).toEqual([{ url: "https://leaddash.io", kind: "page", site: "LeadDash", title: "LeadDash EHR: one platform for your EHR, billing, phone, fax, and marketing", description: "Most practices pay for five or six separate tools. LeadDash replaces them with one login & one bill.", image: "https://leaddash.io/img/home.png", embed: null, duration: null }]);
+    expect(by(none.id).previews).toEqual([]);
+    // Read once: the same link in another message uses what was kept.
+    const fetches = fetchMock.mock.calls.length;
+    const again = await me.teamChat.send({ organizationId: orgId, channel: "everyone", content: "Again: https://leaddash.io" });
+    await settled();
+    expect(fetchMock.mock.calls.length).toBe(fetches);
+    expect((await me.teamChat.messages({ organizationId: orgId, channel: "everyone" })).messages.find((m) => m.id === again.id)!.previews[0].site).toBe("LeadDash");
+    // Hide preview: the card goes for everyone, the link stays, other links on the message keep theirs.
+    await caller(caroline).teamChat.hidePreview({ organizationId: orgId, messageId: sheet.id, url: "https://docs.google.com/document/d/private/edit" });
+    const after = (await me.teamChat.messages({ organizationId: orgId, channel: "everyone" })).messages.find((m) => m.id === sheet.id)!;
+    expect(after.previews.map((p) => p.site)).toEqual(["Google Sheets"]);
+    expect(after.content).toContain("https://docs.google.com/document/d/private/edit");
+    // Threads and search carry the cards too.
+    const reply = await me.teamChat.send({ organizationId: orgId, channel: "everyone", content: "Watch this one too https://youtu.be/dQw4w9WgXcQ", threadOf: loom.id });
+    await settled();
+    expect((await me.teamChat.thread({ organizationId: orgId, messageId: loom.id })).replies.find((r) => r.id === reply.id)!.previews[0].title).toBe("Front desk training");
+  });
+
   it("searches channels, threads and direct messages with From, In, Has files and Date", async () => {
     const { orgId, owner, caroline } = await setup("tch-search");
     const me = caller(owner);
@@ -240,7 +345,7 @@ describe("Import from Slack", () => {
     await fs.promises.mkdir("/tmp/leaddash-employees-test-uploads", { recursive: true });
     await exportZip(file);
     const p = await hold(orgId, "export.zip", file);
-    expect(p.counts).toEqual({ channels: 3, messages: 5, reactions: 3, replies: 1, files: 1, active: 3, left: 1 });
+    expect(p.counts).toEqual({ channels: 3, dms: 0, messages: 5, reactions: 3, replies: 1, files: 1, active: 3, left: 1 });
     expect(p.channels.map((c) => [c.name, c.messages, c.becomes, c.take, c.archived])).toEqual([["general", 3, "general", true, false], ["training-videos", 1, "training-videos", true, false], ["jane-training-videos", 1, "jane-training-videos", false, true]]);
     expect(p2Order(p.channels)).toBe(true);
     expect(p.people.map((x) => [x.name, x.matched, x.userId, x.messages])).toEqual([["Ashley Bryant", "email", owner.id, 2], ["Amanda Case, LPC", "none", null, 1], ["Bentlee Smiley", "left", null, 1], ["Caroline M", "email", caroline.id, 1]]);
@@ -277,5 +382,74 @@ describe("Import from Slack", () => {
     expect(again.messages).toHaveLength(2);
     expect(again.messages[0].reactions[0].count).toBe(2);
     expect((await me.teamChat.channels({ organizationId: orgId })).channels).toHaveLength(2);
+  });
+
+  it("brings over direct messages and group messages from a full export, between people who are on the team here", async () => {
+    const { orgId, owner, caroline, angela } = await setup("tch-slackdm");
+    const me = caller(owner);
+    const file = "/tmp/leaddash-employees-test-uploads/slack-dm-test.zip";
+    await fs.promises.mkdir("/tmp/leaddash-employees-test-uploads", { recursive: true });
+    const zip = new JSZip();
+    zip.file("users.json", JSON.stringify([
+      { id: "U1", name: "ashley", real_name: "Ashley Bryant", profile: { email: "owner@tch-slackdm.test" } },
+      { id: "U2", name: "caroline", real_name: "Caroline M", profile: { email: "caroline@tch-slackdm.test" } },
+      { id: "U3", name: "angela", real_name: "Angela St. Ville", profile: { email: "angela@tch-slackdm.test" } },
+      { id: "U4", name: "amanda", real_name: "Amanda Case", profile: { email: "amanda@elsewhere.test" } },
+    ]));
+    zip.file("channels.json", JSON.stringify([{ id: "C1", name: "general", is_general: true, members: ["U1", "U2", "U3"] }]));
+    zip.file("general/2026-10-01.json", JSON.stringify([{ type: "message", user: "U1", text: "Welcome", ts: ts("2026-10-01T14:00:00Z") }]));
+    // A private channel in groups.json, a direct message by id, one with someone not here, and a group message by name.
+    zip.file("groups.json", JSON.stringify([{ id: "G1", name: "therapists-only", members: ["U1", "U3"], purpose: { value: "Therapists" } }]));
+    zip.file("therapists-only/2026-10-01.json", JSON.stringify([{ type: "message", user: "U3", text: "Supervision moved to 3.", ts: ts("2026-10-01T15:00:00Z") }]));
+    zip.file("dms.json", JSON.stringify([{ id: "D1", members: ["U1", "U2"] }, { id: "D2", members: ["U1", "U4"] }, { id: "D3", members: ["U2", "U3"] }]));
+    zip.file("D1/2026-10-01.json", JSON.stringify([
+      { type: "message", user: "U1", text: "Can you send the promo copy by 4?", ts: ts("2026-10-01T16:00:00Z"), reactions: [{ name: "white_check_mark", users: ["U2"], count: 1 }] },
+      { type: "message", user: "U2", text: "Yes, on it.", ts: ts("2026-10-01T16:05:00Z") },
+    ]));
+    zip.file("D2/2026-10-01.json", JSON.stringify([{ type: "message", user: "U4", text: "Hi Ashley", ts: ts("2026-10-01T17:00:00Z") }]));
+    zip.file("mpims.json", JSON.stringify([{ id: "G2", name: "mpdm-ashley--caroline--angela-1", members: ["U1", "U2", "U3"] }, { id: "G3", name: "mpdm-ashley--amanda--bob-1", members: ["U1", "U4", "U5"] }]));
+    zip.file("mpdm-ashley--caroline--angela-1/2026-10-01.json", JSON.stringify([{ type: "message", user: "U2", text: "Fire inspection passed.", ts: ts("2026-10-01T18:00:00Z") }]));
+    zip.file("mpdm-ashley--amanda--bob-1/2026-10-01.json", JSON.stringify([{ type: "message", user: "U4", text: "Lunch?", ts: ts("2026-10-01T18:30:00Z") }]));
+    await fs.promises.writeFile(file, await zip.generateAsync({ type: "nodebuffer" }));
+
+    const p = await hold(orgId, "full-export.zip", file);
+    expect(p.counts).toMatchObject({ channels: 2, dms: 4, messages: 7 });
+    expect(p.channels.map((c) => [c.name, c.private])).toEqual([["general", false], ["therapists-only", true]]);
+    expect(p.dms.map((d) => [d.id, d.group, d.names, d.messages, d.take])).toEqual([
+      ["D1", false, ["Ashley Bryant", "Caroline M"], 2, true],
+      ["D2", false, ["Ashley Bryant", "Amanda Case"], 1, true],
+      ["G2", true, ["Ashley Bryant", "Caroline M", "Angela St. Ville"], 1, true],
+      ["G3", true, ["Ashley Bryant", "Amanda Case", "Someone"], 1, true],
+    ]);
+    const r = await me.teamChat.slackImport({ organizationId: orgId, token: p.token, channels: p.channels.map((c) => ({ id: c.id, take: true, name: c.becomes })), people: p.people.map((x) => ({ id: x.id, userId: x.userId })), dms: p.dms.map((d) => ({ id: d.id, take: true })) });
+    expect(r).toMatchObject({ channelsMade: 2, added: 5, dms: 2 });
+    expect(r.log).toEqual([
+      "#general: 1 messages",
+      "#therapists-only: 1 messages",
+      `Direct message (${owner.name}, Caroline Jones): 2 messages`,
+      `Direct message (${owner.name}, Amanda Case): skipped, both people need to be on this team`,
+      `#group-${owner.name.split(" ")[0].toLowerCase()}-caroline-angela (group message, ${owner.name}, Caroline Jones, Angela St. Ville): 1 messages`,
+      `Group message (${owner.name}, Amanda Case, someone): skipped, at least two of its people need to be on this team`,
+    ]);
+    // The direct message is between the two of them, read, with its reaction; the group one is a private channel for its three people.
+    const key = `dm:${Math.min(owner.id, caroline.id)}-${Math.max(owner.id, caroline.id)}`;
+    const dm = await caller(caroline).teamChat.messages({ organizationId: orgId, channel: key });
+    expect(dm.messages.map((m) => [m.authorName, m.content])).toEqual([[owner.name, "Can you send the promo copy by 4?"], ["Caroline Jones", "Yes, on it."]]);
+    expect(dm.messages[0].reactions).toEqual([{ emoji: "✅", count: 1, me: true, names: ["Caroline Jones"] }]);
+    expect((await caller(caroline).teamChat.channels({ organizationId: orgId })).dms.find((d) => d.key === key)?.unread).toBe(0);
+    const chans = await caller(angela).teamChat.channels({ organizationId: orgId });
+    const group = chans.channels.find((c) => c.name.startsWith("group-"))!;
+    expect(group.private).toBe(true);
+    expect((await caller(angela).teamChat.messages({ organizationId: orgId, channel: group.key })).messages.map((m) => m.content)).toEqual(["Fire inspection passed."]);
+    expect((await caller(angela).teamChat.messages({ organizationId: orgId, channel: group.key })).memberCount).toBe(3);
+    expect((await caller(angela).teamChat.messages({ organizationId: orgId, channel: chans.channels.find((c) => c.name === "therapists-only")!.key })).messages).toHaveLength(1);
+    // Again: nothing doubles.
+    await fs.promises.writeFile(file, await zip.generateAsync({ type: "nodebuffer" }));
+    const p2 = await hold(orgId, "full-export.zip", file);
+    expect(p2.dms.find((d) => d.id === "G2")?.existing).toBe(true);
+    const r2 = await me.teamChat.slackImport({ organizationId: orgId, token: p2.token, channels: p2.channels.map((c) => ({ id: c.id, take: true, name: c.becomes })), people: p2.people.map((x) => ({ id: x.id, userId: x.userId })), dms: p2.dms.map((d) => ({ id: d.id, take: true })) });
+    expect(r2).toMatchObject({ channelsMade: 0, added: 0, updated: 5, dms: 2 });
+    expect((await caller(caroline).teamChat.messages({ organizationId: orgId, channel: key })).messages).toHaveLength(2);
+    expect((await caller(angela).teamChat.channels({ organizationId: orgId })).channels.filter((c) => c.name.startsWith("group-"))).toHaveLength(1);
   });
 });

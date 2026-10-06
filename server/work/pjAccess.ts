@@ -21,7 +21,7 @@ export type Level = "view" | "comment" | "edit" | "full";
 export const LEVEL_RANK: Record<Level, number> = { view: 1, comment: 2, edit: 3, full: 4 };
 
 export type Viewer =
-  | { kind: "member"; userId: number; role: "owner" | "admin" | "member" | "reviewer"; name: string }
+  | { kind: "member"; userId: number; role: "owner" | "admin" | "member" | "chat" | "reviewer"; name: string }
   | { kind: "guest"; userId: number; name: string }
   | { kind: "employee"; employeeId: number; name: string }
   | { kind: "system" };

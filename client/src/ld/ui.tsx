@@ -12,17 +12,17 @@ import { NewChannel } from "./team/NewChannel";
 // ==========================================
 
 export function useEmployees() {
-  const { currentOrgId } = useTenant();
-  const q = trpc.employees.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const { currentOrgId, chatOnly } = useTenant();
+  const q = trpc.employees.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && !chatOnly });
   const list = q.data ?? [];
   const byKind = (kind: string) => list.find((e) => e.kind === kind) ?? null;
   return { ...q, list, byKind };
 }
 
 export function useApprovalCount() {
-  const { currentOrgId } = useTenant();
-  const q = trpc.publishing.listApprovalQueue.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
-  const apps = trpc.applications.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 60_000 });
+  const { currentOrgId, chatOnly } = useTenant();
+  const q = trpc.publishing.listApprovalQueue.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && !chatOnly });
+  const apps = trpc.applications.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && !chatOnly, refetchInterval: 60_000 });
   const followStep = (i: { kind: string; metadata: string | null }) => {
     if (i.kind !== "outreach_email") return false;
     try {
@@ -142,6 +142,7 @@ export const Icons = {
   workspace: I(<><rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-4h4v4" /></>),
   integrations: I(<><rect x="3" y="11" width="7" height="7" rx="1" /><rect x="11" y="11" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /></>),
   team: I(<><circle cx="10" cy="8" r="4" /><path d="M3 21a7 7 0 0 1 14 0" /><path d="M19 8v6M16 11h6" /></>),
+  account: I(<><circle cx="12" cy="8" r="4" /><path d="M5 21a7 7 0 0 1 14 0" /></>),
   help: I(<><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7M12 17h.01" /></>),
   chevron: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -164,6 +165,7 @@ export type RailKey = "chats" | "calendar" | "goals" | "projects" | "huddle" | "
 export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
   const { user, logout } = useAuth();
+  const { chatOnly } = useTenant();
   const [switcher, setSwitcher] = React.useState(false);
   const [menu, setMenu] = React.useState(false);
   const base: React.CSSProperties = {
@@ -213,17 +215,18 @@ export function Rail({ active }: { active: RailKey }) {
         <img src="/brand/icon.png" alt="LeadDash Employees" width={44} height={44} style={{ display: "block", width: 44, height: 44, borderRadius: 11 }} />
       </button>
       {item("chats", "Chats", "/chats", Icons.chats)}
-      {item("calendar", "Calendar", "/calendar", Icons.calendar)}
-      {item("goals", "Goals", "/goals", Icons.goals)}
-      {item("projects", "Projects", "/projects", Icons.projects)}
-      {item("huddle", "Huddle", "/huddle", Icons.huddle)}
-      {item("activity", "Activity", "/activity", Icons.activity)}
-      {item("approvals", "Approvals", "/approvals", Icons.approvals, count)}
-      {item("brain", "Brain", "/brain", Icons.brain)}
-      {item("workspace", "Workspace", "/workspace", Icons.workspace)}
-      {item("integrations", "Integrations", "/integrations", Icons.integrations)}
+      {!chatOnly && item("calendar", "Calendar", "/calendar", Icons.calendar)}
+      {!chatOnly && item("goals", "Goals", "/goals", Icons.goals)}
+      {!chatOnly && item("projects", "Projects", "/projects", Icons.projects)}
+      {!chatOnly && item("huddle", "Huddle", "/huddle", Icons.huddle)}
+      {!chatOnly && item("activity", "Activity", "/activity", Icons.activity)}
+      {!chatOnly && item("approvals", "Approvals", "/approvals", Icons.approvals, count)}
+      {!chatOnly && item("brain", "Brain", "/brain", Icons.brain)}
+      {!chatOnly && item("workspace", "Workspace", "/workspace", Icons.workspace)}
+      {!chatOnly && item("integrations", "Integrations", "/integrations", Icons.integrations)}
       {item("team", "Team", "/team", Icons.team)}
       <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, position: "relative" }}>
+        {chatOnly && item("account", "Account", "/account", Icons.account)}
         <a href="mailto:info@leaddash.io" style={{ ...base, color: "#a9c0b6" }}>
           {Icons.help}
           <span>Help</span>
@@ -396,10 +399,10 @@ export function HoursSaved() {
 // ==========================================
 
 export function ChatList({ activeKind }: { activeKind: string | null }) {
-  const { currentOrgId, currentOrg } = useTenant();
+  const { currentOrgId, currentOrg, chatOnly } = useTenant();
   const { user } = useAuth();
   const { list } = useEmployees();
-  const summaries = trpc.chat.summaries.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 30_000 });
+  const summaries = trpc.chat.summaries.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && !chatOnly, refetchInterval: 30_000 });
   const [switcher, setSwitcher] = React.useState(false);
   const sorted = [...list].sort((a, b) => KIND_ORDER.indexOf(a.kind as Kind) - KIND_ORDER.indexOf(b.kind as Kind) || a.id - b.id);
   return (
@@ -416,7 +419,7 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
         {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 88, top: 52 }} />}
       </div>
       <TeamGroup activeKind={activeKind} />
-      {GROUP_ORDER.map((group) => {
+      {!chatOnly && GROUP_ORDER.map((group) => {
         const people = sorted.filter((e) => KIND_META[(e.kind as Kind) ?? "custom"].group === group);
         if (people.length === 0) return null;
         return (
@@ -449,8 +452,8 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
           </div>
         );
       })}
-      {list.length === 0 && <div className="ld-empty">No employees in this workspace yet.</div>}
-      <HoursSaved />
+      {!chatOnly && list.length === 0 && <div className="ld-empty">No employees in this workspace yet.</div>}
+      {!chatOnly && <HoursSaved />}
     </aside>
   );
 }
@@ -659,6 +662,7 @@ const MoreIcon = I(<><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r=
 
 export function BottomNav({ active }: { active: RailKey }) {
   const count = useApprovalCount();
+  const { chatOnly } = useTenant();
   const on = (k: RailKey) => (k === "more" ? ["calendar", "goals", "tasks", "huddle", "activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
   const item = (key: RailKey, label: string, href: string, icon: React.ReactNode, badge?: number) => (
     <Link key={key} href={href} className={`ld-bn-item ${on(key) ? "on" : ""}`} aria-current={on(key) ? "page" : undefined}>
@@ -669,6 +673,14 @@ export function BottomNav({ active }: { active: RailKey }) {
       <span>{label}</span>
     </Link>
   );
+  if (chatOnly)
+    return (
+      <nav className="ld-bottomnav" aria-label="Main">
+        {item("chats", "Chats", "/chats?list=1", Icons.chats)}
+        {item("team", "Team", "/team", Icons.team)}
+        {item("account", "Account", "/account", Icons.account)}
+      </nav>
+    );
   return (
     <nav className="ld-bottomnav" aria-label="Main">
       {item("chats", "Chats", "/chats?list=1", Icons.chats)}

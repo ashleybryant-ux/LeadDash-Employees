@@ -65,7 +65,7 @@ export function periodFor(level: Goal["level"], year: number, quarter = 1, cycle
 // ==========================================
 
 export async function owners(orgId: number): Promise<Owner[]> {
-  const people = (await db.listMembers(orgId)).filter((m) => m.role !== "reviewer");
+  const people = (await db.listMembers(orgId)).filter((m) => m.role !== "reviewer" && m.role !== "chat");
   const emps = await db.listEmployeesByOrg(orgId);
   return [
     ...people.map((p) => ({ type: "user" as const, id: p.userId, name: p.name || p.email, avatarUrl: p.avatarUrl })),

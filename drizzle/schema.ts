@@ -117,7 +117,8 @@ export const organizationMembers = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
     userId: integer("userId").notNull(),
-    role: text("role", { enum: ["owner", "admin", "member", "reviewer"] }).notNull().default("member"),
+    /** chat = team chat only: channels and direct messages, the Team page and their account, nothing else. */
+    role: text("role", { enum: ["owner", "admin", "member", "chat", "reviewer"] }).notNull().default("member"),
     title: text("title"),
     createdAt: createdAt(),
   },
@@ -2404,11 +2405,42 @@ export const teamMessages = sqliteTable(
     pinnedAt: integer("pinnedAt", { mode: "timestamp" }),
     /** Slack's message ts when it came from an import. */
     importedId: text("importedId"),
+    /** JSON [urls] whose preview card someone hid under this message. */
+    hiddenPreviews: text("hiddenPreviews"),
     createdAt: createdAt(),
   },
   (t) => [index("team_messages_org_channel_idx").on(t.organizationId, t.channel, t.id), index("team_messages_thread_idx").on(t.threadOf)]
 );
 export type TeamMessage = typeof teamMessages.$inferSelect;
+
+/**
+ * What a link in a team chat message points at, read once from the site
+ * (Loom and YouTube by oEmbed, pages by their Open Graph tags) and kept by
+ * url so every message with that link shows the same card.
+ */
+export const teamLinks = sqliteTable(
+  "team_links",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    url: text("url").notNull(),
+    /** video: plays in place; file: a Google Doc, Sheet, Slide or Drive file; page: anything else. */
+    kind: text("kind", { enum: ["video", "file", "page"] }).notNull().default("page"),
+    /** "Loom", "YouTube", "Google Sheets", or the site's name or host. */
+    site: text("site").notNull().default(""),
+    title: text("title"),
+    description: text("description"),
+    image: text("image"),
+    /** The player url for a video (an iframe source). */
+    embed: text("embed"),
+    /** Seconds, when the site says. */
+    duration: integer("duration"),
+    /** ok: read; none: the site gave nothing to show. */
+    status: text("status", { enum: ["ok", "none"] }).notNull().default("none"),
+    fetchedAt: integer("fetchedAt", { mode: "timestamp" }).notNull(),
+  },
+  (t) => [uniqueIndex("team_links_url_unique").on(t.url)]
+);
+export type TeamLink = typeof teamLinks.$inferSelect;
 
 /** How far each person has read in each team channel, for unread counts and "Seen". */
 export const teamReads = sqliteTable(

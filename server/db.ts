@@ -2098,6 +2098,7 @@ const inOrgs = (col: any, o: Orgs) => (Array.isArray(o) ? inArray(col, o.length 
 
 export type TeamChannelRow = schema.TeamChannel;
 export type TeamMessageRow = schema.TeamMessage;
+export type TeamLinkRow = schema.TeamLink;
 
 export const team = {
   messages(orgs: Orgs, channel: string, limit = 300) {
@@ -2230,7 +2231,7 @@ export const team = {
   setMember(orgId: number, channelId: number, userId: number, patch: Partial<Pick<typeof schema.teamChannelMembers.$inferInsert, "notify" | "muted" | "left">>) {
     const m = schema.teamChannelMembers;
     const have = getDb().select().from(m).where(and(eq(m.channelId, channelId), eq(m.userId, userId))).limit(1).all()[0];
-    if (have) return getDb().update(m).set(patch).where(eq(m.id, have.id)).returning().all()[0];
+    if (have) return Object.keys(patch).length ? getDb().update(m).set(patch).where(eq(m.id, have.id)).returning().all()[0] : have;
     return getDb().insert(m).values({ organizationId: orgId, channelId, userId, ...patch }).returning().all()[0];
   },
   removeMember(channelId: number, userId: number) {
@@ -2253,6 +2254,27 @@ export const team = {
     }
     getDb().insert(r).values({ organizationId: orgId, messageId, userId, emoji, authorName }).run();
     return true;
+  },
+  // Link previews, kept by url.
+  links(urls: string[]) {
+    const l = schema.teamLinks;
+    if (!urls.length) return [] as schema.TeamLink[];
+    return getDb().select().from(l).where(inArray(l.url, urls)).all();
+  },
+  linkByUrl(url: string) {
+    const l = schema.teamLinks;
+    return getDb().select().from(l).where(eq(l.url, url)).limit(1).all()[0] ?? null;
+  },
+  saveLink(row: typeof schema.teamLinks.$inferInsert) {
+    const l = schema.teamLinks;
+    const have = getDb().select({ id: l.id }).from(l).where(eq(l.url, row.url)).limit(1).all()[0];
+    if (have) return getDb().update(l).set(row).where(eq(l.id, have.id)).returning().all()[0];
+    return getDb().insert(l).values(row).returning().all()[0];
+  },
+  /** Messages that hold a link, newest first, for reading previews of what came over before. */
+  withLinks(limit = 2000) {
+    const t = schema.teamMessages;
+    return getDb().select({ id: t.id, content: t.content }).from(t).where(and(isNull(t.deletedAt), like(t.content, "%http%"))).orderBy(desc(t.id)).limit(limit).all();
   },
   savedIds(userId: number, messageIds: number[]) {
     const sv = schema.teamSaved;

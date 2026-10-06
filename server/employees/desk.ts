@@ -302,7 +302,7 @@ async function tellDeciders(orgId: number, d: DeskDecision) {
   const rules = rulesOf(orgId);
   const members = await db.listMembers(orgId);
   const who = whoDecides(rules, d.category, d.amountCents);
-  const ids = members.filter((m) => m.role === "owner" || (who === "team" && m.role !== "reviewer")).map((m) => m.userId);
+  const ids = members.filter((m) => m.role === "owner" || (who === "team" && m.role !== "reviewer" && m.role !== "chat")).map((m) => m.userId);
   await notify(orgId, "approval", { title: "Avery: a decision is waiting", body: d.title, url: "/chats/inbox/work?tab=decisions", tag: `desk-${d.id}` }, { only: ids });
 }
 

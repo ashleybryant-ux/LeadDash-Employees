@@ -16,6 +16,7 @@ const SOUND_LABEL: Record<SoundKind, string> = { chime: "Chime", knock: "Soft kn
 export default function Account() {
   const account = trpc.account.get.useQuery();
   const { logout } = useAuth();
+  const { chatOnly } = useTenant();
   const a = account.data;
   return (
     <Page rail="account" maxWidth={900}>
@@ -33,8 +34,8 @@ export default function Account() {
           )}
           {a.staff && <ReviewCard />}
           <PushCard pushReady={a.pushReady} vapid={a.vapidPublicKey} devices={a.devices} />
-          <ConnectorCard />
-          <PrefsCard prefs={a.prefs as Prefs} sound={a.sound as Sound} events={a.events} />
+          {!chatOnly && <ConnectorCard />}
+          <PrefsCard prefs={a.prefs as Prefs} sound={a.sound as Sound} events={chatOnly ? a.events.filter((e) => e.key === "team_message") : a.events} />
           <section className="ld-card ld-between" style={{ padding: "14px 18px" }}>
             <span className="ld-strong">Sign out of this device</span>
             <button type="button" className="ld-btn" onClick={() => logout()}>Sign out</button>

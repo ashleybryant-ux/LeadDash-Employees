@@ -49,7 +49,7 @@ function NoWorkspace() {
 }
 
 function Router() {
-  const { organizations, isLoading, currentOrg } = useTenant();
+  const { organizations, isLoading, currentOrg, chatOnly } = useTenant();
   if (isLoading) return <Spinner />;
   if (organizations.length === 0) return <NoWorkspace />;
   // A guest on shared Projects lists sees those lists and nothing else.
@@ -58,6 +58,19 @@ function Router() {
       <Switch>
         <Route path="/projects" component={Projects} />
         <Route>{() => <Redirect to="/projects" />}</Route>
+      </Switch>
+    );
+  // Team chat only: the channels and direct messages, the Team page and their account.
+  if (chatOnly)
+    return (
+      <Switch>
+        <Route path="/chats" component={ChatPage} />
+        <Route path="/chats/team/:channel" component={TeamChatPage} />
+        <Route path="/chats/search" component={TeamSearchPage} />
+        <Route path="/chats/view/:kind" component={TeamViewPage} />
+        <Route path="/team" component={Team} />
+        <Route path="/account" component={Account} />
+        <Route>{() => <Redirect to="/chats" />}</Route>
       </Switch>
     );
   return (

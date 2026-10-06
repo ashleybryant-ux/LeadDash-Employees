@@ -96,7 +96,7 @@ export async function draftYear(orgId: number, year: number) {
   const have = db.work.goals.all(orgId).filter((g) => g.level === "year" && g.period === String(year) && (g.state === "draft" || g.state === "active"));
   if (have.some((g) => g.state === "draft")) return have.filter((g) => g.state === "draft");
   const { lines } = await goalFacts(orgId);
-  const people = (await db.listMembers(orgId)).filter((m) => m.role !== "reviewer");
+  const people = (await db.listMembers(orgId)).filter((m) => m.role !== "reviewer" && m.role !== "chat");
   const emps = await db.listEmployeesByOrg(orgId);
   const out = await working(simone, async () => {
     const { system } = await systemPromptFor(

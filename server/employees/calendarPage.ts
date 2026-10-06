@@ -360,7 +360,7 @@ export type WhoRow = {
   work: string | null;
 };
 
-const ROLE: Record<string, string> = { owner: "Owner", admin: "Admin", member: "Member", reviewer: "Reviewer" };
+const ROLE: Record<string, string> = { owner: "Owner", admin: "Admin", member: "Member", chat: "Team chat only", reviewer: "Reviewer" };
 
 function fmtWhen(d: Date, tz: string) {
   return d.toLocaleString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
@@ -401,7 +401,7 @@ export async function whoView(orgId: number, now = new Date()) {
   const current = today.find((e) => e.start <= now && e.end > now);
   const coming = today.find((e) => e.start > now);
 
-  for (const m of members.filter((x) => x.role !== "reviewer")) {
+  for (const m of members.filter((x) => x.role !== "reviewer" && x.role !== "chat")) {
     const mine = open.filter((t) => ownsTask(t, m));
     const behind = mine.filter((t) => taskState(t, now).key === "behind");
     const isOwner = m.role === "owner";

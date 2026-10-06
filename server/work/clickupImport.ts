@@ -103,7 +103,7 @@ async function run(srcOrg: number, importId: number, picks: Pick[], by: { id: nu
     const org = await db.getOrganizationById(pick.orgId);
     if (!org) continue;
     const tz = org.timezone || "America/Chicago";
-    const team = (await db.listMembers(pick.orgId)).filter((m) => m.role !== "reviewer");
+    const team = (await db.listMembers(pick.orgId)).filter((m) => m.role !== "reviewer" && m.role !== "chat");
     const toAssignee = (u: any): Assignee => {
       const email = String(u?.email ?? "").toLowerCase();
       const name = String(u?.username ?? u?.email ?? "Someone");
@@ -454,7 +454,7 @@ async function runCsv(orgId: number, importId: number, rows: CsvRow[], picks: Pi
     const org = await db.getOrganizationById(pick.orgId);
     if (!org) continue;
     const tz = org.timezone || "America/Chicago";
-    const team = (await db.listMembers(pick.orgId)).filter((m) => m.role !== "reviewer");
+    const team = (await db.listMembers(pick.orgId)).filter((m) => m.role !== "reviewer" && m.role !== "chat");
     const toAssignee = (u: any): Assignee => {
       const raw = String(u?.username ?? u?.email ?? u ?? "Someone").trim();
       const email = raw.includes("@") ? raw.toLowerCase() : "";

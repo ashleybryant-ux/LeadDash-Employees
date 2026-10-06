@@ -193,7 +193,7 @@ export function registerMcp(app: Express) {
     if (!link) return res.status(404).json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "This connector link isn't valid. Make a new one on My account in LeadDash Employees." } });
     const user = await db.getUserById(link.userId);
     const member = user && (user.role === "admin" || (await db.getOrganizationMembership(link.organizationId, user.id)));
-    if (!user || !member || (typeof member === "object" && member.role === "reviewer")) return res.status(403).json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "You're no longer on this workspace." } });
+    if (!user || !member || (typeof member === "object" && (member.role === "reviewer" || member.role === "chat"))) return res.status(403).json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "You're no longer on this workspace." } });
     // At most 120 calls a minute per link.
     const now = Date.now();
     const h = hits.get(link.id);

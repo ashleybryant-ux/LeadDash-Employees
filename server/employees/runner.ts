@@ -112,6 +112,8 @@ export function startScheduler() {
   void import("./drama").then((d) => d.resumeDrama()).catch(() => null);
   void import("../work/clickupImport").then((c) => c.failInterrupted()).catch(() => null);
   void import("../work/clickupImport").then((c) => c.repairNewlines()).catch(() => null);
+  // Links in team chat messages that have no card yet (history from Slack, say) get one.
+  void import("../teamLinks").then((l) => l.backfill()).catch((err) => console.warn("[team] link previews:", err instanceof Error ? err.message : err));
   // The old catch-all "Team action items" list is sorted into projects once.
   void (async () => {
     const pj = await import("./projects");

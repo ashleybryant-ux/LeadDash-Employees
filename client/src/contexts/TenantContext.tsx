@@ -22,6 +22,8 @@ export interface Organization {
   updatedAt: Date;
   /** Only a guest on shared Projects lists here. */
   guest?: boolean;
+  /** This person's role in the workspace: owner, admin, member, chat (team chat only) or reviewer. */
+  role?: string;
 }
 
 interface TenantContextType {
@@ -34,6 +36,8 @@ interface TenantContextType {
   closeCreateOrgModal: () => void;
   isCreateOrgModalOpen: boolean;
   refetchOrgs: () => void;
+  /** True when this person is team chat only here: channels, direct messages, the Team page and their account, nothing else. */
+  chatOnly: boolean;
 }
 
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
@@ -78,6 +82,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         closeCreateOrgModal: () => setIsCreateOrgModalOpen(false),
         isCreateOrgModalOpen,
         refetchOrgs: refetch,
+        chatOnly: (currentOrg as Organization | null)?.role === "chat",
       }}
     >
       {children}
