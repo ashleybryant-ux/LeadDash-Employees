@@ -98,12 +98,15 @@ describe("A healthcare practice workspace", () => {
     const harper = (await db.getEmployeeByKind(orgId, "billing"))!;
     expect(await db.listChatMessages(orgId, harper.id, 10)).toHaveLength(0);
     expect(await ehr.ehrFacts(orgId)).toContain("1 denied or rejected claims, 4 unpaid past 30 days ($8,420)");
+    expect(await ehr.ehrFacts(orgId)).toContain("0 clients not booked in 30 days");
+    expect(await ehr.ehrFacts(orgId, "billing")).toContain("Client balances, largest first: A.P. $360 (card on file), last paid Aug 4, 2026");
 
     // The next read: a rejected claim, paperwork newly overdue, a cancellation and more unsigned notes.
     served = snapshot({
       claims: [...snapshot().claims, { id: "c2", initials: "R.T.", dos: "2026-09-18", payer: "HealthChoice", status: "rejected", reason: "Member ID does not match", fix: "Check the card, resubmit", amountCents: 9_500, url: "https://ehr.test/claims/c2", at: "2026-10-06T14:30:00.000Z" }],
       paperwork: [...snapshot().paperwork, { id: "p2", initials: "D.W.", what: "Consent forms", sent: "2026-09-30", due: "2026-10-06", status: "overdue", daysOut: 6, url: "https://ehr.test/clients/p2/paperwork" }],
       appointments: [...snapshot().appointments, { id: "a2", kind: "cancelled", initials: "A.P.", clinician: "Angela St. Ville", start: "2026-10-07T21:00:00.000Z", reason: "Schedule conflict", at: "2026-10-06T14:20:00.000Z", url: "https://ehr.test/appointments/a2" }],
+      lapsed: [{ id: "l1", initials: "T.R.", lastSeen: "2026-08-20", days: 47, clinician: "Angela St. Ville", url: "https://ehr.test/patients/l1" }],
       docs: [{ ...snapshot().docs[0], unsigned: 4 }],
     });
     const second = await me.ehr.refresh({ organizationId: orgId });
@@ -114,7 +117,9 @@ describe("A healthcare practice workspace", () => {
     expect(h.content).not.toContain("J.M.");
     const malik = (await db.getEmployeeByKind(orgId, "leads"))!;
     const m = (await db.listChatMessages(orgId, malik.id, 10)).pop()!;
-    expect(m.content).toContain("One client has paperwork past due and 1 appointment change");
+    expect(m.content).toContain("One client has paperwork past due and 1 appointment change and one client not booked in 30 days");
+    expect(m.content).toContain("- T.R. · last seen Aug 20, 2026 with Angela St. Ville, 47 days ago, nothing booked");
+    expect(await ehr.ehrFacts(orgId, "leads")).toContain("Not booked in 30 days, longest first: T.R. last seen Aug 20, 2026 with Angela St. Ville (47 days)");
     expect(m.content).toContain("- D.W. · Consent forms sent Sep 30, 2026, 6 days out, not finished");
     expect(m.content).toContain("A.P. · Wed, Oct 7, 2026, 4:00 PM with Angela St. Ville · cancelled (Schedule conflict)");
     const camille = (await db.getEmployeeByKind(orgId, "compliance"))!;

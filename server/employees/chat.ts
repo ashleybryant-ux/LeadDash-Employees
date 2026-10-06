@@ -340,11 +340,11 @@ async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "billing" || emp.kind === "compliance") {
     const ehr = await import("../ehr");
     const extra = emp.kind === "compliance" ? await (await import("./compliance")).complianceFacts(emp.organizationId) : "";
-    return `${await ehr.ehrFacts(emp.organizationId)}${extra}`;
+    return `${await ehr.ehrFacts(emp.organizationId, emp.kind)}${extra}`;
   }
   if (emp.kind === "leads") {
     const org = await db.getOrganizationById(emp.organizationId);
-    if (org?.orgType === "healthcare") return (await import("../ehr")).ehrFacts(emp.organizationId);
+    if (org?.orgType === "healthcare") return (await import("../ehr")).ehrFacts(emp.organizationId, "leads");
   }
   if (emp.kind === "inbox") {
     const cals = db.listAccountLinks(emp.organizationId, "calendar");

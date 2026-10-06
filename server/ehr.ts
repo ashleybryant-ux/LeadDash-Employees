@@ -31,6 +31,8 @@ export type EhrBalance = { id: string; initials: string; cents: number; lastPaym
 export type EhrEligibility = { id: string; initials: string; session: string; clinician: string; result: string; ok: boolean; url: string };
 export type EhrPaperwork = { id: string; initials: string; what: string; sent: string; due: string | null; status: string; daysOut: number; url: string };
 export type EhrAppointment = { id: string; kind: "booked" | "confirmed" | "cancelled" | "reschedule_requested" | "no_show"; initials: string; clinician: string; start: string; reason: string; at: string; url: string };
+/** An active client with no kept appointment in 30 days and nothing booked ahead. */
+export type EhrLapsed = { id: string; initials: string; lastSeen: string; days: number; clinician: string; url: string };
 export type EhrClinicianDocs = { clinician: string; unsigned: number; oldestUnsigned: string | null; plansDue: number; plansDueSoonest: string | null; measuresOverdue: number; url: string };
 export type EhrSnapshot = {
   generatedAt: string;
@@ -41,8 +43,9 @@ export type EhrSnapshot = {
   eligibility: EhrEligibility[];
   paperwork: EhrPaperwork[];
   appointments: EhrAppointment[];
+  lapsed: EhrLapsed[];
   docs: EhrClinicianDocs[];
-  totals: { collectedMonthCents: number; unpaid30Cents: number; balancesCents: number };
+  totals: { collectedMonthCents: number; unpaid30Cents: number; balancesCents: number; lapsed: number };
 };
 
 const PROVIDER = "leaddash_ehr" as const;
@@ -136,7 +139,7 @@ export async function disconnect(orgId: number) {
 // Reading, and what changed since last time
 // ==========================================
 
-const empty = (): EhrSnapshot => ({ generatedAt: "", practice: "", claims: [], unpaid: [], balances: [], eligibility: [], paperwork: [], appointments: [], docs: [], totals: { collectedMonthCents: 0, unpaid30Cents: 0, balancesCents: 0 } });
+const empty = (): EhrSnapshot => ({ generatedAt: "", practice: "", claims: [], unpaid: [], balances: [], eligibility: [], paperwork: [], appointments: [], lapsed: [], docs: [], totals: { collectedMonthCents: 0, unpaid30Cents: 0, balancesCents: 0, lapsed: 0 } });
 
 function normalize(raw: unknown): EhrSnapshot {
   const r = (raw ?? {}) as Partial<EhrSnapshot>;
@@ -151,8 +154,9 @@ function normalize(raw: unknown): EhrSnapshot {
     eligibility: arr<EhrEligibility>(r.eligibility),
     paperwork: arr<EhrPaperwork>(r.paperwork),
     appointments: arr<EhrAppointment>(r.appointments),
+    lapsed: arr<EhrLapsed>(r.lapsed),
     docs: arr<EhrClinicianDocs>(r.docs),
-    totals: { ...base.totals, ...(r.totals ?? {}) },
+    totals: { ...base.totals, ...(r.totals ?? {}), lapsed: arr<EhrLapsed>(r.lapsed).length },
   };
 }
 
@@ -161,15 +165,17 @@ export type Changes = {
   paperwork: EhrPaperwork[];
   appointments: EhrAppointment[];
   eligibility: EhrEligibility[];
+  lapsed: EhrLapsed[];
   docs: { clinician: string; unsigned: number; before: number }[];
 };
 
 /** What is in the new snapshot that was not in the old one. The first read reports nothing, so a fresh connection does not post weeks of history. */
 export function diff(before: EhrSnapshot | null, after: EhrSnapshot): Changes {
-  const none: Changes = { claims: [], paperwork: [], appointments: [], eligibility: [], docs: [] };
+  const none: Changes = { claims: [], paperwork: [], appointments: [], eligibility: [], lapsed: [], docs: [] };
   if (!before) return none;
   const had = (list: { id: string }[]) => new Set(list.map((x) => x.id));
   const claims = had(before.claims);
+  const lapsed = had(before.lapsed);
   const forms = new Set(before.paperwork.filter((p) => p.status === "overdue").map((p) => p.id));
   const appts = had(before.appointments);
   const elig = new Set(before.eligibility.filter((e) => !e.ok).map((e) => e.id));
@@ -179,6 +185,7 @@ export function diff(before: EhrSnapshot | null, after: EhrSnapshot): Changes {
     paperwork: after.paperwork.filter((p) => p.status === "overdue" && !forms.has(p.id)),
     appointments: after.appointments.filter((a) => !appts.has(a.id)),
     eligibility: after.eligibility.filter((e) => !e.ok && !elig.has(e.id)),
+    lapsed: after.lapsed.filter((l) => !lapsed.has(l.id)),
     docs: after.docs.filter((d) => d.unsigned > (docsBefore.get(d.clinician) ?? 0)).map((d) => ({ clinician: d.clinician, unsigned: d.unsigned, before: docsBefore.get(d.clinician) ?? 0 })),
   };
 }
@@ -218,14 +225,19 @@ export async function announce(orgId: number, changes: Changes, tz = "America/Ch
     notes.push({ kind: "billing", title: head, text: `${lines.length} item${lines.length === 1 ? "" : "s"} on Harper's Claims tab.`, url: "/chats/billing/work" });
   }
   const malik = await emp(orgId, "leads");
-  if (malik && (changes.paperwork.length || changes.appointments.length)) {
+  if (malik && (changes.paperwork.length || changes.appointments.length || changes.lapsed.length)) {
     const lines: string[] = [];
     for (const p of changes.paperwork) lines.push(`- ${p.initials} · ${p.what} sent ${longDate(p.sent)}, ${p.daysOut} day${p.daysOut === 1 ? "" : "s"} out, not finished`);
     for (const a of changes.appointments) {
       const what = a.kind === "booked" ? "booked" : a.kind === "confirmed" ? "confirmed" : a.kind === "cancelled" ? `cancelled${a.reason ? ` (${a.reason})` : ""}` : a.kind === "no_show" ? "did not show" : `asked to reschedule${a.reason ? ` (${a.reason})` : ""}`;
       lines.push(`- ${a.initials} · ${whenText(a.start, tz)} with ${a.clinician} · ${what}`);
     }
-    const head = [changes.paperwork.length ? `${changes.paperwork.length === 1 ? "One client has" : `${changes.paperwork.length} clients have`} paperwork past due` : "", changes.appointments.length ? `${changes.appointments.length} appointment change${changes.appointments.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ");
+    for (const l of changes.lapsed) lines.push(`- ${l.initials} · last seen ${longDate(l.lastSeen)}${l.clinician ? ` with ${l.clinician}` : ""}, ${l.days} days ago, nothing booked`);
+    const head = [
+      changes.paperwork.length ? `${changes.paperwork.length === 1 ? "One client has" : `${changes.paperwork.length} clients have`} paperwork past due` : "",
+      changes.appointments.length ? `${changes.appointments.length} appointment change${changes.appointments.length === 1 ? "" : "s"}` : "",
+      changes.lapsed.length ? `${changes.lapsed.length === 1 ? "one client" : `${changes.lapsed.length} clients`} not booked in 30 days` : "",
+    ].filter(Boolean).join(" and ");
     await post(malik, `From LeadDash EHR: ${head}.\n${lines.join("\n")}\n\nThe reminders the practice set keep going on their own; tell me if you want me to reach out by name.`);
     notes.push({ kind: "leads", title: `${head[0].toUpperCase()}${head.slice(1)}`, text: `On Malik's Leads tab.`, url: "/chats/leads/work" });
   }
@@ -286,10 +298,14 @@ export async function ehrTicks(now = Date.now()) {
 }
 
 /** A line for the employees' prompts: connected, and what is in the snapshot. */
-export async function ehrFacts(orgId: number) {
+export async function ehrFacts(orgId: number, kind: EmployeeKind | "" = "") {
   const v = await view(orgId);
   if (!v.connected) return "\nLeadDash EHR: not connected. The practice connects it on Integrations with the key from Practice Settings, LeadDash Employees. Until then there are no claims, paperwork or notes to read.";
   const s = v.snapshot;
   if (!s) return `\nLeadDash EHR: connected as ${v.practice}${v.error ? `, but the last read failed (${v.error})` : ", first read pending"}.`;
-  return `\nLeadDash EHR: connected as ${v.practice}, read ${v.fetchedAt ? v.fetchedAt.toISOString() : "recently"}. ${s.claims.length} denied or rejected claims, ${s.unpaid.reduce((n, u) => n + u.count, 0)} unpaid past 30 days (${money(s.totals.unpaid30Cents)}), ${s.balances.length} client balances (${money(s.totals.balancesCents)}), ${s.paperwork.filter((p) => p.status === "overdue").length} paperwork past due, ${s.docs.reduce((n, d) => n + d.unsigned, 0)} unsigned notes. Clients are initials; the detail is on the Desk tabs and in the EHR.`;
+  const head = `\nLeadDash EHR: connected as ${v.practice}, read ${v.fetchedAt ? v.fetchedAt.toISOString() : "recently"}. ${s.claims.length} denied or rejected claims, ${s.unpaid.reduce((n, u) => n + u.count, 0)} unpaid past 30 days (${money(s.totals.unpaid30Cents)}), ${s.balances.length} client balances (${money(s.totals.balancesCents)}), ${s.paperwork.filter((p) => p.status === "overdue").length} paperwork past due, ${s.lapsed.length} clients not booked in 30 days, ${s.docs.reduce((n, d) => n + d.unsigned, 0)} unsigned notes. Clients are initials; the detail is on the Work tabs and in the EHR.`;
+  const detail: string[] = [];
+  if (kind === "billing" && s.balances.length) detail.push(`Client balances, largest first: ${s.balances.slice(0, 20).map((b) => `${b.initials} ${money(b.cents)}${b.cardOnFile ? " (card on file)" : ""}${b.lastPayment ? `, last paid ${longDate(b.lastPayment)}` : ""}`).join("; ")}${s.balances.length > 20 ? `; and ${s.balances.length - 20} more on the Balances tab` : ""}.`);
+  if (kind === "leads" && s.lapsed.length) detail.push(`Not booked in 30 days, longest first: ${s.lapsed.slice(0, 20).map((l) => `${l.initials} last seen ${longDate(l.lastSeen)}${l.clinician ? ` with ${l.clinician}` : ""} (${l.days} days)`).join("; ")}${s.lapsed.length > 20 ? `; and ${s.lapsed.length - 20} more on the Not booked tab` : ""}. The practice decides who is reached out to; say so by initials and it opens in the EHR.`);
+  return `${head}${detail.length ? `\n${detail.join("\n")}` : ""}`;
 }

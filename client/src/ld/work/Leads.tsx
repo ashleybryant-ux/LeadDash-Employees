@@ -6,7 +6,7 @@ import { ErrorLine, FolderTabs } from "../ui";
 import type { Outputs } from "../types";
 
 type Lead = Outputs["sales"]["leads"][number];
-type Tab = "new" | "replied" | "booked" | "closed";
+type Tab = "new" | "replied" | "booked" | "closed" | "lapsed";
 const TABS: { key: Tab; label: string }[] = [
   { key: "new", label: "New" },
   { key: "replied", label: "Replied" },
@@ -44,7 +44,10 @@ export default function Leads({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId, currentOrg } = useTenant();
   const tz = currentOrg?.timezone || "America/Chicago";
   const utils = trpc.useUtils();
+  const healthcare = currentOrg?.orgType === "healthcare";
   const q = trpc.sales.leads.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 30_000 });
+  const ehr = trpc.ehr.view.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && healthcare, refetchInterval: 60_000 });
+  const lapsed = ehr.data?.snapshot?.lapsed ?? [];
   const [tab, setTab] = React.useState<Tab>("new");
   const [open, setOpen] = React.useState<number | null>(null);
   const refresh = () => Promise.all([utils.sales.leads.invalidate(), utils.publishing.listApprovalQueue.invalidate()]);
@@ -56,8 +59,9 @@ export default function Leads({ emp }: { emp: EmployeeRow }) {
 
   return (
     <main className="ld-main" style={{ padding: "20px 32px" }}>
-      <FolderTabs value={tab} onChange={(k) => { setTab(k); setOpen(null); }} tabs={TABS.map((t) => ({ key: t.key, label: `${t.label} (${all.filter((l) => l.status === t.key).length})` }))}>
-        <div className="ld-hd" style={{ gridTemplateColumns: COLS }}>
+      <FolderTabs value={tab} onChange={(k) => { setTab(k); setOpen(null); }} tabs={[...TABS.map((t) => ({ key: t.key as Tab, label: `${t.label} (${all.filter((l) => l.status === t.key).length})` })), ...(healthcare ? [{ key: "lapsed" as Tab, label: `Not booked (${lapsed.length})` }] : [])]}>
+        {tab === "lapsed" && <Lapsed rows={lapsed} connected={!!ehr.data?.connected} loading={ehr.isLoading} />}
+        {tab !== "lapsed" && <><div className="ld-hd" style={{ gridTemplateColumns: COLS }}>
           <span>Lead</span>
           <span>Came from</span>
           <span>Came in</span>
@@ -120,8 +124,40 @@ export default function Leads({ emp }: { emp: EmployeeRow }) {
             </React.Fragment>
           );
         })}
-        {(close.error || send.error) && <div style={{ padding: "8px 18px" }}><ErrorLine error={close.error || send.error} /></div>}
+        {(close.error || send.error) && <div style={{ padding: "8px 18px" }}><ErrorLine error={close.error || send.error} /></div>}</>}
       </FolderTabs>
     </main>
+  );
+}
+
+const LQ = "80px 140px 110px minmax(0,1fr) 120px";
+const longDate = (ymd: string) => {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ymd;
+};
+
+/** Active clients with no kept appointment in 30 days and nothing booked, from LeadDash EHR. Initials only; the chart opens in the EHR. */
+function Lapsed({ rows, connected, loading }: { rows: { id: string; initials: string; lastSeen: string; days: number; clinician: string; url: string }[]; connected: boolean; loading: boolean }) {
+  if (!connected) return <div className="ld-empty">{loading ? "Loading..." : "LeadDash EHR is not connected. Connect it on Integrations and this list fills in at the next read."}</div>;
+  return (
+    <>
+      <div className="ld-hd" style={{ gridTemplateColumns: LQ }}>
+        <span>Client</span>
+        <span>Last seen</span>
+        <span>Days</span>
+        <span>Clinician</span>
+        <span />
+      </div>
+      {rows.length === 0 && <div className="ld-empty">Every active client has been seen in the last 30 days or has a session booked.</div>}
+      {rows.map((r) => (
+        <div key={r.id} className="ld-rw" style={{ gridTemplateColumns: LQ }}>
+          <span className="ld-strong">{r.initials}</span>
+          <span>{longDate(r.lastSeen)}</span>
+          <span className={`ld-pill ${r.days >= 60 ? "red" : "amber"}`}>{r.days} days</span>
+          <span>{r.clinician || <span className="ld-muted">Not recorded</span>}</span>
+          <a href={r.url} target="_blank" rel="noreferrer noopener" className="ld-btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>Open in EHR</a>
+        </div>
+      ))}
+    </>
   );
 }
