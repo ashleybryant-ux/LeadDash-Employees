@@ -344,7 +344,9 @@ function NewTask({ c, guest, open, setOpen, onTemplate }: { c: PjCtx; guest: boo
   const makeList = trpc.pj.saveList.useMutation();
   const editable = c.data.lists.filter((l) => l.level === "edit" || l.level === "full");
   const none = !editable.length;
-  React.useEffect(() => setList(c.listId ?? editable[0]?.id ?? ""), [c.listId, c.data.lists]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => {
+    setList(c.listId ?? editable[0]?.id ?? "");
+  }, [c.listId, c.data.lists]); // eslint-disable-line react-hooks/exhaustive-deps
   const add = async () => {
     if (!name.trim()) return;
     let id = list ? Number(list) : 0;

@@ -46,7 +46,9 @@ export function DocPage({ orgId, id, onPick, onOpenTask, refresh }: { orgId: num
   const [saveTpl, setSaveTpl] = React.useState(false);
   const removeDoc = trpc.pj.removeDoc.useMutation({ onSuccess: async () => { await refresh(); onPick({ scope: "everything" }); } });
   const addPage = trpc.pj.saveDoc.useMutation({ onSuccess: async (d) => { await refresh(); onPick({ scope: "doc", id: d.id }); } });
-  React.useEffect(() => setEditing(false), [id]);
+  React.useEffect(() => {
+    setEditing(false);
+  }, [id]);
   const d = q.data;
   const [copied, setCopied] = React.useState(false);
   if (!d) return <div className="gp-canvas"><ErrorLine error={q.error} />{q.isLoading && <span className="ld-muted">Opening the doc</span>}</div>;

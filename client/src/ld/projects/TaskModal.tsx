@@ -22,7 +22,9 @@ const RANK = { view: 1, comment: 2, edit: 3, full: 4 } as const;
 export function TaskModal({ orgId, id, onClose, onOpen, onEditFields, onSaveTemplate }: { orgId: number; id: number; onClose: () => void; onOpen: (id: number) => void; onEditFields?: () => void; onSaveTemplate?: (id: number) => void }) {
   const q = trpc.pj.task.useQuery({ organizationId: orgId, id }, { refetchInterval: 30_000 });
   const [editing, setEditing] = React.useState(false);
-  React.useEffect(() => setEditing(false), [id]);
+  React.useEffect(() => {
+    setEditing(false);
+  }, [id]);
   React.useEffect(() => {
     const h = (e: KeyboardEvent) => e.key === "Escape" && !editing && onClose();
     window.addEventListener("keydown", h);
@@ -784,7 +786,10 @@ function Activity({ orgId, d, onClose }: { orgId: number; d: Detail; onClose: ()
     },
   });
   const end = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => end.current?.scrollIntoView({ block: "end" }), [d.comments.length]);
+  // Wrapped in braces: an effect must return nothing or a cleanup function, and a browser extension can make scrollIntoView return a value.
+  React.useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [d.comments.length]);
   // An employee answers in a moment: look again shortly after a comment that names one.
   React.useEffect(() => {
     if (!send.isSuccess) return;
