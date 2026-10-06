@@ -211,6 +211,19 @@ export function PagePreviewCard({ id, version, title, kind }: { id: number; vers
   const approve = trpc.pages.approve.useMutation({ onSuccess: () => { utils.pages.invalidate(); } });
   const [phone, setPhone] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  // Desktop shows the page at a real desktop width (1280px) scaled down to fit, so it lays out the way a laptop shows it.
+  const DESK = 1280;
+  const box = React.useRef<HTMLDivElement>(null);
+  const [scale, setScale] = React.useState(0.65);
+  React.useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = () => setScale(Math.min(1, el.clientWidth / DESK));
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const v = q.data?.version ?? version ?? 0;
   const approved = q.data?.page.status === "approved";
   const full = () => {
@@ -244,9 +257,15 @@ export function PagePreviewCard({ id, version, title, kind }: { id: number; vers
           <span className="dot" />
           <span style={{ marginLeft: 8 }}>Live preview · scroll inside to see the whole page</span>
         </div>
-        <div style={{ background: phone ? "#eef2f0" : "#fff", display: "flex", justifyContent: "center" }}>
+        <div ref={box} style={{ background: phone ? "#eef2f0" : "#fff", display: "flex", justifyContent: "center", overflow: "hidden", height: 460 }}>
           {q.data?.document ? (
-            <iframe title={`${title}, version ${v}`} srcDoc={q.data.document} sandbox="allow-same-origin" style={{ width: phone ? 390 : "100%", maxWidth: "100%", height: 460, border: 0, background: "#fff", display: "block" }} />
+            phone ? (
+              <iframe title={`${title}, version ${v}`} srcDoc={q.data.document} sandbox="allow-same-origin" style={{ width: 390, maxWidth: "100%", height: 460, border: 0, background: "#fff", display: "block" }} />
+            ) : (
+              <div style={{ width: "100%", height: 460, position: "relative" }}>
+                <iframe title={`${title}, version ${v}`} srcDoc={q.data.document} sandbox="allow-same-origin" style={{ width: DESK, height: 460 / scale, border: 0, background: "#fff", display: "block", transform: `scale(${scale})`, transformOrigin: "top left", position: "absolute", top: 0, left: 0 }} />
+              </div>
+            )
           ) : (
             <div className="ld-empty" style={{ padding: 40 }}>{q.isLoading ? "Loading the preview..." : "This version isn't available."}</div>
           )}
