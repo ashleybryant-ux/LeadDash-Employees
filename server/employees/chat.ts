@@ -1578,7 +1578,7 @@ async function nowIn(orgId: number) {
 }
 
 /** Who was @tagged in a message to an employee: the other AI employees get it in their own chats, the people get a notice. */
-async function passOnMentions(emp: AIEmployee, opts: { organizationId: number; text: string; authorName: string; userId: number | null }) {
+async function passOnMentions(emp: AIEmployee, opts: { organizationId: number; text: string; authorName: string; userId: number | null; quoteText?: string }) {
   const { findMentions } = await import("../team");
   const members = await db.listMembers(opts.organizationId);
   const emps = (await db.listEmployeesByOrg(opts.organizationId)).filter((e) => e.id !== emp.id);
@@ -1587,11 +1587,11 @@ async function passOnMentions(emp: AIEmployee, opts: { organizationId: number; t
   for (const id of m.employees) {
     const other = emps.find((e) => e.id === id);
     if (!other || other.status === "paused") continue;
-    void sendChatMessage({ organizationId: opts.organizationId, employeeId: other.id, text: `${opts.text}\n\n(${opts.authorName} tagged you in ${emp.name}'s chat.)`, authorName: opts.authorName, userId: opts.userId, forwarded: true }).catch((err) => console.warn(`[chat] tag to ${other.name} failed:`, err instanceof Error ? err.message : err));
+    void sendChatMessage({ organizationId: opts.organizationId, employeeId: other.id, text: `${opts.text}\n\n(${opts.authorName} tagged you in ${emp.name}'s chat${opts.quoteText ? `, replying to this message there: "${opts.quoteText}"` : ""}.)`, authorName: opts.authorName, userId: opts.userId, forwarded: true }).catch((err) => console.warn(`[chat] tag to ${other.name} failed:`, err instanceof Error ? err.message : err));
   }
   if (users.length) {
     const { notify } = await import("../notify");
-    await notify(opts.organizationId, "team_message", { title: `${opts.authorName} tagged you in ${emp.name}'s chat`, body: opts.text.slice(0, 240), url: `/chats/${emp.kind}`, tag: `tag-${emp.kind}` }, { only: users }).catch(() => null);
+    await notify(opts.organizationId, "team_message", { title: `${opts.authorName} tagged you in ${emp.name}'s chat`, body: `${opts.text}${opts.quoteText ? ` (about: ${opts.quoteText})` : ""}`.slice(0, 240), url: `/chats/${emp.kind}`, tag: `tag-${emp.kind}` }, { only: users }).catch(() => null);
   }
   return { users, employees: m.employees.filter((id) => emps.some((e) => e.id === id && e.status !== "paused")) };
 }
@@ -1645,11 +1645,16 @@ export async function sendChatMessage(opts: {
   spoken?: boolean;
   /** This message was passed on from another employee's chat because of an @mention: its own mentions are not passed on again. */
   forwarded?: boolean;
+  /** Reply on a message in this chat: that message is quoted above this one and given to the employee as what this answers. */
+  replyToId?: number | null;
 }) {
   const emp = await db.getEmployeeForOrg(opts.employeeId, opts.organizationId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+  const quoted = opts.replyToId ? await db.getChatMessage(opts.organizationId, opts.replyToId) : null;
+  const quote = quoted && quoted.employeeId === emp.id ? quoted : null;
+  const quoteText = quote ? `${quote.authorName}: ${quote.content.replace(/\s+/g, " ").slice(0, 400)}` : "";
   // @mentions: a tagged AI employee gets the message in their own chat and answers there; a tagged person gets a notice.
-  const tagged = opts.forwarded ? { users: [] as number[], employees: [] as number[] } : await passOnMentions(emp, opts);
+  const tagged = opts.forwarded ? { users: [] as number[], employees: [] as number[] } : await passOnMentions(emp, { ...opts, quoteText });
   // Only this chat's own unsent files can go with the message.
   const sent = db.getChatFiles(opts.organizationId, (opts.attachmentIds ?? []).slice(0, 10)).filter((f) => f.employeeId === emp.id && f.messageId == null);
   if (!opts.text.trim() && !sent.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Type a message or attach a file." });
@@ -1662,6 +1667,7 @@ export async function sendChatMessage(opts: {
     userId: opts.userId,
     content: opts.text,
     spoken: !!opts.spoken,
+    replyToId: quote?.id ?? null,
     attachments: sent.length ? JSON.stringify(sent.map((f) => ({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl }))) : null,
   });
   db.attachChatFiles(opts.organizationId, sent.map((f) => f.id), userMsg.id);
@@ -1690,7 +1696,7 @@ export async function sendChatMessage(opts: {
     const recentIds = new Set(history.slice(-12).map((m) => m.id));
     const files = sent.length ? sent : db.recentChatFiles(opts.organizationId, emp.id, 6).filter((f) => f.messageId != null && recentIds.has(f.messageId)).slice(0, 4);
     const scheduled = /^Scheduled task/.test(opts.authorName);
-    const said = opts.text.trim() || `(attached ${sent.map((f) => f.name).join(", ")})`;
+    const said = `${quoteText ? `(Replying to this message: "${quoteText}")\n` : ""}${opts.text.trim() || `(attached ${sent.map((f) => f.name).join(", ")})`}`;
     const { system } = await tasks.systemPromptAbout(
       emp,
       `${opts.text} ${sent.map((f) => f.name).join(" ")}`,

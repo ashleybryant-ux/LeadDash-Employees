@@ -507,6 +507,8 @@ export const chatMessages = sqliteTable(
     attachments: text("attachments"),
     /** Said out loud in a one-on-one: the person spoke it, or the employee's answer was played. */
     spoken: integer("spoken", { mode: "boolean" }).notNull().default(false),
+    /** The message this one answers (Reply on a message), shown as a quote above it. */
+    replyToId: integer("replyToId"),
     createdAt: createdAt(),
   },
   (t) => [index("chat_messages_org_emp_idx").on(t.organizationId, t.employeeId)]

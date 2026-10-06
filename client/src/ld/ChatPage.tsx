@@ -152,6 +152,9 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   const [text, setText] = React.useState("");
   const [pending, setPending] = React.useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = React.useState<{ id: number; name: string; size: number; kind: "image" | "document"; url: string }[]>([]);
+  // Replying to one message: the quote shows in the box, goes out with the message, and tagged people see what it was about.
+  const [replyTo, setReplyTo] = React.useState<{ id: number; authorName: string; excerpt: string } | null>(null);
+  const [pendingReply, setPendingReply] = React.useState<{ authorName: string; excerpt: string } | null>(null);
   const files = useAttachments(currentOrgId, emp.id);
   // @mentions: the people on the team and the other AI employees. A tagged employee gets the message in their own chat; a tagged person gets a notice.
   const members = trpc.members.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, staleTime: 60_000 });
@@ -164,11 +167,12 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
     onSuccess: async (r, v) => {
       setPending(null);
       setPendingFiles([]);
+      setPendingReply(null);
       // In a one-on-one, the answer is also played out loud.
       if (v.spoken) talk.heard(r);
       await Promise.all([utils.chat.list.invalidate(), utils.chat.summaries.invalidate(), utils.publishing.listApprovalQueue.invalidate()]);
     },
-    onError: () => { setPending(null); setPendingFiles([]); },
+    onError: () => { setPending(null); setPendingFiles([]); setPendingReply(null); },
   });
   const lastMsgId = messages.data?.length ? messages.data[messages.data.length - 1].id : null;
   const talk = useOneOnOne({
@@ -215,9 +219,16 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
     if ((!v && !attached.length) || send.isPending || files.uploading) return;
     setPending(v);
     setPendingFiles(attached);
+    setPendingReply(replyTo ? { authorName: replyTo.authorName, excerpt: replyTo.excerpt } : null);
     setText("");
     files.clear();
-    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: v, attachmentIds: attached.map((f) => f.id), spoken: talk.active });
+    setReplyTo(null);
+    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: v, attachmentIds: attached.map((f) => f.id), spoken: talk.active, replyToId: replyTo?.id });
+  };
+  /** Reply picks one message; its first line shows in the box and goes along with what you send. */
+  const startReply = (m: { id: number; authorName: string; content: string }) => {
+    setReplyTo({ id: m.id, authorName: m.authorName, excerpt: excerptOf(m.content) });
+    composer.current?.querySelector("textarea")?.focus();
   };
   /** A tapped quick reply goes out as the person's message, without touching files waiting in the box. */
   const pick = (value: string) => {
@@ -248,6 +259,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
           // Quick replies show only under the latest message, while nothing is being sent.
           const replies = m.id === lastId && pending === null && !busy ? allCards.filter((c) => c.type === "choices").flatMap((c) => c.options ?? []) : [];
           const queries = parseJson<string[]>(m.searchQueries, []);
+          const quoted = m.replyToId ? list.find((q) => q.id === m.replyToId) ?? null : null;
           if (m.role === "handoff") {
             return (
               <React.Fragment key={m.id}>
@@ -263,14 +275,25 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
           return (
             <React.Fragment key={m.id}>
               {sep && <DaySep date={day} />}
-              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <div className="ld-msg" style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                 {m.role === "user" ? <PersonAvatar name={m.authorName.replace(/^Scheduled task: /, "Task")} src={photoOf(m.userId)} /> : <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={36} />}
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
                   <div>
                     <div>
                       <span style={{ fontWeight: 800, fontSize: 14 }}>{m.authorName}</span>
                       <span style={{ fontSize: 12, color: "#5b6b64", fontWeight: 500, marginLeft: 6 }}>{fmtTime(m.createdAt)}</span>
+                      {m.content && (
+                        <button type="button" className="ld-msgreply" onClick={() => startReply(m)} aria-label={`Reply to ${m.authorName}`}>
+                          Reply
+                        </button>
+                      )}
                     </div>
+                    {quoted && (
+                      <div className="ld-quote sent">
+                        <b>{quoted.authorName}:</b>
+                        <span>{excerptOf(quoted.content)}</span>
+                      </div>
+                    )}
                     {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.role === "user" ? m.content : <Rich text={m.content} />}</div>}
                     <MessageAttachments raw={m.attachments} />
                     {m.spoken && <SpokenTag role={m.role} />}
@@ -341,6 +364,12 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start", opacity: 0.8 }}>
               <PersonAvatar name="You" src={user?.avatarUrl} />
               <div style={{ minWidth: 0 }}>
+                {pendingReply && (
+                  <div className="ld-quote sent">
+                    <b>{pendingReply.authorName}:</b>
+                    <span>{pendingReply.excerpt}</span>
+                  </div>
+                )}
                 {pending && <div style={{ fontSize: 15, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{pending}</div>}
                 {pendingFiles.length > 0 && <MessageAttachments raw={JSON.stringify(pendingFiles)} />}
               </div>
@@ -397,7 +426,22 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             who={who}
             busy={send.isPending || files.uploading || (!text.trim() && !files.ready.length)}
             attach={files.button}
-            chips={files.chips}
+            chips={
+              replyTo || files.chips ? (
+                <>
+                  {replyTo && (
+                    <div className="ld-quote" role="status">
+                      <b>Replying to {replyTo.authorName}:</b>
+                      <span>{replyTo.excerpt}</span>
+                      <button type="button" onClick={() => setReplyTo(null)} aria-label="Cancel reply">
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  {files.chips}
+                </>
+              ) : null
+            }
             note={files.note}
             extra={<TalkButton o={talk} name={emp.name} />}
             employeeNote="AI employee, gets this in their own chat"
@@ -407,6 +451,12 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
       </div>
     </div>
   );
+}
+
+/** The first line of a message, plain and short, for the quote above a reply. */
+function excerptOf(text: string) {
+  const line = text.replace(/\*\*|^#{1,6}\s+/gm, "").trim().split("\n").find((l) => l.trim()) ?? "";
+  return line.length > 140 ? line.slice(0, 137).trimEnd() + "..." : line;
 }
 
 /** An employee's message with **bold** shown as bold and "# " heading marks dropped, so no stray asterisks show. */

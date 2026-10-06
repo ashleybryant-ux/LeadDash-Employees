@@ -1621,6 +1621,16 @@ button.gp-ts:hover { background: #f8fbf9; }
 .ld-notes li.done { text-decoration: line-through; color: #5b6b64; }
 .ld-notes.compact { gap: 8px; margin-top: 4px; }
 
+/* Replying to one message in an employee's chat: a Reply button on each row, a quoted line in the box and above the sent message. */
+.ld-msgreply { border: 0; background: none; font: inherit; font-size: 12px; font-weight: 700; color: #155c3e; cursor: pointer; padding: 0 4px; margin-left: 6px; opacity: 0; transition: opacity 0.12s; }
+.ld-msg:hover .ld-msgreply, .ld-msgreply:focus-visible { opacity: 1; }
+@media (hover: none) { .ld-msgreply { opacity: 1; } }
+.ld-quote { display: flex; align-items: flex-start; gap: 8px; border-left: 3px solid #b8cfc3; background: #eef3f0; border-radius: 0 10px 10px 0; padding: 6px 10px; font-size: 13px; line-height: 1.45; color: #3d4c45; min-width: 0; }
+.ld-quote b { color: #14221c; white-space: nowrap; }
+.ld-quote span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ld-quote button { border: 0; background: none; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; padding: 0 2px; color: #5b6b64; }
+.ld-quote.sent { margin-top: 4px; margin-bottom: 2px; max-width: 560px; }
+
 /* ==========================================
  * Laptop layout (761px to 1400px) inside an employee's page
  * The chat list takes 340px and the rail 76px, so a work tab gets half the

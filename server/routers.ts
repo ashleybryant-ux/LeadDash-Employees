@@ -3364,7 +3364,7 @@ export const appRouter = router({
       }),
 
     send: protectedProcedure
-      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().max(20_000), attachmentIds: z.array(z.number().int()).max(10).default([]), spoken: z.boolean().default(false) }))
+      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().max(20_000), attachmentIds: z.array(z.number().int()).max(10).default([]), spoken: z.boolean().default(false), replyToId: z.number().int().optional() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
         const result = await sendChatMessage({
@@ -3375,6 +3375,7 @@ export const appRouter = router({
           userId: ctx.user.id,
           attachmentIds: input.attachmentIds,
           spoken: input.spoken,
+          replyToId: input.replyToId ?? null,
         });
         await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id);
         // In a one-on-one the answer is also said out loud in the employee's voice.

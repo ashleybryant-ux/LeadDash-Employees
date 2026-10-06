@@ -1035,6 +1035,10 @@ export async function listChatMessages(orgId: number, employeeId: number, limit 
   return rows.reverse();
 }
 
+export async function getChatMessage(orgId: number, id: number) {
+  return getDb().select().from(chatMessages).where(and(eq(chatMessages.organizationId, orgId), eq(chatMessages.id, id))).limit(1).all()[0] ?? null;
+}
+
 export async function createChatMessage(msg: InsertChatMessage) {
   const rows = getDb().insert(chatMessages).values(msg).returning().all();
   return rows[0];
