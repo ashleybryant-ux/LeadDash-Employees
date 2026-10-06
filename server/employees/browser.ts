@@ -115,20 +115,50 @@ type Live = {
   stop: boolean;
   handBack: boolean;
   helped: string[];
+  /** What the owner said in chat while this session ran; given to the employee at its next step. */
+  notes: string[];
 };
 const lives = new Map<number, Live>();
+/** Sessions waiting their turn behind the one that is open (one browser per workspace at a time). */
+const queued = new Map<number, string[]>();
 
 export function liveView(orgId: number) {
   const l = lives.get(orgId);
-  if (!l) return { id: "", state: "none" as const, step: "", url: "", reason: "", frame: null as string | null, frameAt: 0 };
-  return { id: l.id, state: l.state, step: l.step, url: l.url, reason: l.reason, frame: l.frame ? `data:image/jpeg;base64,${l.frame.toString("base64")}` : null, frameAt: l.frameAt };
+  const waiting = queued.get(orgId) ?? [];
+  if (!l) return { id: "", state: "none" as const, step: "", url: "", reason: "", frame: null as string | null, frameAt: 0, queued: waiting };
+  return { id: l.id, state: l.state, step: l.step, url: l.url, reason: l.reason, frame: l.frame ? `data:image/jpeg;base64,${l.frame.toString("base64")}` : null, frameAt: l.frameAt, queued: waiting };
 }
 
-/** Shows "Opening the browser" for a session that is queued but not started yet. */
+/** Shows "Opening the browser" for a session that is about to start; one already open keeps the screen and the new one waits in line. */
 export function liveStart(orgId: number, id: string) {
   const l = lives.get(orgId);
-  if (l && l.page && l.state !== "done" && l.state !== "stopped") return;
-  lives.set(orgId, { id, orgId, state: "starting", step: "Opening the browser", url: "", reason: "", frame: null, frameAt: 0, page: null, stop: false, handBack: false, helped: [] });
+  if (l && l.page && l.state !== "done" && l.state !== "stopped") {
+    const q = queued.get(orgId) ?? [];
+    if (!q.includes(id)) queued.set(orgId, [...q, id]);
+    return;
+  }
+  queued.set(orgId, (queued.get(orgId) ?? []).filter((x) => x !== id));
+  lives.set(orgId, { id, orgId, state: "starting", step: "Opening the browser", url: "", reason: "", frame: null, frameAt: 0, page: null, stop: false, handBack: false, helped: [], notes: [] });
+}
+
+/** A session has left the line (it started, or was dropped). */
+export function liveDequeue(orgId: number, id: string) {
+  queued.set(orgId, (queued.get(orgId) ?? []).filter((x) => x !== id));
+}
+
+/** Whether a browser session is open in this workspace right now (starting, running, waiting for the person, or under their control). */
+export function liveBusy(orgId: number) {
+  const l = lives.get(orgId);
+  return !!l && (l.state === "starting" || l.state === "running" || l.state === "waiting" || l.state === "control");
+}
+
+/** Something the owner said in chat while the browser is working: the employee reads it at the next step. */
+export function liveNote(orgId: number, text: string) {
+  const l = lives.get(orgId);
+  if (!l || !liveBusy(orgId)) return false;
+  l.notes.push(text.trim().slice(0, 500));
+  l.notes = l.notes.slice(-6);
+  return true;
 }
 
 function liveFor(orgId: number, id: string) {
@@ -310,8 +340,9 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
     let live: Live | null = null;
     if (task.live) {
       const prev = lives.get(task.orgId);
-      live = { id: task.live.id, orgId: task.orgId, state: "starting", step: "Opening the site", url: task.startUrl, reason: "", frame: null, frameAt: 0, page, stop: prev?.id === task.live.id && prev.stop, handBack: false, helped: [] };
+      live = { id: task.live.id, orgId: task.orgId, state: "starting", step: "Opening the site", url: task.startUrl, reason: "", frame: null, frameAt: 0, page, stop: prev?.id === task.live.id && prev.stop, handBack: false, helped: [], notes: prev?.id === task.live.id ? prev.notes : [] };
       lives.set(task.orgId, live);
+      liveDequeue(task.orgId, task.live.id);
       const l = live;
       let busy = false;
       ticker = setInterval(() => {
@@ -377,6 +408,12 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
           live.state = "running";
           log.push({ step, action: "person", detail: `The person took over and handed back.${live.helped.length ? ` ${live.helped.join(". ")}.` : ""} Continue the goal from this page.`, url: page.url() });
           max += 15;
+          lastSig = "";
+        }
+        // Said in chat while this ran: part of the goal from here on.
+        if (live.notes.length) {
+          log.push({ step, action: "person", detail: `The owner just said in chat: ${live.notes.map((n) => `"${n}"`).join(" ")}. Follow it from here; it is part of the goal.`, url: page.url() });
+          live.notes = [];
           lastSig = "";
         }
       }

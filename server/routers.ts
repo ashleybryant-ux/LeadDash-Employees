@@ -3259,65 +3259,10 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "reviewer");
+        const m = await requireMember(ctx, input.organizationId, "reviewer");
         const item = await db.getOutboundItemForOrg(input.itemId, input.organizationId);
         if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Outbound item not found in this organization." });
-        if (item.status === "published") throw new TRPCError({ code: "BAD_REQUEST", message: "This has already gone out." });
-        const reviewer = personName(ctx.user);
-        if (input.action === "approve_for_dispatch" || input.action === "approve_only") {
-          await desk.assertDecide(input.organizationId, (await requireMember(ctx, input.organizationId, "reviewer")).role, desk.categoryOfItem(item.kind));
-        }
-
-        if (input.action === "request_revisions" || input.action === "cancel") {
-          const status = input.action === "request_revisions" ? "changes_requested" : "cancelled";
-          const updated = await db.updateOutboundItem(input.itemId, input.organizationId, { status, reviewerNotes: input.notes ?? null, scheduledFor: status === "cancelled" ? null : item.scheduledFor });
-          await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: reviewer, action: status === "changes_requested" ? "Sent back" : "Cancelled", details: `"${item.title}".${input.notes ? ` Note: ${input.notes}` : ""}` });
-          return updated;
-        }
-
-        if (input.action === "retry" && item.status === "pending_approval") throw new TRPCError({ code: "BAD_REQUEST", message: "Approve it first." });
-        if (item.kind === "social_post" && input.action !== "retry") {
-          const problems = postProblems(item);
-          if (problems.length) throw new TRPCError({ code: "BAD_REQUEST", message: `${problems.join(". ")}.` });
-        }
-        const approval = item.approvedBy ? {} : { approvedBy: reviewer, approvedAt: new Date() };
-        const later = item.kind === "social_post" && item.scheduledFor && new Date(item.scheduledFor).getTime() > Date.now() + 30_000;
-
-        // Jada's sequences are approved as a whole.
-        if (item.kind === "outreach_email" && input.action !== "retry") {
-          const seq = (() => {
-            try {
-              return JSON.parse(item.metadata || "{}").sequence as string | undefined;
-            } catch {
-              return undefined;
-            }
-          })();
-          if (seq) {
-            await sales.approveSequence(input.organizationId, seq, reviewer);
-            return db.getOutboundItemForOrg(item.id, input.organizationId);
-          }
-        }
-        if (input.action !== "retry") await team.noteApproval(item);
-
-        // Approved, waiting for a time; or approved for a time already set.
-        if (input.action === "approve_only" || (input.action === "approve_for_dispatch" && later)) {
-          if (item.kind !== "social_post" && input.action === "approve_only") throw new TRPCError({ code: "BAD_REQUEST", message: "Only posts can wait for a time." });
-          const status = later ? "scheduled" : "approved";
-          const updated = await db.updateOutboundItem(input.itemId, input.organizationId, { status, reviewerNotes: input.notes ?? item.reviewerNotes ?? null, ...approval });
-          const tz = (await db.getOrganizationById(input.organizationId))?.timezone || "America/Chicago";
-          const when = later ? social.localParts(new Date(item.scheduledFor!), tz) : null;
-          await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: reviewer, action: "Approved", details: `"${item.title}". ${when ? `Scheduled for ${when.date} at ${when.time}.` : "Waiting for a time on the calendar."}` });
-          return updated;
-        }
-
-        // Theo's approved article goes to Sienna for posts, unless Theo is set to ask.
-        if (item.kind === "blog_post" && input.action === "approve_for_dispatch") {
-          const theo = item.employeeId ? await db.getEmployeeForOrg(item.employeeId, input.organizationId) : null;
-          if (theo && team.gate(theo, "pass_to_social") === "auto") void tasks.postsFromArticle(input.organizationId, item.id).catch((err) => console.warn("[team] posts from article failed:", err instanceof Error ? err.message : err));
-        }
-
-        // Approve (or try again): post or send to every connected channel it is meant for.
-        return social.postNow(item, reviewer, "human_user", input.action === "retry" ? "Tried again" : "Approved", { ...approval, ...(item.kind === "social_post" ? { scheduledFor: item.scheduledFor ?? new Date() } : {}) }, input.notes);
+        return (await import("./approvals")).decideItem(item, { reviewer: personName(ctx.user), role: m.role, action: input.action, notes: input.notes });
       }),
 
     /** Which Connect buttons work, and what each workspace has connected. */

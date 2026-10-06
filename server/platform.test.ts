@@ -131,6 +131,35 @@ describe("every employee's browser", () => {
     expect((await db.listPortalLogins(orgId))[0].sessionEncrypted).toBeTruthy();
   });
 
+  it("never opens a second browser on top of the first: what is said meanwhile goes to the run that is open, and jobs take turns", async () => {
+    const { orgId, owner } = await makeWorkspace("browseonce");
+    const simone = (await db.getEmployeeByKind(orgId, "coo"))!;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const runs: BrowserTask[] = [];
+    vi.spyOn(browser, "runBrowserTask").mockImplementation(async (t) => {
+      runs.push(t);
+      // The first run marks itself live and waits; a note said in chat lands on it.
+      browser.liveStart(orgId, t.live!.id);
+      await gate;
+      return result({ result: JSON.stringify({ answer: "Done.", pending: "" }) });
+    });
+    await mockAi({ action: "browse", goal: "Open the demo practice and add a client", url: "https://demo.leaddash.io", title: "Adding a client" });
+    const first = await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "Add a client in the demo practice" });
+    expect(first.reply.content).toMatch(/^Opening it in my browser now/);
+    await until(() => runs.length === 1);
+    const second = await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "Just enter test information" });
+    expect(second.reply.content).toBe('I\'m still in the browser on "Adding a client". I\'ll use what you just said from here: "Just enter test information". Watch here or take over if I look stuck.');
+    expect(db.listWebTasks(orgId)).toHaveLength(1);
+    expect(runs).toHaveLength(1);
+    release();
+    await until(() => db.getWebTask(db.listWebTasks(orgId)[0].id, orgId)!.status === "done");
+    // A new job after the first is done starts normally.
+    const third = await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "Now add a second client" });
+    expect(third.reply.content).toMatch(/^Opening it in my browser now/);
+    expect(db.listWebTasks(orgId)).toHaveLength(2);
+  });
+
   it("refuses a page outside a locked login's sub-account before opening anything", async () => {
     const { orgId, owner } = await makeWorkspace("browselock");
     const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;

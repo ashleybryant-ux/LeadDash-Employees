@@ -771,10 +771,16 @@ function BrowserCard({ card }: { card: Card }) {
   const [text, setText] = React.useState("");
   const v = q.data;
   const mine = v && v.id === id;
-  const state = mine ? v.state : v ? "ended" : "starting";
+  const state = mine ? v.state : v ? (v.queued?.includes(id) ? "queued" : "ended") : "starting";
   React.useEffect(() => {
     if (state === "done" || state === "stopped" || state === "ended") setEnded(true);
   }, [state]);
+  if (state === "queued")
+    return (
+      <div className="ld-card" style={{ padding: "14px 18px" }}>
+        <span className="ld-small ld-muted">{card.title}: waiting for the browser. Another job is finishing first.</span>
+      </div>
+    );
   const control = state === "control";
   const active = state === "starting" || state === "running" || state === "waiting" || state === "control";
   const send = (i: { kind: "click"; x: number; y: number } | { kind: "type"; text: string } | { kind: "key"; key: string } | { kind: "scroll"; dy: number }) =>

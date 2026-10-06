@@ -108,10 +108,17 @@ describe("Avery's calendars", () => {
     const item = (await db.listOutboundItemsByOrg(orgId)).find((i) => i.kind === "calendar_hold")!;
     expect(JSON.parse(item.metadata!).linkId).toBe(ld.id);
     routes.unshift([/calendars\/ashley%40leaddash\.io\/events\?sendUpdates=none/, () => json({ htmlLink: "https://calendar.google.com/event?eid=1" })]);
-    const res = await integrations.dispatch(item);
-    expect(res.results[0]).toMatchObject({ channel: "calendar", ok: true });
+    // "approved" in chat does what Approve on the Approvals page does, and Avery says where it went.
+    await mockAi({ action: "approve", target: "" });
+    const asked = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "what is waiting on me?" });
+    expect(asked.reply.content).toBe('Waiting for your OK: "Payroll review" (calendar hold). Say "approved" and it goes out, or open Approvals.');
+    const ok2 = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "approved. send me the link here" });
+    expect(ok2.reply.content).toBe('Approved "Payroll review". It went out. Calendar event: https://calendar.google.com/event?eid=1');
+    expect((await db.getOutboundItemForOrg(item.id, orgId))!.status).toBe("published");
     const post = calls.find((c) => /events\?sendUpdates=none/.test(c.url))!;
     expect(post.init.headers.authorization).toBe("Bearer tok-leaddash");
+    const again = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "approved" });
+    expect(again.reply.content).toBe("Nothing of mine is waiting for your approval right now.");
   });
 });
 

@@ -5,7 +5,7 @@ import { extractJson, searchJson } from "../_core/llm";
 import { storagePut } from "../storage";
 import { withUsage } from "../usage";
 import type { AIEmployee, PortalLogin, WebTask } from "../../drizzle/schema";
-import { liveStart, runBrowserTask, type BrowserResult, type BrowserTask } from "./browser";
+import { liveDequeue, liveStart, runBrowserTask, type BrowserResult, type BrowserTask } from "./browser";
 import { findLogin, keepSession, lockGuard, secretsOf, sessionOf, startIn } from "./logins";
 
 /**
@@ -109,8 +109,10 @@ export async function startWebTask(emp: AIEmployee, input: { goal: string; url?:
 }
 
 const active = new Set<number>();
+/** One browser job at a time in each workspace: the next waits for the one that is open, so two never fight over the screen. */
+const lines = new Map<number, Promise<unknown>>();
 
-/** Runs in the background; the browser itself takes one job at a time. */
+/** Runs in the background, after any job already open in this workspace. */
 export function queueWebTask(orgId: number, id: number) {
   if (active.has(id)) return false;
   const t = db.getWebTask(id, orgId);
@@ -118,10 +120,25 @@ export function queueWebTask(orgId: number, id: number) {
   active.add(id);
   if (t.liveId) liveStart(orgId, t.liveId);
   db.updateWebTask(id, orgId, { status: "queued" });
-  void withUsage({ orgId, employeeId: t.employeeId }, () => runWebTask(orgId, id))
+  const prev = lines.get(orgId) ?? Promise.resolve();
+  const next = prev
+    .catch(() => null)
+    .then(() => {
+      if (t.liveId) liveStart(orgId, t.liveId);
+      return withUsage({ orgId, employeeId: t.employeeId }, () => runWebTask(orgId, id));
+    })
     .catch((err) => console.error(`[web] job ${id} failed:`, err instanceof Error ? err.message : err))
-    .finally(() => active.delete(id));
+    .finally(() => {
+      active.delete(id);
+      if (t.liveId) liveDequeue(orgId, t.liveId);
+    });
+  lines.set(orgId, next);
   return true;
+}
+
+/** The web job this employee has open or waiting right now, if any. */
+export function openTaskFor(orgId: number, employeeId: number) {
+  return db.listWebTasks(orgId).find((t) => t.employeeId === employeeId && (t.status === "queued" || t.status === "working")) ?? null;
 }
 
 function goalText(t: WebTask) {
