@@ -328,3 +328,206 @@ function scoreValue(orgId: number, t: any, ymd: (ms: unknown) => string | null) 
   if (!m) m = db.work.measures.insert({ organizationId: orgId, name: "Weekly execution score", unit: "percent", direction: "up", kind: "leading", source: "manual", weeklyGoal: 85, sort: 0 });
   db.work.setValue(orgId, m.id, sundayOf(when), Math.min(100, Number(pct[1])), "ClickUp");
 }
+
+// ==========================================
+// From a ClickUp CSV export (Workspace settings, Import/Export, Export)
+// ==========================================
+
+/**
+ * The same import from the file ClickUp exports, for when the live
+ * connection isn't wanted or everything lives in one ClickUp Workspace: each
+ * Space in the file goes to the workspace the owner picks. Folders, lists,
+ * tasks, subtasks, assignees, dates, priorities, checklists, comments and
+ * attachments come over the same way, and the 12 Week Year becomes goals.
+ * Running it again updates what came over before.
+ */
+
+/** A small CSV reader: quoted fields, doubled quotes, newlines inside quotes. */
+export function parseCsv(text: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let q = false;
+  const s = text.replace(/^﻿/, "");
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      if (c === '"') {
+        if (s[i + 1] === '"') { cell += '"'; i++; } else q = false;
+      } else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && s[i + 1] === "\n") i++;
+      row.push(cell); cell = ""; rows.push(row); row = [];
+    } else cell += c;
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  const head = (rows.shift() ?? []).map((h) => h.trim());
+  return rows.filter((r) => r.some((x) => x.trim())).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? "").trim()])));
+}
+
+const REQUIRED = ["Task ID", "Task Name", "Status", "List Name", "Space Name"];
+const j = <T,>(raw: string, fallback: T): T => {
+  if (!raw || raw === "null" || raw === "NaN") return fallback;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
+};
+const num = (raw: string) => (raw && raw !== "null" && raw !== "NaN" && Number.isFinite(Number(raw)) ? Number(raw) : null);
+
+export type CsvRow = Record<string, string>;
+
+/** ClickUp writes people and tags as "[Ashley Bryant, Caroline Jones]" (no quotes), sometimes as real JSON. */
+export function nameList(raw: string): string[] {
+  const asJson = j<unknown>(raw, null);
+  if (Array.isArray(asJson)) return asJson.map((x) => String(typeof x === "object" && x ? ((x as any).username ?? (x as any).name ?? "") : x).trim()).filter(Boolean);
+  const inner = raw.trim().replace(/^\[/, "").replace(/\]$/, "");
+  return inner.split(",").map((x) => x.trim()).filter(Boolean);
+}
+
+/** What's in the file: each Space with its folders and lists, the way the live import lists them. */
+export function csvSpaces(text: string) {
+  const rows = parseCsv(text);
+  const missing = REQUIRED.filter((k) => !(k in (rows[0] ?? {})));
+  if (!rows.length || missing.length) throw new TRPCError({ code: "BAD_REQUEST", message: `That doesn't look like a ClickUp task export. Export it from ClickUp under Workspace settings, Import/Export, as CSV.${missing.length ? ` Missing columns: ${missing.join(", ")}.` : ""}` });
+  const spaces = new Map<string, { folders: Set<string>; lists: Set<string>; tasks: number }>();
+  for (const r of rows) {
+    const sp = spaces.get(r["Space Name"]) ?? { folders: new Set<string>(), lists: new Set<string>(), tasks: 0 };
+    const folder = j<string[]>(r["Folder Name/Path"], [])[0];
+    if (folder) sp.folders.add(folder);
+    sp.lists.add(`${folder ?? ""}/${r["List Name"]}`);
+    sp.tasks++;
+    spaces.set(r["Space Name"], sp);
+  }
+  return {
+    rows: rows.length,
+    spaces: Array.from(spaces.entries()).map(([name, sp]) => ({
+      id: `csv:${name}`,
+      name,
+      folders: sp.folders.size,
+      lists: sp.lists.size,
+      tasks: sp.tasks,
+      goalsLike: Array.from(sp.folders).some((f) => /12 week|cycle|annual|goal/i.test(f)) || /annual planning|goals/i.test(name),
+    })),
+  };
+}
+
+export function startCsvImport(orgId: number, text: string, picks: Pick[], by: { id: number; name: string }) {
+  if (running.has(orgId)) throw new TRPCError({ code: "BAD_REQUEST", message: "An import is already running." });
+  if (!picks.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick at least one Space." });
+  const rows = parseCsv(text);
+  const row = db.work.imports.insert({ organizationId: orgId, picks: JSON.stringify(picks.map((p) => ({ ...p, from: "csv" }))), startedBy: by.name, progress: "Starting" });
+  running.add(orgId);
+  void runCsv(orgId, row.id, rows, picks, by)
+    .catch((err) => db.work.imports.update(orgId, row.id, { status: "failed", error: (err as Error).message.slice(0, 500), finishedAt: new Date() }))
+    .finally(() => running.delete(orgId));
+  return row;
+}
+
+/** Statuses for one list, from the statuses its tasks use, in ClickUp's usual order. */
+function csvStatuses(names: string[]): StatusDef[] {
+  const kind = (n: string): StatusDef["type"] => (/^(complete|completed|done|published|closed|joined|approved)$/.test(n) ? "done" : /cancel|skipped|rejected/.test(n) ? "closed" : /^(to do|todo|open|idea|backlog|not started)$/.test(n) ? "open" : "active");
+  const color = (n: string, t: StatusDef["type"]) => (t === "done" ? "#008844" : t === "closed" ? "#87909e" : t === "open" ? (n === "idea" ? "#b5bcc2" : "#87909e") : /review/.test(n) ? "#f8ae00" : /scheduled/.test(n) ? "#7c3aed" : "#1090e0");
+  const rank = { open: 0, active: 1, done: 2, closed: 3 } as const;
+  const uniq = Array.from(new Set(names.map((n) => n.toLowerCase().trim()).filter(Boolean)));
+  if (!uniq.includes("to do")) uniq.unshift("to do");
+  return uniq.map((n) => ({ name: n, color: color(n, kind(n)), type: kind(n) })).sort((a, b) => rank[a.type] - rank[b.type]);
+}
+
+async function runCsv(orgId: number, importId: number, rows: CsvRow[], picks: Pick[], by: { id: number; name: string }) {
+  const counts: Counts = { folders: 0, lists: 0, tasks: 0, comments: 0, files: 0, goals: 0 };
+  const say = (progress: string) => db.work.imports.update(orgId, importId, { progress: progress.slice(0, 300), counts: JSON.stringify(counts) });
+  const PRIORITY: Record<string, string> = { "1": "urgent", "2": "high", "3": "normal", "4": "low" };
+  for (const pick of picks) {
+    say(`Reading ${pick.name}`);
+    const org = await db.getOrganizationById(pick.orgId);
+    if (!org) continue;
+    const tz = org.timezone || "America/Chicago";
+    const team = (await db.listMembers(pick.orgId)).filter((m) => m.role !== "reviewer");
+    const toAssignee = (u: any): Assignee => {
+      const raw = String(u?.username ?? u?.email ?? u ?? "Someone").trim();
+      const email = raw.includes("@") ? raw.toLowerCase() : "";
+      const name = raw;
+      // "Dr. Ashley Bryant" and "Ashley Bryant, PhD" are the same person.
+      const plain = (n: string) => n.toLowerCase().replace(/\b(dr|mr|mrs|ms|phd|lpc|crc)\.?/g, "").replace(/[,]/g, " ").replace(/\s+/g, " ").trim();
+      const first = plain(name).split(" ")[0];
+      const m = (email && team.find((p) => p.email.toLowerCase() === email)) || team.find((p) => plain(p.name ?? "") === plain(name)) || (first && team.find((p) => plain(p.name ?? "").split(" ")[0] === first)) || (email ? team.find((p) => p.email.toLowerCase().split("@")[0] === email.split("@")[0]) : null);
+      return m ? { type: "user", id: m.userId, name: m.name || m.email } : { type: "name", id: 0, name: email ? email.split("@")[0] : name };
+    };
+    const ymd = (ms: unknown) => {
+      const n = num(String(ms ?? ""));
+      if (!n) return null;
+      const p = partsIn(new Date(n), tz);
+      return `${p.y}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
+    };
+    const mine = rows.filter((r) => r["Space Name"] === pick.name);
+    // Folders and lists in this Space, in the order they first appear.
+    const toHere = picks.filter((p) => p.orgId === pick.orgId && p.mode === "projects");
+    const named = toHere.find((p) => org.name.toLowerCase().includes(p.name.toLowerCase().replace(/,? inc\.?$/, "").trim()) || p.name.toLowerCase().includes(org.name.toLowerCase().replace(/,? inc\.?$/, "").trim()));
+    const main = pick.mode === "projects" && (named ?? toHere[0])?.spaceId === pick.spaceId;
+    const folderName = (n: string) => (main ? n : `${pick.name}: ${n}`);
+    const folderIds = new Map<string, number | null>();
+    const listIds = new Map<string, PjList>();
+    let fi = 0;
+    for (const r of mine) {
+      const folder = j<string[]>(r["Folder Name/Path"], [])[0] ?? "";
+      const listKey = `${folder}/${r["List Name"]}`;
+      if (listIds.has(listKey)) continue;
+      if (!folderIds.has(folder)) {
+        if (folder) folderIds.set(folder, upsertFolder(pick.orgId, `csv:${pick.spaceId}:${folder}`, folderName(folder), FOLDER_COLORS[fi++ % FOLDER_COLORS.length], counts).id);
+        else folderIds.set(folder, main ? null : upsertFolder(pick.orgId, `space-${pick.spaceId}`, pick.name, FOLDER_COLORS[fi++ % FOLDER_COLORS.length], counts).id);
+      }
+      const inList = mine.filter((x) => (j<string[]>(x["Folder Name/Path"], [])[0] ?? "") === folder && x["List Name"] === r["List Name"]);
+      const listCuId = r["Home Location ID"] && r["Home Location ID"] !== "null" ? r["Home Location ID"] : `csv:${pick.spaceId}:${listKey}`;
+      listIds.set(listKey, upsertList(pick.orgId, listCuId, r["List Name"], folderIds.get(folder) ?? null, "", csvStatuses(inList.map((x) => x["Status"])), [], counts));
+    }
+    // Parents before subtasks, then in creation order.
+    const sorted = [...mine].sort((a, b) => (a["Parent ID"] && a["Parent ID"] !== "null" ? 1 : 0) - (b["Parent ID"] && b["Parent ID"] !== "null" ? 1 : 0) || (num(a["Date Created"]) ?? 0) - (num(b["Date Created"]) ?? 0));
+    for (let n = 0; n < sorted.length; n++) {
+      const r = sorted[n];
+      if (n % 25 === 0) say(`${pick.name}: ${n + 1} of ${sorted.length} tasks`);
+      const folder = j<string[]>(r["Folder Name/Path"], [])[0] ?? "";
+      const list = listIds.get(`${folder}/${r["List Name"]}`)!;
+      const folderLabel = folder;
+      const cycle = pick.mode === "goals" ? cycleOf(folderLabel || list.name) : undefined;
+      const status = r["Status"].toLowerCase();
+      const sts = JSON.parse(list.statuses) as StatusDef[];
+      const done = sts.find((s) => s.name === status && (s.type === "done" || s.type === "closed"));
+      const checklists = Object.entries(j<Record<string, string[]>>(r["Checklists"], {})).map(([name, items]) => ({ name, items: (Array.isArray(items) ? items : []).map((i) => ({ name: String(i), resolved: false })) }));
+      const t = {
+        id: r["Task ID"],
+        name: r["Task Name"],
+        markdown_description: r["Task Content"],
+        status: { status, type: done?.type ?? "open" },
+        priority: PRIORITY[r["Priority"]] ? { priority: PRIORITY[r["Priority"]] } : null,
+        due_date: num(r["Due Date"]),
+        start_date: num(r["Start Date"]),
+        date_created: num(r["Date Created"]),
+        date_updated: num(r["Due Date"]) ?? num(r["Date Created"]),
+        date_closed: done ? (num(r["Due Date"]) ?? num(r["Date Created"])) : null,
+        parent: r["Parent ID"] && r["Parent ID"] !== "null" ? r["Parent ID"] : null,
+        subtasks: r["Subtasks IDs"] && r["Subtasks IDs"] !== "null" ? [1] : [],
+        assignees: nameList(r["Assignees"]).map((name) => ({ username: name })),
+        tags: nameList(r["Tags"]).map((name) => ({ name })),
+        time_estimate: num(r["Time Estimated"]),
+        checklists,
+        custom_fields: [],
+        text_content: r["Task Content"],
+        creator: { username: "ClickUp" },
+        orderindex: n,
+      };
+      const id = upsertTask(pick.orgId, list, t, [], toAssignee, ymd, counts);
+      if (pick.mode === "goals" && cycle && /goal/i.test(list.name) && isGoalTask(t)) {
+        const gid = upsertGoal(pick.orgId, t, cycle, ymd, counts);
+        db.work.tasks.update(pick.orgId, id, { goalId: gid });
+      }
+      if (pick.mode === "goals" && /execution score|score/i.test(list.name)) scoreValue(pick.orgId, t, ymd);
+      for (const a of j<{ title: string; url: string }[]>(r["Attachments"], [])) await saveAttachment(pick.orgId, id, a, by, counts);
+      const comments = j<{ text: string; by: string; date: string }[]>(r["Comments"], []);
+      for (const c of comments) {
+        const when = Date.parse(String(c.date ?? "").replace(/ [A-Z]{3,4}$/, ""));
+        upsertComment(pick.orgId, id, { id: `${r["Task ID"]}:${when || comments.indexOf(c)}`, comment_text: c.text, user: { username: c.by, email: c.by }, date: Number.isFinite(when) ? when : null }, toAssignee, counts);
+      }
+    }
+  }
+  db.work.imports.update(orgId, importId, { status: "done", progress: "Done", counts: JSON.stringify(counts), finishedAt: new Date() });
+}

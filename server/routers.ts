@@ -1945,6 +1945,17 @@ export const appRouter = router({
       const spaces = await imp.spaces(src);
       return { connected: true as const, spaces, workspaces: mine, from: mine.find((w) => w.id === src)?.name ?? null };
     }),
+    // From a ClickUp CSV export, for one ClickUp Workspace split across several of ours
+    csvSpaces: protectedProcedure.input(orgInput.extend({ csv: z.string().max(12_000_000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const imp = await import("./work/clickupImport");
+      return { ...imp.csvSpaces(input.csv), workspaces: await adminWorkspaces(ctx.user.id) };
+    }),
+    startCsvImport: protectedProcedure.input(orgInput.extend({ csv: z.string().max(12_000_000), picks: z.array(z.object({ spaceId: z.string().max(200), name: z.string().max(200), orgId: z.number().int(), mode: z.enum(["projects", "goals"]) })).min(1).max(20) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      for (const p of input.picks) await requireMember(ctx, p.orgId, "admin");
+      return (await import("./work/clickupImport")).startCsvImport(input.organizationId, input.csv, input.picks, { id: ctx.user.id, name: personName(ctx.user) });
+    }),
     importStatus: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       return (await import("./work/clickupImport")).latestImport(input.organizationId);

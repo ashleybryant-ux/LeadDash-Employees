@@ -289,4 +289,63 @@ describe("Moving from ClickUp", () => {
     expect(new Set(read)).toEqual(new Set([there]));
     expect(db.work.tasks.all(here).map((t) => t.name)).toEqual(["Call the bank"]);
   });
+  it("imports a ClickUp CSV export: each Space to its own workspace, folders, lists with their statuses, subtasks, checklists, comments and the 12 Week Year goals; running it again doesn't copy twice", async () => {
+    const { orgId: lead, owner } = await makeWorkspace("pj-csv-lead");
+    const legacy = (await caller((await db.getUserByEmail("staff@leaddash.io"))!).organizations.create({ name: "Legacy Family Services", slug: "pj-csv-legacy", plan: "growth", state: "Oklahoma", ownerEmail: owner.email })).id!;
+    const caroline = await makeUser("caroline@pj-csv.test", "user", "Caroline Jones");
+    await db.addOrganizationMember({ organizationId: lead, userId: caroline.id, role: "admin" });
+    const H = "Task ID,Task Link,Task Type,Task Name,Task Content,Status,Date Created,Date Created Text,Due Date,Due Date Text,Start Date,Start Date Text,Parent ID,Subtasks IDs,Attachments,Assignees,Tags,Priority,List Name,Folder Name/Path,Space Name,Time Estimated,Time Estimated Text,Checklists,Comments,Assigned Comments,Time Spent,Time Spent Text,Rolled Up Time,Rolled Up Time Text,Home Location ID,Home Location,Other Location IDs,Other Locations";
+    const row = (o: Record<string, string>) => H.split(",").map((k) => { const v = o[k] ?? ""; return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }).join(",");
+    const csv = [H,
+      row({ "Task ID": "a1", "Task Name": "Pitch Documents", "Task Content": "Write the master pitch.", Status: "complete", "Date Created": "1774117017690", "Due Date": "1775293200000", "Parent ID": "null", "Subtasks IDs": "a2", Attachments: "[]", Assignees: "[Ashley Bryant]", Tags: "[]", Priority: "1", "List Name": "PR + Publicity", "Folder Name/Path": '["PR: Trademark"]', "Space Name": "LeadDash", Checklists: '{"Steps":["Hook","Bio"]}', Comments: '[{"text":"Drafts are in the doc.","by":"caroline@pj-csv.test","assigned":false,"date":"3/24/2026, 1:20:14 PM CDT","resolved":"N/A"}]', "Home Location ID": "9017" }),
+      row({ "Task ID": "a2", "Task Name": "Black Business podcasts", "Task Content": "", Status: "in progress", "Date Created": "1774117104891", "Due Date": "null", "Parent ID": "a1", "Subtasks IDs": "", Attachments: "[]", Assignees: "[]", Tags: "[]", Priority: "null", "List Name": "PR + Publicity", "Folder Name/Path": '["PR: Trademark"]', "Space Name": "LeadDash", Checklists: "{}", Comments: "[]", "Home Location ID": "9017" }),
+      row({ "Task ID": "b1", "Task Name": "Post: Monday reel", "Task Content": "", Status: "published", "Date Created": "1774117104891", "Due Date": "null", "Parent ID": "null", "Subtasks IDs": "", Attachments: "[]", Assignees: "[Caroline Jones, Ashley Bryant]", Tags: "[]", Priority: "2", "List Name": "Social Posts", "Folder Name/Path": '["Social Media"]', "Space Name": "LeadDash", Checklists: "{}", Comments: "[]", "Home Location ID": "9018" }),
+      row({ "Task ID": "c1", "Task Name": "Renew the facility license", "Task Content": "", Status: "to do", "Date Created": "1774117104891", "Due Date": "1780650000000", "Parent ID": "null", "Subtasks IDs": "", Attachments: "[]", Assignees: "[]", Tags: "[]", Priority: "null", "List Name": "Licensing & Corporate Setup", "Folder Name/Path": '["Compliance and QA"]', "Space Name": "Legacy Family Services, Inc", Checklists: "{}", Comments: "[]", "Home Location ID": "9019" }),
+      row({ "Task ID": "g1", "Task Name": "🟢 LeadDash — 12 Mid-Tier Founding Members by Jun 19", "Task Content": "", Status: "cancelled", "Date Created": "1774117104891", "Due Date": "1781758800000", "Parent ID": "null", "Subtasks IDs": "g2", Attachments: "[]", Assignees: "[]", Tags: "[]", Priority: "null", "List Name": "🎯 Goals + Tactics", "Folder Name/Path": '["12 Week Year — Cycle 1 (Apr 3 – Jun 19, 2026)"]', "Space Name": "Annual Planning", Checklists: "{}", Comments: "[]", "Home Location ID": "9020" }),
+      row({ "Task ID": "g2", "Task Name": "Set up Facebook ad campaign", "Task Content": "", Status: "cancelled", "Date Created": "1774117104891", "Due Date": "null", "Parent ID": "g1", "Subtasks IDs": "", Attachments: "[]", Assignees: "[]", Tags: "[]", Priority: "null", "List Name": "🎯 Goals + Tactics", "Folder Name/Path": '["12 Week Year — Cycle 1 (Apr 3 – Jun 19, 2026)"]', "Space Name": "Annual Planning", Checklists: "{}", Comments: "[]", "Home Location ID": "9020" }),
+      row({ "Task ID": "s1", "Task Name": "Week 3: 82%", "Task Content": "", Status: "complete", "Date Created": "1774117104891", "Due Date": String(Date.parse("2026-04-22T17:00:00Z")), "Parent ID": "null", "Subtasks IDs": "", Attachments: "[]", Assignees: "[]", Tags: "[]", Priority: "null", "List Name": "📊 Weekly Execution Score", "Folder Name/Path": '["12 Week Year — Cycle 1 (Apr 3 – Jun 19, 2026)"]', "Space Name": "Annual Planning", Checklists: "{}", Comments: "[]", "Home Location ID": "9021" }),
+    ].join("\n");
+    const me = caller(owner);
+    const read = await me.pj.csvSpaces({ organizationId: lead, csv });
+    expect(read.rows).toBe(7);
+    expect(read.spaces.map((s) => [s.name, s.folders, s.lists, s.tasks, s.goalsLike])).toEqual([["LeadDash", 2, 2, 3, false], ["Legacy Family Services, Inc", 1, 1, 1, false], ["Annual Planning", 1, 2, 3, true]]);
+    await expect(me.pj.csvSpaces({ organizationId: lead, csv: "Name,Email\nA,b@c.d" })).rejects.toThrow(/ClickUp task export/);
+    const picks = [
+      { spaceId: "csv:LeadDash", name: "LeadDash", orgId: lead, mode: "projects" as const },
+      { spaceId: "csv:Legacy Family Services, Inc", name: "Legacy Family Services, Inc", orgId: legacy, mode: "projects" as const },
+      { spaceId: "csv:Annual Planning", name: "Annual Planning", orgId: lead, mode: "goals" as const },
+    ];
+    const run = async () => {
+      const r = await me.pj.startCsvImport({ organizationId: lead, csv, picks });
+      await waitFor(() => db.work.imports.get(lead, r.id)?.status !== "running");
+      return db.work.imports.get(lead, r.id)!;
+    };
+    const done = await run();
+    expect(done.status).toBe("done");
+    expect(JSON.parse(done.counts)).toMatchObject({ folders: 4, lists: 5, tasks: 7, comments: 1, goals: 1 });
+    // LeadDash keeps its folders as they are; Annual Planning's carry the Space name; Legacy got its own.
+    expect((await me.pj.tree({ organizationId: lead })).folders.map((f) => f.name)).toEqual(["PR: Trademark", "Social Media", "Annual Planning: 12 Week Year — Cycle 1 (Apr 3 – Jun 19, 2026)"]);
+    expect((await me.pj.tree({ organizationId: legacy })).folders.map((f) => [f.name, f.lists.map((l) => l.name)])).toEqual([["Compliance and QA", ["Licensing & Corporate Setup"]]]);
+    const posts = db.work.lists.all(lead).find((l) => l.name === "Social Posts")!;
+    expect(JSON.parse(posts.statuses).map((x: any) => [x.name, x.type])).toEqual([["to do", "open"], ["published", "done"]]);
+    const a1 = db.work.tasks.all(lead).find((t) => t.clickupId === "a1")!;
+    expect(a1).toMatchObject({ priority: "urgent", description: "Write the master pitch.", status: "complete", dueDate: "2026-04-04" });
+    expect(a1.closedAt).not.toBeNull();
+    expect(JSON.parse(a1.assignees)).toEqual([{ type: "name", id: 0, name: "Ashley Bryant" }]); // nobody on this team by that name: kept as a name
+    expect(JSON.parse(a1.checklist)).toEqual([{ text: "Hook", done: false }, { text: "Bio", done: false }]);
+    expect(db.work.tasks.all(lead).find((t) => t.clickupId === "a2")!.parentId).toBe(a1.id);
+    expect(db.work.comments.where(lead, "taskId", a1.id).find((c) => c.kind === "comment")).toMatchObject({ authorName: "Caroline Jones", body: "Drafts are in the doc." });
+    expect(JSON.parse(db.work.tasks.all(lead).find((t) => t.clickupId === "b1")!.assignees)).toEqual([{ type: "user", id: caroline.id, name: "Caroline Jones" }, { type: "name", id: 0, name: "Ashley Bryant" }]);
+    expect(db.work.tasks.all(legacy).map((t) => t.name)).toEqual(["Renew the facility license"]);
+    const g = db.work.goals.all(lead).find((x) => x.clickupId === "g1")!;
+    expect(g).toMatchObject({ title: "LeadDash — 12 Mid-Tier Founding Members by Jun 19", period: "Cycle 1, 2026", startDate: "2026-04-03", dueDate: "2026-06-19", state: "archived" });
+    const score = db.work.measures.all(lead).find((m) => m.name === "Weekly execution score")!;
+    expect(db.work.values.where(lead, "measureId", score.id)[0]).toMatchObject({ weekStart: "2026-04-19", value: 82 });
+    // Again: nothing doubles.
+    const again = await run();
+    expect(again.status).toBe("done");
+    expect(db.work.tasks.all(lead)).toHaveLength(6);
+    expect(db.work.lists.all(lead)).toHaveLength(4);
+    expect(db.work.comments.where(lead, "taskId", a1.id).filter((c) => c.kind === "comment")).toHaveLength(1);
+  });
 });
