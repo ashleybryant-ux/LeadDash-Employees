@@ -4,6 +4,8 @@ import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AVATAR_FILES, GROUP_ORDER, KIND_META, KIND_ORDER, fmtWhen, initials, type Kind } from "./meta";
+import { Menu } from "./goals/shared";
+import { NewChannel } from "./team/NewChannel";
 
 // ==========================================
 // Data hooks
@@ -453,41 +455,91 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
   );
 }
 
-/** The people in this workspace: the Everyone channel and a direct message with each person. */
+/**
+ * The team part of the Chats list, like Slack: search, the Unreads, Mentions
+ * and Saved pills, then Channels and Direct messages as one-line rows. The
+ * AI employees keep their own rows below.
+ */
 function TeamGroup({ activeKind }: { activeKind: string | null }) {
   const { currentOrgId } = useTenant();
+  const [, go] = useLocation();
+  const utils = trpc.useUtils();
   const q = trpc.teamChat.channels.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 10_000 });
-  const list = q.data ?? [];
-  if (!list.length) return null;
+  const join = trpc.teamChat.joinChannel.useMutation({ onSuccess: () => utils.teamChat.channels.invalidate() });
+  const [newChannel, setNewChannel] = React.useState(false);
+  const [browse, setBrowse] = React.useState(false);
+  const [q2, setQ2] = React.useState("");
+  const d = q.data;
+  if (!d) return null;
+  const pill = (key: "unreads" | "mentions" | "saved", label: string, n: number) => (
+    <Link key={key} href={`/chats/view/${key}`} className={`ld-tpill ${activeKind === `team:view:${key}` ? "on" : ""}`}>
+      {label}
+      {n > 0 && <i>{n}</i>}
+    </Link>
+  );
+  const row = (key: string, icon: React.ReactNode, name: string, unread: number, mentions: number, muted = false) => {
+    const on = activeKind === `team:${key}`;
+    return (
+      <Link key={key} href={`/chats/team/${key}`} className={`ld-trow ${on ? "on" : ""} ${unread && !muted ? "unread" : ""} ${muted ? "muted" : ""}`}>
+        {icon}
+        <span className="nm">{name}</span>
+        {unread > 0 && !on ? <span className={`b ${mentions ? "at" : ""}`}>{mentions ? `@ ${unread}` : unread}</span> : null}
+      </Link>
+    );
+  };
   return (
-    <div>
-      <div style={{ padding: "10px 18px 4px 18px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5b6b64" }}>Team</div>
-      {list.map((c) => {
-        const on = activeKind === `team:${c.key}`;
-        const preview = c.last ? `${c.last.mine ? "You" : c.last.author.split(" ")[0]}: ${c.last.text}` : c.kind === "channel" ? "Everyone in this workspace" : c.sub;
-        return (
-          <Link key={c.key} href={`/chats/team/${c.key}`} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 14px", margin: "2px 8px", borderRadius: 12, textDecoration: "none", color: "#14221c", background: on ? "#eef3f0" : "transparent" }}>
-            {c.kind === "channel" ? (
-              <span aria-hidden="true" style={{ width: 46, height: 46, borderRadius: 12, background: "#1b6b4a", color: "#fff", fontSize: 20, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>#</span>
-            ) : (
-              <span style={{ position: "relative", display: "flex", flexShrink: 0 }}>
-                <PersonAvatar name={c.name} src={c.avatarUrl} size={46} />
-                {c.online && <span aria-label="Online" style={{ position: "absolute", right: 0, bottom: 0, width: 11, height: 11, borderRadius: 999, background: "#22a06b", border: "2px solid #fff" }} />}
-              </span>
-            )}
-            <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
-              <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-                <span style={{ fontWeight: 800, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
-                <span style={{ fontSize: 12, color: "#5b6b64", whiteSpace: "nowrap" }}>{c.last ? fmtWhen(c.last.at) : ""}</span>
-              </span>
-              <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 13, color: "#3d4c45", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview}</span>
-                {c.unread > 0 && !on ? <span style={{ background: "#c2410c", color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "0 7px", lineHeight: "18px" }}>{c.unread}</span> : null}
-              </span>
+    <div className="ld-teamlist">
+      {newChannel && <NewChannel onClose={() => setNewChannel(false)} onMade={(key) => { setNewChannel(false); go(`/chats/team/${key}`); }} />}
+      <form
+        className="ld-tsearch"
+        onSubmit={(e) => {
+          e.preventDefault();
+          go(`/chats/search${q2.trim() ? `?q=${encodeURIComponent(q2.trim())}` : ""}`);
+        }}
+      >
+        <input className="ld-in" value={q2} placeholder="Search messages, people, files" aria-label="Search team chat" onChange={(e) => setQ2(e.target.value)} />
+      </form>
+      <div className="ld-tpills">
+        {pill("unreads", "Unreads", d.counts.unread)}
+        {pill("mentions", "Mentions", d.counts.mentions)}
+        {pill("saved", "Saved", d.counts.saved)}
+      </div>
+      <div className="ld-tgroup">
+        <span>Channels</span>
+        <Menu label="Add a channel" button="+" buttonClass="ld-tadd">
+          {(close) => (
+            <>
+              <button type="button" role="menuitem" onClick={() => { setNewChannel(true); close(); }}>New channel</button>
+              {d.joinable.length > 0 && <button type="button" role="menuitem" onClick={() => { setBrowse((v) => !v); close(); }}>Browse channels</button>}
+              {d.admin && <button type="button" role="menuitem" onClick={() => { go("/chats/import-slack"); close(); }}>Import from Slack</button>}
+            </>
+          )}
+        </Menu>
+      </div>
+      {d.channels.map((c) => row(c.key, <span className="h">{c.private ? "🔒" : "#"}</span>, c.name, c.unread, c.mentions, c.muted))}
+      {browse && d.joinable.length > 0 && (
+        <div className="ld-tjoin">
+          {d.joinable.map((c) => (
+            <span key={c.id} className="ld-between">
+              <span className="gp-ell"># {c.name}</span>
+              <button type="button" className="gp-link" disabled={join.isPending} onClick={() => join.mutate({ organizationId: currentOrgId, channelId: c.id })}>Join</button>
             </span>
-          </Link>
-        );
-      })}
+          ))}
+        </div>
+      )}
+      <div className="ld-tgroup"><span>Direct messages</span></div>
+      {d.dms.map((c) =>
+        row(
+          c.key,
+          <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+            <PersonAvatar name={c.name} src={c.avatarUrl} size={22} />
+            {c.online && <span aria-label="Online" style={{ position: "absolute", right: -2, bottom: -2, width: 9, height: 9, borderRadius: 999, background: "#22a06b", border: "2px solid #fff" }} />}
+          </span>,
+          c.name,
+          c.unread,
+          0
+        )
+      )}
     </div>
   );
 }

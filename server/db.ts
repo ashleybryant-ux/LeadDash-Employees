@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { and, desc, eq, inArray, lt, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, gt, isNull, like, or, sql } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "../drizzle/schema";
@@ -2093,26 +2093,86 @@ export const desk = {
 type Orgs = number | number[];
 const inOrgs = (col: any, o: Orgs) => (Array.isArray(o) ? inArray(col, o.length ? o : [-1]) : eq(col, o));
 
+export type TeamChannelRow = schema.TeamChannel;
+export type TeamMessageRow = schema.TeamMessage;
+
 export const team = {
-  messages(orgs: Orgs, channel: string, limit = 200) {
+  messages(orgs: Orgs, channel: string, limit = 300) {
     const t = schema.teamMessages;
-    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel))).orderBy(desc(t.id)).limit(limit).all().reverse();
+    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel), isNull(t.threadOf))).orderBy(desc(t.id)).limit(limit).all().reverse();
+  },
+  get(orgs: Orgs, id: number) {
+    const t = schema.teamMessages;
+    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.id, id))).limit(1).all()[0] ?? null;
+  },
+  /** Every message in the channel (top level and replies), oldest first. */
+  all(orgs: Orgs, channel: string) {
+    const t = schema.teamMessages;
+    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel))).orderBy(t.id).all();
+  },
+  replies(orgs: Orgs, parentId: number) {
+    const t = schema.teamMessages;
+    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.threadOf, parentId))).orderBy(t.id).all();
+  },
+  /** Reply counts and the last reply for several parents at once. */
+  threadInfo(orgs: Orgs, parentIds: number[]) {
+    const t = schema.teamMessages;
+    if (!parentIds.length) return new Map<number, { count: number; lastAt: Date; who: { userId: number; employeeId: number | null; name: string }[] }>();
+    const rows = getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), inArray(t.threadOf, parentIds), isNull(t.deletedAt))).orderBy(t.id).all();
+    const out = new Map<number, { count: number; lastAt: Date; who: { userId: number; employeeId: number | null; name: string }[] }>();
+    for (const r of rows) {
+      const cur = out.get(r.threadOf!) ?? { count: 0, lastAt: r.createdAt, who: [] };
+      cur.count += 1;
+      cur.lastAt = r.createdAt;
+      if (!cur.who.some((w) => w.name === r.authorName)) cur.who.push({ userId: r.userId, employeeId: r.employeeId, name: r.authorName });
+      out.set(r.threadOf!, cur);
+    }
+    return out;
   },
   /** The newest message in a channel. */
   last(orgs: Orgs, channel: string) {
     const t = schema.teamMessages;
-    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel))).orderBy(desc(t.id)).limit(1).all()[0] ?? null;
+    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel), isNull(t.threadOf), isNull(t.deletedAt))).orderBy(desc(t.id)).limit(1).all()[0] ?? null;
   },
-  /** The newest message in each channel the person can see. */
-  latest(orgId: number, channels: string[]) {
-    return channels.map((c) => team.last(orgId, c));
-  },
+  /** Unread top-level messages after a point, and how many of them mention the person. */
   unread(orgs: Orgs, userId: number, channel: string, afterId: number) {
     const t = schema.teamMessages;
-    return getDb().select({ id: t.id, userId: t.userId }).from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel), gt(t.id, afterId))).all().filter((m) => m.userId !== userId).length;
+    const rows = getDb().select({ id: t.id, userId: t.userId, mentions: t.mentions, threadOf: t.threadOf }).from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel), gt(t.id, afterId), isNull(t.deletedAt))).all().filter((m) => m.userId !== userId);
+    const mentions = rows.filter((m) => m.mentions && m.mentions.includes(`"users":[`) && (JSON.parse(m.mentions).users as number[]).includes(userId)).length;
+    return { count: rows.filter((m) => !m.threadOf).length, mentions, ids: rows.map((m) => m.id) };
   },
   send(row: typeof schema.teamMessages.$inferInsert) {
     return getDb().insert(schema.teamMessages).values(row).returning().all()[0];
+  },
+  update(id: number, patch: Partial<typeof schema.teamMessages.$inferInsert>) {
+    return getDb().update(schema.teamMessages).set(patch).where(eq(schema.teamMessages.id, id)).returning().all()[0];
+  },
+  /** An imported message by its Slack ts, for reruns. */
+  byImportedId(orgId: number, channel: string, importedId: string) {
+    const t = schema.teamMessages;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.channel, channel), eq(t.importedId, importedId))).limit(1).all()[0] ?? null;
+  },
+  pinned(orgs: Orgs, channel: string) {
+    const t = schema.teamMessages;
+    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), eq(t.channel, channel), isNull(t.deletedAt), sql`${t.pinnedAt} is not null`)).orderBy(desc(t.pinnedAt)).all();
+  },
+  /** Messages in some channels whose text or file names match, newest first. */
+  search(orgs: Orgs, channels: string[], q: string, opts: { from?: number; files?: boolean; since?: Date | null; limit?: number } = {}) {
+    const t = schema.teamMessages;
+    if (!channels.length) return [];
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const conds = [inOrgs(t.organizationId, orgs), inArray(t.channel, channels), isNull(t.deletedAt)];
+    if (opts.from) conds.push(eq(t.userId, opts.from));
+    if (opts.files) conds.push(sql`${t.attachments} is not null`);
+    if (opts.since) conds.push(gt(t.createdAt, opts.since));
+    for (const w of words) conds.push(or(like(sql`lower(${t.content})`, `%${w}%`), like(sql`lower(${t.attachments})`, `%${w}%`))!);
+    return getDb().select().from(t).where(and(...conds)).orderBy(desc(t.id)).limit(opts.limit ?? 60).all();
+  },
+  /** Top-level messages in channels that @mention the person, newest first. */
+  mentionsOf(orgs: Orgs, channels: string[], userId: number, limit = 60) {
+    const t = schema.teamMessages;
+    if (!channels.length) return [];
+    return getDb().select().from(t).where(and(inOrgs(t.organizationId, orgs), inArray(t.channel, channels), isNull(t.deletedAt), like(t.mentions, `%"users":[%`))).orderBy(desc(t.id)).limit(600).all().filter((m) => ((JSON.parse(m.mentions!).users as number[]) ?? []).includes(userId)).slice(0, limit);
   },
   /** How far the person has read; across several workspaces, the furthest. */
   read(orgs: Orgs, userId: number, channel: string) {
@@ -2126,6 +2186,89 @@ export const team = {
     if (have) {
       if (lastId > have.lastReadId) getDb().update(r).set({ lastReadId: lastId, readAt: new Date() }).where(eq(r.id, have.id)).run();
     } else getDb().insert(r).values({ organizationId: orgId, userId, channel, lastReadId: lastId, readAt: new Date() }).run();
+  },
+
+  // Channels
+  channels(orgId: number) {
+    const c = schema.teamChannels;
+    return getDb().select().from(c).where(eq(c.organizationId, orgId)).orderBy(c.id).all();
+  },
+  channel(orgId: number, id: number) {
+    const c = schema.teamChannels;
+    return getDb().select().from(c).where(and(eq(c.organizationId, orgId), eq(c.id, id))).limit(1).all()[0] ?? null;
+  },
+  channelByKey(orgId: number, key: string) {
+    const c = schema.teamChannels;
+    return getDb().select().from(c).where(and(eq(c.organizationId, orgId), eq(c.key, key))).limit(1).all()[0] ?? null;
+  },
+  channelByImportedId(orgId: number, importedId: string) {
+    const c = schema.teamChannels;
+    return getDb().select().from(c).where(and(eq(c.organizationId, orgId), eq(c.importedId, importedId))).limit(1).all()[0] ?? null;
+  },
+  addChannel(row: Omit<typeof schema.teamChannels.$inferInsert, "key"> & { key?: string }) {
+    const c = schema.teamChannels;
+    const made = getDb().insert(c).values({ ...row, key: row.key ?? "" }).returning().all()[0];
+    if (!row.key) return getDb().update(c).set({ key: `ch:${made.id}` }).where(eq(c.id, made.id)).returning().all()[0];
+    return made;
+  },
+  updateChannel(orgId: number, id: number, patch: Partial<typeof schema.teamChannels.$inferInsert>) {
+    const c = schema.teamChannels;
+    return getDb().update(c).set(patch).where(and(eq(c.organizationId, orgId), eq(c.id, id))).returning().all()[0];
+  },
+  members(channelId: number) {
+    const m = schema.teamChannelMembers;
+    return getDb().select().from(m).where(eq(m.channelId, channelId)).orderBy(m.id).all();
+  },
+  /** Every channel membership row for one person in a workspace. */
+  memberships(orgId: number, userId: number) {
+    const m = schema.teamChannelMembers;
+    return getDb().select().from(m).where(and(eq(m.organizationId, orgId), eq(m.userId, userId))).all();
+  },
+  setMember(orgId: number, channelId: number, userId: number, patch: Partial<Pick<typeof schema.teamChannelMembers.$inferInsert, "notify" | "muted" | "left">>) {
+    const m = schema.teamChannelMembers;
+    const have = getDb().select().from(m).where(and(eq(m.channelId, channelId), eq(m.userId, userId))).limit(1).all()[0];
+    if (have) return getDb().update(m).set(patch).where(eq(m.id, have.id)).returning().all()[0];
+    return getDb().insert(m).values({ organizationId: orgId, channelId, userId, ...patch }).returning().all()[0];
+  },
+  removeMember(channelId: number, userId: number) {
+    const m = schema.teamChannelMembers;
+    getDb().delete(m).where(and(eq(m.channelId, channelId), eq(m.userId, userId))).run();
+  },
+
+  // Reactions and saved messages
+  reactions(messageIds: number[]) {
+    const r = schema.teamReactions;
+    if (!messageIds.length) return [];
+    return getDb().select().from(r).where(inArray(r.messageId, messageIds)).orderBy(r.id).all();
+  },
+  toggleReaction(orgId: number, messageId: number, userId: number, emoji: string, authorName = "") {
+    const r = schema.teamReactions;
+    const have = getDb().select().from(r).where(and(eq(r.messageId, messageId), eq(r.userId, userId), eq(r.emoji, emoji))).limit(1).all()[0];
+    if (have) {
+      getDb().delete(r).where(eq(r.id, have.id)).run();
+      return false;
+    }
+    getDb().insert(r).values({ organizationId: orgId, messageId, userId, emoji, authorName }).run();
+    return true;
+  },
+  savedIds(userId: number, messageIds: number[]) {
+    const sv = schema.teamSaved;
+    if (!messageIds.length) return new Set<number>();
+    return new Set(getDb().select({ messageId: sv.messageId }).from(sv).where(and(eq(sv.userId, userId), inArray(sv.messageId, messageIds))).all().map((x) => x.messageId));
+  },
+  saved(orgs: Orgs, userId: number) {
+    const sv = schema.teamSaved;
+    return getDb().select().from(sv).where(and(inOrgs(sv.organizationId, orgs), eq(sv.userId, userId))).orderBy(desc(sv.id)).all();
+  },
+  toggleSaved(orgId: number, userId: number, messageId: number) {
+    const sv = schema.teamSaved;
+    const have = getDb().select().from(sv).where(and(eq(sv.userId, userId), eq(sv.messageId, messageId))).limit(1).all()[0];
+    if (have) {
+      getDb().delete(sv).where(eq(sv.id, have.id)).run();
+      return false;
+    }
+    getDb().insert(sv).values({ organizationId: orgId, userId, messageId }).run();
+    return true;
   },
 };
 

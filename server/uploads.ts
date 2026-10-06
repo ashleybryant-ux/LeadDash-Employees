@@ -30,6 +30,7 @@ const LIMITS: Record<string, number> = {
   brain_doc: 40_000_000,
   brain_image: 30_000_000,
   history: 400_000_000,
+  slack: 300_000_000,
   take: 200_000_000,
   leads: 80_000_000,
 };
@@ -163,6 +164,36 @@ export function registerUploads(app: Express) {
         });
         const { imp, also } = await history.startEverywhere(orgId, { id: user.id, name: who }, name, dest);
         return res.json({ id: imp.id, also });
+      }
+
+      // A Slack export for team chat: held on disk, read into a plan the person adjusts, then run.
+      if (slot === "slack") {
+        if (user.role !== "admin") {
+          const m = await db.getOrganizationMembership(orgId, user.id);
+          if (!m || (m.role !== "owner" && m.role !== "admin")) return res.status(403).json({ error: "Only the workspace owner or an admin can import from Slack." });
+        }
+        if (!/\.zip$/i.test(name)) return res.status(400).json({ error: "Upload the .zip that Slack exported." });
+        const slack = await import("./teamImport");
+        const dest = slack.holdingPath(orgId);
+        const fs = await import("node:fs");
+        const declared = Number(req.headers["content-length"] || 0);
+        if (declared > max) return res.status(400).json({ error: `Files must be under ${Math.round(max / 1_000_000)} MB.` });
+        await new Promise<void>((resolve, reject) => {
+          const out = fs.createWriteStream(dest);
+          let size = 0;
+          req.on("data", (c: Buffer) => {
+            size += c.length;
+            if (size > max) {
+              reject(new Error(`Files must be under ${Math.round(max / 1_000_000)} MB.`));
+              req.destroy();
+            }
+          });
+          req.on("error", reject);
+          out.on("error", reject);
+          out.on("finish", () => resolve());
+          req.pipe(out);
+        });
+        return res.json(await slack.hold(orgId, name, dest));
       }
 
       const old = unsupportedNote(name);

@@ -9,6 +9,9 @@ import { useAuth } from "./_core/hooks/useAuth";
 import SignIn from "./pages/SignIn";
 import ChatPage from "./ld/ChatPage";
 import TeamChatPage from "./ld/TeamChat";
+import TeamSearchPage from "./ld/team/Search";
+import TeamViewPage from "./ld/team/Views";
+import SlackImportPage from "./ld/team/Import";
 import Approvals from "./ld/pages/Approvals";
 import Huddle from "./ld/pages/Huddle";
 import Activity from "./ld/pages/Activity";
@@ -62,6 +65,9 @@ function Router() {
       <Route path="/">{() => <Redirect to="/chats" />}</Route>
       <Route path="/chats" component={ChatPage} />
       <Route path="/chats/team/:channel" component={TeamChatPage} />
+      <Route path="/chats/search" component={TeamSearchPage} />
+      <Route path="/chats/view/:kind" component={TeamViewPage} />
+      <Route path="/chats/import-slack" component={SlackImportPage} />
       <Route path="/chats/e/:id/:tab?" component={ChatPage} />
       <Route path="/chats/:kind/app/:appId/:view?" component={ChatPage} />
       <Route path="/chats/:kind/:tab?" component={ChatPage} />

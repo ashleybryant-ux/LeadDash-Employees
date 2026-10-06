@@ -11,29 +11,30 @@ async function setup(slug: string) {
 }
 
 describe("Team chat", () => {
-  it("has an Everyone channel and a direct message with each person, with unread counts and Seen", async () => {
+  it("has a general channel and a direct message with each person, with unread counts and Seen", async () => {
     const { orgId, owner, caroline } = await setup("tc-basic");
     const me = caller(owner);
     const her = caller(caroline);
     const list = await me.teamChat.channels({ organizationId: orgId });
-    expect(list.map((c) => c.name)).toEqual(["Everyone", "Caroline Jones"]); // the reviewer isn't in team chat
-    expect(list[0].sub).toBe("You and Caroline Jones");
+    expect(list.channels.map((c) => c.name)).toEqual(["general"]);
+    expect(list.dms.map((c) => c.name)).toEqual(["Caroline Jones"]); // the reviewer isn't in team chat
 
     const before = pingsFor(caroline.id, 0).latest;
     await me.teamChat.send({ organizationId: orgId, channel: "everyone", content: "Can you look at Sienna's posts before 3?" });
     let hers = await her.teamChat.channels({ organizationId: orgId });
-    expect(hers[0]).toMatchObject({ key: "everyone", unread: 1, last: { author: owner.name, text: "Can you look at Sienna's posts before 3?" } });
+    expect(hers.channels[0]).toMatchObject({ key: "everyone", unread: 1, last: { author: owner.name, text: "Can you look at Sienna's posts before 3?" } });
+    expect(hers.counts.unread).toBe(1);
     // She gets the pop-up (and the sound, by her settings); the sender doesn't.
-    expect(pingsFor(caroline.id, before).pings.map((p) => [p.event, p.title, p.url])).toEqual([["team_message", `${owner.name} in Everyone`, "/chats/team/everyone"]]);
+    expect(pingsFor(caroline.id, before).pings.map((p) => [p.event, p.title, p.url])).toEqual([["team_message", `${owner.name} in #general`, "/chats/team/everyone"]]);
     expect(pingsFor(owner.id, before).pings).toHaveLength(0);
 
     const msgs = await her.teamChat.messages({ organizationId: orgId, channel: "everyone" });
     await her.teamChat.markRead({ organizationId: orgId, channel: "everyone", lastId: msgs.messages.at(-1)!.id });
     hers = await her.teamChat.channels({ organizationId: orgId });
-    expect(hers[0].unread).toBe(0);
+    expect(hers.channels[0].unread).toBe(0);
 
     // A direct message, then Seen once she reads it.
-    const dm = hers.find((c) => c.kind === "dm")!;
+    const dm = hers.dms[0];
     expect(dm.name).toBe(owner.name);
     await her.teamChat.send({ organizationId: orgId, channel: dm.key, content: "I'll send the promo copy by 4." });
     let mine = await me.teamChat.messages({ organizationId: orgId, channel: dm.key });
@@ -79,24 +80,24 @@ describe("Team chat", () => {
     expect(a.sound).toEqual({ kind: "bell", volume: 40 });
     expect(readSound('{"_sound":{"kind":"siren","volume":900}}')).toEqual({ kind: "chime", volume: 100 });
   });
-  it("shows a direct message in every workspace both people share, and keeps Everyone to its own workspace", async () => {
+  it("shows a direct message in every workspace both people share, and keeps general to its own workspace", async () => {
     const { orgId: a, owner, caroline } = await setup("tc-two-a");
     const staff = (await db.getUserByEmail("staff@leaddash.io"))!;
     const b = (await caller(staff).organizations.create({ name: "Second workspace", slug: "tc-two-b", plan: "growth", state: "Oklahoma", ownerEmail: owner.email })).id!;
     await db.addOrganizationMember({ organizationId: b, userId: caroline.id, role: "member" });
     const me = caller(owner);
     const her = caller(caroline);
-    const key = (await me.teamChat.channels({ organizationId: b })).find((c) => c.kind === "dm")!.key;
+    const key = (await me.teamChat.channels({ organizationId: b })).dms[0].key;
     await me.teamChat.send({ organizationId: b, channel: key, content: "Did you see the webinar slides?" });
     await me.teamChat.send({ organizationId: b, channel: "everyone", content: "Only in the second workspace" });
     // Caroline is looking at the first workspace: the DM is there, unread.
     const hers = await her.teamChat.channels({ organizationId: a });
-    expect(hers.find((c) => c.key === key)).toMatchObject({ unread: 1, last: { text: "Did you see the webinar slides?" } });
-    expect(hers.find((c) => c.key === "everyone")).toMatchObject({ unread: 0, last: null });
+    expect(hers.dms.find((c) => c.key === key)).toMatchObject({ unread: 1, last: { text: "Did you see the webinar slides?" } });
+    expect(hers.channels.find((c) => c.key === "everyone")).toMatchObject({ unread: 0, last: null });
     const msgs = await her.teamChat.messages({ organizationId: a, channel: key });
     expect(msgs.messages.map((m) => m.content)).toEqual(["Did you see the webinar slides?"]);
     await her.teamChat.markRead({ organizationId: a, channel: key, lastId: msgs.messages[0].id });
-    expect((await her.teamChat.channels({ organizationId: b })).find((c) => c.key === key)!.unread).toBe(0);
+    expect((await her.teamChat.channels({ organizationId: b })).dms.find((c) => c.key === key)!.unread).toBe(0);
     expect((await me.teamChat.messages({ organizationId: b, channel: key })).seenAt).not.toBeNull();
     // Her reply from the first workspace reaches the owner in the second.
     await her.teamChat.send({ organizationId: a, channel: key, content: "Yes, they look good." });

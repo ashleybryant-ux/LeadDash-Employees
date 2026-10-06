@@ -1371,7 +1371,7 @@ export const appRouter = router({
     }),
   }),
 
-  // Team chat: the people in a workspace, one channel for everyone and a direct message between any two
+  // Team chat: channels, direct messages and threads in a workspace, like Slack
   teamChat: router({
     channels: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
@@ -1381,16 +1381,108 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId);
       return (await import("./team")).messages(input.organizationId, ctx.user.id, input.channel);
     }),
-    send: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40), content: z.string().max(8000), attachmentIds: z.array(z.number().int()).max(10).default([]) })).mutation(async ({ ctx, input }) => {
+    thread: protectedProcedure.input(orgInput.extend({ messageId: z.number().int() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      const m = await (await import("./team")).send(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channel, input.content, input.attachmentIds);
-      return { id: m.id };
+      return (await import("./team")).thread(input.organizationId, ctx.user.id, input.messageId);
+    }),
+    details: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).details(input.organizationId, ctx.user.id, input.channel);
+    }),
+    send: protectedProcedure
+      .input(orgInput.extend({ channel: z.string().max(40), content: z.string().max(8000), attachmentIds: z.array(z.number().int()).max(10).default([]), threadOf: z.number().int().nullable().optional(), alsoToChannel: z.boolean().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const m = await (await import("./team")).send(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channel, input.content, input.attachmentIds, { threadOf: input.threadOf ?? null, alsoToChannel: !!input.alsoToChannel });
+        return { id: m.id };
+      }),
+    edit: protectedProcedure.input(orgInput.extend({ messageId: z.number().int(), content: z.string().max(8000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      await (await import("./team")).edit(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId, input.content);
+      return { ok: true };
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ messageId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      await (await import("./team")).remove(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId);
+      return { ok: true };
+    }),
+    react: protectedProcedure.input(orgInput.extend({ messageId: z.number().int(), emoji: z.string().max(16) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).react(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId, input.emoji);
+    }),
+    pin: protectedProcedure.input(orgInput.extend({ messageId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).pin(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId);
+    }),
+    save: protectedProcedure.input(orgInput.extend({ messageId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).save(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.messageId);
     }),
     markRead: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40), lastId: z.number().int().min(0) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       (await import("./team")).markRead(input.organizationId, ctx.user.id, input.channel, input.lastId);
       return { ok: true };
     }),
+    createChannel: protectedProcedure
+      .input(orgInput.extend({ name: z.string().max(80), purpose: z.string().max(300).default(""), private: z.boolean().default(false), memberIds: z.array(z.number().int()).max(200).default([]), aiAllowed: z.boolean().default(true) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const ch = await (await import("./team")).createChannel(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input);
+        return { id: ch.id, key: ch.key, name: ch.name };
+      }),
+    updateChannel: protectedProcedure
+      .input(orgInput.extend({ channelId: z.number().int(), name: z.string().max(80).optional(), purpose: z.string().max(300).optional(), aiAllowed: z.boolean().optional(), private: z.boolean().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const { channelId, organizationId, ...patch } = input;
+        const ch = await (await import("./team")).updateChannel(organizationId, { id: ctx.user.id, name: personName(ctx.user) }, channelId, patch);
+        return { id: ch.id, key: ch.key, name: ch.name };
+      }),
+    archiveChannel: protectedProcedure.input(orgInput.extend({ channelId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      await (await import("./team")).archiveChannel(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId);
+      return { ok: true };
+    }),
+    addMembers: protectedProcedure.input(orgInput.extend({ channelId: z.number().int(), userIds: z.array(z.number().int()).max(200) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).addMembers(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId, input.userIds);
+    }),
+    leaveChannel: protectedProcedure.input(orgInput.extend({ channelId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).leaveChannel(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId);
+    }),
+    joinChannel: protectedProcedure.input(orgInput.extend({ channelId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).joinChannel(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId);
+    }),
+    setNotify: protectedProcedure.input(orgInput.extend({ channelId: z.number().int(), notify: z.enum(["all", "mentions", "none"]), muted: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./team")).setNotify(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.channelId, input.notify, input.muted);
+    }),
+    search: protectedProcedure
+      .input(orgInput.extend({ q: z.string().max(200), from: z.number().int().nullable().optional(), in: z.string().max(40).nullable().optional(), files: z.boolean().optional(), days: z.number().int().nullable().optional() }))
+      .query(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        return (await import("./team")).search(input.organizationId, ctx.user.id, input.q, { from: input.from, in: input.in, files: input.files, days: input.days });
+      }),
+    view: protectedProcedure.input(orgInput.extend({ kind: z.enum(["unreads", "mentions", "saved"]) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const t = await import("./team");
+      if (input.kind === "unreads") return { kind: "unreads" as const, groups: await t.unreads(input.organizationId, ctx.user.id) };
+      if (input.kind === "mentions") return { kind: "mentions" as const, messages: await t.mentions(input.organizationId, ctx.user.id) };
+      return { kind: "saved" as const, messages: await t.saved(input.organizationId, ctx.user.id) };
+    }),
+    // Slack import: the zip goes through /api/upload/slack, which returns a plan; this runs it.
+    slackPlan: protectedProcedure.input(orgInput.extend({ token: z.string().max(80) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return (await import("./teamImport")).plan(input.organizationId, input.token);
+    }),
+    slackImport: protectedProcedure
+      .input(orgInput.extend({ token: z.string().max(80), channels: z.array(z.object({ id: z.string().max(40), take: z.boolean(), name: z.string().max(80) })).max(500), people: z.array(z.object({ id: z.string().max(40), userId: z.number().int().nullable() })).max(2000) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        return (await import("./teamImport")).run(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.token, input.channels, input.people);
+      }),
   }),
 
   // Goals: each workspace's own, set by the owner and Simone together

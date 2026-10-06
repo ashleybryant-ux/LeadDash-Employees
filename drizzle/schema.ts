@@ -2323,24 +2323,80 @@ export const deskSettings = sqliteTable("desk_settings", {
 export type DeskSettings = typeof deskSettings.$inferSelect;
 
 // ==========================================
-// Team chat: the people in a workspace talking to each other (no AI employees)
+// Team chat: channels, direct messages and threads, like Slack
 // ==========================================
 
-/** channel: "everyone", or "dm:<lower user id>-<higher user id>" for two people. */
+/**
+ * A channel in a workspace. "everyone" is the general channel every workspace
+ * has (key "everyone"); the rest get key "ch:<id>". Private channels are seen
+ * only by their members. aiAllowed lets AI employees answer @mentions in it.
+ */
+export const teamChannels = sqliteTable(
+  "team_channels",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    key: text("key").notNull().default(""),
+    name: text("name").notNull(),
+    purpose: text("purpose").notNull().default(""),
+    private: integer("private", { mode: "boolean" }).notNull().default(false),
+    aiAllowed: integer("aiAllowed", { mode: "boolean" }).notNull().default(true),
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    createdBy: integer("createdBy"),
+    /** Slack's channel id when it came from an import, so a second run updates instead of copying. */
+    importedId: text("importedId"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("team_channels_org_idx").on(t.organizationId, t.key)]
+);
+export type TeamChannel = typeof teamChannels.$inferSelect;
+
+/** Who is in a channel (every member of a private channel; anyone who left or changed notifications on a public one). */
+export const teamChannelMembers = sqliteTable(
+  "team_channel_members",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    channelId: integer("channelId").notNull(),
+    userId: integer("userId").notNull(),
+    /** all: every message; mentions: only @mentions; none: nothing. */
+    notify: text("notify", { enum: ["all", "mentions", "none"] }).notNull().default("all"),
+    muted: integer("muted", { mode: "boolean" }).notNull().default(false),
+    left: integer("left", { mode: "boolean" }).notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("team_channel_members_unique").on(t.channelId, t.userId)]
+);
+export type TeamChannelMember = typeof teamChannelMembers.$inferSelect;
+
+/** channel: "everyone", "ch:<id>", or "dm:<lower user id>-<higher user id>" for two people. */
 export const teamMessages = sqliteTable(
   "team_messages",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
     channel: text("channel").notNull(),
+    /** 0 when the author has no account here (someone who left Slack before the import). */
     userId: integer("userId").notNull(),
+    /** Set when an AI employee wrote it (answering an @mention in a thread). */
+    employeeId: integer("employeeId"),
     authorName: text("authorName").notNull(),
     content: text("content").notNull().default(""),
-    /** JSON [{id, name, size, kind, url}] from chat_files. */
+    /** JSON [{id, name, size, kind, url}] from chat_files; imported Slack files have no url. */
     attachments: text("attachments"),
+    /** The message this one replies to, for threads. */
+    threadOf: integer("threadOf"),
+    /** JSON {users: [ids], employees: [ids]} of who was @mentioned. */
+    mentions: text("mentions"),
+    editedAt: integer("editedAt", { mode: "timestamp" }),
+    deletedAt: integer("deletedAt", { mode: "timestamp" }),
+    pinnedBy: integer("pinnedBy"),
+    pinnedAt: integer("pinnedAt", { mode: "timestamp" }),
+    /** Slack's message ts when it came from an import. */
+    importedId: text("importedId"),
     createdAt: createdAt(),
   },
-  (t) => [index("team_messages_org_channel_idx").on(t.organizationId, t.channel, t.id)]
+  (t) => [index("team_messages_org_channel_idx").on(t.organizationId, t.channel, t.id), index("team_messages_thread_idx").on(t.threadOf)]
 );
 export type TeamMessage = typeof teamMessages.$inferSelect;
 
@@ -2358,6 +2414,37 @@ export const teamReads = sqliteTable(
   (t) => [uniqueIndex("team_reads_unique").on(t.organizationId, t.userId, t.channel)]
 );
 export type TeamRead = typeof teamReads.$inferSelect;
+
+/** An emoji reaction on a message, one row per person per emoji. */
+export const teamReactions = sqliteTable(
+  "team_reactions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    messageId: integer("messageId").notNull(),
+    userId: integer("userId").notNull(),
+    /** Someone who left Slack, kept by name on imported reactions. */
+    authorName: text("authorName").notNull().default(""),
+    emoji: text("emoji").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("team_reactions_msg_idx").on(t.messageId)]
+);
+export type TeamReaction = typeof teamReactions.$inferSelect;
+
+/** A message someone saved for later. */
+export const teamSaved = sqliteTable(
+  "team_saved",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    userId: integer("userId").notNull(),
+    messageId: integer("messageId").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("team_saved_unique").on(t.userId, t.messageId)]
+);
+export type TeamSaved = typeof teamSaved.$inferSelect;
 
 // ==========================================
 // Goals: each workspace's own, set by the owner and Simone together
