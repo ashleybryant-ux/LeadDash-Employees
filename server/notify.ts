@@ -88,7 +88,7 @@ export type Notice = { title: string; body: string; url: string; tag?: string };
 // In the app: a pop-up, and a sound when the person turned it on
 // ==========================================
 
-export type Ping = { id: number; orgId: number; event: NotifyEvent; title: string; body: string; url: string; at: number };
+export type Ping = { id: number; orgId: number; orgName: string; event: NotifyEvent; title: string; body: string; url: string; at: number };
 const pings = new Map<number, Ping[]>();
 let pingSeq = 0;
 
@@ -136,7 +136,7 @@ export async function notify(orgId: number, event: NotifyEvent, notice: Notice, 
   const people: User[] = (await db.notifyRecipients(orgId)).filter((p) => !opts.only || opts.only.includes(p.id));
   const org = await db.getOrganizationById(orgId);
   const pushIds: number[] = [];
-  addPing(people.map((p) => p.id), { orgId, event, title: notice.title, body: notice.body.slice(0, 240), url: notice.url });
+  addPing(people.map((p) => p.id), { orgId, orgName: org?.name ?? "", event, title: notice.title, body: notice.body.slice(0, 240), url: notice.url });
   for (const p of people) {
     const prefs = readPrefs(p.notifyPrefs);
     const wantPush = opts.channel === "push" ? true : prefs[event].push;

@@ -9,6 +9,16 @@ import { addOpportunity, parse, type Attachment, type Extras, type Award } from 
 import { addApplicant } from "./employees/hiring";
 import { KNOWLEDGE_CATEGORIES } from "../drizzle/schema";
 
+/** Whether a photo attached in this chat may be sent to the provider that reads photos. */
+async function photosAllowed(orgId: number, kind: string) {
+  const { carriesClientInfo } = await import("./_core/baa");
+  if (carriesClientInfo("anthropic")) return true;
+  const org = await db.getOrganizationById(orgId);
+  if (org?.orgType !== "healthcare") return true;
+  const { worksWithClientInfo } = await import("./employees/roster");
+  return !worksWithClientInfo(kind as never, "healthcare");
+}
+
 /**
  * File uploads that are too big to send as JSON: Knowledge documents, a host's
  * RFP, signed forms and attachments, pitch videos and award letters. The body
@@ -303,7 +313,9 @@ export function registerUploads(app: Express) {
           pages = read.pages;
         }
         const saved = await storagePut(`org-${orgId}/chat/${name}`, buf, imageType ?? mime);
-        if (imageType) text = await describeImage(buf, imageType).catch(() => "");
+        // A photo is read by Anthropic. In a healthcare workspace, an employee who works with client information gets the file but no reading until that provider is under a BAA.
+        const canRead = !imageType || (await photosAllowed(orgId, emp.kind));
+        if (imageType && canRead) text = await describeImage(buf, imageType).catch(() => "");
         const f = db.createChatFile({ organizationId: orgId, employeeId: emp.id, userId: user.id, name, mime: imageType ?? mime, size: buf.length, kind: imageType ? "image" : "document", fileUrl: saved.url, text, pages });
         return res.json({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl });
       }

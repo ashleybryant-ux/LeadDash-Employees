@@ -318,7 +318,7 @@ export const appRouter = router({
   }),
 
   /** Which AI services are configured on this server (no secrets returned). */
-  status: protectedProcedure.query(() => ({ ai: aiStatus(), secretsKey: hasSecretsKey(), baa: { signed: ENV.baaSigned, requested: ENV.baaRequested } })),
+  status: protectedProcedure.query(() => ({ ai: aiStatus(), secretsKey: hasSecretsKey() })),
 
   // ==========================================
   // Workspaces
@@ -1623,6 +1623,8 @@ export const appRouter = router({
   }),
 
   teamChat: router({
+    /** Unread counts in every workspace the person is in, for the switcher and the badge on the workspace name. */
+    unreadEverywhere: protectedProcedure.query(async ({ ctx }) => (await import("./team")).unreadEverywhere(ctx.user.id)),
     channels: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "chat");
       return (await import("./team")).channels(input.organizationId, ctx.user.id);

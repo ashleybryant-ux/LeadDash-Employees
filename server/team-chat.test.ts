@@ -117,8 +117,13 @@ describe("Team chat", () => {
     const me = caller(owner);
     const her = caller(caroline);
     const key = (await me.teamChat.channels({ organizationId: b })).dms[0].key;
+    const before = pingsFor(caroline.id, 0).latest;
     await me.teamChat.send({ organizationId: b, channel: key, content: "Did you see the webinar slides?" });
     await me.teamChat.send({ organizationId: b, channel: "everyone", content: "Only in the second workspace" });
+    // The pop-up says which workspace it came from, so it can show while she has the first one open.
+    expect(pingsFor(caroline.id, before).pings.map((p) => [p.orgId, p.orgName, p.title])).toEqual([[b, "Second workspace", owner.name], [b, "Second workspace", `${owner.name} in #general`]]);
+    // The switcher knows what is unread in each workspace: the DM counts in both (it shows in both), general only in the second.
+    expect(await her.teamChat.unreadEverywhere()).toEqual([{ orgId: a, unread: 1, mentions: 0 }, { orgId: b, unread: 2, mentions: 0 }]);
     // Caroline is looking at the first workspace: the DM is there, unread.
     const hers = await her.teamChat.channels({ organizationId: a });
     expect(hers.dms.find((c) => c.key === key)).toMatchObject({ unread: 1, last: { text: "Did you see the webinar slides?" } });

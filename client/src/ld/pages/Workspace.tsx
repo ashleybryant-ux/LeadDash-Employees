@@ -41,14 +41,6 @@ export const ORG_TYPES = [
   { key: "business", label: "Business", sub: "Products, services, agencies, consultancies." },
 ] as const;
 
-const PROVIDERS: { key: string; name: string; does: string; used: string; client: "allowed" | "never" }[] = [
-  { key: "assemblyai", name: "AssemblyAI", does: "Writing, thinking, transcription", used: "Every employee's drafts and replies; Harper and Camille's EHR work; Avery's meeting notes", client: "allowed" },
-  { key: "openai", name: "OpenAI", does: "Pictures, voices", used: "Sienna, Reese, Theo and Jordan's images; voices when ElevenLabs is off", client: "allowed" },
-  { key: "anthropic", name: "Anthropic", does: "Web search, reading scanned PDFs", used: "Morgan, Taylor, Elena and Quinn's searches; scanned files in Knowledge", client: "allowed" },
-  { key: "elevenlabs", name: "ElevenLabs", does: "Voices", used: "Huddles and Talk", client: "never" },
-  { key: "fal", name: "fal.ai", does: "Video", used: "Elena's avatar videos", client: "never" },
-];
-
 const CLIENT_INFO_ROWS = [
   { kind: "inbox", sees: "Your inbox and calendar, meeting audio", rule: "Clients are named in the app and in chat; initials in every email, text and push notice. Nothing from a message goes to web search." },
   { kind: "leads", sees: "New client inquiries from the booking page, forms and the phone line", rule: "Replies and books from the practice's services and hours only. Never asks why someone is seeking care." },
@@ -56,19 +48,16 @@ const CLIENT_INFO_ROWS = [
   { kind: "compliance", sees: "Clinician credentials, licenses, and which notes and plans are unsigned or due", rule: "Sees that a note is unsigned, never what it says. Reports by clinician." },
 ];
 
-/** The two cards a healthcare practice gets: who works with client information, and which providers may carry it. LeadDash sets both; the practice reads them. */
+/** The card a healthcare practice gets: who works with client information and under what rule. LeadDash sets it under the practice's BAA with LeadDash; the practice reads it. */
 function ClientInformation() {
   const { currentOrgId } = useTenant();
   const emps = trpc.employees.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
-  const status = trpc.status.useQuery();
-  const signed = status.data?.baa.signed ?? [];
-  const requested = status.data?.baa.requested ?? [];
   const byKind = (k: string) => emps.data?.find((e) => e.kind === k);
   const others = (emps.data ?? []).filter((e) => !CLIENT_INFO_ROWS.some((r) => r.kind === e.kind)).length;
   return (
     <>
       <section className="ld-card">
-        <div className="ld-sh"><span className="ld-st">Client information</span><span className="ld-small ld-muted">Set by LeadDash for healthcare practices</span></div>
+        <div className="ld-sh"><span className="ld-st">Client information</span><span className="ld-small ld-muted">Under your BAA with LeadDash</span></div>
         <div className="ld-hd ld-ci-cols" style={{ gridTemplateColumns: "180px minmax(0,1fr) minmax(0,1.4fr)" }}><span>Employee</span><span>What they see</span><span>Rule</span></div>
         {CLIENT_INFO_ROWS.map((r) => {
           const e = byKind(r.kind);
@@ -86,22 +75,6 @@ function ClientInformation() {
           <span>The Brain, Knowledge files, public sources</span>
           <span>Work without client information. A client's name or details pasted into their chat is refused with a note to use {[byKind("inbox")?.name, byKind("leads")?.name, byKind("billing")?.name].filter(Boolean).join(", ")}.</span>
         </div>
-      </section>
-      <section className="ld-card">
-        <div className="ld-sh"><span className="ld-st">Providers</span><span className="ld-small ld-muted">Under your LeadDash agreement, Schedule A</span></div>
-        <div className="ld-hd ld-pv-cols" style={{ gridTemplateColumns: "200px minmax(0,1fr) 110px 130px" }}><span>Provider</span><span>Used for</span><span>BAA</span><span>Client information</span></div>
-        {PROVIDERS.map((p) => {
-          const baa = signed.includes(p.key) ? "signed" : requested.includes(p.key) ? "requested" : "none";
-          const allowed = p.client === "allowed" && baa === "signed";
-          return (
-            <div key={p.key} className="ld-rw ld-pv-cols" style={{ gridTemplateColumns: "200px minmax(0,1fr) 110px 130px", alignItems: "start" }}>
-              <span><span className="ld-strong">{p.name}</span><br /><span className="ld-small ld-muted">{p.does}</span></span>
-              <span>{p.used}</span>
-              <span className={`ld-pill ${baa === "signed" ? "green" : baa === "requested" ? "amber" : "gray"}`}>{baa === "signed" ? "Signed" : baa === "requested" ? "Requested" : "None"}</span>
-              <span className={`ld-pill ${allowed ? "green" : "gray"}`}>{allowed ? "Allowed" : "Not sent"}</span>
-            </div>
-          );
-        })}
       </section>
     </>
   );

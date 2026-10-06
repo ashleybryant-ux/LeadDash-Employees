@@ -274,6 +274,32 @@ export async function channels(orgId: number, me: number) {
   return { channels: chans, dms, counts: { unread, mentions, saved: db.team.saved(orgId, me).length }, joinable: joinable(orgId, me), admin: await isAdmin(orgId, me) };
 }
 
+/** Unread team chat in every workspace this person is in, for the workspace switcher. No presence is recorded. */
+export async function unreadEverywhere(me: number) {
+  const out: { orgId: number; unread: number; mentions: number }[] = [];
+  for (const o of await db.listOrganizationsForUser(me)) {
+    const m = await db.getOrganizationMembership(o.id, me);
+    if (!m || m.role === "reviewer") continue;
+    let unread = 0;
+    let mentions = 0;
+    for (const c of visibleChannels(o.id, me)) {
+      const row = memberRow(c.id, me);
+      if (row?.muted) continue;
+      const u = db.team.unread(o.id, me, c.key, db.team.read(o.id, me, c.key)?.lastReadId ?? 0);
+      unread += u.count;
+      mentions += u.mentions;
+    }
+    for (const p of await people(o.id)) {
+      if (p.userId === me) continue;
+      const key = dmKey(me, p.userId);
+      const orgs = await sharedOrgs(o.id, me, p.userId);
+      unread += db.team.unread(orgs, me, key, db.team.read(orgs, me, key)?.lastReadId ?? 0).count;
+    }
+    out.push({ orgId: o.id, unread, mentions });
+  }
+  return out;
+}
+
 // ==========================================
 // Messages
 // ==========================================

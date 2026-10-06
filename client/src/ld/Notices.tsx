@@ -10,10 +10,10 @@ import { playSound, unlockSoundOnFirstTap, type SoundKind } from "./sounds";
  * person turned Sound on for that kind of notice in My account.
  */
 
-type Toast = { id: number; title: string; body: string; url: string; sounded: boolean };
+type Toast = { id: number; orgId: number; title: string; body: string; url: string; sounded: boolean };
 
 export default function Notices() {
-  const { currentOrgId } = useTenant();
+  const { currentOrgId, switchOrganization } = useTenant();
   const [location, go] = useLocation();
   const account = trpc.account.get.useQuery(undefined, { staleTime: 60_000 });
   const after = React.useRef<number | null>(null);
@@ -35,12 +35,12 @@ export default function Notices() {
     if (!fresh.length) return;
     const prefs = account.data?.prefs as Record<string, { sound: boolean }> | undefined;
     const sound = account.data?.sound as { kind: SoundKind; volume: number } | undefined;
-    // Already looking at it: no pop-up and no sound.
-    const shown = fresh.filter((p) => p.orgId === currentOrgId && p.url !== location);
+    // Already looking at it: no pop-up and no sound. A notice from another workspace pops up with that workspace's name.
+    const shown = fresh.filter((p) => !(p.orgId === currentOrgId && p.url === location));
     if (!shown.length) return;
     const wantsSound = shown.some((p) => prefs?.[p.event]?.sound);
     if (wantsSound && sound) playSound(sound.kind, sound.volume);
-    setToasts((t) => [...t, ...shown.map((p) => ({ id: p.id, title: p.title, body: p.body, url: p.url, sounded: !!prefs?.[p.event]?.sound }))].slice(-3));
+    setToasts((t) => [...t, ...shown.map((p) => ({ id: p.id, orgId: p.orgId, title: p.orgId === currentOrgId || !p.orgName ? p.title : `${p.title} · ${p.orgName}`, body: p.body, url: p.url, sounded: !!prefs?.[p.event]?.sound }))].slice(-3));
     for (const p of shown) setTimeout(() => setToasts((t) => t.filter((x) => x.id !== p.id)), 7_000);
   }, [q.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -54,6 +54,7 @@ export default function Notices() {
           className="ld-toast"
           onClick={() => {
             setToasts((x) => x.filter((y) => y.id !== t.id));
+            if (t.orgId !== currentOrgId) switchOrganization(t.orgId);
             go(t.url);
           }}
         >

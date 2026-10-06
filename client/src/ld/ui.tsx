@@ -166,6 +166,7 @@ export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
   const { user, logout } = useAuth();
   const { chatOnly } = useTenant();
+  const railUnread = useUnreadElsewhere();
   const [switcher, setSwitcher] = React.useState(false);
   const [menu, setMenu] = React.useState(false);
   const base: React.CSSProperties = {
@@ -208,11 +209,12 @@ export function Rail({ active }: { active: RailKey }) {
     >
       <button
         type="button"
-        aria-label="Switch workspace"
+        aria-label={railUnread.elsewhere ? `Switch workspace, ${railUnread.elsewhere} unread in your other workspaces` : "Switch workspace"}
         onClick={() => setSwitcher((v) => !v)}
-        style={{ width: 44, height: 44, borderRadius: 11, background: "transparent", border: 0, padding: 0, cursor: "pointer", marginBottom: 12 }}
+        style={{ width: 44, height: 44, borderRadius: 11, background: "transparent", border: 0, padding: 0, cursor: "pointer", marginBottom: 12, position: "relative" }}
       >
         <img src="/brand/icon.png" alt="LeadDash Employees" width={44} height={44} style={{ display: "block", width: 44, height: 44, borderRadius: 11 }} />
+        {railUnread.elsewhere > 0 && <span style={{ ...badge, position: "absolute", top: -4, right: -6 }}>{railUnread.elsewhere}</span>}
       </button>
       {item("chats", "Chats", "/chats", Icons.chats)}
       {!chatOnly && item("calendar", "Calendar", "/calendar", Icons.calendar)}
@@ -262,9 +264,22 @@ const ORG_TYPE_CHOICES = [
   { key: "business", label: "Business", sub: "Products, services, agencies, consultancies." },
 ] as const;
 
+/** Unread team chat in the workspaces that are not open, for the badge on the workspace name and the rows in the switcher. */
+export function useUnreadElsewhere() {
+  const { currentOrgId } = useTenant();
+  const q = trpc.teamChat.unreadEverywhere.useQuery(undefined, { refetchInterval: 20_000, refetchIntervalInBackground: true });
+  const rows = q.data ?? [];
+  const by = new Map(rows.map((r) => [r.orgId, r]));
+  const elsewhere = rows.filter((r) => r.orgId !== currentOrgId).reduce((n, r) => n + r.unread, 0);
+  return { by, elsewhere };
+}
+
+const badge: React.CSSProperties = { background: "#c2410c", color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "0 7px", lineHeight: "18px", flexShrink: 0 };
+
 export function Switcher({ onClose, style, className }: { onClose: () => void; style?: React.CSSProperties; className?: string }) {
   const { organizations, currentOrgId, switchOrganization, refetchOrgs } = useTenant();
   const { user } = useAuth();
+  const unread = useUnreadElsewhere();
   const [creating, setCreating] = React.useState(false);
   const [name, setName] = React.useState("");
   const [owner, setOwner] = React.useState("");
@@ -310,6 +325,7 @@ export function Switcher({ onClose, style, className }: { onClose: () => void; s
         >
           <OrgLogo name={o.name} src={o.logoUrl} size={36} />
           <span style={{ flex: 1 }}>{o.name}</span>
+          {o.id !== currentOrgId && (unread.by.get(o.id)?.unread ?? 0) > 0 && <span style={badge} aria-label={`${unread.by.get(o.id)!.unread} unread`}>{unread.by.get(o.id)!.unread}</span>}
           {o.id === currentOrgId && Icons.check}
         </button>
       ))}
@@ -419,14 +435,16 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
   const { user } = useAuth();
   const { list } = useEmployees();
   const summaries = trpc.chat.summaries.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && !chatOnly, refetchInterval: 30_000 });
+  const elsewhere = useUnreadElsewhere();
   const [switcher, setSwitcher] = React.useState(false);
   const sorted = [...list].sort((a, b) => KIND_ORDER.indexOf(a.kind as Kind) - KIND_ORDER.indexOf(b.kind as Kind) || a.id - b.id);
   return (
     <aside className="ld-chatlist" style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "#fff", borderRight: "1px solid #e3e9e6", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
       <div style={{ padding: "18px 18px 12px 18px", position: "relative" }} className="ld-between">
-        <button type="button" onClick={() => setSwitcher((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 10, border: 0, background: "none", font: "inherit", fontSize: 16, fontWeight: 800, color: "#14221c", cursor: "pointer", padding: 0, minWidth: 0, textAlign: "left" }}>
+        <button type="button" onClick={() => setSwitcher((v) => !v)} title={elsewhere.elsewhere ? `${elsewhere.elsewhere} unread in your other workspaces` : undefined} style={{ display: "flex", alignItems: "center", gap: 10, border: 0, background: "none", font: "inherit", fontSize: 16, fontWeight: 800, color: "#14221c", cursor: "pointer", padding: 0, minWidth: 0, textAlign: "left" }}>
           {currentOrg && <OrgLogo name={currentOrg.name} src={currentOrg.logoUrl} size={32} />}
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentOrg?.name ?? "Choose a workspace"}</span>
+          {elsewhere.elsewhere > 0 && <span style={badge} aria-label={`${elsewhere.elsewhere} unread in other workspaces`}>{elsewhere.elsewhere}</span>}
           {Icons.chevron}
         </button>
         <Link href="/account" className="ld-mobile-only" aria-label="My account" style={{ textDecoration: "none" }}>
