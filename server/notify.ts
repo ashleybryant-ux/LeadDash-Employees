@@ -10,7 +10,7 @@ import type { Application, OutboundItem, User } from "../drizzle/schema";
  * Notices never carry a client's name: they say what is waiting and link to it.
  */
 
-export const NOTIFY_EVENTS = ["team_message", "task_assigned", "approval", "report", "application", "deadline", "task_failed", "team_due"] as const;
+export const NOTIFY_EVENTS = ["team_message", "task_assigned", "approval", "report", "application", "deadline", "task_failed", "team_due", "ehr"] as const;
 export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 
 export const EVENT_LABELS: Record<NotifyEvent, string> = {
@@ -22,6 +22,7 @@ export const EVENT_LABELS: Record<NotifyEvent, string> = {
   deadline: "A deadline is 7 days out",
   task_failed: "A task fails",
   team_due: "A team license or certification is due",
+  ehr: "LeadDash EHR: a claim is denied, paperwork is past due, a booking changes",
 };
 
 /** sound: a sound on this device while the app is open. */
@@ -36,6 +37,7 @@ export const DEFAULT_PREFS: Prefs = {
   deadline: { push: true, email: true, sound: false },
   task_failed: { push: true, email: true, sound: true },
   team_due: { push: true, email: false, sound: false },
+  ehr: { push: true, email: false, sound: false },
 };
 
 export const SOUNDS = ["chime", "knock", "bell"] as const;

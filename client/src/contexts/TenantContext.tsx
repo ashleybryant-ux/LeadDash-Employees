@@ -6,6 +6,8 @@ export interface Organization {
   name: string;
   slug: string;
   plan: "starter" | "growth" | "enterprise";
+  /** business, nonprofit or healthcare: decides the roster, the titles and the client information rules. */
+  orgType?: "business" | "nonprofit" | "healthcare";
   focusAreas: string | null;
   ein: string | null;
   annualBudget: string | null;

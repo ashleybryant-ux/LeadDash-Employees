@@ -1,6 +1,6 @@
 /** Display facts about each employee job, shared by every screen. */
 
-export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "developer" | "onboarding" | "platform" | "ads" | "custom";
+export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "developer" | "onboarding" | "platform" | "ads" | "billing" | "compliance" | "custom";
 
 export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Leadership" | "Revenue" | "Sales" | "Marketing" | "Operations" | "Other" }> = {
   coo: { color: "#334155", work: "Meetings", group: "Leadership" },
@@ -20,11 +20,24 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
   developer: { color: "#3b4a6b", work: "Changes", group: "Operations" },
   onboarding: { color: "#7a3e6b", work: null, group: "Operations" },
   platform: { color: "#2f6f8a", work: "Workflows", group: "Operations" },
+  billing: { color: "#5a3d8a", work: "Claims", group: "Operations" },
+  compliance: { color: "#8a5a1d", work: "Compliance", group: "Operations" },
   custom: { color: "#3d4c45", work: null, group: "Other" },
 };
 
-export const KIND_ORDER: Kind[] = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "ads", "inbox", "hiring", "onboarding", "developer", "platform", "custom"];
+export const KIND_ORDER: Kind[] = ["coo", "projects", "inbox", "leads", "billing", "compliance", "grants", "speaking", "prospecting", "outreach", "social", "blog", "website", "video", "ads", "hiring", "onboarding", "developer", "platform", "custom"];
 export const GROUP_ORDER = ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"] as const;
+/** The chat list groups employees by department, in this order for each organization type. */
+export const DEPARTMENT_ORDER: Record<string, string[]> = {
+  business: ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"],
+  nonprofit: ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"],
+  healthcare: ["Leadership", "Client care", "Billing and compliance", "Growth", "Operations", "Other"],
+};
+/** In a healthcare practice, the employees that work with client information. */
+export const CLIENT_INFO_KINDS: Kind[] = ["inbox", "leads", "billing", "compliance"];
+export function worksWithClientInfo(kind: string | null | undefined, orgType: string | null | undefined) {
+  return orgType === "healthcare" && CLIENT_INFO_KINDS.includes((kind ?? "custom") as Kind);
+}
 
 /** Portraits live in client/public/avatars/<kind>.webp (256 px, cut from the LeadDash Employees team sheet). */
 export const AVATAR_FILES: Partial<Record<Kind, string>> = {
@@ -65,6 +78,8 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
   developer: ["Something's broken", "What are you working on?", "What's ready for me to merge?"],
   onboarding: ["Onboard a new customer", "Who's being onboarded?", "What's due this week?"],
   platform: ["Audit my workflows", "Write an SOP from the site", "Put Jordan's page in a funnel", "What needs fixing?"],
+  billing: ["What needs a person today?", "Unpaid claims past 30 days", "Draft the statements", "Which payer should I call first?"],
+  compliance: ["What is due in the next 30 days?", "Unsigned notes by clinician", "Add a license renewal", "SOPs past their review date"],
   custom: ["What can you help with?"],
 };
 
@@ -86,10 +101,24 @@ export const GUIDELINE_LABELS: Record<Kind, { focus: string; avoid: string; sign
   prospecting: { focus: "Look for", avoid: "Skip", signAs: "Ideal fit" },
   outreach: { focus: "What to lead with", avoid: "Never say", signAs: "Sign emails as" },
   leads: { focus: "How to reply", avoid: "Never promise", signAs: "Sign replies as" },
+  billing: { focus: "Flag first", avoid: "Never do on my own", signAs: "Sign statements as" },
+  compliance: { focus: "Track first", avoid: "Never do on my own", signAs: "Sign reminders as" },
   custom: { focus: "Focus on", avoid: "Avoid", signAs: "Sign as" },
 };
 
 export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
+  billing: [
+    "Reads LeadDash EHR through the connection on Integrations; nothing is read until the practice connects it.",
+    "Never submits a claim, charges a card, sends a statement or writes anything off. Every fix is made by a person in LeadDash EHR.",
+    "Clients appear by initials in chat and in every notice; the full detail is in the EHR.",
+    "Nothing from a claim or a client goes to web search.",
+  ],
+  compliance: [
+    "Sees that a note is unsigned or a plan is due, never what is in it. Counts and dates only, by clinician.",
+    "Reminders are drafted and wait for Send.",
+    "Credentials, licenses and training dates are what the practice types in; nothing is looked up about a person without being asked.",
+    "Clients appear by initials in chat and in every notice.",
+  ],
   coo: [
     "Invites and recaps wait for your approval unless you set them to go on their own.",
     "Agendas come from what happened this week: Activity, launch reports and the scorecard.",

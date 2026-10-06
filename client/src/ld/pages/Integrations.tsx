@@ -71,7 +71,7 @@ const okTile: React.CSSProperties = { ...tile, background: "#e6f2ec", color: "#1
 const warnTile: React.CSSProperties = { ...tile, background: "#fdf0e3", color: "#8a4510" };
 
 export default function Integrations() {
-  const { currentOrgId } = useTenant();
+  const { currentOrgId, currentOrg } = useTenant();
   const q = trpc.publishing.listConnections.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const info = trpc.publishing.connectInfo.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
@@ -103,6 +103,7 @@ export default function Integrations() {
   return (
     <Page rail="integrations" maxWidth={1140}>
       <h1 className="ld-h1">Integrations</h1>
+      {currentOrg?.orgType === "healthcare" && <EhrConnection />}
       <WebsiteLogins />
       <Calendars />
       <SendingAddresses />
@@ -1061,6 +1062,77 @@ function ConnectForm({ item, conn, onDone }: { item: CatalogItem; conn: Conn | u
         )}
       </div>
     </div>
+  );
+}
+
+// ==========================================
+// LeadDash EHR: one key from Practice Settings, checked with the EHR before it is saved
+// ==========================================
+
+const EHR_READERS = [
+  { kind: "billing", what: "Claims, payments, client balances, eligibility results. Opens the claim in LeadDash EHR for the fix; never submits, charges or sends on her own.", how: "Reads" },
+  { kind: "compliance", what: "Note and treatment plan status by clinician, measure due dates. Counts and dates only.", how: "Reads" },
+  { kind: "leads", what: "Bookings, cancellations, reschedule requests and paperwork that is past due, so the front desk hears about them.", how: "Reads" },
+];
+
+function EhrConnection() {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.ehr.view.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const emps = trpc.employees.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [editing, setEditing] = React.useState(false);
+  const [url, setUrl] = React.useState("https://ehr.leaddash.io");
+  const [key, setKey] = React.useState("");
+  const refresh = () => Promise.all([utils.ehr.view.invalidate(), utils.publishing.listConnections.invalidate()]);
+  const connect = trpc.ehr.connect.useMutation({ onSuccess: async () => { setKey(""); setEditing(false); await refresh(); } });
+  const disconnect = trpc.ehr.disconnect.useMutation({ onSuccess: async () => { setEditing(false); await refresh(); } });
+  const v = q.data;
+  const byKind = (k: string) => emps.data?.find((e) => e.kind === k);
+  return (
+    <section className="ld-card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="ld-between">
+        <span className="ld-lbl">LeadDash EHR</span>
+        <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {v?.connected ? <span className="ld-pill green">Connected</span> : <span className="ld-pill gray">Not connected</span>}
+          {!editing && <button type="button" className="ld-btn sm" onClick={() => setEditing(true)}>{v?.connected ? "Change" : "Connect"}</button>}
+        </span>
+      </div>
+      {v?.connected && !editing && (
+        <span style={{ fontSize: 14 }}>Connected as <b>{v.practice}</b>{v.fetchedAt ? <span className="ld-small ld-muted"> · last read {fmtDate(v.fetchedAt)}</span> : <span className="ld-small ld-muted"> · first read pending</span>}{v.error ? <span className="ld-small" style={{ color: "#b42318" }}> · last read failed: {v.error}</span> : null}</span>
+      )}
+      {!v?.connected && !editing && <span style={{ fontSize: 14 }}>Harper, Camille and Malik read from LeadDash EHR once it is connected. The key comes from LeadDash EHR, Practice Settings, LeadDash Employees.</span>}
+      {editing && (
+        <div style={{ borderTop: "1px solid #eef2f0", paddingTop: 14, display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 14, alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label htmlFor="ehr-url" className="ld-lbl">EHR address</label>
+            <input id="ehr-url" className="ld-in" value={url} onChange={(e) => setUrl(e.target.value)} />
+            <label htmlFor="ehr-key" className="ld-lbl">Key</label>
+            <input id="ehr-key" className="ld-in" type="password" autoComplete="new-password" value={key} onChange={(e) => setKey(e.target.value)} />
+            <span className="ld-small ld-muted">From LeadDash EHR, Practice Settings, LeadDash Employees. Checked with the EHR, then saved encrypted; never shown again.</span>
+            <ErrorLine error={connect.error || disconnect.error} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" className="ld-btn p" disabled={connect.isPending || !key.trim() || !url.trim()} onClick={() => connect.mutate({ organizationId: currentOrgId, url: url.trim(), key: key.trim() })}>{connect.isPending ? "Checking..." : "Save"}</button>
+            <button type="button" className="ld-btn" onClick={() => setEditing(false)}>Cancel</button>
+            {v?.connected && <button type="button" className="ld-btn danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate({ organizationId: currentOrgId })}>Disconnect</button>}
+          </div>
+        </div>
+      )}
+      <div style={{ borderTop: "1px solid #eef2f0" }}>
+        {EHR_READERS.map((r) => {
+          const e = byKind(r.kind);
+          if (!e) return null;
+          return (
+            <div key={r.kind} className="ld-rw" style={{ gridTemplateColumns: "150px minmax(0,1fr) 90px", padding: "9px 0" }}>
+              <span className="ld-strong">{e.name}</span>
+              <span style={{ fontSize: 13.5 }}>{r.what}</span>
+              <span className="ld-pill blue" style={{ justifySelf: "end" }}>{r.how}</span>
+            </div>
+          );
+        })}
+      </div>
+      <span className="ld-small ld-muted">Everything read from LeadDash EHR stays on the providers under a signed BAA. Nothing from the EHR goes to web search, and clients are initials outside it.</span>
+    </section>
   );
 }
 

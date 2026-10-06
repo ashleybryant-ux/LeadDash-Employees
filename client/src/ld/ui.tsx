@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { AVATAR_FILES, GROUP_ORDER, KIND_META, KIND_ORDER, fmtWhen, initials, type Kind } from "./meta";
+import { AVATAR_FILES, KIND_META, KIND_ORDER, fmtWhen, initials, type Kind, DEPARTMENT_ORDER, worksWithClientInfo } from "./meta";
 import { Menu } from "./goals/shared";
 import { NewChannel } from "./team/NewChannel";
 
@@ -256,12 +256,19 @@ export function Rail({ active }: { active: RailKey }) {
 // Workspace switcher
 // ==========================================
 
+const ORG_TYPE_CHOICES = [
+  { key: "healthcare", label: "Healthcare practice", sub: "Therapy, counseling, medical, behavioral health. Employees that read client messages run only on providers under a signed BAA." },
+  { key: "nonprofit", label: "Nonprofit", sub: "Grants, programs, community services." },
+  { key: "business", label: "Business", sub: "Products, services, agencies, consultancies." },
+] as const;
+
 export function Switcher({ onClose, style, className }: { onClose: () => void; style?: React.CSSProperties; className?: string }) {
   const { organizations, currentOrgId, switchOrganization, refetchOrgs } = useTenant();
   const { user } = useAuth();
   const [creating, setCreating] = React.useState(false);
   const [name, setName] = React.useState("");
   const [owner, setOwner] = React.useState("");
+  const [orgType, setOrgType] = React.useState<"business" | "nonprofit" | "healthcare">("business");
   const [error, setError] = React.useState<string | null>(null);
   const create = trpc.organizations.create.useMutation({
     onSuccess: async (r) => {
@@ -320,13 +327,22 @@ export function Switcher({ onClose, style, className }: { onClose: () => void; s
               onSubmit={(e) => {
                 e.preventDefault();
                 setError(null);
-                create.mutate({ name: name.trim(), slug: slug(name), plan: "growth", ownerEmail: owner.trim() || undefined });
+                create.mutate({ name: name.trim(), slug: slug(name), plan: "growth", orgType, ownerEmail: owner.trim() || undefined });
               }}
             >
               <label className="ld-lbl" htmlFor="ws-name">Name</label>
               <input id="ws-name" className="ld-in" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} autoFocus />
               <label className="ld-lbl" htmlFor="ws-owner">Owner email (optional)</label>
               <input id="ws-owner" className="ld-in" type="email" value={owner} onChange={(e) => setOwner(e.target.value)} />
+              <span className="ld-lbl">Organization type</span>
+              <div className="ld-orgtypes" role="radiogroup" aria-label="Organization type">
+                {ORG_TYPE_CHOICES.map((t) => (
+                  <label key={t.key} className="ld-orgtype">
+                    <input type="radio" name="ws-orgtype" checked={orgType === t.key} onChange={() => setOrgType(t.key)} />
+                    <span><b>{t.label}</b><small>{t.sub}</small></span>
+                  </label>
+                ))}
+              </div>
               {error && <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>}
               <div className="ld-row" style={{ justifyContent: "flex-end" }}>
                 <button type="button" className="ld-btn sm" onClick={() => setCreating(false)}>Cancel</button>
@@ -419,8 +435,9 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
         {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 88, top: 52 }} />}
       </div>
       <TeamGroup activeKind={activeKind} />
-      {!chatOnly && GROUP_ORDER.map((group) => {
-        const people = sorted.filter((e) => KIND_META[(e.kind as Kind) ?? "custom"].group === group);
+      {!chatOnly && (DEPARTMENT_ORDER[currentOrg?.orgType ?? "business"] ?? DEPARTMENT_ORDER.business).map((group) => {
+        const known = DEPARTMENT_ORDER[currentOrg?.orgType ?? "business"] ?? DEPARTMENT_ORDER.business;
+        const people = sorted.filter((e) => (known.includes(e.department) ? e.department : "Other") === group);
         if (people.length === 0) return null;
         return (
           <div key={group}>
@@ -438,7 +455,7 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
                       <span style={{ fontWeight: 800, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
                       <span style={{ fontSize: 12, color: "#5b6b64", whiteSpace: "nowrap" }}>{s ? fmtWhen(s.createdAt) : ""}</span>
                     </span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#1b6b4a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.roleTitle}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#1b6b4a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.roleTitle}{worksWithClientInfo(e.kind, currentOrg?.orgType) && <span className="ld-pill blue ld-ci">Client info</span>}</span>
                     <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 13, color: "#3d4c45", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview}</span>
                       {s && s.unread > 0 && !on ? (
@@ -554,10 +571,11 @@ function TeamGroup({ activeKind }: { activeKind: string | null }) {
 type Emp = { id: number; name: string; roleTitle: string; kind: string; status: string; avatar: string | null };
 
 export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines"; base: string }) {
-  const { currentOrgId } = useTenant();
+  const { currentOrgId, currentOrg } = useTenant();
   const utils = trpc.useUtils();
   const toggle = trpc.employees.toggleStatus.useMutation({ onSuccess: () => utils.employees.list.invalidate() });
   const work = KIND_META[(emp.kind as Kind) ?? "custom"].work;
+  const clientInfo = worksWithClientInfo(emp.kind, currentOrg?.orgType);
   const paused = emp.status === "paused";
   const tab = (on: boolean): React.CSSProperties => ({
     display: "inline-flex",
@@ -584,6 +602,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
           <span style={{ fontWeight: 800, fontSize: 16 }}>{emp.name}</span>
           <span style={{ fontSize: 13, color: "#5b6b64", whiteSpace: "nowrap" }}>{emp.roleTitle}</span>
         </span>
+        {clientInfo && <span className="ld-pill blue ld-emphead-ci" title="Works with client information, on providers under a signed BAA. Clients by initials in every notice.">Client info</span>}
       </div>
       <nav aria-label="Employee views" className="ld-emptabs" style={{ display: "flex", gap: 6, background: "#f1f5f3", padding: 4, borderRadius: 12 }}>
         <Link href={base} style={tab(active === "chat")} className="ld-tablink">Chat</Link>

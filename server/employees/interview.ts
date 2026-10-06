@@ -368,6 +368,8 @@ const HELLO: Record<EmployeeKind, string> = {
   onboarding: "Before I onboard a customer, I'd like to learn your steps from signed to live and how you want them to feel.",
   platform: "Before I open anything in the LeadDash platform, I'd like to learn which workflows matter most and what I should never touch.",
   ads: "Before I write an ad, I'd like to learn what you sell, who buys it, where you already run ads and what must never show up in one.",
+  billing: "Before I read a single claim, I'd like to learn who works the billing here, which payers you bill most, and what I must never do on my own.",
+  compliance: "Before I track anything, I'd like to learn your clinicians, their licenses and payers, and the documentation rules you hold the team to.",
   custom: "Before I start, I'd like to learn what you need from me.",
 };
 
@@ -384,11 +386,13 @@ const ROLE: Record<EmployeeKind, string> = {
   website: "website planner",
   video: "video producer",
   inbox: "inbox and calendar assistant",
-  hiring: "recruiter",
+  hiring: "HR director",
   developer: "developer",
   onboarding: "onboarding specialist",
   platform: "platform specialist",
   ads: "ads manager",
+  billing: "billing specialist",
+  compliance: "compliance coordinator",
   custom: "",
 };
 

@@ -21,6 +21,7 @@ const LOGO_MAX = 8 * 1024 * 1024;
 type SectionKey = "about" | "basic" | "brand";
 
 type Form = {
+  orgType: "business" | "nonprofit" | "healthcare";
   description: string;
   audience: string;
   entity: string;
@@ -33,6 +34,78 @@ type Form = {
   brandColors: string;
   fonts: string;
 };
+
+export const ORG_TYPES = [
+  { key: "healthcare", label: "Healthcare practice", sub: "Therapy, counseling, medical, behavioral health. Employees that read client messages run only on providers under a signed BAA." },
+  { key: "nonprofit", label: "Nonprofit", sub: "Grants, programs, community services." },
+  { key: "business", label: "Business", sub: "Products, services, agencies, consultancies." },
+] as const;
+
+const PROVIDERS: { key: string; name: string; does: string; used: string; client: "allowed" | "never" }[] = [
+  { key: "assemblyai", name: "AssemblyAI", does: "Writing, thinking, transcription", used: "Every employee's drafts and replies; Harper and Camille's EHR work; Avery's meeting notes", client: "allowed" },
+  { key: "openai", name: "OpenAI", does: "Pictures, voices", used: "Sienna, Reese, Theo and Jordan's images; voices when ElevenLabs is off", client: "allowed" },
+  { key: "anthropic", name: "Anthropic", does: "Web search, reading scanned PDFs", used: "Morgan, Taylor, Elena and Quinn's searches; scanned files in Knowledge", client: "allowed" },
+  { key: "elevenlabs", name: "ElevenLabs", does: "Voices", used: "Huddles and Talk", client: "never" },
+  { key: "fal", name: "fal.ai", does: "Video", used: "Elena's avatar videos", client: "never" },
+];
+
+const CLIENT_INFO_ROWS = [
+  { kind: "inbox", sees: "Your inbox and calendar, meeting audio", rule: "Clients appear by initials in chat and in every email, text and push notice. Nothing from a message goes to web search." },
+  { kind: "leads", sees: "New client inquiries from the booking page, forms and the phone line", rule: "Replies and books from the practice's services and hours only. Never asks why someone is seeking care." },
+  { kind: "billing", sees: "Claims, payments and balances in LeadDash EHR", rule: "Reads the EHR through the connection on Integrations. Never submits a claim, charges a card or sends a statement without a person pressing the button." },
+  { kind: "compliance", sees: "Clinician credentials, licenses, and which notes and plans are unsigned or due", rule: "Sees that a note is unsigned, never what it says. Reports by clinician, clients by initials." },
+];
+
+/** The two cards a healthcare practice gets: who works with client information, and which providers may carry it. LeadDash sets both; the practice reads them. */
+function ClientInformation() {
+  const { currentOrgId } = useTenant();
+  const emps = trpc.employees.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const status = trpc.status.useQuery();
+  const signed = status.data?.baa.signed ?? [];
+  const requested = status.data?.baa.requested ?? [];
+  const byKind = (k: string) => emps.data?.find((e) => e.kind === k);
+  const others = (emps.data ?? []).filter((e) => !CLIENT_INFO_ROWS.some((r) => r.kind === e.kind)).length;
+  return (
+    <>
+      <section className="ld-card">
+        <div className="ld-sh"><span className="ld-st">Client information</span><span className="ld-small ld-muted">Set by LeadDash for healthcare practices</span></div>
+        <div className="ld-hd ld-ci-cols" style={{ gridTemplateColumns: "180px minmax(0,1fr) minmax(0,1.4fr)" }}><span>Employee</span><span>What they see</span><span>Rule</span></div>
+        {CLIENT_INFO_ROWS.map((r) => {
+          const e = byKind(r.kind);
+          if (!e) return null;
+          return (
+            <div key={r.kind} className="ld-rw ld-ci-cols" style={{ gridTemplateColumns: "180px minmax(0,1fr) minmax(0,1.4fr)", alignItems: "start" }}>
+              <span><span className="ld-strong">{e.name}</span><br /><span className="ld-small ld-muted">{e.roleTitle}</span></span>
+              <span>{r.sees}</span>
+              <span>{r.rule}</span>
+            </div>
+          );
+        })}
+        <div className="ld-rw ld-ci-cols" style={{ gridTemplateColumns: "180px minmax(0,1fr) minmax(0,1.4fr)", alignItems: "start" }}>
+          <span><span className="ld-strong">Everyone else</span><br /><span className="ld-small ld-muted">{others} employees</span></span>
+          <span>The Brain, Knowledge files, public sources</span>
+          <span>Work without client information. A client's name or details pasted into their chat is refused with a note to use {[byKind("inbox")?.name, byKind("leads")?.name, byKind("billing")?.name].filter(Boolean).join(", ")}.</span>
+        </div>
+      </section>
+      <section className="ld-card">
+        <div className="ld-sh"><span className="ld-st">Providers</span><span className="ld-small ld-muted">Under your LeadDash agreement, Schedule A</span></div>
+        <div className="ld-hd ld-pv-cols" style={{ gridTemplateColumns: "200px minmax(0,1fr) 110px 130px" }}><span>Provider</span><span>Used for</span><span>BAA</span><span>Client information</span></div>
+        {PROVIDERS.map((p) => {
+          const baa = signed.includes(p.key) ? "signed" : requested.includes(p.key) ? "requested" : "none";
+          const allowed = p.client === "allowed" && baa === "signed";
+          return (
+            <div key={p.key} className="ld-rw ld-pv-cols" style={{ gridTemplateColumns: "200px minmax(0,1fr) 110px 130px", alignItems: "start" }}>
+              <span><span className="ld-strong">{p.name}</span><br /><span className="ld-small ld-muted">{p.does}</span></span>
+              <span>{p.used}</span>
+              <span className={`ld-pill ${baa === "signed" ? "green" : baa === "requested" ? "amber" : "gray"}`}>{baa === "signed" ? "Signed" : baa === "requested" ? "Requested" : "None"}</span>
+              <span className={`ld-pill ${allowed ? "green" : "gray"}`}>{allowed ? "Allowed" : "Not sent"}</span>
+            </div>
+          );
+        })}
+      </section>
+    </>
+  );
+}
 
 function NotSet() {
   return <span className="ld-muted">Not set</span>;
@@ -78,6 +151,7 @@ export default function Workspace() {
     update.reset();
     setLogoError(null);
     setF({
+      orgType: o.orgType ?? "business",
       description: o.description ?? "",
       audience: o.audience ?? "",
       entity: o.entity ?? "",
@@ -98,7 +172,7 @@ export default function Workspace() {
 
   const save = (key: SectionKey) => {
     if (!f) return;
-    if (key === "about") update.mutate({ id: o.id, description: f.description.trim(), audience: f.audience.trim(), entity: f.entity.trim() });
+    if (key === "about") update.mutate({ id: o.id, orgType: f.orgType, description: f.description.trim(), audience: f.audience.trim(), entity: f.entity.trim() });
     if (key === "basic")
       update.mutate({
         id: o.id,
@@ -180,6 +254,15 @@ export default function Workspace() {
         {header("about", "About the business")}
         {editing === "about" && f ? (
           <div className="ld-kv">
+            <span className="ld-k" style={kStart}>Organization type</span>
+            <div className="ld-orgtypes" role="radiogroup" aria-label="Organization type">
+              {ORG_TYPES.map((t) => (
+                <label key={t.key} className="ld-orgtype">
+                  <input type="radio" name="w-orgtype" checked={f.orgType === t.key} onChange={() => setF((p) => (p ? { ...p, orgType: t.key } : p))} />
+                  <span><b>{t.label}</b><small>{t.sub}</small></span>
+                </label>
+              ))}
+            </div>
             <label htmlFor="w-desc" className="ld-k" style={kStart}>What it is</label>
             <textarea id="w-desc" className="ld-ta" rows={2} value={f.description} onChange={set("description")} />
             <label htmlFor="w-aud" className="ld-k" style={kStart}>Who it serves</label>
@@ -189,6 +272,8 @@ export default function Workspace() {
           </div>
         ) : (
           <div className="ld-kv" style={{ alignItems: "start" }}>
+            <span className="ld-k">Organization type</span>
+            <span>{ORG_TYPES.find((t) => t.key === (o.orgType ?? "business"))?.label ?? "Business"}</span>
             <span className="ld-k">What it is</span>
             {val(o.description)}
             <span className="ld-k">Who it serves</span>
@@ -198,6 +283,8 @@ export default function Workspace() {
           </div>
         )}
       </section>
+
+      {o.orgType === "healthcare" && <ClientInformation />}
 
       <section className={`ld-card ${editing === "basic" ? "editing" : ""}`}>
         {header("basic", "Basic information")}

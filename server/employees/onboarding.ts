@@ -73,6 +73,14 @@ export const TEMPLATES: Record<EmployeeKind, Template[]> = {
   onboarding: [REPORT("customers being onboarded, steps due this week, and anything waiting on me.")],
   platform: [REPORT("workflows that need fixing, fixes made this week, and pages waiting to be published.")],
   leads: [REPORT("new leads, who I replied to, and meetings booked this week.")],
+  billing: [
+    REPORT("denials to fix, unpaid claims past 30 days, and statements waiting for Send."),
+    { label: "Morning billing note", title: "Morning billing note", instructions: "Read today's claims, payments and eligibility from LeadDash EHR and tell me what needs a person.", repeat: "weekdays", time: "08:00" },
+  ],
+  compliance: [
+    REPORT("what is due in the next 30 days, unsigned notes by clinician, and SOPs past their review date."),
+    { label: "Monday compliance check", title: "Monday compliance check", instructions: "Tell me what is due in the next 30 days and which clinicians have notes or plans overdue.", repeat: "weekly", time: "08:00", weekday: 1 },
+  ],
   coo: [REPORT("this week's scorecard, meetings coming up, and open action items.")],
   projects: [REPORT("launches behind, tasks due this week, and KPIs off pace.")],
   custom: [REPORT("what you did and what is waiting on me.")],

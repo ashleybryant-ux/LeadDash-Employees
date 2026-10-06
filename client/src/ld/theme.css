@@ -1591,3 +1591,22 @@ button.gp-ts:hover { background: #f8fbf9; }
   .sop-estep { grid-template-columns: 28px minmax(0, 1fr); }
   .sop-hrow { grid-template-columns: 90px minmax(0, 1fr); }
 }
+
+/* ---------- Healthcare practice: client information ---------- */
+.ld-ci { font-size: 10px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
+@media (max-width: 760px) { .ld-emphead-ci { display: none; } }
+.ld-orgtypes { display: flex; flex-direction: column; gap: 8px; }
+.ld-orgtype { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 14px; }
+.ld-orgtype input { margin-top: 3px; }
+.ld-orgtype b { font-weight: 700; display: block; }
+.ld-orgtype small { display: block; color: #5b6b64; font-size: 12.5px; line-height: 1.4; }
+@media (max-width: 760px) {
+  .ld-ci-cols, .ld-pv-cols { grid-template-columns: minmax(0, 1fr) !important; }
+  .ld-hd.ld-ci-cols, .ld-hd.ld-pv-cols { display: none; }
+}
+.ld-stats4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 760px) {
+  .ld-stats4 { grid-template-columns: 1fr 1fr; }
+  .hb-cols, .cp-cols { grid-template-columns: minmax(0, 1fr) 110px !important; }
+  .ld-hd.hb-cols, .ld-hd.cp-cols { display: none; }
+}

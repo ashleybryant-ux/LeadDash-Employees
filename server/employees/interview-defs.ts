@@ -462,6 +462,60 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
     "a short ad"
   ),
 
+  billing: build(
+    [],
+    [
+      job("What should I keep on top of?", ["Denials and rejections", "Unpaid claims", "Client balances", "Eligibility before sessions"], "money"),
+      {
+        key: "money",
+        title: "How the money works here",
+        intro: "What I need to read the billing the way you do.",
+        questions: [
+          { key: "biller", label: "Who works claims and fixes them in LeadDash EHR", type: "text", placeholder: "Angela St. Ville", short: "Biller", guide: "money" },
+          { key: "payers", label: "Payers you bill most", type: "text", placeholder: "BCBS of Oklahoma, HealthChoice, Aetna, UnitedHealthcare", short: "Payers", guide: "money" },
+          { key: "followup", label: "When should I flag an unpaid claim?", type: "choice", options: ["30 days", "45 days", "60 days"], short: "Unpaid after", guide: "money" },
+          { key: "balances", label: "Client balances: what goes out and when", type: "text", placeholder: "Statement at 30 days, text reminder with consent at 45, card on file only when a person presses it", short: "Balances", guide: "balances" },
+        ],
+      },
+      voice("voice", [{ key: "never", label: "Never do on my own", type: "text", placeholder: "Submit a claim, charge a card, send a statement, write off anything", short: "Never on my own", guide: "rules" }]),
+    ],
+    [
+      { key: "money", title: "How do I read the billing?" },
+      { key: "balances", title: "What goes to clients, and when?" },
+      { key: "voice", title: "How should I write?" },
+      { key: "rules", title: "What do I never do on my own?" },
+    ],
+    { label: "Read today's denials", prompt: "Tell me what needs a person on the claims today." },
+    "a morning billing note"
+  ),
+
+  compliance: build(
+    [],
+    [
+      job("What should I keep track of?", ["Credentialing and CAQH", "License renewals and CE hours", "HIPAA and staff training", "Unsigned notes and plans due", "SOP review dates"], "track"),
+      {
+        key: "track",
+        title: "What to track",
+        intro: "The dates that cannot slip, and who owns them.",
+        questions: [
+          { key: "clinicians", label: "Clinicians and their licenses (type and state)", type: "text", placeholder: "Angela St. Ville, LPC Oklahoma; Bentlee Smiley, LPC Oklahoma", short: "Clinicians", guide: "track" },
+          { key: "payers", label: "Payers each clinician is enrolled with, or applying to", type: "text", short: "Enrollments", guide: "track" },
+          { key: "notesRule", label: "Notes must be signed within", type: "choice", options: ["24 hours", "48 hours", "72 hours", "7 days"], short: "Notes signed within", guide: "notes" },
+          { key: "planRule", label: "Treatment plans reviewed every", type: "choice", options: ["90 days", "6 months", "A year"], short: "Plans reviewed every", guide: "notes" },
+        ],
+      },
+      voice("voice", [{ key: "never", label: "Never do on my own", type: "text", placeholder: "Send a reminder to a clinician, change a date, read a note", short: "Never on my own", guide: "rules" }]),
+    ],
+    [
+      { key: "track", title: "What do I track, and for whom?" },
+      { key: "notes", title: "What are the documentation rules?" },
+      { key: "voice", title: "How should reminders sound?" },
+      { key: "rules", title: "What do I never do on my own?" },
+    ],
+    { label: "What is due", prompt: "What is due in the next 30 days?" },
+    "a compliance reminder"
+  ),
+
   social: build(
     [COLORS, BOOKING],
     [

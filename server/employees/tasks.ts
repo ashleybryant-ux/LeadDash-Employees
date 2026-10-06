@@ -4,7 +4,7 @@ import type { AIEmployee, EmployeeKind } from "../../drizzle/schema";
 import { generateJson, generateText, searchJson, type JsonSchema } from "../_core/llm";
 import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
-import { BASE_RULES, rosterEntry } from "./roster";
+import { BASE_RULES, rosterEntry, CLIENT_INFO_KINDS, ROSTER, worksWithClientInfo } from "./roster";
 import { guidelinesText } from "./interview";
 import { handbookText, playbookText } from "./handbook";
 import { findPassages, formatPassages } from "./kb";
@@ -45,11 +45,32 @@ export async function systemPromptFor(emp: AIEmployee, job: string, about?: stri
   const guides = guidelinesText(emp);
   const extra =
     (guides ? `\n\n# Guidelines from the owner for ${emp.name} (follow these; they come from onboarding, chat and the Guidelines tab)\n${guides}` : "") +
-    (emp.systemPrompt?.trim() ? `\n\nMore instructions from the workspace:\n${emp.systemPrompt.trim()}` : "");
+    (emp.systemPrompt?.trim() ? `\n\nMore instructions from the workspace:\n${emp.systemPrompt.trim()}` : "") +
+    clientInfoRules(emp, brain.org?.orgType);
   return {
     brain,
     system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${handbookText(emp.organizationId)}${playbookText(emp.kind) ? `\n\n${playbookText(emp.kind)}` : ""}\n\n# The task in front of you\n${job}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${await passagesFor(emp, about, job)}`,
   };
+}
+
+/**
+ * In a healthcare practice, four employees work with client information and
+ * every other one works without it. The rule goes in every prompt so it holds
+ * in chat, in drafts and in notices.
+ */
+export function clientInfoRules(emp: Pick<AIEmployee, "kind" | "name">, orgType: string | null | undefined) {
+  if (orgType !== "healthcare") return "";
+  if (worksWithClientInfo(emp.kind, "healthcare")) {
+    return `\n\n# Client information (this workspace is a healthcare practice)
+- You work with client information as part of your job. It stays inside this app and LeadDash EHR.
+- In every email, text, push notice, chat summary or report, a client appears by initials only ("J.M."), never by name, and never with anything from their record. The full detail opens inside the app.
+- Nothing from a client's message or record goes to web search or to any outside site.
+- Never diagnose, never ask why someone is seeking care, and never put a clinical detail in writing outside the EHR.`;
+  }
+  const to = CLIENT_INFO_KINDS.map((k) => ROSTER.find((r) => r.kind === k)?.name).filter(Boolean).join(", ");
+  return `\n\n# Client information (this workspace is a healthcare practice)
+- You work without client information. If a message or file you are given contains a client's name, contact details or anything from their care, do not use it: say that client information goes to ${to}, and continue with the part of the task that does not need it.
+- Never search the web for, write about, or store anything about a client.`;
 }
 
 /**

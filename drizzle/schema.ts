@@ -75,11 +75,17 @@ export const sessions = sqliteTable(
 // Workspaces
 // ==========================================
 
+/** What kind of organization a workspace is. It decides the roster, the titles and the client information rules. */
+export const ORG_TYPES = ["business", "nonprofit", "healthcare"] as const;
+export type OrgType = (typeof ORG_TYPES)[number];
+
 export const organizations = sqliteTable("organizations", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   plan: text("plan", { enum: ["starter", "growth", "enterprise"] }).notNull().default("growth"),
+  /** business, nonprofit or healthcare (a practice: no outbound sales, billing and compliance employees, client information rules). */
+  orgType: text("orgType", { enum: ORG_TYPES }).notNull().default("business"),
   focusAreas: text("focusAreas"),
   ein: text("ein"),
   annualBudget: text("annualBudget"),
@@ -150,6 +156,8 @@ export const EMPLOYEE_KINDS = [
   "onboarding",
   "platform",
   "ads",
+  "billing",
+  "compliance",
   "custom",
 ] as const;
 export type EmployeeKind = (typeof EMPLOYEE_KINDS)[number];
@@ -166,6 +174,8 @@ export const aiEmployees = sqliteTable(
     roleTitle: text("roleTitle").notNull(),
     department: text("department").notNull(),
     status: text("status", { enum: ["active", "idle", "working", "paused"] }).notNull().default("active"),
+    /** False for a roster employee the organization type leaves off the team (Sales in a healthcare practice). Hidden everywhere; comes back if the type changes. */
+    onTeam: integer("onTeam", { mode: "boolean" }).notNull().default(true),
     efficiency: integer("efficiency").notNull().default(98),
     tasksCompleted: integer("tasksCompleted").notNull().default(0),
     hoursSaved: integer("hoursSaved").notNull().default(0),
@@ -398,7 +408,7 @@ export type InsertAuditLog = typeof auditLogs.$inferInsert;
 // Connections and the approval queue
 // ==========================================
 
-export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize", "threads", "tiktok", "clickup", "zoom", "recall", "bidprime"] as const;
+export const PROVIDERS = ["google_workspace", "linkedin", "facebook", "instagram", "wordpress", "x", "google_business", "submittable", "sessionize", "threads", "tiktok", "clickup", "zoom", "recall", "bidprime", "leaddash_ehr"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const externalConnections = sqliteTable(
@@ -3221,3 +3231,45 @@ export const sopJobs = sqliteTable(
   (t) => [index("sop_jobs_org_idx").on(t.organizationId, t.status)]
 );
 export type SopJob = typeof sopJobs.$inferSelect;
+
+// ==========================================
+// LeadDash EHR: what a healthcare practice's employees read from it
+// ==========================================
+
+/** The last snapshot read from LeadDash EHR for a workspace: claims, paperwork, appointments, notes, balances. Harper, Camille and Malik work from it; the next read is compared to it for what is new. */
+export const ehrSnapshots = sqliteTable("ehr_snapshots", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  organizationId: integer("organizationId").notNull().unique(),
+  /** JSON EhrSnapshot */
+  data: text("data").notNull(),
+  fetchedAt: integer("fetchedAt", { mode: "timestamp" }).notNull(),
+  /** The last read that failed, and why; cleared on the next good read. */
+  error: text("error"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+export type EhrSnapshotRow = typeof ehrSnapshots.$inferSelect;
+
+/** Camille's dates: CAQH attestations, license renewals, training, payer enrollments. Typed by the practice; nothing is looked up about a person. */
+export const COMPLIANCE_KINDS = ["caqh", "license", "training", "enrollment", "other"] as const;
+export const complianceItems = sqliteTable(
+  "compliance_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    kind: text("kind", { enum: COMPLIANCE_KINDS }).notNull().default("other"),
+    /** What it is: "CAQH attestation", "LPC renewal, Oklahoma", "HIPAA training", "BCBS of Oklahoma enrollment". */
+    title: text("title").notNull(),
+    /** Who it is for: a clinician or staff member's name. */
+    who: text("who").notNull().default(""),
+    /** YYYY-MM-DD */
+    due: text("due"),
+    status: text("status", { enum: ["open", "done"] }).notNull().default("open"),
+    note: text("note").notNull().default(""),
+    doneAt: text("doneAt"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("compliance_items_org_idx").on(t.organizationId, t.status)]
+);
+export type ComplianceItem = typeof complianceItems.$inferSelect;

@@ -38,6 +38,8 @@ import { AvatarVideoCard } from "./chat/Avatar";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 import { DeckCard, DocCard } from "./chat/Talk";
 import AdsWork from "./work/Ads";
+import Billing from "./work/Billing";
+import Compliance from "./work/Compliance";
 import { AdBudgetCard, AdSetCard } from "./chat/Ads";
 import { SopCard } from "./sops/SopCard";
 
@@ -60,6 +62,8 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   developer: Changes,
   platform: Workflows,
   ads: AdsWork,
+  billing: Billing,
+  compliance: Compliance,
 };
 
 /** /chats, /chats/:kind, /chats/:kind/work, /chats/:kind/guidelines, /chats/e/:id[...] */

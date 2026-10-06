@@ -81,6 +81,8 @@ const ACTIONS: Record<string, string[]> = {
   coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   ads: ["none", "report", "ads_campaign", "ads_note", "ads_rewrite", "ads_approve", "ads_skip", "ads_platform", "ads_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  billing: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  compliance: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 // Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
@@ -334,6 +336,15 @@ async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "video") return (await import("./drama")).dramaFacts(emp.organizationId);
   if (emp.kind === "outreach") return (await import("./cold")).coldFacts(emp.organizationId);
   if (emp.kind === "speaking") return `${(await import("./press")).pressFacts(emp.organizationId)}${await (await import("./newsroom")).newsroomFacts(emp.organizationId)}`;
+  if (emp.kind === "billing" || emp.kind === "compliance") {
+    const ehr = await import("../ehr");
+    const extra = emp.kind === "compliance" ? await (await import("./compliance")).complianceFacts(emp.organizationId) : "";
+    return `${await ehr.ehrFacts(emp.organizationId)}${extra}`;
+  }
+  if (emp.kind === "leads") {
+    const org = await db.getOrganizationById(emp.organizationId);
+    if (org?.orgType === "healthcare") return (await import("../ehr")).ehrFacts(emp.organizationId);
+  }
   if (emp.kind === "inbox") {
     const cals = db.listAccountLinks(emp.organizationId, "calendar");
     const desk = await (await import("./desk")).deskFacts(emp.organizationId).catch(() => "");

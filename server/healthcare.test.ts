@@ -1,0 +1,162 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { caller, makeWorkspace } from "./test/helpers";
+import * as db from "./db";
+import * as ehr from "./ehr";
+import * as compliance from "./employees/compliance";
+import { systemPromptFor } from "./employees/tasks";
+
+/**
+ * A healthcare practice: the organization type decides who is on the team,
+ * the titles and departments, the client information rules in every prompt,
+ * and what Harper, Malik and Camille read from LeadDash EHR.
+ */
+
+vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 404 })));
+afterEach(() => vi.restoreAllMocks());
+
+const snapshot = (over: Partial<ehr.EhrSnapshot> = {}): ehr.EhrSnapshot => ({
+  generatedAt: "2026-10-06T14:00:00.000Z",
+  practice: "Legacy Family Services",
+  claims: [{ id: "c1", initials: "J.M.", dos: "2026-09-22", payer: "BCBS of Oklahoma", status: "denied", reason: "CO-4: modifier missing", fix: "Add modifier 95, resubmit", amountCents: 12_000, url: "https://ehr.test/claims/c1", at: "2026-10-06T13:00:00.000Z" }],
+  unpaid: [{ payer: "HealthChoice", count: 4, oldest: "2026-08-20", amountCents: 296_000, status: "Needs a call", url: "https://ehr.test/claims?payer=hc" }],
+  balances: [{ id: "b1", initials: "A.P.", cents: 36_000, lastPayment: "2026-08-04", cardOnFile: true, url: "https://ehr.test/clients/b1/billing" }],
+  eligibility: [{ id: "e1", initials: "R.T.", session: "2026-10-07T19:00:00.000Z", clinician: "Angela St. Ville", result: "Plan ended Aug 31, 2026", ok: false, url: "https://ehr.test/clients/e1" }],
+  paperwork: [{ id: "p1", initials: "K.L.", what: "Intake packet", sent: "2026-09-28", due: "2026-10-05", status: "overdue", daysOut: 8, url: "https://ehr.test/clients/p1/paperwork" }],
+  appointments: [{ id: "a1", kind: "booked", initials: "M.B.", clinician: "Dr. Ashley Bryant", start: "2026-10-08T15:00:00.000Z", reason: "", at: "2026-10-06T12:00:00.000Z", url: "https://ehr.test/appointments/a1" }],
+  docs: [{ clinician: "Bentlee Smiley", unsigned: 2, oldestUnsigned: "2026-09-24", plansDue: 1, plansDueSoonest: "2026-10-15", measuresOverdue: 1, url: "https://ehr.test/notes?who=bs" }],
+  totals: { collectedMonthCents: 2_498_000, unpaid30Cents: 842_000, balancesCents: 131_000 },
+  ...over,
+});
+
+describe("A healthcare practice workspace", () => {
+  it("gets its own roster, titles and departments when the organization type is set, and back again", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-roster");
+    const me = caller(owner);
+    const before = await me.employees.list({ organizationId: orgId });
+    expect(before.map((e) => e.kind)).not.toContain("billing");
+    expect(before.find((e) => e.kind === "hiring")!.roleTitle).toBe("HR Director");
+    expect((await db.listAllEmployeesByOrg(orgId)).filter((e) => !e.onTeam).map((e) => e.kind).sort()).toEqual(["billing", "compliance"]);
+
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    const list = await me.employees.list({ organizationId: orgId });
+    const kinds = list.map((e) => e.kind).sort();
+    expect(kinds).toContain("billing");
+    expect(kinds).toContain("compliance");
+    expect(kinds).not.toContain("prospecting");
+    expect(kinds).not.toContain("outreach");
+    expect(kinds).not.toContain("developer");
+    expect(list).toHaveLength(16);
+    const by = (k: string) => list.find((e) => e.kind === k)!;
+    expect(by("leads")).toMatchObject({ name: "Malik", roleTitle: "Intake Coordinator", department: "Client care" });
+    expect(by("inbox").department).toBe("Client care");
+    expect(by("billing")).toMatchObject({ name: "Harper", roleTitle: "Billing Specialist", department: "Billing and compliance" });
+    expect(by("compliance")).toMatchObject({ name: "Camille", roleTitle: "Compliance Coordinator" });
+    expect(by("onboarding").roleTitle).toBe("Clinician Onboarding Specialist");
+    expect(by("social").department).toBe("Growth");
+    expect(by("hiring").department).toBe("Operations");
+
+    // The rules land in every prompt: those four work with client information, everyone else without it.
+    const avery = (await systemPromptFor(by("inbox"), "Draft a reply")).system;
+    expect(avery).toContain("You work with client information");
+    expect(avery).toContain("initials only");
+    const sienna = (await systemPromptFor(by("social"), "Write a post")).system;
+    expect(sienna).toContain("You work without client information");
+    expect(sienna).toContain("goes to Avery, Malik, Harper, Camille");
+
+    // Back to business: Sales returns, Harper and Camille step off, the titles go back.
+    await me.organizations.update({ id: orgId, orgType: "business" });
+    const back = await me.employees.list({ organizationId: orgId });
+    expect(back.map((e) => e.kind)).toContain("prospecting");
+    expect(back.map((e) => e.kind)).not.toContain("billing");
+    expect(back.find((e) => e.kind === "leads")!.roleTitle).toBe("New Leads Assistant");
+    expect((await systemPromptFor(back.find((e) => e.kind === "social")!, "Write a post")).system).not.toContain("client information (this workspace");
+  });
+
+  it("connects LeadDash EHR, reads a snapshot, and tells Harper, Malik and Camille only what changed", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-ehr");
+    const me = caller(owner);
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    let served: ehr.EhrSnapshot = snapshot();
+    const calls: string[] = [];
+    vi.spyOn(ehr.tools, "fetchJson").mockImplementation(async (url: string, key: string) => {
+      calls.push(`${url} ${key}`);
+      if (url.endsWith("/api/employees/ping")) {
+        if (key !== "ld-emp-0123456789abcdefghij") throw new Error("LeadDash EHR answered 401: bad key");
+        return { ok: true, practice: "Legacy Family Services", locationId: "loc_1" };
+      }
+      return served;
+    });
+    await expect(me.ehr.connect({ organizationId: orgId, url: "https://ehr.leaddash.io/", key: "wrong-key-wrong-key-wrong" })).rejects.toThrow(/did not accept that key/);
+    await expect(me.ehr.connect({ organizationId: orgId, url: "ehr.leaddash.io", key: "ld-emp-0123456789abcdefghij" })).rejects.toThrow(/looks like https/);
+    const r = await me.ehr.connect({ organizationId: orgId, url: "https://ehr.leaddash.io/", key: "ld-emp-0123456789abcdefghij" });
+    expect(r.practice).toBe("Legacy Family Services");
+    expect(calls[0]).toBe("https://ehr.leaddash.io/api/employees/ping wrong-key-wrong-key-wrong");
+    // Connecting does the first read; a first read never posts history.
+    const v = await me.ehr.view({ organizationId: orgId });
+    expect(v).toMatchObject({ connected: true, practice: "Legacy Family Services" });
+    expect(v.snapshot!.claims).toHaveLength(1);
+    const harper = (await db.getEmployeeByKind(orgId, "billing"))!;
+    expect(await db.listChatMessages(orgId, harper.id, 10)).toHaveLength(0);
+    expect(await ehr.ehrFacts(orgId)).toContain("1 denied or rejected claims, 4 unpaid past 30 days ($8,420)");
+
+    // The next read: a rejected claim, paperwork newly overdue, a cancellation and more unsigned notes.
+    served = snapshot({
+      claims: [...snapshot().claims, { id: "c2", initials: "R.T.", dos: "2026-09-18", payer: "HealthChoice", status: "rejected", reason: "Member ID does not match", fix: "Check the card, resubmit", amountCents: 9_500, url: "https://ehr.test/claims/c2", at: "2026-10-06T14:30:00.000Z" }],
+      paperwork: [...snapshot().paperwork, { id: "p2", initials: "D.W.", what: "Consent forms", sent: "2026-09-30", due: "2026-10-06", status: "overdue", daysOut: 6, url: "https://ehr.test/clients/p2/paperwork" }],
+      appointments: [...snapshot().appointments, { id: "a2", kind: "cancelled", initials: "A.P.", clinician: "Angela St. Ville", start: "2026-10-07T21:00:00.000Z", reason: "Schedule conflict", at: "2026-10-06T14:20:00.000Z", url: "https://ehr.test/appointments/a2" }],
+      docs: [{ ...snapshot().docs[0], unsigned: 4 }],
+    });
+    const second = await me.ehr.refresh({ organizationId: orgId });
+    expect(second.posted).toBe(3);
+    const h = (await db.listChatMessages(orgId, harper.id, 10)).pop()!;
+    expect(h.content).toContain("A claim came back rejected from LeadDash EHR.");
+    expect(h.content).toContain("- R.T. · Sep 18, 2026 · HealthChoice · Rejected: Member ID does not match. Fix: Check the card, resubmit ($95)");
+    expect(h.content).not.toContain("J.M.");
+    const malik = (await db.getEmployeeByKind(orgId, "leads"))!;
+    const m = (await db.listChatMessages(orgId, malik.id, 10)).pop()!;
+    expect(m.content).toContain("One client has paperwork past due and 1 appointment change");
+    expect(m.content).toContain("- D.W. · Consent forms sent Sep 30, 2026, 6 days out, not finished");
+    expect(m.content).toContain("A.P. · Wed, Oct 7, 2026, 4:00 PM with Angela St. Ville · cancelled (Schedule conflict)");
+    const camille = (await db.getEmployeeByKind(orgId, "compliance"))!;
+    const c = (await db.listChatMessages(orgId, camille.id, 10)).pop()!;
+    expect(c.content).toContain("A clinician has more unsigned notes than yesterday.");
+    expect(c.content).toContain("- Bentlee Smiley: 4 unsigned notes past the limit (was 2)");
+
+    // Nothing new: nothing posted.
+    const third = await me.ehr.refresh({ organizationId: orgId });
+    expect(third.posted).toBe(0);
+    expect(await db.listChatMessages(orgId, harper.id, 10)).toHaveLength(1);
+
+    // Camille's desk shows the EHR counts next to her own dates.
+    const desk = await me.compliance.desk({ organizationId: orgId });
+    expect(desk.counts).toMatchObject({ unsigned: 4, plansDue: 1 });
+    expect(desk.ehr.connected).toBe(true);
+
+    await me.ehr.disconnect({ organizationId: orgId });
+    expect((await me.ehr.view({ organizationId: orgId })).connected).toBe(false);
+    expect(await ehr.ehrFacts(orgId)).toContain("not connected");
+  });
+
+  it("keeps Camille's dates: due in 30 days, overdue, done", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-dates");
+    const me = caller(owner);
+    const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    const far = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
+    const mdy = (ymd: string) => `${ymd.slice(5, 7)}/${ymd.slice(8, 10)}/${ymd.slice(0, 4)}`;
+    const a = await me.compliance.add({ organizationId: orgId, kind: "caqh", title: "CAQH attestation", who: "Angela St. Ville", due: mdy(soon) });
+    await me.compliance.add({ organizationId: orgId, kind: "license", title: "LPC renewal, Oklahoma", who: "Bentlee Smiley", due: mdy(far), note: "16 of 20 CE hours on file" });
+    const late = await me.compliance.add({ organizationId: orgId, kind: "training", title: "HIPAA training", who: "Delicia Porter", due: "09/30/2026" });
+    await expect(me.compliance.add({ organizationId: orgId, kind: "other", title: "x", due: "Oct 6" })).rejects.toThrow(/MM\/DD\/YYYY/);
+    const desk = await me.compliance.desk({ organizationId: orgId });
+    expect(desk.due30.map((i) => i.title)).toEqual(["HIPAA training", "CAQH attestation"]);
+    expect(desk.counts).toMatchObject({ due30: 2, overdue: 1, unsigned: 0, sopsDue: 0 });
+    expect(desk.ehr.connected).toBe(false);
+    expect(desk.items.find((i) => i.id === late.id)).toMatchObject({ overdue: true, kindLabel: "Training" });
+    expect(await compliance.complianceFacts(orgId)).toContain("- CAQH attestation: CAQH attestation (Angela St. Ville), due");
+    await me.compliance.setDone({ organizationId: orgId, id: a.id, done: true });
+    expect((await me.compliance.desk({ organizationId: orgId })).counts.due30).toBe(1);
+    await me.compliance.save({ organizationId: orgId, id: late.id, kind: "training", title: "HIPAA training", who: "Delicia Porter", due: mdy(far) });
+    expect((await me.compliance.desk({ organizationId: orgId })).counts.overdue).toBe(0);
+    expect((await me.compliance.remove({ organizationId: orgId, id: late.id })).ok).toBe(true);
+  });
+});

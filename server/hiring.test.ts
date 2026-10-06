@@ -57,7 +57,7 @@ describe("every workspace has every employee", () => {
     db.getDb().delete((await import("../drizzle/schema")).aiEmployees).where((await import("drizzle-orm")).eq((await import("../drizzle/schema")).aiEmployees.id, quinn.id)).run();
     expect(await db.getEmployeeByKind(orgId, "hiring")).toBeNull();
     expect(await ensureAllRosters()).toBeGreaterThanOrEqual(1);
-    expect((await db.getEmployeeByKind(orgId, "hiring"))?.roleTitle).toBe("Recruiter");
+    expect((await db.getEmployeeByKind(orgId, "hiring"))?.roleTitle).toBe("HR Director");
     expect(await ensureAllRosters()).toBe(0);
   });
 });

@@ -63,6 +63,12 @@ export const ENV = {
   openAiKey: process.env.OPENAI_API_KEY || "",
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",
 
+  // Business associate agreements, for the Workspace page of a healthcare practice.
+  /** Providers with a signed BAA, e.g. "assemblyai,openai". Anthropic joins the list when its BAA is countersigned. */
+  baaSigned: list(process.env.BAA_SIGNED),
+  /** Providers with a BAA requested but not yet signed, e.g. "anthropic". */
+  baaRequested: list(process.env.BAA_REQUESTED),
+
   // Push notifications (Web Push). Generate once with: npx web-push generate-vapid-keys
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || "",
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || "",

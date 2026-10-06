@@ -372,7 +372,13 @@ export async function countMembershipsForUser(userId: number) {
 // AI employees
 // ==========================================
 
+/** The employees on the team. A roster kind the organization type leaves off (onTeam false) is hidden everywhere. */
 export async function listEmployeesByOrg(orgId: number) {
+  return getDb().select().from(aiEmployees).where(and(eq(aiEmployees.organizationId, orgId), eq(aiEmployees.onTeam, true))).orderBy(aiEmployees.id).all();
+}
+
+/** Every employee, on the team or not (roster sync). */
+export async function listAllEmployeesByOrg(orgId: number) {
   return getDb().select().from(aiEmployees).where(eq(aiEmployees.organizationId, orgId)).orderBy(aiEmployees.id).all();
 }
 
@@ -2182,6 +2188,49 @@ export const sops = {
   },
   updateJob(id: number, patch: Partial<typeof schema.sopJobs.$inferInsert>) {
     return getDb().update(schema.sopJobs).set({ ...patch, updatedAt: new Date() }).where(eq(schema.sopJobs.id, id)).returning().all()[0];
+  },
+};
+
+export const ehr = {
+  snapshot(orgId: number) {
+    const t = schema.ehrSnapshots;
+    return getDb().select().from(t).where(eq(t.organizationId, orgId)).limit(1).all()[0] ?? null;
+  },
+  save(orgId: number, data: string) {
+    const t = schema.ehrSnapshots;
+    const now = new Date();
+    const row = this.snapshot(orgId);
+    if (row) return getDb().update(t).set({ data, fetchedAt: now, error: null, updatedAt: now }).where(eq(t.id, row.id)).returning().all()[0];
+    return getDb().insert(t).values({ organizationId: orgId, data, fetchedAt: now, error: null }).returning().all()[0];
+  },
+  setError(orgId: number, error: string) {
+    const t = schema.ehrSnapshots;
+    const row = this.snapshot(orgId);
+    if (row) getDb().update(t).set({ error, updatedAt: new Date() }).where(eq(t.id, row.id)).run();
+    else getDb().insert(t).values({ organizationId: orgId, data: "{}", fetchedAt: new Date(0), error }).run();
+  },
+  clear(orgId: number) {
+    getDb().delete(schema.ehrSnapshots).where(eq(schema.ehrSnapshots.organizationId, orgId)).run();
+  },
+};
+
+export const compliance = {
+  list(orgId: number) {
+    const t = schema.complianceItems;
+    return getDb().select().from(t).where(eq(t.organizationId, orgId)).orderBy(t.due, t.id).all();
+  },
+  get(orgId: number, id: number) {
+    const t = schema.complianceItems;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.id, id))).limit(1).all()[0] ?? null;
+  },
+  add(row: typeof schema.complianceItems.$inferInsert) {
+    return getDb().insert(schema.complianceItems).values(row).returning().all()[0];
+  },
+  update(id: number, patch: Partial<typeof schema.complianceItems.$inferInsert>) {
+    return getDb().update(schema.complianceItems).set({ ...patch, updatedAt: new Date() }).where(eq(schema.complianceItems.id, id)).returning().all()[0];
+  },
+  remove(orgId: number, id: number) {
+    return getDb().delete(schema.complianceItems).where(and(eq(schema.complianceItems.organizationId, orgId), eq(schema.complianceItems.id, id))).run().changes;
   },
 };
 

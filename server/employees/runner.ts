@@ -148,6 +148,8 @@ export function startScheduler() {
       await (await import("./dev")).devTicks();
       // Taylor: reporter requests from the press inbox, every 15 minutes.
       await (await import("./press")).pressTicks();
+      // LeadDash EHR: one snapshot per connected practice, every 15 minutes; what changed goes to Harper, Malik and Camille.
+      await (await import("../ehr")).ehrTicks();
       // Taylor's newsroom: Monday scout and briefing, follow-ups, seasonal alerts.
       await (await import("./newsroom")).newsroomTicks();
       // Jada's cold email: replies every 5 minutes, inboxes hourly, the day's batch, Monday review.

@@ -9,6 +9,8 @@ import { decryptJson, encryptJson, hasSecretsKey } from "./_core/crypto";
 import * as db from "./db";
 import {
   SOP_AREAS,
+  ORG_TYPES,
+  COMPLIANCE_KINDS,
   KNOWLEDGE_CATEGORIES,
   OPP_KINDS,
   OUTBOUND_KINDS,
@@ -316,7 +318,7 @@ export const appRouter = router({
   }),
 
   /** Which AI services are configured on this server (no secrets returned). */
-  status: protectedProcedure.query(() => ({ ai: aiStatus(), secretsKey: hasSecretsKey() })),
+  status: protectedProcedure.query(() => ({ ai: aiStatus(), secretsKey: hasSecretsKey(), baa: { signed: ENV.baaSigned, requested: ENV.baaRequested } })),
 
   // ==========================================
   // Workspaces
@@ -353,6 +355,7 @@ export const appRouter = router({
             .max(100)
             .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers and dashes"),
           plan: z.enum(["starter", "growth", "enterprise"]).default("growth"),
+          orgType: z.enum(ORG_TYPES).default("business"),
           focusAreas: z.string().max(2000).optional(),
           ein: z.string().max(30).optional(),
           annualBudget: z.string().max(100).optional(),
@@ -369,6 +372,7 @@ export const appRouter = router({
           name: input.name,
           slug: input.slug,
           plan: input.plan,
+          orgType: input.orgType,
           focusAreas: input.focusAreas || null,
           ein: input.ein || null,
           annualBudget: input.annualBudget || null,
@@ -409,6 +413,7 @@ export const appRouter = router({
           timezone: z.string().max(64).optional(),
           signerName: z.string().max(120).optional(),
           signerTitle: z.string().max(120).optional(),
+          orgType: z.enum(ORG_TYPES).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -417,7 +422,10 @@ export const appRouter = router({
         if (data.timezone && !isValidTimeZone(data.timezone)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "That time zone is not recognized. Use a name like America/Chicago." });
         }
+        const before = await db.getOrganizationById(id);
         const updated = await db.updateOrganization(id, data);
+        // A new organization type changes who is on the team, the titles and the departments.
+        if (data.orgType && before && before.orgType !== data.orgType) await deployRoster(id);
         await db.logAction({
           organizationId: id,
           actorType: "human_user",
@@ -1389,6 +1397,60 @@ export const appRouter = router({
   }),
 
   // Team chat: channels, direct messages and threads in a workspace, like Slack
+  // ==========================================
+  // LeadDash EHR: the connection and what Harper, Malik and Camille read from it
+  // ==========================================
+  ehr: router({
+    view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./ehr")).view(input.organizationId);
+    }),
+    connect: protectedProcedure.input(orgInput.extend({ url: z.string().min(8).max(300), key: z.string().min(1).max(500) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const r = await (await import("./ehr")).connect(input.organizationId, { url: input.url, key: input.key });
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Connected LeadDash EHR", details: `Connected as ${r.practice}. Key checked with the EHR and saved encrypted.` });
+      return r;
+    }),
+    disconnect: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      await (await import("./ehr")).disconnect(input.organizationId);
+      return { ok: true };
+    }),
+    refresh: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const r = await (await import("./ehr")).refresh(input.organizationId);
+      return { posted: r.posted, fetchedAt: r.fetchedAt };
+    }),
+  }),
+
+  // ==========================================
+  // Camille: compliance dates, the EHR counts and SOPs due
+  // ==========================================
+  compliance: router({
+    desk: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/compliance")).deskView(input.organizationId);
+    }),
+    add: protectedProcedure.input(orgInput.extend({ kind: z.enum(COMPLIANCE_KINDS), title: z.string().trim().min(1).max(160), who: z.string().max(120).optional(), due: z.string().max(12).optional(), note: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const { organizationId, ...rest } = input;
+      return (await import("./employees/compliance")).add(organizationId, rest);
+    }),
+    save: protectedProcedure.input(orgInput.extend({ id: z.number().int(), kind: z.enum(COMPLIANCE_KINDS), title: z.string().trim().min(1).max(160), who: z.string().max(120).optional(), due: z.string().max(12).optional(), note: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const { organizationId, id, ...rest } = input;
+      return (await import("./employees/compliance")).save(organizationId, id, rest);
+    }),
+    setDone: protectedProcedure.input(orgInput.extend({ id: z.number().int(), done: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/compliance")).setDone(input.organizationId, input.id, input.done);
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return { ok: (await import("./employees/compliance")).remove(input.organizationId, input.id) };
+    }),
+  }),
+
   // ==========================================
   // SOPs: the library, versions, and the three ways one gets written
   // ==========================================

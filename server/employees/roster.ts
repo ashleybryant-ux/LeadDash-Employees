@@ -1,15 +1,17 @@
-import type { EmployeeKind } from "../../drizzle/schema";
+import type { EmployeeKind, OrgType } from "../../drizzle/schema";
 
 /**
  * The employees every workspace has. One job each. New jobs added here are
  * given to every existing workspace at startup (ensureRoster).
  * Names can be changed per workspace; the kind decides what the employee does.
  */
+export type Department = "Leadership" | "Revenue" | "Sales" | "Marketing" | "Operations" | "Client care" | "Billing and compliance" | "Growth";
+
 export type RosterEntry = {
   kind: Exclude<EmployeeKind, "custom">;
   name: string;
   roleTitle: string;
-  department: "Leadership" | "Revenue" | "Sales" | "Marketing" | "Operations";
+  department: Department;
   description: string;
   capabilities: string[];
   /** Searches the web for this job. */
@@ -152,10 +154,10 @@ export const ROSTER: RosterEntry[] = [
   {
     kind: "hiring",
     name: "Quinn",
-    roleTitle: "Recruiter",
+    roleTitle: "HR Director",
     department: "Operations",
-    description: "Writes job posts, finds people for outreach, screens applicants against your must-haves and runs license, NPI and exclusion checks.",
-    capabilities: ["Job posts", "Outreach lists with sources", "Applicant scoring against your must-haves", "License, NPI and exclusion checks", "Onboarding checklists"],
+    description: "Runs hiring and the people side: writes job posts, finds people for outreach, screens applicants against your must-haves, runs license, NPI and exclusion checks, and reports on each team member's hours, capacity and what they bring in, with a recommendation when a number crosses a line.",
+    capabilities: ["Job posts", "Outreach lists with sources", "Applicant scoring against your must-haves", "License, NPI and exclusion checks", "Team report: hours, capacity, collected, no-shows", "Recommendations with the numbers behind them"],
     searches: true,
     minutesPerTask: 45,
   },
@@ -189,7 +191,84 @@ export const ROSTER: RosterEntry[] = [
     searches: false,
     minutesPerTask: 45,
   },
+  {
+    kind: "billing",
+    name: "Harper",
+    roleTitle: "Billing Specialist",
+    department: "Billing and compliance",
+    description: "Reads claims, payments and eligibility from LeadDash EHR every morning and lays out what needs a person: denials with the reason and the fix, unpaid claims by payer with a follow-up script, client balances with statements drafted, and eligibility results for the week. Opens the claim in LeadDash EHR for the fix; never submits a claim, charges a card or sends a statement on her own.",
+    capabilities: ["Denials with the reason and the fix", "Unpaid claims by payer, with a follow-up script", "Statements and reminders drafted, never sent on their own", "Eligibility results for the week's sessions", "Clients by initials outside the EHR"],
+    searches: false,
+    minutesPerTask: 30,
+  },
+  {
+    kind: "compliance",
+    name: "Camille",
+    roleTitle: "Compliance Coordinator",
+    department: "Billing and compliance",
+    description: "Keeps the practice ready for an audit: CAQH attestations, license renewals and CE hours, HIPAA training, payer enrollments, SOP review dates, and from LeadDash EHR the counts of unsigned notes, treatment plans due for review and overdue measures by clinician. Sees that a note is unsigned, never what is in it. Reminders are drafted and wait for Send.",
+    capabilities: ["Credentials, licenses and training with due dates", "Payer enrollments and their status", "Unsigned notes and plans due, by clinician, counts only", "SOPs past their review date", "Reminders drafted, never sent on their own"],
+    searches: false,
+    minutesPerTask: 30,
+  },
 ];
+
+// ==========================================
+// Who is on the team, by organization type
+// ==========================================
+
+/** Roster kinds an organization type leaves off the team. A healthcare practice does no outbound sales and has no code to fix; a business has no claims or credentials. */
+export const OFF_TEAM: Record<OrgType, EmployeeKind[]> = {
+  business: ["billing", "compliance"],
+  nonprofit: ["billing", "compliance"],
+  healthcare: ["prospecting", "outreach", "developer"],
+};
+
+/** Titles that change with the organization type. */
+export const TITLES_BY_TYPE: Record<OrgType, Partial<Record<EmployeeKind, string>>> = {
+  business: {},
+  nonprofit: {},
+  healthcare: { leads: "Intake Coordinator", onboarding: "Clinician Onboarding Specialist" },
+};
+
+/** Departments by organization type: a practice groups its team the way it runs. */
+export const DEPARTMENTS_BY_TYPE: Record<OrgType, Partial<Record<EmployeeKind, Department>>> = {
+  business: {},
+  nonprofit: {},
+  healthcare: { inbox: "Client care", leads: "Client care", grants: "Growth", speaking: "Growth", social: "Growth", ads: "Growth", blog: "Growth", website: "Growth", video: "Growth", hiring: "Operations", onboarding: "Operations", platform: "Operations" },
+};
+
+/** The order departments show in the chat list, by organization type. */
+export const DEPARTMENT_ORDER: Record<OrgType, Department[]> = {
+  business: ["Leadership", "Revenue", "Sales", "Marketing", "Operations"],
+  nonprofit: ["Leadership", "Revenue", "Sales", "Marketing", "Operations"],
+  healthcare: ["Leadership", "Client care", "Billing and compliance", "Growth", "Operations"],
+};
+
+/** In a healthcare practice, the employees that work with client information (only on providers under a signed BAA). */
+export const CLIENT_INFO_KINDS: EmployeeKind[] = ["inbox", "leads", "billing", "compliance"];
+
+export function onTeam(kind: EmployeeKind, orgType: OrgType) {
+  return !OFF_TEAM[orgType].includes(kind);
+}
+
+export function titleFor(entry: Pick<RosterEntry, "kind" | "roleTitle">, orgType: OrgType) {
+  return TITLES_BY_TYPE[orgType][entry.kind] ?? entry.roleTitle;
+}
+
+export function departmentFor(entry: Pick<RosterEntry, "kind" | "department">, orgType: OrgType): Department {
+  return DEPARTMENTS_BY_TYPE[orgType][entry.kind] ?? entry.department;
+}
+
+export function worksWithClientInfo(kind: EmployeeKind, orgType: OrgType) {
+  return orgType === "healthcare" && CLIENT_INFO_KINDS.includes(kind);
+}
+
+/** Every title a roster kind has had, by type, so a workspace whose type changes gets retitled and a title someone typed stays. */
+export function defaultTitles(entry: Pick<RosterEntry, "kind" | "roleTitle">) {
+  const old = OLD_TITLES[entry.roleTitle];
+  return [entry.roleTitle, ...(Array.isArray(old) ? old : old ? [old] : []), ...Object.values(TITLES_BY_TYPE).map((t) => t[entry.kind]).filter((t): t is string => Boolean(t))];
+}
 
 /** Earlier default titles. A workspace still showing one gets the new title; a title someone typed stays. */
 export const OLD_TITLES: Record<string, string | string[]> = {
@@ -205,7 +284,7 @@ export const OLD_TITLES: Record<string, string | string[]> = {
   "Website Planner": "Website",
   "Video Producer": "Video",
   "Executive Assistant": "Inbox and calendar",
-  "Recruiter": "Hiring",
+  "HR Director": ["Hiring", "Recruiter"],
 };
 
 export function rosterEntry(kind: EmployeeKind) {
@@ -246,6 +325,8 @@ export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: 
   onboarding: { focus: "Every onboarding includes", avoid: "Never promise", signAs: "Sign emails as" },
   platform: { focus: "What to check first", avoid: "Never change", signAs: "Name pages as" },
   ads: { focus: "Offers and audiences to lead with", avoid: "Never say in an ad", signAs: "Brand name in ads" },
+  billing: { focus: "Flag first", avoid: "Never do on my own", signAs: "Sign statements as" },
+  compliance: { focus: "Track first", avoid: "Never do on my own", signAs: "Sign reminders as" },
 };
 
 export type Guidelines = { focus: string; avoid: string; signAs: string };
