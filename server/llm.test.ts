@@ -9,7 +9,7 @@ const { generateJson, searchJson, searchReady, extractJson } = await import("./_
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  ENV.searchProvider = "openai";
+  ENV.searchProvider = "anthropic";
   ENV.openAiKey = "test-openai";
   ENV.anthropicKey = "test-anthropic";
 });
@@ -30,7 +30,8 @@ describe("AI request plumbing", () => {
     expect(body.response_format.type).toBe("json_schema");
   });
 
-  it("runs web searches on OpenAI by default and collects the queries, sources and tagged JSON", async () => {
+  it("with SEARCH_PROVIDER=openai, runs the search on OpenAI and collects the queries, sources and tagged JSON", async () => {
+    ENV.searchProvider = "openai";
     const response = {
       output: [
         { type: "web_search_call", status: "completed", action: { type: "search", query: "grants oklahoma", sources: [{ url: "https://a.org/g", title: "A" }] } },
@@ -64,17 +65,17 @@ describe("AI request plumbing", () => {
   });
 
   it("says which key is missing for the chosen search provider", async () => {
-    ENV.openAiKey = "";
-    expect(searchReady()).toBe(false);
-    await expect(searchJson({ system: "s", prompt: "p", schemaName: "g", schema: {} })).rejects.toThrow(/OPENAI_API_KEY/);
-    ENV.searchProvider = "anthropic";
-    expect(searchReady()).toBe(true);
+    expect(ENV.searchProvider).toBe("anthropic");
     ENV.anthropicKey = "";
+    expect(searchReady()).toBe(false);
     await expect(searchJson({ system: "s", prompt: "p", schemaName: "g", schema: {} })).rejects.toThrow(/ANTHROPIC_API_KEY/);
+    ENV.searchProvider = "openai";
+    expect(searchReady()).toBe(true);
+    ENV.openAiKey = "";
+    await expect(searchJson({ system: "s", prompt: "p", schemaName: "g", schema: {} })).rejects.toThrow(/OPENAI_API_KEY/);
   });
 
-  it("with SEARCH_PROVIDER=anthropic, collects search queries and sources, resumes a paused turn, and reads the tagged JSON", async () => {
-    ENV.searchProvider = "anthropic";
+  it("collects search queries and sources, resumes a paused turn, and reads the tagged JSON", async () => {
     const responses = [
       {
         stop_reason: "pause_turn",

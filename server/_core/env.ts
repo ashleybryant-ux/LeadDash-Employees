@@ -35,10 +35,12 @@ export const ENV = {
   llmModel: process.env.LLM_MODEL || "claude-sonnet-4-6",
   /**
    * Who runs web searches (grants, speaking events, video trends, license
-   * checks): "openai" (the OpenAI key, Responses API web search tool) or
-   * "anthropic" (the Anthropic key, its web search tool).
+   * checks): "anthropic" (the default: the Anthropic key, its web search tool)
+   * or "openai" (the OpenAI key, Responses API web search tool). No search
+   * carries client information on either; OpenAI's web search sits outside
+   * its BAA, Anthropic's is HIPAA eligible once a BAA is in place.
    */
-  searchProvider: (process.env.SEARCH_PROVIDER || "openai").toLowerCase() === "anthropic" ? "anthropic" : "openai",
+  searchProvider: (process.env.SEARCH_PROVIDER || "anthropic").toLowerCase() === "openai" ? "openai" : "anthropic",
   openAiSearchModel: process.env.OPENAI_SEARCH_MODEL || "gpt-6.1-sol",
   /** Anthropic key: web search when SEARCH_PROVIDER=anthropic, and reading scanned PDFs and photos. */
   anthropicKey: process.env.ANTHROPIC_API_KEY || "",
@@ -57,7 +59,7 @@ export const ENV = {
   /** GitHub fine-grained token for Kai: issues, pull requests and contents on the owner's repos. */
   githubToken: process.env.GITHUB_TOKEN || "",
   elevenLabsModel: process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5",
-  /** OpenAI key: images, web search (the default), and voices when ElevenLabs is not set. */
+  /** OpenAI key: images, voices when ElevenLabs is not set, and web search when SEARCH_PROVIDER=openai. */
   openAiKey: process.env.OPENAI_API_KEY || "",
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",
 
