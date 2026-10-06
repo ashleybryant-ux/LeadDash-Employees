@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { caller, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
 import * as ads from "./employees/ads";
+import * as files from "./employees/files";
 
 /**
  * Reese, the Ads Manager: a brief in chat becomes a campaign and a budget
@@ -12,10 +13,20 @@ import * as ads from "./employees/ads";
 
 let llm: typeof import("./_core/llm");
 let decision: any = { reply: "", action: "none", choices: [] };
+let pages: string[] = [];
+
+// Nothing in these tests reaches the web: the campaign page is served from
+// here, and any other fetch gets a fast 404 (the real fetch has a 15 s
+// timeout per call, which is longer than a test is allowed to run).
+vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 404 })));
 
 const blank = { focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [], remember_topic: "", remember_fact: "", remember_category: "" };
 
 function mockAi() {
+  vi.spyOn(files, "fetchWebpage").mockImplementation(async (url: string) => {
+    pages.push(url);
+    return { url, title: "Founding member offer", text: "Join as a founding member for $299 a month. Group practices only.", html: "" };
+  });
   vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => {
     if (opts.schemaName === "chat_decision") return { ...blank, ...decision } as any;
     if (opts.schemaName === "ad_split") {
@@ -24,6 +35,7 @@ function mockAi() {
       return { shares: kept.map((p, i) => ({ platform: p, share: i === 0 ? 100 - 5 * (kept.length - 1) : 5, why: `${p} reason` })), leftOut: platforms.filter((p) => p === "nextdoor" || p === "yelp"), leftOutWhy: "They reach neighbors, not practice owners." } as any;
     }
     if (String(opts.schemaName).startsWith("ad_")) {
+      if (/The ads go to: leaddash\.io\/founding/.test(opts.prompt) && !/Join as a founding member/.test(opts.prompt)) throw new Error("the campaign page did not reach the prompt");
       const props = opts.schema.properties as Record<string, { type: string }>;
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(props)) {
@@ -41,6 +53,7 @@ function mockAi() {
 
 beforeEach(async () => {
   llm = await import("./_core/llm");
+  pages = [];
   mockAi();
 });
 afterEach(() => vi.restoreAllMocks());
@@ -183,7 +196,8 @@ describe("Reese, Ads Manager", () => {
     expect(v.counts.platforms).toBe(9);
     const zip = await me.ads.download({ organizationId: orgId, id: c.id });
     expect(zip.url).toMatch(/\/files\/org-\d+\/ads\/founding-member-offer[^/]*\.zip$/);
-  });
+    expect(pages).toEqual(Array(8).fill("https://leaddash.io/founding"));
+  }, 20_000);
 
   it("takes a brief from the Ads tab, with an even split and typed dates, and the budget can be changed", async () => {
     const { orgId, owner } = await makeWorkspace("ads-form");
