@@ -373,7 +373,7 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
       })}
       <div className="ld-row" style={{ padding: "10px 18px", gap: 12, alignItems: "center" }}>
         <button type="button" className="ld-btn" style={{ width: 128 }} disabled={refresh.isPending} onClick={() => refresh.mutate({ organizationId: currentOrgId })}>{refresh.isPending ? "Reading..." : "Refresh"}</button>
-        <span className="ld-small ld-muted">Your Google Calendar, the next 2 days. Zoom and Google Meet only.</span>
+        <span className="ld-small ld-muted">Every calendar on Integrations, the next 2 days. Zoom and Google Meet only.</span>
       </div>
       <div style={{ padding: "0 18px 10px" }}>
         <ErrorLine error={setJoin.error || refresh.error} />

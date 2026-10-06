@@ -240,6 +240,91 @@ export async function schedule(orgId: number, from: Date, to: Date, opts: { full
   return { events, failed, sources, tz };
 }
 
+/** What the notetaker got from the calendars: the meetings, calendars that hide their links, calendars that failed. */
+export type NotetakerRead = { meetings: integrations.CalendarMeeting[]; hidden: string[]; failed: string[]; sources: number };
+
+/** An ICS attendee as node-ical gives it: a string, one object, or a list. */
+function icsAttendees(raw: unknown) {
+  const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return list
+    .map((a: any) => {
+      const val = String(typeof a === "string" ? a : a?.val ?? "").replace(/^mailto:/i, "");
+      const name = String(a?.params?.CN ?? val);
+      return val.includes("@") ? { name: name.slice(0, 120), email: val.slice(0, 200) } : null;
+    })
+    .filter((a): a is { name: string; email: string } => !!a)
+    .slice(0, 40);
+}
+
+/**
+ * The meetings Avery can sit in on: every calendar he checks on Integrations (the main Google
+ * connection, each extra Google account's included calendars, and Outlook or iCloud links) that
+ * shows event details and whose event has a Zoom or Google Meet link. A busy-times-only calendar
+ * never gives its links, so its meetings are reported as hidden, not read.
+ */
+export async function notetakerMeetings(orgId: number, from: Date, to: Date): Promise<NotetakerRead> {
+  const links = db.listAccountLinks(orgId, "calendar");
+  const seen = new Map<string, integrations.CalendarMeeting>();
+  const hidden: string[] = [];
+  const failed: string[] = [];
+  let sources = 0;
+  const add = (ms: integrations.CalendarMeeting[]) => {
+    for (const m of ms) if (!seen.has(m.eventId)) seen.set(m.eventId, m);
+  };
+  const main = await integrations.mainGoogleToken(orgId);
+  if (main) {
+    sources++;
+    try {
+      add(await integrations.calendarMeetingsOn(main, "primary", from, to));
+    } catch {
+      failed.push("Google Calendar");
+    }
+  }
+  for (const l of links) {
+    const included = calendarsOf(l).filter((c) => c.include);
+    if (!included.length) continue;
+    if (l.detail === "busy") {
+      hidden.push(l.name);
+      continue;
+    }
+    sources++;
+    try {
+      if (l.kind === "link") {
+        const url = decryptJson<{ url: string }>(l.secretsEncrypted)?.url ?? "";
+        const res = await fetch(url, { headers: { accept: "text/calendar, */*" }, signal: AbortSignal.timeout(20_000) });
+        if (!res.ok) throw new Error(`${res.status}`);
+        const ical = (await import("node-ical")).default;
+        const data = ical.sync.parseICS(await res.text());
+        const got: integrations.CalendarMeeting[] = [];
+        for (const e of Object.values(data) as any[]) {
+          if (!e || e.type !== "VEVENT" || e.status === "CANCELLED" || e.transparency === "TRANSPARENT") continue;
+          const location = String((typeof e.location === "string" ? e.location : e.location?.val) ?? "").slice(0, 300);
+          const description = String((typeof e.description === "string" ? e.description : e.description?.val) ?? "");
+          const link = integrations.meetingLinkOf({ location, description });
+          if (!link) continue;
+          for (const o of ical.expandRecurringEvent(e, { from, to }) as any[]) {
+            const start = new Date(o.start);
+            const end = new Date(o.end ?? o.start);
+            if (o.isFullDay || end <= from || start >= to) continue;
+            const title = String(o.summary ?? e.summary ?? "Untitled meeting").slice(0, 200);
+            got.push({ eventId: `ics:${l.id}:${String(e.uid ?? title)}:${start.toISOString()}`, title, start, end, platform: link.platform, url: link.url, text: [title, description, location].filter(Boolean).join(" \n ").slice(0, 8000), attendees: icsAttendees(e.attendee), declined: false });
+          }
+        }
+        add(got);
+      } else {
+        const token = await integrations.linkToken(l);
+        for (const c of included) add(await integrations.calendarMeetingsOn(token, c.id, from, to));
+      }
+      if (l.status === "error") db.updateAccountLink(l.id, orgId, { status: "connected", error: null });
+    } catch (err) {
+      failed.push(l.name);
+      db.updateAccountLink(l.id, orgId, { status: "error", error: err instanceof Error ? err.message.slice(0, 200) : "Couldn't read it" });
+    }
+  }
+  const meetings = Array.from(seen.values()).sort((a, b) => a.start.getTime() - b.start.getTime());
+  return { meetings, hidden, failed, sources };
+}
+
 /** Pairs of timed events on different calendars that overlap. */
 export function overlaps(events: Event[]) {
   const timed = events.filter((e) => !e.allDay);

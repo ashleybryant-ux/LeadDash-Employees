@@ -70,15 +70,15 @@ const ACTIONS: Record<string, string[]> = {
   social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   website: ["none", "report", "site_audit", "mockup_site", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  projects: ["none", "report", "check_schedule", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  coo: ["none", "report", "check_schedule", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   ads: ["none", "report", "ads_campaign", "ads_note", "ads_rewrite", "ads_approve", "ads_skip", "ads_platform", "ads_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   billing: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -152,6 +152,7 @@ const ACTION_HELP: Record<string, string> = {
   schedule_meeting: "schedule_meeting: set up a one-time meeting. Put its name in `title`, the date as YYYY-MM-DD in `date`, the start time like 10:00 AM in `time`, the length in minutes in `count` (15, 30, 45, 60 or 90), who attends (names or emails) in `attendees`, and employees whose updates belong on the agenda (names, comma-separated) in `notes`.",
   meeting_notes: "meeting_notes: the person pasted notes from a meeting. Put the meeting name in `target` ('' for the most recent) and the full notes in `message`.",
   sat_in_notes: "sat_in_notes: the person asks about a meeting Avery sat in on and took notes for (Avery takes them, Simone gets them; what was decided, who agreed to what). Put the meeting name, company or person in `target` ('' for the most recent) and the question in `message`.",
+  sitting_in: "sitting_in: the person asks whether Avery (the notetaker) is joining a meeting, or which meetings Avery is sitting in on (\"are you joining my 11am?\", \"is Avery in the board call?\", \"what are you sitting in on today?\"). Put the meeting name or its start time (like 11am) in `target` ('' for all of them). Never use browse for this; the calendars are read through Integrations.",
   join_or_skip: "join_or_skip: the person wants Avery (the notetaker) to skip, or to sit in on, an upcoming meeting on their calendar. Put the meeting name or its start time (like 4:00 PM) in `target`, and \"join\" or \"skip\" in `to`.",
   send_notes: "send_notes: email the notes from a meeting Avery sat in on. Put the meeting name in `target` ('' for the most recent).",
   set_goal: "set_goal: set a weekly goal on the scorecard. Put one of practices_contacted, demos_booked, reply_minutes, posts_published, articles_published, grant_apps_sent, tasks_on_time, approvals_waiting in `target` and the goal number in `count`.",
@@ -409,6 +410,8 @@ TALK_BY_KIND.inbox = `- You are the owner's executive assistant. You protect her
 - Lead with a recommendation, not a pile of options: "Nov 17 works and Nov 19 clashes with your board call. I suggest Nov 17 and can confirm it."
 - Some decisions only the owner makes (see your desk); anyone on the team can make the rest, and you always say who decided.
 - You don't do another employee's job: work for an employee goes to Nora (to_nora), sales follow-ups to Jada, speaking and press to Taylor.`;
+TALK_BY_KIND.coo = `- The owner's calendars are connected on Integrations: check_schedule reads them (today, tomorrow, a day, a week). Never open Google Calendar, Gmail or Zoom in a browser, and never send anyone to a sign-in page.
+- Avery sits in on meetings with a Zoom or Google Meet link and sends you the notes. "Are you joining my 11am?" or "is Avery in the board call?" is sitting_in; "skip it" or "join it" is join_or_skip. Answer from the facts, never with "which meeting?" when they gave a time.`;
 TALK_BY_KIND.outreach = `- You run two kinds of outreach: warm sequences for prospects Riley finds (from Gmail), and cold email to the owner's lead list through Instantly. Cold email work is cold_campaign, cold_research, cold_review and cold_replies.
 - Cold email rules: business facts only, never personal details. Never claim a price, offer, migration, result or statistic that isn't in the playbook, the Brain or the website pricing. Opt-outs are honored at once. Every email carries the mailing address and an opt-out line.
 - Any employee can run the Pre-call report (precall_report) before a meeting; you run it on your own when a lead books.`;
@@ -849,6 +852,28 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       }
     }
     case "browse": {
+      // Google Calendar, Gmail and Zoom are connected on Integrations: never a sign-in page in a browser.
+      const about = `${d.goal} ${d.notes} ${d.title} ${d.url} ${d.message}`.toLowerCase();
+      if (/calendar\.google\.com|accounts\.google\.com|mail\.google\.com|zoom\.us\/(signin|meeting)|\bgmail\b|google calendar|google meet|\b(my|your|the|her|his) (calendar|schedule|inbox|email)\b|what'?s on (my|the) calendar/.test(about)) {
+        if (/calendar|schedule|meeting/.test(about)) {
+          const cal = await import("./calendars");
+          const tz = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
+          const today = new Date(new Date().toLocaleString("en-US", { timeZone: tz }));
+          if (/tomorrow/.test(about)) today.setDate(today.getDate() + 1);
+          const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+          const days = /week/.test(about) ? 7 : 1;
+          try {
+            const r = await cal.scheduleReply(org, ymd, days);
+            if (!r.events.length) return { text: r.text, cards: [], queries: [] };
+            const clashing = new Set((r.clash ?? []).flat());
+            const events = r.events.slice(0, 40).map((e) => ({ when: cal.whenText(e, r.tz), day: days > 1 ? e.start.toLocaleDateString("en-US", { timeZone: r.tz, weekday: "short", month: "short", day: "numeric", year: "numeric" }) : undefined, title: e.title, calendar: e.calendar, color: e.color, clash: clashing.has(e) }));
+            return { text: r.text, cards: [{ type: "schedule", id: Date.now(), title: "Schedule", events }], queries: [] };
+          } catch (err) {
+            return { text: `I couldn't read your calendars: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+          }
+        }
+        return { text: "Your email is connected on Integrations, so nobody signs in to it from a browser. Avery reads the inbox; ask him what came in.", cards: [], queries: [] };
+      }
       // Jordan reads and reviews websites from their real HTML, not by clicking around a browser.
       if (emp.kind === "website" && !d.target && /\b(audit|review|critique|read|look (?:at|over)|feedback|flag|assess|evaluate)\b/i.test(`${d.goal} ${d.notes} ${d.title}`)) {
         const sw = await import("./siteWork");
@@ -1091,11 +1116,14 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
     }
     case "join_or_skip": {
       const r = await notetaker.findMeeting(org, d.target, "upcoming");
-      if (!r) return { text: "I couldn't find that meeting among the ones with a Zoom or Google Meet link in the next two days.", cards: [], queries: [] };
+      if (!r) return { text: await notetaker.explainMissing(org, d.target, emp.kind === "inbox" ? "me" : "avery"), cards: [], queries: [] };
       const choice = d.to.trim().toLowerCase() === "join" ? "join" : "skip";
       const next = await notetaker.setChoice(org, r.id, choice);
       const who = emp.kind === "inbox" ? "I'll" : "Avery will";
       return { text: choice === "join" ? (next.status === "scheduled" ? `${who} sit in on ${r.title}.` : `${who} sit in on ${r.title} once it's close enough to book.`) : `${who} skip ${r.title}.`, cards: [], queries: [] };
+    }
+    case "sitting_in": {
+      return { text: await notetaker.sittingInReply(org, d.target, emp.kind === "inbox" ? "me" : "avery"), cards: [], queries: [] };
     }
     case "send_notes": {
       const r = await notetaker.findMeeting(org, d.target, "notes");

@@ -179,7 +179,7 @@ export function NotetakerCard({ emp }: { emp: EmployeeRow }) {
               <Link href="/integrations">Open Integrations</Link>
             </span>
           )}
-          <Row label="Joins" note="From your Google Calendar: Zoom and Google Meet links only.">
+          <Row label="Joins" note="From every calendar on Integrations: Zoom and Google Meet links only. Busy-only calendars hide their links.">
             {editing ? <Choice options={[{ key: "all", label: "Every meeting with a video link" }, { key: "picked", label: "Only meetings I turn on" }]} value={d.joins} onChange={(v) => setD({ ...d, joins: v })} /> : <span className="ld-body">{s.joins === "picked" ? "Only meetings you turn on" : "Every meeting with a Zoom or Google Meet link"}</span>}
           </Row>
           <Row label="Never joins" note={editing ? "Separate words with commas. Anything with a leaddash.io link is never joined either." : undefined}>

@@ -1501,30 +1501,41 @@ export function meetingLinkOf(e: any): { platform: "zoom" | "meet"; url: string 
   return null;
 }
 
-/** Timed events on the primary Google Calendar between two times that have a Zoom or Google Meet link. */
-export async function calendarMeetings(orgId: number, from: Date, to: Date): Promise<CalendarMeeting[]> {
-  const { token } = await accessToken(orgId, "google_workspace");
+/** One Google Calendar event as a meeting Avery can sit in on, or null when it has no Zoom or Google Meet link. */
+export function calendarMeetingOf(e: any): CalendarMeeting | null {
+  if (!e || e.status === "cancelled" || !e.start?.dateTime || !e.end?.dateTime || !e.id) return null;
+  const link = meetingLinkOf(e);
+  if (!link) return null;
+  const people = (e.attendees ?? []).filter((a: any) => a?.email && !a.resource);
+  return {
+    eventId: String(e.id),
+    title: String(e.summary || "Untitled meeting").slice(0, 200),
+    start: new Date(e.start.dateTime),
+    end: new Date(e.end.dateTime),
+    platform: link.platform,
+    url: link.url,
+    text: [e.summary, e.description, e.location].filter(Boolean).join(" \n ").slice(0, 8000),
+    attendees: people.slice(0, 40).map((a: any) => ({ name: String(a.displayName || a.email).slice(0, 120), email: String(a.email).slice(0, 200) })),
+    declined: people.some((a: any) => a.self && a.responseStatus === "declined"),
+  };
+}
+
+/** Timed events on one Google calendar between two times that have a Zoom or Google Meet link. */
+export async function calendarMeetingsOn(token: string, calendarId: string, from: Date, to: Date): Promise<CalendarMeeting[]> {
   const q = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "250" });
-  const { data } = await api(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${q}`, { token });
+  const { data } = await api(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${q}`, { token });
   const out: CalendarMeeting[] = [];
   for (const e of data.items ?? []) {
-    if (e.status === "cancelled" || !e.start?.dateTime || !e.end?.dateTime || !e.id) continue;
-    const link = meetingLinkOf(e);
-    if (!link) continue;
-    const people = (e.attendees ?? []).filter((a: any) => a?.email && !a.resource);
-    out.push({
-      eventId: String(e.id),
-      title: String(e.summary || "Untitled meeting").slice(0, 200),
-      start: new Date(e.start.dateTime),
-      end: new Date(e.end.dateTime),
-      platform: link.platform,
-      url: link.url,
-      text: [e.summary, e.description, e.location].filter(Boolean).join(" \n ").slice(0, 8000),
-      attendees: people.slice(0, 40).map((a: any) => ({ name: String(a.displayName || a.email).slice(0, 120), email: String(a.email).slice(0, 200) })),
-      declined: people.some((a: any) => a.self && a.responseStatus === "declined"),
-    });
+    const m = calendarMeetingOf(e);
+    if (m) out.push(m);
   }
   return out;
+}
+
+/** The main Google connection's primary calendar. Avery reads every calendar through calendars.notetakerMeetings. */
+export async function calendarMeetings(orgId: number, from: Date, to: Date): Promise<CalendarMeeting[]> {
+  const { token } = await accessToken(orgId, "google_workspace");
+  return calendarMeetingsOn(token, "primary", from, to);
 }
 
 // ==========================================
