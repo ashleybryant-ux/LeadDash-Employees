@@ -23,8 +23,8 @@ export default function Billing() {
   const v = q.data;
   const s = v?.snapshot;
   const tz = currentOrg?.timezone;
-  if (!v) return <div className="ld-empty">{q.isLoading ? "Loading..." : "Could not load."}</div>;
-  if (!v.connected) return <NotConnected who="Harper" what="claims, payments, balances and eligibility" />;
+  if (!v) return <main className="ld-main" style={{ padding: "20px 32px" }}><div className="ld-empty">{q.isLoading ? "Loading..." : "Could not load."}</div></main>;
+  if (!v.connected) return <main className="ld-main" style={{ padding: "20px 32px" }}><NotConnected who="Harper" what="claims, payments, balances and eligibility" /></main>;
   const tabs: { key: Tab; label: string }[] = [
     { key: "today", label: "Today" },
     { key: "denials", label: `Denials (${s?.claims.length ?? 0})` },
@@ -33,7 +33,7 @@ export default function Billing() {
     { key: "eligibility", label: "Eligibility" },
   ];
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <main className="ld-main" style={{ padding: "20px 32px", gap: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <UnderlineTabs tabs={tabs} value={tab} onChange={setTab} />
         <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -121,7 +121,7 @@ export default function Billing() {
           ))}
         </section>
       )}
-    </div>
+    </main>
   );
 }
 

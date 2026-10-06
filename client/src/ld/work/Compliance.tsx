@@ -33,7 +33,7 @@ export default function Compliance() {
   const setDone = trpc.compliance.setDone.useMutation({ onSuccess: done, onError: (e) => setError(e.message) });
   const remove = trpc.compliance.remove.useMutation({ onSuccess: done, onError: (e) => setError(e.message) });
   const d = q.data;
-  if (!d) return <div className="ld-empty">{q.isLoading ? "Loading..." : "Could not load."}</div>;
+  if (!d) return <main className="ld-main" style={{ padding: "20px 32px" }}><div className="ld-empty">{q.isLoading ? "Loading..." : "Could not load."}</div></main>;
   const start = (it: Item | null) => {
     setError(null);
     setForm(it ? { kind: it.kind, title: it.title, who: it.who, due: mdy(it.due), note: it.note } : { kind: "caqh", title: "", who: "", due: "", note: "" });
@@ -71,7 +71,7 @@ export default function Compliance() {
     </div>
   );
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <main className="ld-main" style={{ padding: "20px 32px", gap: 14 }}>
       <UnderlineTabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === "today" && (
         <div className="ld-stats4">
@@ -145,6 +145,6 @@ export default function Compliance() {
         </section>
       )}
       <ErrorLine error={q.error} />
-    </div>
+    </main>
   );
 }

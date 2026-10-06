@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine } from "../ui";
-import { AgendaList, meetingStatus, notesState } from "../work/Meetings";
+import { AgendaList, meetingStatus, NotesBody, notesState } from "../work/Meetings";
 
 const day = (d: Date | string | number, tz: string) => new Date(d).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" });
 const time = (d: Date | string | number, tz: string) => new Date(d).toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
@@ -108,9 +108,9 @@ export function MeetingNotesCard({ id }: { id: number }) {
           <span style={{ fontWeight: 800, fontSize: 15 }}>{r.title}</span>
           <span className={`ld-pill ${st.c}`}>{st.l}</span>
         </div>
-        <span style={{ fontSize: 14, color: "#3d4c45" }}>{[`${day(r.startsAt, tz)}`, r.heldMinutes ? `${r.heldMinutes} minutes` : null, who || null].filter(Boolean).join(" · ")}</span>
-        {r.summary?.summary && <span style={{ fontSize: 14, color: "#3d4c45", lineHeight: 1.5 }}>{r.summary.summary}</span>}
-        {r.actionItems.length > 0 && <span style={{ fontSize: 14, color: "#3d4c45" }}>{`${r.actionItems.length} action item${r.actionItems.length === 1 ? "" : "s"}: ${byOwner}.`}</span>}
+        <span style={{ fontSize: 14, color: "#3d4c45" }}>{[`${day(r.startsAt, tz)}`, r.heldMinutes ? `${r.heldMinutes} minute${r.heldMinutes === 1 ? "" : "s"}` : null, who || null].filter(Boolean).join(" · ")}</span>
+        {r.summary && <NotesBody summary={r.summary.summary} decisions={r.summary.decisions} questions={r.summary.questions} items={r.actionItems} compact />}
+        {r.actionItems.length > 0 && <span className="ld-small ld-muted">{byOwner}</span>}
         <ErrorLine error={recap.error} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

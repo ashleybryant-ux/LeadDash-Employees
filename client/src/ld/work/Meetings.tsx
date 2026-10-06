@@ -433,6 +433,32 @@ function NotesList({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
 
 const lines = (list: string[]) => (list.length ? list.join("\n") : "");
 
+/** The notes as sections: a summary paragraph, then decisions, open questions and action items as lists. */
+export function NotesBody({ summary, decisions, questions, items, compact }: { summary: string; decisions: string[]; questions: string[]; items: { text: string; owner: string; due: string | null; status?: string }[]; compact?: boolean }) {
+  const sec = (label: string, body: React.ReactNode) => (
+    <div className="ld-notes-sec">
+      <span className="ld-lbl">{label}</span>
+      {body}
+    </div>
+  );
+  return (
+    <div className={`ld-notes ${compact ? "compact" : ""}`}>
+      {sec("Summary", <p>{summary || "None"}</p>)}
+      {(decisions.length > 0 || !compact) && sec("Decisions", decisions.length ? <ul>{decisions.map((d, i) => <li key={i}>{d}</li>)}</ul> : <p className="ld-muted">None</p>)}
+      {questions.length > 0 && sec("Open questions", <ul>{questions.map((q, i) => <li key={i}>{q}</li>)}</ul>)}
+      {(items.length > 0 || !compact) && sec(`Action items (${items.length})`, items.length ? (
+        <ul>
+          {items.map((i, k) => (
+            <li key={k} className={i.status === "done" ? "done" : ""}>
+              {i.text} <span className="ld-muted">({i.owner}{i.due ? `, by ${i.due}` : ""})</span>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="ld-muted">No one agreed to do anything in this meeting.</p>)}
+    </div>
+  );
+}
+
 export function NotesDetail({ r, tz, onClose }: { r: NT; tz: string; onClose?: () => void }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
@@ -509,9 +535,7 @@ export function NotesDetail({ r, tz, onClose }: { r: NT; tz: string; onClose?: (
   return (
     <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 128px", gap: 24 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-        <KV label="Summary">{s?.summary || "None"}</KV>
-        <KV label="Decisions">{s?.decisions.length ? s.decisions.join(" ") : "None"}</KV>
-        {!!s?.questions.length && <KV label="Open questions">{s.questions.join(" ")}</KV>}
+        <NotesBody summary={s?.summary ?? ""} decisions={s?.decisions ?? []} questions={s?.questions ?? []} items={[]} compact />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
         <span className="ld-lbl">{`Action items (${r.actionItems.length})`}</span>

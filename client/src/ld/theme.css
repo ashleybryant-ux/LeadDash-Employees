@@ -149,7 +149,8 @@ html.ld-review .ld-emphead { top: 34px !important; }
   .ld-emphead-who { flex: 1; min-width: 0; }
   .ld-emptabs { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
   .ld-emptabs::-webkit-scrollbar { display: none; }
-  .ld-emptabs a { flex-shrink: 0; padding: 0 12px !important; }
+  .ld-emptabs { gap: 2px !important; }
+  .ld-emptabs a { flex-shrink: 0; padding: 0 8px !important; font-size: 12.5px !important; height: 32px !important; }
   .ld-emphead-status .ld-pill { display: none; }
 
   .ld-chatmsgs { padding: 16px 14px !important; gap: 18px !important; }
@@ -1609,4 +1610,49 @@ button.gp-ts:hover { background: #f8fbf9; }
   .ld-stats4 { grid-template-columns: 1fr 1fr; }
   .hb-cols, .cp-cols { grid-template-columns: minmax(0, 1fr) 110px !important; }
   .ld-hd.hb-cols, .ld-hd.cp-cols { display: none; }
+}
+
+/* Meeting notes: sections with lists, in the chat card and on the Notes tab. */
+.ld-notes { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ld-notes-sec { display: flex; flex-direction: column; gap: 3px; }
+.ld-notes p { margin: 0; font-size: 14px; line-height: 1.55; color: #14221c; }
+.ld-notes ul { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.55; color: #14221c; list-style: disc; }
+.ld-notes li { margin: 2px 0; }
+.ld-notes li.done { text-decoration: line-through; color: #5b6b64; }
+.ld-notes.compact { gap: 8px; margin-top: 4px; }
+
+/* ==========================================
+ * Laptop layout (761px to 1400px) inside an employee's page
+ * The chat list takes 340px and the rail 76px, so a work tab gets half the
+ * screen. Rows go to two lines (the name on its own line, the rest after)
+ * and the project list sits above the tasks instead of beside them.
+ * ========================================== */
+@media (min-width: 761px) and (max-width: 1400px) {
+  .ld-chatlist { width: 280px !important; }
+  .ld-chatmain .ld-main { padding: 20px 22px !important; }
+  /* The header fits: the job title drops, tabs tighten and scroll if they must, the status pill goes. */
+  .ld-emphead { padding: 0 14px !important; gap: 10px !important; height: 60px !important; }
+  .ld-emphead-who { gap: 8px !important; }
+  .ld-emphead-who > span:first-of-type { width: 36px !important; height: 36px !important; }
+  .ld-emphead-who > span > span:last-child { display: none; }
+  .ld-emphead-ci { display: none; }
+  .ld-emptabs { min-width: 0; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .ld-emptabs::-webkit-scrollbar { display: none; }
+  .ld-emptabs a { flex-shrink: 0; padding: 0 12px !important; }
+  .ld-emphead-status .ld-pill { display: none; }
+  .ld-chatmain .ld-hd { display: none !important; }
+  .ld-chatmain .ld-main .ld-rw[style] { display: flex !important; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 14px; }
+  .ld-chatmain .ld-main .ld-rw[style] > :first-child { flex-basis: 100%; min-width: 0; }
+  .ld-chatmain .ld-main .ld-rw[style] > span:empty { display: none; }
+  .ld-chatmain .ld-main .ld-rw[style] > .ld-btn, .ld-chatmain .ld-main .ld-rw[style] > a.ld-btn { margin-left: auto; width: auto !important; min-width: 84px; }
+  .ld-chatmain .ld-main .ld-rw[style] > .ld-btn ~ .ld-btn, .ld-chatmain .ld-main .ld-rw[style] > .ld-btn ~ a.ld-btn { margin-left: 0; }
+  .ld-chatmain .ld-main .ld-rw[style] > span[style*="flex-direction: column"] { flex-direction: row !important; flex-wrap: wrap; margin-left: auto; }
+  .ld-chatmain .ld-main .ld-expand[style] { display: flex !important; flex-direction: column; gap: 16px !important; padding: 4px 14px 18px 14px; }
+  .ld-chatmain .ld-main .ld-expand[style] > div:last-child { flex-direction: row !important; flex-wrap: wrap; }
+  .ld-chatmain .ld-main .ld-expand[style] > div > .ld-btn { width: auto; min-width: 128px; }
+  .ld-chatmain .ld-main [style*="grid-template-columns"]:not(.ld-rw):not(.ld-keep):not(.ld-stats4):not(.ld-agenda) { grid-template-columns: minmax(0, 1fr) !important; }
+  .ld-chatmain .ld-stats4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .ld-chatmain .ld-pjwrap { grid-template-columns: minmax(0, 1fr); }
+  .ld-chatmain .ld-pjlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .ld-chatmain .ld-pjlist > .ld-between, .ld-chatmain .ld-pjlist > .ld-pjform, .ld-chatmain .ld-pjlist > .ld-small { grid-column: 1 / -1; }
 }

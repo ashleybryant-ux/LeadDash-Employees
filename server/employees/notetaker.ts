@@ -50,12 +50,18 @@ const fmtTime = (d: Date | number, tz: string) => new Date(d).toLocaleTimeString
 
 const ACTIVE: NotetakerStatus[] = ["scheduled", "joining", "in_call", "processing"];
 
-/** The workspace owner's name, for "notes for Ashley". */
+/** A person's first name, skipping a title ("Dr. Ashley Bryant" is Ashley). */
+export function firstNameOf(name: string) {
+  const parts = name.trim().split(/\s+/).filter((p) => !/^(dr|mr|mrs|ms|mx|prof|rev)\.?$/i.test(p));
+  return parts[0] || name.trim().split(/\s+/)[0] || name;
+}
+
+/** The workspace owner's name, for the notes. */
 async function ownerOf(orgId: number) {
   const members = await db.listMembers(orgId);
-  const owner = members.find((m) => m.role === "owner") ?? members[0];
+  const owner = members.find((m) => m.role === "owner") ?? members.find((m) => m.role === "admin") ?? members[0];
   const name = owner?.name?.trim() || owner?.email || "the owner";
-  return { name, first: name.split(" ")[0], email: owner?.email ?? "" };
+  return { name, first: firstNameOf(name), email: owner?.email ?? "" };
 }
 
 /** The name on the bot's tile: just his name, unless the practice typed another. */
@@ -302,7 +308,7 @@ Never include a client's name or health details. Your own lines in the transcrip
   const items: NotesItem[] = (out.items ?? []).slice(0, 25).map((i) => {
     const emp = emps.find((e) => e.name.toLowerCase() === i.owner.trim().toLowerCase());
     const due = /^\d{2}\/\d{2}\/\d{4}$/.test(i.due.trim()) ? i.due.trim() : null;
-    return { text: i.text.slice(0, 200), owner: emp ? emp.name : i.owner.trim().split(" ")[0] || owner.first, ownerKind: emp?.kind ?? null, taskId: null, status: "open", due };
+    return { text: i.text.slice(0, 200), owner: emp ? emp.name : firstNameOf(i.owner) || owner.first, ownerKind: emp?.kind ?? null, taskId: null, status: "open", due };
   });
   const summary: NotesSummary = { summary: String(out.summary ?? "").slice(0, 2000), decisions: (out.decisions ?? []).slice(0, 15).map((d) => d.slice(0, 300)), questions: (out.questions ?? []).slice(0, 15).map((q) => q.slice(0, 300)) };
   await db.updateNotetaker(id, orgId, { summary: JSON.stringify(summary), actionItems: JSON.stringify(items), status: "ready", error: null });
