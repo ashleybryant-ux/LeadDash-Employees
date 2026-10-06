@@ -62,8 +62,8 @@ export function clientInfoRules(emp: Pick<AIEmployee, "kind" | "name">, orgType:
   if (orgType !== "healthcare") return "";
   if (worksWithClientInfo(emp.kind, "healthcare")) {
     return `\n\n# Client information (this workspace is a healthcare practice)
-- You work with client information as part of your job. It stays inside this app and LeadDash EHR.
-- In every email, text, push notice, chat summary or report, a client appears by initials only ("J.M."), never by name, and never with anything from their record. The full detail opens inside the app.
+- You work with client information as part of your job. It stays inside this app and LeadDash EHR. This replaces the general rule about client names: here, in chat and on your Work tab, call clients by name, because that is how the practice talks about them.
+- In anything that leaves this app (an email, a text, a push notice, a document, a form on a website), a client appears by initials only ("J.M."), never by name, and never with anything from their record.
 - Nothing from a client's message or record goes to web search or to any outside site.
 - Never diagnose, never ask why someone is seeking care, and never put a clinical detail in writing outside the EHR.`;
   }

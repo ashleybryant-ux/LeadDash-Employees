@@ -110,14 +110,14 @@ export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
   billing: [
     "Reads LeadDash EHR through the connection on Integrations; nothing is read until the practice connects it.",
     "Never submits a claim, charges a card, sends a statement or writes anything off. Every fix is made by a person in LeadDash EHR.",
-    "Clients appear by initials in chat and in every notice; the full detail is in the EHR.",
+    "Clients are named in the app and in chat; initials in every email, text and push notice. The full detail is in the EHR.",
     "Nothing from a claim or a client goes to web search.",
   ],
   compliance: [
     "Sees that a note is unsigned or a plan is due, never what is in it. Counts and dates only, by clinician.",
     "Reminders are drafted and wait for Send.",
     "Credentials, licenses and training dates are what the practice types in; nothing is looked up about a person without being asked.",
-    "Clients appear by initials in chat and in every notice.",
+    "Clients are named in the app and in chat; initials in every email, text and push notice.",
   ],
   coo: [
     "Invites and recaps wait for your approval unless you set them to go on their own.",
@@ -162,7 +162,7 @@ export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
   ],
   inbox: [
     "Replies wait for your approval before anything is sent.",
-    "Clients are referred to by initials only.",
+    "Clients are named in the app and in chat; initials in every email, text and push notice.",
     "Decisions that belong to you become placeholders.",
   ],
   developer: [

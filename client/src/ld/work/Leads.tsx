@@ -130,14 +130,14 @@ export default function Leads({ emp }: { emp: EmployeeRow }) {
   );
 }
 
-const LQ = "80px 140px 110px minmax(0,1fr) 120px";
+const LQ = "minmax(0,1fr) 140px 110px minmax(0,1fr) 120px";
 const longDate = (ymd: string) => {
   const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ymd;
 };
 
-/** Active clients with no kept appointment in 30 days and nothing booked, from LeadDash EHR. Initials only; the chart opens in the EHR. */
-function Lapsed({ rows, connected, loading }: { rows: { id: string; initials: string; lastSeen: string; days: number; clinician: string; url: string }[]; connected: boolean; loading: boolean }) {
+/** Active clients with no kept appointment in 30 days and nothing booked, from LeadDash EHR. Named here; the chart opens in the EHR. */
+function Lapsed({ rows, connected, loading }: { rows: { id: string; name?: string; initials: string; lastSeen: string; days: number; clinician: string; url: string }[]; connected: boolean; loading: boolean }) {
   if (!connected) return <div className="ld-empty">{loading ? "Loading..." : "LeadDash EHR is not connected. Connect it on Integrations and this list fills in at the next read."}</div>;
   return (
     <>
@@ -151,7 +151,7 @@ function Lapsed({ rows, connected, loading }: { rows: { id: string; initials: st
       {rows.length === 0 && <div className="ld-empty">Every active client has been seen in the last 30 days or has a session booked.</div>}
       {rows.map((r) => (
         <div key={r.id} className="ld-rw" style={{ gridTemplateColumns: LQ }}>
-          <span className="ld-strong">{r.initials}</span>
+          <span className="ld-strong">{(r.name && r.name.trim()) || r.initials}</span>
           <span>{longDate(r.lastSeen)}</span>
           <span className={`ld-pill ${r.days >= 60 ? "red" : "amber"}`}>{r.days} days</span>
           <span>{r.clinician || <span className="ld-muted">Not recorded</span>}</span>

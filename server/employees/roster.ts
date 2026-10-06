@@ -197,7 +197,7 @@ export const ROSTER: RosterEntry[] = [
     roleTitle: "Billing Specialist",
     department: "Billing and compliance",
     description: "Reads claims, payments and eligibility from LeadDash EHR every morning and lays out what needs a person: denials with the reason and the fix, unpaid claims by payer with a follow-up script, client balances with statements drafted, and eligibility results for the week. Opens the claim in LeadDash EHR for the fix; never submits a claim, charges a card or sends a statement on her own.",
-    capabilities: ["Denials with the reason and the fix", "Unpaid claims by payer, with a follow-up script", "Statements and reminders drafted, never sent on their own", "Eligibility results for the week's sessions", "Clients by initials outside the EHR"],
+    capabilities: ["Denials with the reason and the fix", "Unpaid claims by payer, with a follow-up script", "Statements and reminders drafted, never sent on their own", "Eligibility results for the week's sessions", "Clients by initials in anything that leaves the app"],
     searches: false,
     minutesPerTask: 30,
   },

@@ -50,10 +50,10 @@ const PROVIDERS: { key: string; name: string; does: string; used: string; client
 ];
 
 const CLIENT_INFO_ROWS = [
-  { kind: "inbox", sees: "Your inbox and calendar, meeting audio", rule: "Clients appear by initials in chat and in every email, text and push notice. Nothing from a message goes to web search." },
+  { kind: "inbox", sees: "Your inbox and calendar, meeting audio", rule: "Clients are named in the app and in chat; initials in every email, text and push notice. Nothing from a message goes to web search." },
   { kind: "leads", sees: "New client inquiries from the booking page, forms and the phone line", rule: "Replies and books from the practice's services and hours only. Never asks why someone is seeking care." },
   { kind: "billing", sees: "Claims, payments and balances in LeadDash EHR", rule: "Reads the EHR through the connection on Integrations. Never submits a claim, charges a card or sends a statement without a person pressing the button." },
-  { kind: "compliance", sees: "Clinician credentials, licenses, and which notes and plans are unsigned or due", rule: "Sees that a note is unsigned, never what it says. Reports by clinician, clients by initials." },
+  { kind: "compliance", sees: "Clinician credentials, licenses, and which notes and plans are unsigned or due", rule: "Sees that a note is unsigned, never what it says. Reports by clinician." },
 ];
 
 /** The two cards a healthcare practice gets: who works with client information, and which providers may carry it. LeadDash sets both; the practice reads them. */

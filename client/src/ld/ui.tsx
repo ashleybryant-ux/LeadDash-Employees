@@ -602,7 +602,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
           <span style={{ fontWeight: 800, fontSize: 16 }}>{emp.name}</span>
           <span style={{ fontSize: 13, color: "#5b6b64", whiteSpace: "nowrap" }}>{emp.roleTitle}</span>
         </span>
-        {clientInfo && <span className="ld-pill blue ld-emphead-ci" title="Works with client information, on providers under a signed BAA. Clients by initials in every notice.">Client info</span>}
+        {clientInfo && <span className="ld-pill blue ld-emphead-ci" title="Works with client information, on providers under a signed BAA. Clients are named in the app and in chat, initials in every notice.">Client info</span>}
       </div>
       <nav aria-label="Employee views" className="ld-emptabs" style={{ display: "flex", gap: 6, background: "#f1f5f3", padding: 4, borderRadius: 12 }}>
         <Link href={base} style={tab(active === "chat")} className="ld-tablink">Chat</Link>

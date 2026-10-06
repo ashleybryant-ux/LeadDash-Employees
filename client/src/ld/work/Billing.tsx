@@ -6,6 +6,8 @@ import { ErrorLine, UnderlineTabs } from "../ui";
 import { fmtDate } from "../meta";
 import { longDate } from "../sops/shared";
 
+const who = (x: { name?: string; initials: string }) => (x.name && x.name.trim()) || x.initials;
+
 const money = (cents: number) => `$${(Math.round(cents) / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 const when = (iso: string, tz?: string) => {
   const d = new Date(iso);
@@ -56,11 +58,11 @@ export default function Billing() {
           )}
           <section className="ld-card">
             <div className="ld-sh"><span className="ld-st">Denied or rejected · fix in LeadDash EHR</span><span className="ld-small ld-muted">From the EHR, {s.generatedAt ? fmtDate(s.generatedAt) : ""}</span></div>
-            <div className="ld-hd hb-cols" style={{ gridTemplateColumns: "70px 110px 150px minmax(0,1fr) minmax(0,1fr) 120px" }}><span>Client</span><span>Date of service</span><span>Payer</span><span>Reason</span><span>Fix</span><span /></div>
+            <div className="ld-hd hb-cols" style={{ gridTemplateColumns: "minmax(0,1fr) 110px 150px minmax(0,1.2fr) minmax(0,1.2fr) 120px" }}><span>Client</span><span>Date of service</span><span>Payer</span><span>Reason</span><span>Fix</span><span /></div>
             {s.claims.length === 0 && <div className="ld-empty">Nothing denied or rejected right now.</div>}
             {s.claims.map((c) => (
-              <div key={c.id} className="ld-rw hb-cols" style={{ gridTemplateColumns: "70px 110px 150px minmax(0,1fr) minmax(0,1fr) 120px", alignItems: "start" }}>
-                <span className="ld-strong">{c.initials}</span>
+              <div key={c.id} className="ld-rw hb-cols" style={{ gridTemplateColumns: "minmax(0,1fr) 110px 150px minmax(0,1.2fr) minmax(0,1.2fr) 120px", alignItems: "start" }}>
+                <span className="ld-strong">{who(c)}</span>
                 <span>{longDate(c.dos)}</span>
                 <span>{c.payer}</span>
                 <span>{c.status === "rejected" ? "Rejected: " : ""}{c.reason}</span>
@@ -91,11 +93,11 @@ export default function Billing() {
       {s && (tab === "today" || tab === "balances") && (
         <section className="ld-card">
           <div className="ld-sh"><span className="ld-st">Client balances</span><span className="ld-small ld-muted">{s.balances.length} clients · statements go out from the EHR</span></div>
-          <div className="ld-hd hb-cols" style={{ gridTemplateColumns: "70px 100px 120px 110px minmax(0,1fr) 120px" }}><span>Client</span><span>Balance</span><span>Last payment</span><span>Card on file</span><span /><span /></div>
+          <div className="ld-hd hb-cols" style={{ gridTemplateColumns: "minmax(0,1fr) 100px 120px 110px minmax(0,0.6fr) 120px" }}><span>Client</span><span>Balance</span><span>Last payment</span><span>Card on file</span><span /><span /></div>
           {s.balances.length === 0 && <div className="ld-empty">No client balances.</div>}
           {s.balances.map((b) => (
-            <div key={b.id} className="ld-rw hb-cols" style={{ gridTemplateColumns: "70px 100px 120px 110px minmax(0,1fr) 120px" }}>
-              <span className="ld-strong">{b.initials}</span>
+            <div key={b.id} className="ld-rw hb-cols" style={{ gridTemplateColumns: "minmax(0,1fr) 100px 120px 110px minmax(0,0.6fr) 120px" }}>
+              <span className="ld-strong">{who(b)}</span>
               <span style={{ fontWeight: 700 }}>{money(b.cents)}</span>
               <span>{b.lastPayment ? longDate(b.lastPayment) : <span className="ld-muted">None</span>}</span>
               <span>{b.cardOnFile ? "Yes" : "No"}</span>
@@ -108,11 +110,11 @@ export default function Billing() {
       {s && (tab === "today" || tab === "eligibility") && (
         <section className="ld-card">
           <div className="ld-sh"><span className="ld-st">Eligibility · this week's sessions</span><span className="ld-small ld-muted">{s.eligibility.length} checked · {s.eligibility.filter((e) => !e.ok).length} need attention</span></div>
-          <div className="ld-hd hb-cols" style={{ gridTemplateColumns: "70px 220px 150px minmax(0,1fr) 120px" }}><span>Client</span><span>Session</span><span>Clinician</span><span>Result</span><span /></div>
+          <div className="ld-hd hb-cols" style={{ gridTemplateColumns: "minmax(0,1fr) 220px 150px minmax(0,1fr) 120px" }}><span>Client</span><span>Session</span><span>Clinician</span><span>Result</span><span /></div>
           {s.eligibility.filter((e) => tab === "eligibility" || !e.ok).length === 0 && <div className="ld-empty">{tab === "today" ? "Every check this week came back fine." : "No checks this week."}</div>}
           {s.eligibility.filter((e) => tab === "eligibility" || !e.ok).map((e) => (
-            <div key={e.id} className="ld-rw hb-cols" style={{ gridTemplateColumns: "70px 220px 150px minmax(0,1fr) 120px" }}>
-              <span className="ld-strong">{e.initials}</span>
+            <div key={e.id} className="ld-rw hb-cols" style={{ gridTemplateColumns: "minmax(0,1fr) 220px 150px minmax(0,1fr) 120px" }}>
+              <span className="ld-strong">{who(e)}</span>
               <span>{when(e.session, tz)}</span>
               <span>{e.clinician}</span>
               <span>{e.ok ? <span className="ld-pill green">Covered</span> : e.result}</span>
