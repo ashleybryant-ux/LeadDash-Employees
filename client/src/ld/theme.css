@@ -846,9 +846,9 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
 .gp-gantt .bar .end { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; }
 
 /* Projects: a task */
-.gp-tm { width: 1180px; max-width: 100%; background: #fff; border-radius: 14px; box-shadow: 0 24px 60px rgba(18, 33, 29, 0.3); display: grid; grid-template-columns: minmax(0, 1fr) 380px; overflow: hidden; max-height: calc(100vh - 80px); }
-.gp-tm .tml { padding: 20px 26px; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid #e3e9e6; overflow-y: auto; }
-.gp-tm .tmr { background: #fafbfb; display: flex; flex-direction: column; min-height: 0; }
+.gp-tm { width: 1180px; max-width: 100%; background: #fff; border-radius: 14px; box-shadow: 0 24px 60px rgba(18, 33, 29, 0.3); display: grid; grid-template-columns: minmax(0, 1fr) 380px; grid-template-rows: minmax(0, 1fr); overflow: hidden; max-height: calc(100vh - 80px); }
+.gp-tm .tml { padding: 20px 26px; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid #e3e9e6; overflow-y: auto; min-height: 0; }
+.gp-tm .tmr { background: #fafbfb; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 .gp-tt { margin: 0; font-size: 24px; color: #14221c; line-height: 1.25; }
 .gp-tf2 { display: grid; grid-template-columns: 120px minmax(0, 1fr) 120px minmax(0, 1fr); gap: 9px 14px; font-size: 13px; align-items: center; }
 .gp-tf2 > span:nth-child(odd) { color: #5b6b64; font-weight: 600; }

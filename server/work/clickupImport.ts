@@ -376,6 +376,18 @@ const num = (raw: string) => (raw && raw !== "null" && raw !== "NaN" && Number.i
 
 export type CsvRow = Record<string, string>;
 
+/** "6/30/2026, 11:23:14 AM CDT" as a time, honoring the zone ClickUp wrote. */
+const ZONES: Record<string, string> = { CDT: "-0500", CST: "-0600", EDT: "-0400", EST: "-0500", MDT: "-0600", MST: "-0700", PDT: "-0700", PST: "-0800", AKDT: "-0800", AKST: "-0900", HST: "-1000", UTC: "+0000", GMT: "+0000" };
+export function csvDate(raw: string | undefined): number | null {
+  const m = /^(.*?)(?:\s+([A-Z]{3,4}))?$/.exec(String(raw ?? "").trim());
+  if (!m || !m[1]) return null;
+  const t = Date.parse(`${m[1]} GMT${ZONES[m[2] ?? ""] ?? "-0500"}`);
+  return Number.isFinite(t) ? t : null;
+}
+
+/** ClickUp writes line breaks inside a description as the two characters "\\n"; they become real line breaks. */
+const unescapeText = (raw: string) => raw.replace(/\\r\\n|\\n/g, "\n").replace(/\\t/g, "  ");
+
 /** ClickUp writes people and tags as "[Ashley Bryant, Caroline Jones]" (no quotes), sometimes as real JSON. */
 export function nameList(raw: string): string[] {
   const asJson = j<unknown>(raw, null);
@@ -496,7 +508,7 @@ async function runCsv(orgId: number, importId: number, rows: CsvRow[], picks: Pi
       const t = {
         id: r["Task ID"],
         name: r["Task Name"],
-        markdown_description: r["Task Content"],
+        markdown_description: unescapeText(r["Task Content"]),
         status: { status, type: done?.type ?? "open" },
         priority: PRIORITY[r["Priority"]] ? { priority: PRIORITY[r["Priority"]] } : null,
         due_date: num(r["Due Date"]),
@@ -511,7 +523,7 @@ async function runCsv(orgId: number, importId: number, rows: CsvRow[], picks: Pi
         time_estimate: num(r["Time Estimated"]),
         checklists,
         custom_fields: [],
-        text_content: r["Task Content"],
+        text_content: unescapeText(r["Task Content"]),
         creator: { username: "ClickUp" },
         orderindex: n,
       };
@@ -522,10 +534,11 @@ async function runCsv(orgId: number, importId: number, rows: CsvRow[], picks: Pi
       }
       if (pick.mode === "goals" && /execution score|score/i.test(list.name)) scoreValue(pick.orgId, t, ymd);
       for (const a of j<{ title: string; url: string }[]>(r["Attachments"], [])) await saveAttachment(pick.orgId, id, a, by, counts);
-      const comments = j<{ text: string; by: string; date: string }[]>(r["Comments"], []);
+      const comments = j<{ text: string; by: string; date: string }[]>(r["Comments"], []).map((c, i) => ({ ...c, i, when: csvDate(c.date) }));
+      comments.sort((a, b) => (a.when ?? 0) - (b.when ?? 0) || a.i - b.i);
       for (const c of comments) {
-        const when = Date.parse(String(c.date ?? "").replace(/ [A-Z]{3,4}$/, ""));
-        upsertComment(pick.orgId, id, { id: `${r["Task ID"]}:${when || comments.indexOf(c)}`, comment_text: c.text, user: { username: c.by, email: c.by }, date: Number.isFinite(when) ? when : null }, toAssignee, counts);
+        const when = c.when;
+        upsertComment(pick.orgId, id, { id: `${r["Task ID"]}:${when || c.i}`, comment_text: unescapeText(String(c.text ?? "")), user: { username: c.by, email: c.by }, date: Number.isFinite(when) ? when : null }, toAssignee, counts);
       }
     }
   }
