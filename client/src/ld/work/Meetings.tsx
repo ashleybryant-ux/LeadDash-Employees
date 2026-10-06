@@ -289,15 +289,16 @@ function PastMeeting({ m, tz, onClose }: { m: M; tz: string; onClose: () => void
 // Sitting in: meetings on the calendar Avery joins (his notes come to Simone)
 // ==========================================
 
-const PLATFORM: Record<string, string> = { zoom: "Zoom", meet: "Google Meet" };
+const PLATFORM: Record<string, string> = { zoom: "Zoom", meet: "Google Meet", teams: "Teams" };
 const SQ_SIT = "minmax(0,1.8fr) 240px 120px 150px 128px";
 
-export function sitState(r: Pick<NT, "status" | "lockReason" | "botId" | "choice">, joinsAll: boolean) {
+export function sitState(r: Pick<NT, "status" | "lockReason" | "botId" | "choice" | "host">, joins: "mine" | "any" | "picked") {
   if (r.lockReason) return { l: "Never joins", c: "gray" };
   if (r.status === "in_call") return { l: "In the meeting", c: "green" };
   if (r.status === "joining") return { l: "Joining", c: "green" };
   if (r.status === "scheduled") return { l: "Avery joins", c: "green" };
-  if (r.choice === "join" || (r.choice === "auto" && joinsAll)) return { l: "Joins at the start", c: "green" };
+  if (r.choice === "join" || (r.choice === "auto" && (joins === "any" || (joins === "mine" && r.host)))) return { l: "Joins at the start", c: "green" };
+  if (r.choice === "auto" && joins === "mine" && !r.host) return { l: "Not yours", c: "gray" };
   return { l: "Skipped", c: "gray" };
 }
 
@@ -309,12 +310,12 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
   const refresh = trpc.coo.refreshCalendar.useMutation({ onSuccess: () => utils.coo.notetaker.invalidate() });
   const [open, setOpen] = React.useState<number | null>(null);
   const s = settings.data;
-  const joinsAll = s?.joins !== "picked";
+  const joins = s?.joins ?? "mine";
   if (s && (!s.recall || !s.google)) {
     return (
       <div className="ld-empty" style={{ textAlign: "left" }}>
         {!s.google ? "Connect Google on Integrations so Avery can read your calendar. " : ""}
-        {!s.recall ? "Connect Recall.ai on Integrations so Avery can sit in on your Zoom and Google Meet meetings. " : ""}
+        {!s.recall ? "Connect Recall.ai on Integrations so Avery can sit in on your Zoom, Google Meet and Teams meetings. " : ""}
         <Link href="/integrations">Open Integrations</Link>
       </div>
     );
@@ -328,10 +329,10 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
         <span>Notes</span>
         <span />
       </div>
-      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : "No Zoom or Google Meet meetings on your calendar in the next 2 days."}</div>}
+      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : "No Zoom, Google Meet or Teams meetings on your calendar in the next 2 days."}</div>}
       {list.map((r) => {
         const isOpen = open === r.id;
-        const st = sitState(r, joinsAll);
+        const st = sitState(r, joins);
         const joining = st.c === "green";
         const busy = setJoin.isPending && setJoin.variables?.id === r.id;
         return (
@@ -344,7 +345,7 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
               {r.lockReason ? (
                 <button type="button" className="ld-btn" disabled title={r.lockReason}>Locked</button>
               ) : joining ? (
-                <button type="button" className="ld-btn" disabled={busy} onClick={() => setJoin.mutate({ organizationId: currentOrgId, id: r.id, choice: "skip" })}>{r.status === "in_call" || r.status === "joining" ? "Remove her" : "Skip"}</button>
+                <button type="button" className="ld-btn" disabled={busy} onClick={() => setJoin.mutate({ organizationId: currentOrgId, id: r.id, choice: "skip" })}>{r.status === "in_call" || r.status === "joining" ? "Remove him" : "Skip"}</button>
               ) : (
                 <button type="button" className="ld-btn p" disabled={busy} onClick={() => setJoin.mutate({ organizationId: currentOrgId, id: r.id, choice: "join" })}>Join</button>
               )}
@@ -358,8 +359,10 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
                 <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
                   {r.lockReason ? (
                     <KV label="Why Avery never joins">{`${r.lockReason}. Change the never-join words on Avery's Onboarding tab if this is wrong.`}</KV>
+                  ) : st.l === "Not yours" ? (
+                    <KV label="Why Avery skips">Someone else set this meeting up, and Avery joins only the meetings you set up. Press Join to send him anyway.</KV>
                   ) : (
-                    <KV label="She joins as">{s?.botNameShown ?? emp.name}</KV>
+                    <KV label="He joins as">{s?.botNameShown ?? emp.name}</KV>
                   )}
                   {r.error && <KV label="Last problem">{r.error}</KV>}
                 </div>
@@ -373,7 +376,7 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
       })}
       <div className="ld-row" style={{ padding: "10px 18px", gap: 12, alignItems: "center" }}>
         <button type="button" className="ld-btn" style={{ width: 128 }} disabled={refresh.isPending} onClick={() => refresh.mutate({ organizationId: currentOrgId })}>{refresh.isPending ? "Reading..." : "Refresh"}</button>
-        <span className="ld-small ld-muted">Every calendar on Integrations, the next 2 days. Zoom and Google Meet only.</span>
+        <span className="ld-small ld-muted">Every calendar on Integrations, the next 2 days. Zoom, Google Meet and Teams links.</span>
       </div>
       <div style={{ padding: "0 18px 10px" }}>
         <ErrorLine error={setJoin.error || refresh.error} />

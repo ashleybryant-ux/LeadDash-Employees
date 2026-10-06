@@ -1193,8 +1193,8 @@ export async function meetingOnHold(orgId: number, item: OutboundItem, want: "zo
     }
     return { text: `"${item.title}" isn't on the calendar yet, so it doesn't have a link. It gets one when you approve it in Approvals.`, url: null };
   }
-  const have = meta.meeting as { platform: "zoom" | "meet"; url: string } | null;
-  if (have && (want === "any" || have.platform === "zoom")) return { text: `Here's the ${have.platform === "zoom" ? "Zoom" : "Google Meet"} link for "${item.title}": ${have.url}`, url: have.url };
+  const have = meta.meeting as { platform: MeetingPlatform; url: string } | null;
+  if (have && (want === "any" || have.platform === "zoom")) return { text: `Here's the ${PLATFORM_NAMES[have.platform]} link for "${item.title}": ${have.url}`, url: have.url };
   if (!zoomOn) return { text: have ? `"${item.title}" is on Google Meet: ${have.url}
 
 ${noZoom}` : `"${item.title}" doesn't have a meeting link. ${noZoom}`, url: have?.url ?? null };
@@ -1472,13 +1472,18 @@ export async function clickupMembers(orgId: number) {
 // Google Calendar: meetings with a Zoom or Google Meet link
 // ==========================================
 
+export type MeetingPlatform = "zoom" | "meet" | "teams";
+export const PLATFORM_NAMES: Record<MeetingPlatform, string> = { zoom: "Zoom", meet: "Google Meet", teams: "Teams" };
+
 export type CalendarMeeting = {
   eventId: string;
   title: string;
   start: Date;
   end: Date;
-  platform: "zoom" | "meet";
+  platform: MeetingPlatform;
   url: string;
+  /** The owner is the organizer: they set the meeting up. */
+  host: boolean;
   /** Title, description and place, for the never-join words. */
   text: string;
   attendees: { name: string; email: string }[];
@@ -1487,17 +1492,20 @@ export type CalendarMeeting = {
 
 const MEET_RE = /https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i;
 const ZOOM_RE = /https:\/\/(?:[\w-]+\.)?zoom\.us\/(?:j|my|w)\/[^\s"'<>)]+/i;
+const TEAMS_RE = /https:\/\/(?:teams\.microsoft\.com\/l\/meetup-join\/|teams\.live\.com\/meet\/|teams\.microsoft\.com\/meet\/)[^\s"'<>)]+/i;
 
-/** The meeting link on a calendar event: Google Meet or Zoom only. Teams and other links are ignored. */
-export function meetingLinkOf(e: any): { platform: "zoom" | "meet"; url: string } | null {
+/** The meeting link on a calendar event: Zoom, Google Meet or Microsoft Teams. Other links are ignored. */
+export function meetingLinkOf(e: any): { platform: MeetingPlatform; url: string } | null {
   const video = (e?.conferenceData?.entryPoints ?? []).filter((p: any) => p?.entryPointType === "video" && typeof p.uri === "string").map((p: any) => p.uri as string);
   const pool = [typeof e?.hangoutLink === "string" ? e.hangoutLink : "", ...video, String(e?.location ?? ""), String(e?.description ?? "")].join(" \n ");
   const zoom = pool.match(ZOOM_RE);
   const meet = pool.match(MEET_RE);
+  const teams = pool.match(TEAMS_RE);
   // A Meet link Google adds itself wins over a Zoom link pasted in the notes, and the other way round.
   if (typeof e?.hangoutLink === "string" && meet) return { platform: "meet", url: meet[0] };
   if (zoom) return { platform: "zoom", url: zoom[0].replace(/[.,;]+$/, "") };
   if (meet) return { platform: "meet", url: meet[0] };
+  if (teams) return { platform: "teams", url: teams[0].replace(/[.,;]+$/, "") };
   return null;
 }
 
@@ -1514,6 +1522,7 @@ export function calendarMeetingOf(e: any): CalendarMeeting | null {
     end: new Date(e.end.dateTime),
     platform: link.platform,
     url: link.url,
+    host: Boolean(e.organizer?.self),
     text: [e.summary, e.description, e.location].filter(Boolean).join(" \n ").slice(0, 8000),
     attendees: people.slice(0, 40).map((a: any) => ({ name: String(a.displayName || a.email).slice(0, 120), email: String(a.email).slice(0, 200) })),
     declined: people.some((a: any) => a.self && a.responseStatus === "declined"),

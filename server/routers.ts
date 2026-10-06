@@ -4359,7 +4359,7 @@ export const appRouter = router({
     saveNotetaker: protectedProcedure
       .input(
         orgInput.extend({
-          joins: z.enum(["all", "picked"]),
+          joins: z.enum(["mine", "any", "picked"]),
           skipWords: z.string().max(500),
           botName: z.string().max(60),
           notesTo: z.enum(["me", "everyone"]),
@@ -4370,7 +4370,7 @@ export const appRouter = router({
         await requireMember(ctx, input.organizationId, "admin");
         const { organizationId, ...rest } = input;
         const saved = await notetaker.saveNotetaker(organizationId, rest);
-        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved notetaker settings", details: rest.joins === "all" ? "Joins every meeting with a link" : "Joins meetings you turn on" });
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved notetaker settings", details: rest.joins === "any" ? "Joins every meeting with a link" : rest.joins === "picked" ? "Joins meetings you turn on" : "Joins the meetings you set up" });
         return saved;
       }),
     saveRecallKey: protectedProcedure.input(orgInput.extend({ apiKey: z.string().min(1).max(300) })).mutation(async ({ ctx, input }) => {

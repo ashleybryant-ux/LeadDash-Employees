@@ -1270,8 +1270,10 @@ export const notetakerMeetings = sqliteTable(
     title: text("title").notNull(),
     startsAt: integer("startsAt", { mode: "timestamp" }).notNull(),
     endsAt: integer("endsAt", { mode: "timestamp" }).notNull(),
-    platform: text("platform", { enum: ["zoom", "meet"] }).notNull(),
+    platform: text("platform", { enum: ["zoom", "meet", "teams"] }).notNull(),
     meetingUrl: text("meetingUrl").notNull(),
+    /** The owner set this meeting up (is its organizer on the calendar). The default join rule is these only. */
+    host: integer("host", { mode: "boolean" }).notNull().default(false),
     /** JSON [{name, email}] from the calendar invite. */
     attendees: text("attendees").notNull().default("[]"),
     /** auto follows the settings; join and skip are your choice for this one meeting. */

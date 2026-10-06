@@ -6,6 +6,8 @@ import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine } from "../ui";
 import { Buttons, Choice } from "../sales/OnboardingCards";
 
+const JOINS_LABEL: Record<string, string> = { mine: "Meetings you set up (you are the organizer on the calendar)", any: "Every meeting with a Zoom, Google Meet or Teams link", picked: "Only meetings you turn on" };
+
 const grid: React.CSSProperties = { padding: "18px 20px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24 };
 const small: React.CSSProperties = { fontSize: 12, color: "#5b6b64", lineHeight: 1.45 };
 
@@ -158,7 +160,7 @@ export function NotetakerCard({ emp }: { emp: EmployeeRow }) {
   const utils = trpc.useUtils();
   const q = trpc.coo.notetakerSettings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const [editing, setEditing] = React.useState(false);
-  const [d, setD] = React.useState({ joins: "all" as "all" | "picked", skipWords: "", botName: "", notesTo: "me" as "me" | "everyone", keep: "delete" as "delete" | "7" | "30" });
+  const [d, setD] = React.useState({ joins: "mine" as "mine" | "any" | "picked", skipWords: "", botName: "", notesTo: "me" as "me" | "everyone", keep: "delete" as "delete" | "7" | "30" });
   const save = trpc.coo.saveNotetaker.useMutation({ onSuccess: async () => { setEditing(false); await utils.coo.invalidate(); } });
   if (!q.data) return null;
   const s = q.data;
@@ -179,8 +181,8 @@ export function NotetakerCard({ emp }: { emp: EmployeeRow }) {
               <Link href="/integrations">Open Integrations</Link>
             </span>
           )}
-          <Row label="Joins" note="From every calendar on Integrations: Zoom and Google Meet links only. Busy-only calendars hide their links.">
-            {editing ? <Choice options={[{ key: "all", label: "Every meeting with a video link" }, { key: "picked", label: "Only meetings I turn on" }]} value={d.joins} onChange={(v) => setD({ ...d, joins: v })} /> : <span className="ld-body">{s.joins === "picked" ? "Only meetings you turn on" : "Every meeting with a Zoom or Google Meet link"}</span>}
+          <Row label="Joins" note="From every calendar on Integrations: Zoom, Google Meet and Teams links. Busy-only calendars hide their links.">
+            {editing ? <Choice options={[{ key: "mine", label: "Meetings I set up" }, { key: "any", label: "Every meeting with a video link" }, { key: "picked", label: "Only meetings I turn on" }]} value={d.joins} onChange={(v) => setD({ ...d, joins: v })} /> : <span className="ld-body">{JOINS_LABEL[s.joins]}</span>}
           </Row>
           <Row label="Never joins" note={editing ? "Separate words with commas. Anything with a leaddash.io link is never joined either." : undefined}>
             <span className="ld-body">

@@ -14,8 +14,10 @@ import { recordMeeting } from "../usage";
  * Avery sits in on your meetings and sends the notes to Simone, who runs the follow-up.
  * - Every 10 minutes he reads the next two days of every calendar connected on Integrations
  *   (the main Google account, extra Google accounts, Outlook or iCloud links). Events with a
- *   Zoom or Google Meet link are listed on Meetings, Sitting in. Teams and other links are ignored.
+ *   Zoom, Google Meet or Teams link are listed on Meetings, Sitting in. Other links are ignored.
  *   A calendar set to busy times only hides its links, so he can't join meetings on it.
+ * - By default he joins only the meetings the owner set up (the owner is the organizer). A
+ *   meeting someone else set up may not allow notetakers, so it needs Join pressed by hand.
  * - An event whose title, description or place has a never-join word (session, intake, therapy...)
  *   is locked: she never joins it, whatever else is set. Client sessions from the LeadDash EHR
  *   are kept out this way.
@@ -110,12 +112,14 @@ export function lockReasonFor(text: string, words: string[]) {
   return hit ? `Has the word "${hit}"` : null;
 }
 
-/** Whether Avery should be in this meeting. Locked meetings never. */
-export function wantsJoin(m: Pick<NotetakerMeeting, "choice" | "lockReason">, n: Notetaker) {
+/** Whether Avery should be in this meeting. Locked meetings never; by default only the ones the owner set up. */
+export function wantsJoin(m: Pick<NotetakerMeeting, "choice" | "lockReason" | "host">, n: Notetaker) {
   if (m.lockReason) return false;
   if (m.choice === "join") return true;
   if (m.choice === "skip") return false;
-  return n.joins === "all";
+  if (n.joins === "any") return true;
+  if (n.joins === "mine") return m.host;
+  return false;
 }
 
 // ==========================================
@@ -150,7 +154,7 @@ export async function syncCalendar(orgId: number, now = new Date(), force = fals
     seen.add(e.eventId);
     const lockReason = lockReasonFor(e.text, words);
     const linked = series.find((s) => s.calendarEventId && s.calendarEventId === e.eventId);
-    const fields = { title: e.title, startsAt: e.start, endsAt: e.end, platform: e.platform, meetingUrl: e.url, attendees: JSON.stringify(e.attendees), lockReason, meetingId: linked?.id ?? null };
+    const fields = { title: e.title, startsAt: e.start, endsAt: e.end, platform: e.platform, meetingUrl: e.url, host: e.host, attendees: JSON.stringify(e.attendees), lockReason, meetingId: linked?.id ?? null };
     const row = await db.getNotetakerByEvent(orgId, e.eventId);
     if (!row) {
       const created = await db.createNotetaker({ organizationId: orgId, eventId: e.eventId, ...fields, status: "skipped" });
@@ -573,8 +577,10 @@ export async function notetakerStatus(orgId: number) {
   const joining = v.upcoming.filter((r) => r.status === "scheduled" || r.status === "joining" || r.status === "in_call").slice(0, 4);
   const recent = v.notes.filter((r) => r.status === "ready").slice(0, 3);
   const read = lastRead.get(orgId);
+  const { ops } = await opsFor(orgId);
+  const rule = ops.notetaker.joins === "any" ? "every meeting with a Zoom, Google Meet or Teams link" : ops.notetaker.joins === "picked" ? "only the meetings turned on by hand" : "only the meetings the owner set up that have a Zoom, Google Meet or Teams link";
   return [
-    `Sitting in next: ${joining.map((r) => `${r.title} (${fmtDay(r.startsAt, tz)} at ${fmtTime(r.startsAt, tz)})`).join("; ") || "nothing booked"}. Avery joins meetings with a Zoom or Google Meet link on the calendars connected on Integrations.`,
+    `Sitting in next: ${joining.map((r) => `${r.title} (${fmtDay(r.startsAt, tz)} at ${fmtTime(r.startsAt, tz)})`).join("; ") || "nothing booked"}. Avery joins ${rule}, read from the calendars connected on Integrations.`,
     read?.hidden.length ? `${read.hidden.join(" and ")} ${read.hidden.length === 1 ? "is" : "are"} set to busy times only, which hides meeting links, so Avery can't join meetings there.` : "",
     read?.failed.length ? `Couldn't read ${read.failed.join(" and ")}; reconnect on Integrations.` : "",
     `Recent notes: ${recent.map((r) => r.title).join("; ") || "none yet"}.`,
@@ -640,11 +646,11 @@ export async function explainMissing(orgId: number, target: string, who: Voice =
   if (!hits.length) return `${V.I} ${V.dont} see ${clock ? `anything at ${clock.text}` : `a meeting like "${target.trim()}"`} in the next two days on the calendars ${V.I} ${V.s("check")} (${Array.from(new Set(s.events.map((e) => e.calendar))).join(", ") || "none read"}).${where}${failed}`;
   const e = hits[0];
   const when = `${fmtDay(e.start, tz)} at ${fmtTime(e.start, tz)}`;
-  if (e.title === "Busy") return `Your ${when} is on ${e.calendar}, which is set to busy times only, so ${V.I} can only see that you're booked, not the meeting or its link. Switch ${e.calendar} to full details on Integrations and ${V.Ill} join it if it has a Zoom or Google Meet link.`;
+  if (e.title === "Busy") return `Your ${when} is on ${e.calendar}, which is set to busy times only, so ${V.I} can only see that you're booked, not the meeting or its link. Switch ${e.calendar} to full details on Integrations and ${V.Ill} join it if it has a Zoom, Google Meet or Teams link.`;
   const lock = lockReasonFor(`${e.title} ${e.extra?.location ?? ""}`, skipWordList(ops.notetaker));
   if (lock) return `${e.title} (${when}) ${lock.toLowerCase()}, so ${V.I} never ${V.s("join")} it. Change the never-join words on ${V.my} Onboarding tab if that's wrong.`;
-  if (!e.extra?.meeting) return `${e.title} (${when}, on ${e.calendar}) has no Zoom or Google Meet link, so ${V.I} can't join it. Add the link to the event and ${V.Ill} pick it up within 10 minutes.${failed}`;
-  return `${e.title} (${when}, on ${e.calendar}) has a ${e.extra.meeting.platform === "zoom" ? "Zoom" : "Google Meet"} link but isn't on ${V.my} list yet. ${V.Ill} read the calendar again at the next check.${failed}`;
+  if (!e.extra?.meeting) return `${e.title} (${when}, on ${e.calendar}) has no Zoom, Google Meet or Teams link, so ${V.I} can't join it. Add the link to the event and ${V.Ill} pick it up within 10 minutes.${failed}`;
+  return `${e.title} (${when}, on ${e.calendar}) has a ${integrations.PLATFORM_NAMES[e.extra.meeting.platform]} link but isn't on ${V.my} list yet. ${V.Ill} read the calendar again at the next check.${failed}`;
 }
 
 /** One line on where Avery stands with a meeting on the list. */
@@ -658,6 +664,7 @@ export function sittingInLine(r: ReturnType<typeof viewOf>, n: Notetaker, tz: st
   if (r.choice === "skip") return `No. ${r.title} (${when}) is marked Skip. Say "join it" and ${V.Ill} book it.`;
   if (r.error) return `${V.I} tried to book ${r.title} (${when}) and couldn't: ${r.error}`;
   if (n.joins === "picked" && r.choice !== "join") return `Not unless you say so. ${V.I} only ${V.s("join")} meetings you pick; say "join it" for ${r.title} (${when}) and ${V.Ill} book it.`;
+  if (n.joins === "mine" && !r.host && r.choice !== "join") return `No. You didn't set up ${r.title} (${when}), and ${V.I} only ${V.s("join")} meetings you set up unless you say so. Say "join it" and ${V.Ill} book it.`;
   return `Yes. ${V.Ill} join ${r.title} (${when}) once it's close enough to book.`;
 }
 

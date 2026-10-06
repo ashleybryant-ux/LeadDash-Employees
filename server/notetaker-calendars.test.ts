@@ -54,9 +54,9 @@ describe("Avery reads every calendar on Integrations for meetings to sit in on",
   it("finds meetings on an extra Google account and a second calendar, and leaves busy-only calendars alone", async () => {
     const { orgId } = await makeWorkspace("nt-cals");
     const { lg } = await connect(orgId);
-    routes.unshift([/calendars\/ashley%40leaddash\.io\/events/, () => json({ items: [{ id: "ev-main", summary: "Board prep", start: { dateTime: iso(180) }, end: { dateTime: iso(240) }, hangoutLink: "https://meet.google.com/aaa-bbbb-ccc" }] })]);
-    routes.unshift([/calendars\/webinars%40group\/events/, () => json({ items: [{ id: "ev-web", summary: "Webinar run-through", start: { dateTime: iso(300) }, end: { dateTime: iso(330) }, location: "https://zoom.us/j/555" }] })]);
-    routes.unshift([/calendars\/ashley%40legacyfs\.org\/events/, () => json({ items: [{ id: "ev-legacy", summary: "Supervision", start: { dateTime: iso(400) }, end: { dateTime: iso(460) }, hangoutLink: "https://meet.google.com/ddd-eeee-fff" }] })]);
+    routes.unshift([/calendars\/ashley%40leaddash\.io\/events/, () => json({ items: [{ id: "ev-main", summary: "Board prep", start: { dateTime: iso(180) }, end: { dateTime: iso(240) }, hangoutLink: "https://meet.google.com/aaa-bbbb-ccc", organizer: { self: true } }] })]);
+    routes.unshift([/calendars\/webinars%40group\/events/, () => json({ items: [{ id: "ev-web", summary: "Webinar run-through", start: { dateTime: iso(300) }, end: { dateTime: iso(330) }, location: "https://zoom.us/j/555", organizer: { self: true } }] })]);
+    routes.unshift([/calendars\/ashley%40legacyfs\.org\/events/, () => json({ items: [{ id: "ev-legacy", summary: "Supervision", start: { dateTime: iso(400) }, end: { dateTime: iso(460) }, hangoutLink: "https://meet.google.com/ddd-eeee-fff", organizer: { self: true } }] })]);
 
     await notetaker.syncCalendar(orgId, new Date(), true);
     let view = await notetaker.notetakerView(orgId);
@@ -94,7 +94,7 @@ describe("Avery reads every calendar on Integrations for meetings to sit in on",
     const noon = zonedToUtc(y, m, d, 12, 0, tz);
     const two = zonedToUtc(y, m, d, 14, 0, tz);
     routes.unshift([/calendars\/ashley%40leaddash\.io\/events/, () => json({ items: [
-      { id: "ev-11", summary: "Payer contract review", start: { dateTime: eleven.toISOString() }, end: { dateTime: noon.toISOString() }, description: "Dial in: https://teams.microsoft.com/l/meetup-join/1" },
+      { id: "ev-11", summary: "Payer contract review", start: { dateTime: eleven.toISOString() }, end: { dateTime: noon.toISOString() }, description: "Dial in: https://webex.example/join/1", organizer: { self: true } },
       { id: "ev-12", summary: "Client session", start: { dateTime: noon.toISOString() }, end: { dateTime: new Date(noon.getTime() + 3600_000).toISOString() }, location: "https://zoom.us/j/1" },
     ] })]);
     routes.unshift([/calendars\/webinars%40group\/events/, () => json({ items: [] })]);
@@ -102,7 +102,7 @@ describe("Avery reads every calendar on Integrations for meetings to sit in on",
     calendars.saveCalendar(orgId, lg.id, { name: "Legacy Family Services", include: ["ashley@legacyfs.org"], detail: "busy", holds: "no" });
 
     r = await c.chat.send({ organizationId: orgId, employeeId: simone.id, text: "are you joining the 11am meeting to take notes?" });
-    expect(r.reply.content).toMatch(/^Payer contract review \(.* at 11:00 AM, on LeadDash\) has no Zoom or Google Meet link, so Avery can't join it\. Add the link to the event and Avery will pick it up within 10 minutes\.$/);
+    expect(r.reply.content).toMatch(/^Payer contract review \(.* at 11:00 AM, on LeadDash\) has no Zoom, Google Meet or Teams link, so Avery can't join it\. Add the link to the event and Avery will pick it up within 10 minutes\.$/);
 
     await mockAi({ action: "sitting_in", target: "12pm" });
     r = await c.chat.send({ organizationId: orgId, employeeId: avery.id, text: "are you in my noon?" });

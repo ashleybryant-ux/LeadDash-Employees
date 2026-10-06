@@ -37,7 +37,7 @@ export type CalItem = {
   who: string | null;
   /** Where Open goes in the app. */
   link: string | null;
-  meeting: { platform: "zoom" | "meet"; url: string } | null;
+  meeting: { platform: import("../integrations").MeetingPlatform; url: string } | null;
   host: boolean;
   location: string;
   guests: string[];

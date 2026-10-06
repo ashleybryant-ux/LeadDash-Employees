@@ -1,0 +1,1 @@
+ALTER TABLE `notetaker_meetings` ADD `host` integer DEFAULT false NOT NULL;

@@ -16,7 +16,8 @@ export type Series = { id: string; name: string; day: number; time: string; minu
 export type ProjectSeries = Series & { launchId: number };
 
 export type Notetaker = {
-  joins: "all" | "picked";
+  /** mine: meetings the owner set up (the default). any: every meeting with a video link. picked: only ones turned on by hand. */
+  joins: "mine" | "any" | "picked";
   /** Comma-separated words. An event whose title, description or place has one is never joined. */
   skipWords: string;
   /** Name shown in the meeting. Empty means "Simone (notes for <owner first name>)". */
@@ -95,7 +96,7 @@ function readSeries(r: Series): Series {
 function readNotetaker(raw: Partial<Notetaker> | undefined): Notetaker {
   const n = raw && typeof raw === "object" ? raw : {};
   return {
-    joins: n.joins === "picked" ? "picked" : "all",
+    joins: n.joins === "picked" ? "picked" : n.joins === "any" ? "any" : "mine",
     skipWords: typeof n.skipWords === "string" ? n.skipWords.slice(0, 500) : DEFAULT_SKIP_WORDS,
     botName: typeof n.botName === "string" ? n.botName.trim().slice(0, 60) : "",
     notesTo: n.notesTo === "everyone" ? "everyone" : "me",

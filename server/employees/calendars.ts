@@ -22,7 +22,7 @@ export const COLORS = ["#1b6b4a", "#3c4a8a", "#a1432a", "#7a3b6e", "#0f6e74", "#
 
 export type CalendarEntry = { id: string; name: string; primary: boolean; include: boolean };
 /** What the Calendar page shows about an event. Never filled on a busy-times-only calendar. */
-export type EventExtra = { eventId: string | null; meeting: { platform: "zoom" | "meet"; url: string } | null; host: boolean; location: string; guests: string[] };
+export type EventExtra = { eventId: string | null; meeting: { platform: integrations.MeetingPlatform; url: string } | null; host: boolean; location: string; guests: string[] };
 export type Event = { start: Date; end: Date; allDay: boolean; title: string; calendar: string; color: string; sourceId: number; extra?: EventExtra };
 type Raw = { start: Date; end: Date; allDay: boolean; title: string; extra?: EventExtra };
 
@@ -271,6 +271,7 @@ export async function notetakerMeetings(orgId: number, from: Date, to: Date): Pr
   const add = (ms: integrations.CalendarMeeting[]) => {
     for (const m of ms) if (!seen.has(m.eventId)) seen.set(m.eventId, m);
   };
+  const mine = new Set(links.map((l) => (l.email ?? "").toLowerCase()).filter(Boolean));
   const main = await integrations.mainGoogleToken(orgId);
   if (main) {
     sources++;
@@ -307,7 +308,10 @@ export async function notetakerMeetings(orgId: number, from: Date, to: Date): Pr
             const end = new Date(o.end ?? o.start);
             if (o.isFullDay || end <= from || start >= to) continue;
             const title = String(o.summary ?? e.summary ?? "Untitled meeting").slice(0, 200);
-            got.push({ eventId: `ics:${l.id}:${String(e.uid ?? title)}:${start.toISOString()}`, title, start, end, platform: link.platform, url: link.url, text: [title, description, location].filter(Boolean).join(" \n ").slice(0, 8000), attendees: icsAttendees(e.attendee), declined: false });
+            // An Outlook or iCloud link names its organizer by email; it is the owner's meeting when that email is one of the Google accounts connected here.
+            const organizer = String((typeof e.organizer === "string" ? e.organizer : e.organizer?.val) ?? "").replace(/^mailto:/i, "").toLowerCase();
+            const host = !!organizer && mine.has(organizer);
+            got.push({ eventId: `ics:${l.id}:${String(e.uid ?? title)}:${start.toISOString()}`, title, start, end, platform: link.platform, url: link.url, host, text: [title, description, location].filter(Boolean).join(" \n ").slice(0, 8000), attendees: icsAttendees(e.attendee), declined: false });
           }
         }
         add(got);

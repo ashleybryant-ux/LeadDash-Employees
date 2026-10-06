@@ -29,10 +29,21 @@ afterEach(() => {
 const at = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
 
 describe("Avery's notetaker (notes go to Simone)", () => {
-  it("finds Zoom and Google Meet links and ignores Teams", () => {
+  it("finds Zoom, Google Meet and Teams links and ignores other links", () => {
     expect(integrations.meetingLinkOf({ hangoutLink: "https://meet.google.com/abc-defg-hij" })).toEqual({ platform: "meet", url: "https://meet.google.com/abc-defg-hij" });
     expect(integrations.meetingLinkOf({ location: "https://us02web.zoom.us/j/8123456789?pwd=xyz." })).toEqual({ platform: "zoom", url: "https://us02web.zoom.us/j/8123456789?pwd=xyz" });
-    expect(integrations.meetingLinkOf({ description: "Join: https://teams.microsoft.com/l/meetup-join/123" })).toBeNull();
+    expect(integrations.meetingLinkOf({ description: "Join: https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=%7b%22Tid%22%3a%22x%22%7d." })).toEqual({ platform: "teams", url: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=%7b%22Tid%22%3a%22x%22%7d" });
+    expect(integrations.meetingLinkOf({ description: "https://teams.live.com/meet/9876543210" })).toEqual({ platform: "teams", url: "https://teams.live.com/meet/9876543210" });
+    expect(integrations.meetingLinkOf({ description: "Dial in: https://webex.example/join/1" })).toBeNull();
+  });
+
+  it("joins only the meetings the owner set up unless told otherwise", () => {
+    const base = { skipWords: "", botName: "", notesTo: "me" as const, keep: "delete" as const };
+    expect(notetaker.wantsJoin({ choice: "auto", lockReason: null, host: true }, { ...base, joins: "mine" })).toBe(true);
+    expect(notetaker.wantsJoin({ choice: "auto", lockReason: null, host: false }, { ...base, joins: "mine" })).toBe(false);
+    expect(notetaker.wantsJoin({ choice: "join", lockReason: null, host: false }, { ...base, joins: "mine" })).toBe(true);
+    expect(notetaker.wantsJoin({ choice: "auto", lockReason: null, host: false }, { ...base, joins: "any" })).toBe(true);
+    expect(notetaker.wantsJoin({ choice: "auto", lockReason: null, host: true }, { ...base, joins: "picked" })).toBe(false);
   });
 
   it("locks client sessions by word or LeadDash link", () => {
@@ -40,7 +51,7 @@ describe("Avery's notetaker (notes go to Simone)", () => {
     expect(notetaker.lockReasonFor("Client session with J.R.", words)).toBe('Has the word "session"');
     expect(notetaker.lockReasonFor("Telehealth https://portal.leaddash.io/v/abc", words)).toBe("Has a LeadDash link");
     expect(notetaker.lockReasonFor("Demo: Riverbend Counseling", words)).toBeNull();
-    expect(notetaker.wantsJoin({ choice: "join", lockReason: 'Has the word "intake"' }, { joins: "all", skipWords: "", botName: "", notesTo: "me", keep: "delete" })).toBe(false);
+    expect(notetaker.wantsJoin({ choice: "join", lockReason: 'Has the word "intake"', host: true }, { joins: "any", skipWords: "", botName: "", notesTo: "me", keep: "delete" })).toBe(false);
   });
 
   it("books bots from the calendar, skips locked meetings, then writes notes and deletes the recording", async () => {
@@ -55,9 +66,11 @@ describe("Avery's notetaker (notes go to Simone)", () => {
       () =>
         json({
           items: [
-            { id: "ev1", summary: "Demo: Riverbend Counseling", start: { dateTime: at(180) }, end: { dateTime: at(210) }, hangoutLink: "https://meet.google.com/abc-defg-hij", attendees: [{ email: "lauren@riverbend.com", displayName: "Lauren Pierce" }] },
-            { id: "ev2", summary: "Client session", start: { dateTime: at(240) }, end: { dateTime: at(290) }, location: "https://zoom.us/j/999" },
-            { id: "ev3", summary: "Vendor call", start: { dateTime: at(300) }, end: { dateTime: at(330) }, description: "https://teams.microsoft.com/l/meetup-join/1" },
+            { id: "ev1", summary: "Demo: Riverbend Counseling", start: { dateTime: at(180) }, end: { dateTime: at(210) }, hangoutLink: "https://meet.google.com/abc-defg-hij", organizer: { self: true }, attendees: [{ email: "lauren@riverbend.com", displayName: "Lauren Pierce" }] },
+            { id: "ev2", summary: "Client session", start: { dateTime: at(240) }, end: { dateTime: at(290) }, location: "https://zoom.us/j/999", organizer: { self: true } },
+            { id: "ev3", summary: "Vendor call", start: { dateTime: at(300) }, end: { dateTime: at(330) }, description: "https://webex.example/join/1" },
+            // Someone else's meeting: listed, not joined, because it may not allow notetakers.
+            { id: "ev4", summary: "Payer webinar", start: { dateTime: at(360) }, end: { dateTime: at(420) }, description: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0", organizer: { email: "host@payer.example" } },
           ],
         }),
     ]);
@@ -66,7 +79,7 @@ describe("Avery's notetaker (notes go to Simone)", () => {
     await c.coo.saveRecallKey({ organizationId: orgId, apiKey: "recall-key-1234567890abcdef" });
 
     const view = await notetaker.notetakerView(orgId);
-    expect(view.upcoming.map((r) => r.title)).toEqual(["Demo: Riverbend Counseling", "Client session"]);
+    expect(view.upcoming.map((r) => [r.title, r.platform, r.host, r.status])).toEqual([["Demo: Riverbend Counseling", "meet", true, "scheduled"], ["Client session", "zoom", true, "skipped"], ["Payer webinar", "teams", false, "skipped"]]);
     const demo = view.upcoming[0];
     const session = view.upcoming[1];
     expect(demo.status).toBe("scheduled");

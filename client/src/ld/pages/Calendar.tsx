@@ -5,6 +5,9 @@ import { useTenant } from "@/contexts/TenantContext";
 import { Avatar, ErrorLine, FolderTabs, Page, PersonAvatar, UnderlineTabs, useIsMobile } from "../ui";
 import type { Outputs } from "../types";
 
+const PLATFORM_NAMES: Record<string, string> = { zoom: "Zoom", meet: "Google Meet", teams: "Teams" };
+const PLATFORM_SHORT: Record<string, string> = { zoom: "Zoom", meet: "Meet", teams: "Teams" };
+
 /**
  * Calendar: every connected calendar, the tasks and deadlines in the app, and
  * what the AI team has on, as a Day, Week or Month calendar starting on Sunday.
@@ -262,11 +265,11 @@ function NextBar() {
   const tomorrow = inTz(m.start, tz).ymd === addDays(inTz(new Date(now), tz).ymd, 1);
   const badge = now >= e ? "Ended" : now >= s ? `Started ${Math.max(0, -mins)} min ago` : mins <= 60 ? `Starts in ${Math.max(1, mins)} min` : sameDay ? `Today, ${timeText(m.start, tz)}` : tomorrow ? `Tomorrow, ${timeText(m.start, tz)}` : dateText(m.start, tz);
   const soon = now >= s - 60 * 60_000;
-  const platform = m.meeting.platform === "zoom" ? "Zoom" : "Google Meet";
+  const platform = PLATFORM_NAMES[m.meeting.platform];
   const avery = m.notes ? (m.notes.status === "in_call" || m.notes.status === "joining" ? "Avery is in the call" : m.notes.status === "scheduled" ? "Avery sits in" : m.notes.choice === "skip" || m.notes.locked ? "Avery skips" : null) : null;
   const facts = [rangeText(m.start, m.end, tz), platform, m.host ? "you're the host" : null, avery].filter(Boolean).join(" · ");
   const startZoom = m.meeting.platform === "zoom" && m.host;
-  const label = startZoom ? "Start on Zoom" : m.meeting.platform === "zoom" ? "Join on Zoom" : "Join on Meet";
+  const label = startZoom ? "Start on Zoom" : `Join on ${PLATFORM_SHORT[m.meeting.platform]}`;
   const open = () => {
     // The tab opens on the click so the browser doesn't block it; the link follows.
     const w = window.open("about:blank", "_blank");
@@ -436,7 +439,7 @@ function TimeGrid({ days, today, tz, items, sel, onPick, onDay: openDay }: { day
                   onClick={() => onPick(i.key)}
                 >
                   <b>{i.title}</b>
-                  {!short && <span>{rangeText(i.start, i.end, tz)}{i.meeting ? ` · ${i.meeting.platform === "zoom" ? "Zoom" : "Meet"}` : ""}</span>}
+                  {!short && <span>{rangeText(i.start, i.end, tz)}{i.meeting ? ` · ${PLATFORM_SHORT[i.meeting.platform]}` : ""}</span>}
                 </button>
               );
             })}
@@ -511,7 +514,7 @@ function Detail({ item, tz, onClose }: { item: Item; tz: string; onClose: () => 
       {rangeText(item.start, item.end, tz)}
     </>
   );
-  const where = item.meeting ? (item.meeting.platform === "zoom" ? "Zoom" : "Google Meet") : item.location || null;
+  const where = item.meeting ? PLATFORM_NAMES[item.meeting.platform] : item.location || null;
   const n = item.notes;
   const sitting = n && (n.status === "scheduled" || n.status === "joining" || n.status === "in_call");
   const notesPill = n ? (n.locked ? <span className="ld-pill gray">Never joins this one</span> : sitting ? <span className="ld-pill green">Avery sits in</span> : n.status === "ready" ? <span className="ld-pill green">Notes ready</span> : <span className="ld-pill gray">Avery skips</span>) : null;
@@ -556,7 +559,7 @@ function Detail({ item, tz, onClose }: { item: Item; tz: string; onClose: () => 
           </button>
         ) : (
           <a href={item.meeting.url} target="_blank" rel="noreferrer" className="ld-btn p" style={{ width: "100%" }}>
-            {item.meeting.platform === "zoom" ? "Join on Zoom" : "Join on Meet"}
+            {`Join on ${PLATFORM_SHORT[item.meeting.platform]}`}
           </a>
         ))}
         {item.precallId ? (
