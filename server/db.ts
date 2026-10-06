@@ -2134,7 +2134,7 @@ export const team = {
 // ==========================================
 
 /** Insert, read, change and remove rows of one workspace-owned table, always filtered by workspace. */
-function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports | typeof schema.pjLinks | typeof schema.pjTime | typeof schema.pjTemplates | typeof schema.pjDocs | typeof schema.pjDocComments | typeof schema.pjBoards | typeof schema.pjForms | typeof schema.pjFormAnswers | typeof schema.pjDashboards | typeof schema.pjShares | typeof schema.pjSettings>(t: T) {
+function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports | typeof schema.pjLinks | typeof schema.pjTime | typeof schema.pjTemplates | typeof schema.pjDocs | typeof schema.pjDocComments | typeof schema.pjBoards | typeof schema.pjForms | typeof schema.pjFormAnswers | typeof schema.pjDashboards | typeof schema.pjShares | typeof schema.pjSettings | typeof schema.pjViews>(t: T) {
   type Row = T["$inferSelect"];
   type Ins = T["$inferInsert"];
   const tt = t as any;
@@ -2209,6 +2209,7 @@ export const work = {
   answers: crud(schema.pjFormAnswers),
   dashboards: crud(schema.pjDashboards),
   shares: crud(schema.pjShares),
+  views: crud(schema.pjViews),
   /** A small Projects setting (weekly hours, markers); null when unset. */
   setting(orgId: number, key: string): string | null {
     const t = schema.pjSettings;

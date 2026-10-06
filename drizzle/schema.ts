@@ -2751,7 +2751,9 @@ export const pjDocs = sqliteTable(
     organizationId: integer("organizationId").notNull(),
     folderId: integer("folderId"),
     parentId: integer("parentId"),
+    listId: integer("listId"),
     title: text("title").notNull(),
+    tags: text("tags").notNull().default("[]"),
     blocks: text("blocks").notNull().default("[]"),
     taskIds: text("taskIds").notNull().default("[]"),
     editedBy: text("editedBy").notNull().default(""),
@@ -2787,7 +2789,9 @@ export const pjBoards = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
     folderId: integer("folderId"),
+    listId: integer("listId"),
     title: text("title").notNull(),
+    tags: text("tags").notNull().default("[]"),
     items: text("items").notNull().default("[]"),
     editedBy: text("editedBy").notNull().default(""),
     sort: integer("sort").notNull().default(0),
@@ -2872,6 +2876,32 @@ export const pjShares = sqliteTable(
   (t) => [index("pj_shares_list_idx").on(t.organizationId, t.listId), index("pj_shares_user_idx").on(t.userId)]
 );
 export type PjShare = typeof pjShares.$inferSelect;
+
+/**
+ * Saved views on a list or a folder: a kind (list, board, calendar, gantt,
+ * table, workload, timeline, mindmap) with its own filters, grouping, sort and
+ * columns. A row with an empty name holds the settings of the built-in tab of
+ * that kind. A view with a userId is private to that person. pinned views
+ * come first.
+ */
+export const pjViews = sqliteTable(
+  "pj_views",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    listId: integer("listId"),
+    folderId: integer("folderId"),
+    name: text("name").notNull().default(""),
+    kind: text("kind").notNull().default("list"),
+    settings: text("settings").notNull().default("{}"),
+    userId: integer("userId"),
+    pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+    sort: integer("sort").notNull().default(0),
+    createdBy: text("createdBy").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_views_org_idx").on(t.organizationId, t.listId, t.folderId)]
+);
 
 /** Small Projects settings and markers: weekly hours per person, automations already fired. */
 export const pjSettings = sqliteTable(

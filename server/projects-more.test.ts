@@ -286,4 +286,65 @@ describe("Projects, more like ClickUp", () => {
     await me.pj.setLink({ organizationId: orgId, listId: list.id, on: false });
     expect(db.work.lists.get(orgId, list.id)!.shareToken).toBeNull();
   });
+  it("saved views, columns, quick fields, the folder Overview and the Docs page", async () => {
+    const { orgId, me, folder, list, owner } = await listWith("pj-views");
+    const caroline = await makeUser("caroline@pj-views.test", "user", "Caroline Jones");
+    await db.addOrganizationMember({ organizationId: orgId, userId: caroline.id, role: "member" });
+    const her = caller(caroline);
+    const other = await me.pj.saveList({ organizationId: orgId, name: "AI Receptionist", folderId: folder.id });
+    const t1 = await me.pj.create({ organizationId: orgId, listId: list.id, name: "Landing page", dueDate: "2026-10-07", startDate: "2026-10-01", assignees: [{ type: "user", id: caroline.id, name: "Caroline Jones" }] });
+    await me.pj.update({ organizationId: orgId, id: t1.id, patch: { priority: "urgent" } });
+    const t2 = await me.pj.create({ organizationId: orgId, listId: other.id, name: "Greeting script", dueDate: "2026-12-15" });
+    await me.pj.update({ organizationId: orgId, id: t2.id, patch: { status: "complete" } });
+
+    // A new field straight from the + column menu, on the whole folder: every list in it gets the column.
+    const f = await me.pj.addField({ organizationId: orgId, listId: list.id, scope: "folder", name: "Agency", type: "dropdown", options: ["ODMHSAS", "OHCA"] });
+    expect(f.scope).toBe("folder");
+    const v = await me.pj.view({ organizationId: orgId, listId: other.id, scope: "list" });
+    expect(v.fields.map((x) => [x.name, x.scope])).toEqual([["Agency", "folder"]]);
+    await me.pj.update({ organizationId: orgId, id: t1.id, patch: { fields: { [f.id]: f.options![0].id } } });
+
+    // Columns chosen on the built-in List tab stay for everyone; a member with view access can't change them.
+    await me.pj.setBuiltinView({ organizationId: orgId, listId: list.id, kind: "list", settings: { columns: ["assignee", "due", `f:${f.id}`, "nope"] } });
+    expect((await her.pj.views({ organizationId: orgId, listId: list.id })).builtin.list.columns).toEqual(["assignee", "due", `f:${f.id}`]);
+
+    // A saved view keeps its own filters and columns; a private one is hers alone.
+    const sv = await me.pj.saveView({ organizationId: orgId, listId: list.id, name: "Caroline's week", kind: "board", settings: { who: `user:${caroline.id}:Caroline Jones`, group: "priority" }, private: false, pinned: true });
+    const mine = await her.pj.saveView({ organizationId: orgId, listId: list.id, name: "Just me", kind: "list", settings: { closed: true }, private: true, pinned: false });
+    expect((await me.pj.views({ organizationId: orgId, listId: list.id })).saved.map((x) => x.name)).toEqual(["Caroline's week"]);
+    expect((await her.pj.views({ organizationId: orgId, listId: list.id })).saved.map((x) => [x.name, x.kind, x.pinned, x.private])).toEqual([["Caroline's week", "board", true, false], ["Just me", "list", false, true]]);
+    await expect(me.pj.removeView({ organizationId: orgId, id: mine.id })).rejects.toThrow(/someone else/);
+    // With view-only access she can keep a private view but not make one for everyone, nor change the built-in columns.
+    await me.pj.share({ organizationId: orgId, listId: list.id, kind: "user", id: caroline.id, level: "view" });
+    await expect(her.pj.saveView({ organizationId: orgId, listId: list.id, name: "For all", kind: "list", settings: {}, private: false, pinned: false })).rejects.toThrow(/only you see/);
+    await expect(her.pj.setBuiltinView({ organizationId: orgId, listId: list.id, kind: "list", settings: { columns: ["assignee"] } })).rejects.toThrow(/not change its views/);
+    await me.pj.removeView({ organizationId: orgId, id: sv.id });
+    expect((await me.pj.views({ organizationId: orgId, listId: list.id })).saved).toEqual([]);
+
+    // The folder shows every list's tasks together, and its Overview adds up.
+    const fv = await me.pj.view({ organizationId: orgId, listId: null, folderId: folder.id, scope: "folder", closed: true });
+    expect(fv.folder?.name).toBe("Offers");
+    expect(fv.tasks.map((t) => t.name).sort()).toEqual(["Greeting script", "Landing page"]);
+    const doc = await me.pj.saveDoc({ organizationId: orgId, title: "Offer FAQ", listId: list.id, blocks: [{ id: "b0", type: "p", text: "Twenty five seats at the founding price." }] });
+    const ov = await me.pj.overview({ organizationId: orgId, folderId: folder.id });
+    expect(ov.totals).toMatchObject({ open: 1, overdue: 0, total: 2 });
+    expect(ov.lists.map((l) => [l.name, l.done, l.total, l.start, l.end, l.lead?.name ?? null, l.priority])).toEqual([["Founding Members", 0, 1, "2026-10-01", "2026-10-07", "Caroline Jones", "urgent"], ["AI Receptionist", 1, 1, "2026-12-15", "2026-12-15", null, null]]);
+    expect(ov.items.map((i) => [i.kind, i.name])).toEqual([["doc", "Offer FAQ"]]);
+    expect(ov.byPerson.map((p) => [p.name, p.n])).toEqual([["Caroline Jones", 1]]);
+    // A doc made on a list sits under that list in the tree.
+    const tree = await me.pj.tree({ organizationId: orgId });
+    expect(tree.folders[0].lists.find((l) => l.id === list.id)!.items.map((i) => i.name)).toEqual(["Offer FAQ"]);
+    expect(tree.folders[0].items).toEqual([]);
+
+    // The Docs page lists everything, searches inside the text, and moves and tags.
+    const all = await me.pj.allDocs({ organizationId: orgId, q: "" });
+    expect(all.docs.map((d) => [d.kind, d.name, d.where?.name, d.mine])).toEqual([["doc", "Offer FAQ", "Founding Members", true]]);
+    expect((await me.pj.allDocs({ organizationId: orgId, q: "founding price" })).docs.map((d) => d.name)).toEqual(["Offer FAQ"]);
+    expect((await me.pj.allDocs({ organizationId: orgId, q: "pricing page" })).docs).toEqual([]);
+    await me.pj.placeDoc({ organizationId: orgId, kind: "doc", id: doc.id, folderId: folder.id, listId: null, tags: ["SOP", "offers", "sop"] });
+    const moved = (await me.pj.allDocs({ organizationId: orgId, q: "" })).docs[0];
+    expect([moved.where?.kind, moved.where?.name, moved.tags]).toEqual(["folder", "Offers", ["sop", "offers"]]);
+    expect((await her.pj.allDocs({ organizationId: orgId, q: "" })).counts).toMatchObject({ all: 1, mine: 0 });
+    void owner;
+  });
 });

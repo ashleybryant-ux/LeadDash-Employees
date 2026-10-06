@@ -221,6 +221,8 @@ const actionZ = z.object({
   templateId: z.number().int().optional(),
   to: z.string().max(200).optional(),
 });
+const viewKindZ = z.enum(["list", "board", "calendar", "gantt", "table", "workload", "timeline", "mindmap"]);
+const viewSettingsZ = z.object({ group: z.enum(["status", "priority", "assignee", "none"]).optional(), who: z.string().max(160).optional(), priority: z.string().max(20).optional(), closed: z.boolean().optional(), q: z.string().max(120).optional(), columns: z.array(z.string().max(60)).max(40).optional(), sort: z.string().max(40).optional() });
 const blockZ = z.object({ id: z.string().max(40), type: z.string().max(20), text: z.string().max(8000), done: z.boolean().optional(), rows: z.array(z.array(z.string().max(500)).max(10)).max(30).optional(), url: z.string().max(600).optional(), taskId: z.number().int().optional() });
 const itemZ = z.object({ id: z.string().max(40), kind: z.string().max(10), x: z.number(), y: z.number(), w: z.number(), h: z.number(), color: z.string().max(9).optional(), text: z.string().max(2000).optional(), from: z.string().max(40).optional(), to: z.string().max(40).optional(), taskId: z.number().int().optional(), path: z.string().max(20000).optional(), z: z.number().optional() });
 const questionZ = z.object({ id: z.string().max(40), label: z.string().max(200), type: z.enum(["text", "longtext", "email", "phone", "number", "dropdown", "labels", "date", "files"]), required: z.boolean(), options: z.array(z.string().max(80)).max(40).optional(), mapTo: z.string().max(80) });
@@ -1528,9 +1530,52 @@ export const appRouter = router({
       const v = await pjViewer(ctx, input.organizationId);
       return (await import("./work/projects")).tree(input.organizationId, v, { type: "user", id: ctx.user.id, name: personName(ctx.user) });
     }),
-    view: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable(), scope: z.enum(["list", "everything", "mine"]), closed: z.boolean().default(false) })).query(async ({ ctx, input }) => {
+    view: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable(), folderId: z.number().int().nullable().optional(), scope: z.enum(["list", "everything", "mine", "folder"]), closed: z.boolean().default(false) })).query(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);
-      return (await import("./work/projects")).view(input.organizationId, v, { listId: input.listId, scope: input.scope, me: { type: "user", id: ctx.user.id, name: personName(ctx.user) }, closed: input.closed });
+      return (await import("./work/projects")).view(input.organizationId, v, { listId: input.listId, folderId: input.folderId ?? null, scope: input.scope, me: { type: "user", id: ctx.user.id, name: personName(ctx.user) }, closed: input.closed });
+    }),
+    // Quick: one custom field, onto a list or its whole folder
+    addField: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable().optional(), folderId: z.number().int().nullable().optional(), scope: z.enum(["list", "folder"]), name: z.string().max(80), type: fieldZ.shape.type, options: z.array(z.string().max(60)).max(30).optional(), setup: z.string().max(200).optional() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      const acc = await import("./work/pjAccess");
+      if (input.listId) acc.mustLevel(input.organizationId, v, input.listId, "full");
+      else await requireMember(ctx, input.organizationId, "member");
+      const { organizationId, ...rest } = input;
+      return (await import("./work/projects")).addField(organizationId, rest);
+    }),
+    // Saved views, the folder Overview and the Docs page
+    views: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable().optional(), folderId: z.number().int().nullable().optional() })).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjViews")).views(input.organizationId, v, input);
+    }),
+    setBuiltinView: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable().optional(), folderId: z.number().int().nullable().optional(), kind: viewKindZ, settings: viewSettingsZ })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjViews")).setBuiltin(input.organizationId, v, input, input.kind, input.settings);
+      return { ok: true };
+    }),
+    saveView: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), listId: z.number().int().nullable().optional(), folderId: z.number().int().nullable().optional(), name: z.string().max(60), kind: viewKindZ, settings: viewSettingsZ, private: z.boolean().default(false), pinned: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      const { organizationId, ...rest } = input;
+      return (await import("./work/pjViews")).saveView(organizationId, v, rest, personName(ctx.user));
+    }),
+    removeView: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjViews")).removeView(input.organizationId, v, input.id);
+      return { ok: true };
+    }),
+    overview: protectedProcedure.input(orgInput.extend({ folderId: z.number().int() })).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjViews")).overview(input.organizationId, v, input.folderId);
+    }),
+    allDocs: protectedProcedure.input(orgInput.extend({ q: z.string().max(120).default("") })).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjViews")).allDocs(input.organizationId, v, input.q);
+    }),
+    placeDoc: protectedProcedure.input(orgInput.extend({ kind: z.enum(["doc", "board"]), id: z.number().int(), folderId: z.number().int().nullable().optional(), listId: z.number().int().nullable().optional(), tags: z.array(z.string().max(30)).max(10).optional() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      const { organizationId, ...rest } = input;
+      (await import("./work/pjViews")).placeDoc(organizationId, v, rest);
+      return { ok: true };
     }),
     task: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);
@@ -1757,7 +1802,7 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId);
       return (await import("./work/pjDocs")).doc(input.organizationId, input.id);
     }),
-    saveDoc: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), folderId: z.number().int().nullable().optional(), parentId: z.number().int().nullable().optional(), title: z.string().max(200), blocks: z.array(blockZ).max(600).optional() })).mutation(async ({ ctx, input }) => {
+    saveDoc: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), folderId: z.number().int().nullable().optional(), listId: z.number().int().nullable().optional(), parentId: z.number().int().nullable().optional(), title: z.string().max(200), blocks: z.array(blockZ).max(600).optional() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       const { organizationId, ...rest } = input;
       return (await import("./work/pjDocs")).saveDoc(organizationId, rest as Parameters<typeof import("./work/pjDocs").saveDoc>[1], personName(ctx.user));
@@ -1799,7 +1844,7 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId);
       return (await import("./work/pjDocs")).board(input.organizationId, input.id);
     }),
-    saveBoard: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), folderId: z.number().int().nullable().optional(), title: z.string().max(200) })).mutation(async ({ ctx, input }) => {
+    saveBoard: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), folderId: z.number().int().nullable().optional(), listId: z.number().int().nullable().optional(), title: z.string().max(200) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       const { organizationId, ...rest } = input;
       return (await import("./work/pjDocs")).saveBoard(organizationId, rest, personName(ctx.user));

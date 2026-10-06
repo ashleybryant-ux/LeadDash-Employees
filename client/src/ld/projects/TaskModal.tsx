@@ -4,6 +4,7 @@ import { ErrorLine } from "../ui";
 import { AddFiles, fmtAt, fmtYmd, FileTiles, Menu, OwnerAvatar } from "../goals/shared";
 import { Flag, PRIORITY_TEXT, StatusTag } from "./bits";
 import { FieldInput, FieldValue, fieldText } from "./fields";
+import { AssigneeCell, Cell, DateCell, FieldCell, PeoplePick, PriorityCell, StatusCell, type QuickCtx } from "./Quick";
 import type { Outputs } from "../types";
 
 /**
@@ -107,6 +108,8 @@ function ReadTask({ orgId, d, onEdit, onOpen, onEditFields, onSaveTemplate }: { 
   const person = (a: Assignee) => d.people.find((p) => p.type === a.type && p.id === a.id) ?? { type: "name" as const, id: 0, name: a.name };
   const meW = me.data ? { type: "user" as const, id: me.data.userId, name: me.data.name } : null;
   const watching = !!meW && t.watchers.some((w) => w.type === "user" && w.id === meW.id);
+  // Click a value to change it in place; Edit still opens the whole form.
+  const q: QuickCtx = { orgId, people: d.people, statuses: d.list.statuses, canEdit, refresh, today: d.today, tasks: d.pickable };
   return (
     <>
       <div className="ld-between" style={{ gap: 12 }}>
@@ -142,7 +145,7 @@ function ReadTask({ orgId, d, onEdit, onOpen, onEditFields, onSaveTemplate }: { 
         </span>
       </div>
       <div className="ld-row" style={{ flexWrap: "wrap" }}>
-        <StatusTag name={t.status} color={status?.color ?? "#87909e"} />
+        <StatusCell q={q} t={t} color={status?.color ?? "#87909e"} />
         {t.priority && <Flag p={t.priority} />}
         {t.goal && <span className="gp-chip">◎ {t.goal}</span>}
         {t.repeat && <span className="gp-xpill blue">↻ {repeatText(t.repeat)}</span>}
@@ -151,26 +154,26 @@ function ReadTask({ orgId, d, onEdit, onOpen, onEditFields, onSaveTemplate }: { 
       <h2 className="gp-tt">{t.name}</h2>
       <div className="gp-tf2">
         <span>Assignees</span>
-        <span className="ld-row" style={{ flexWrap: "wrap" }}>
-          {t.assignees.length ? t.assignees.map((a) => (
-            <span key={`${a.type}:${a.id}:${a.name}`} className="ld-row">
-              <OwnerAvatar o={person(a)} size={24} />
-              {a.name}
-            </span>
-          )) : <span className="ld-muted">Unassigned</span>}
-        </span>
+        <span><AssigneeCell q={q} t={t} max={6} label /></span>
         <span>Due date</span>
-        <span>{t.dueDate ? fmtYmd(t.dueDate) : <span className="ld-muted">None</span>}</span>
+        <span><DateCell q={q} t={t} which="dueDate" /></span>
         <span>Start date</span>
-        <span>{t.startDate ? fmtYmd(t.startDate) : <span className="ld-muted">None</span>}</span>
+        <span><DateCell q={q} t={t} which="startDate" /></span>
         <span>Repeats</span>
         <span>{t.repeat ? repeatLong(t.repeat) : <span className="ld-muted">No</span>}</span>
         <span>Watchers</span>
-        <span className="ld-row">{t.watchers.length ? t.watchers.map((w) => <OwnerAvatar key={`${w.type}:${w.id}`} o={person(w)} size={24} />) : <span className="ld-muted">None</span>}</span>
+        <span>
+          <Cell
+            canEdit={canComment}
+            show={<span className="ld-row">{t.watchers.length ? t.watchers.map((w) => <OwnerAvatar key={`${w.type}:${w.id}`} o={person(w)} size={24} />) : <span className="ld-muted">None</span>}</span>}
+            ghost={!t.watchers.length ? "⊕ Add" : undefined}
+            pick={(close) => <PeoplePick q={q} title="Watchers" value={t.watchers} onChange={(w) => up.mutate({ organizationId: orgId, id: t.id, patch: { watchers: w } })} close={close} />}
+          />
+        </span>
         <span>Time estimate</span>
         <span>{t.timeEstimate ? `${Math.round((t.timeEstimate / 60) * 10) / 10} hours` : <span className="ld-muted">None</span>}</span>
         <span>Priority</span>
-        <span>{t.priority ? PRIORITY_TEXT[t.priority] : <span className="ld-muted">None</span>}</span>
+        <span><PriorityCell q={q} t={t} /></span>
         <span>Tags</span>
         <span>{t.tags.length ? t.tags.map((x) => <span key={x} className="gp-chip" style={{ marginRight: 4 }}>{x}</span>) : <span className="ld-muted">None</span>}</span>
       </div>
@@ -184,7 +187,7 @@ function ReadTask({ orgId, d, onEdit, onOpen, onEditFields, onSaveTemplate }: { 
             {d.list.fields.map((f) => (
               <React.Fragment key={f.id}>
                 <span>{f.name}</span>
-                <span>{fieldText(f, d.list.fields, t, d.pickable) ? <FieldValue f={f} fields={d.list.fields} t={t} people={d.people} tasks={d.pickable} /> : <span className="ld-muted">None</span>}</span>
+                <span>{canEdit && f.type !== "formula" && f.type !== "progress" ? <FieldCell q={q} t={t} f={f} fields={d.list.fields} /> : fieldText(f, d.list.fields, t, d.pickable) ? <FieldValue f={f} fields={d.list.fields} t={t} people={d.people} tasks={d.pickable} /> : <span className="ld-muted">None</span>}</span>
               </React.Fragment>
             ))}
           </div>

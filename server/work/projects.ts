@@ -101,16 +101,21 @@ export function tree(orgId: number, v: Viewer, me?: Assignee) {
   const lists = vis.map((x) => x.list).sort((a, b) => a.sort - b.sort || a.id - b.id);
   const tasks = db.work.tasks.all(orgId).filter((t) => visIds.has(t.listId));
   const openIn = (l: PjList) => tasks.filter((t) => t.listId === l.id && !t.parentId && !t.closedAt).length;
-  const row = (l: PjList) => ({ id: l.id, name: l.name, open: openIn(l), private: l.private, level: vis.find((x) => x.list.id === l.id)!.level });
   const mine = me ? tasks.filter((t) => !t.closedAt && parse<Assignee[]>(t.assignees, []).some((a) => a.type === me.type && a.id === me.id)).length : 0;
   const docs = member ? db.work.docs.all(orgId).filter((d) => !d.parentId) : [];
   const boards = member ? db.work.boards.all(orgId) : [];
   const forms = member ? db.work.forms.all(orgId) : [];
+  // Docs and whiteboards made on a list sit under that list; the rest sit under their folder.
+  const onList = (listId: number) => [
+    ...docs.filter((d) => d.listId === listId).map((d) => ({ kind: "doc" as const, id: d.id, name: d.title, sort: d.sort })),
+    ...boards.filter((b) => b.listId === listId).map((b) => ({ kind: "board" as const, id: b.id, name: b.title, sort: b.sort })),
+  ];
   const extras = (folderId: number | null) => [
-    ...docs.filter((d) => d.folderId === folderId).map((d) => ({ kind: "doc" as const, id: d.id, name: d.title, sort: d.sort })),
-    ...boards.filter((b) => b.folderId === folderId).map((b) => ({ kind: "board" as const, id: b.id, name: b.title, sort: b.sort })),
+    ...docs.filter((d) => d.folderId === folderId && !d.listId).map((d) => ({ kind: "doc" as const, id: d.id, name: d.title, sort: d.sort })),
+    ...boards.filter((b) => b.folderId === folderId && !b.listId).map((b) => ({ kind: "board" as const, id: b.id, name: b.title, sort: b.sort })),
     ...forms.filter((f) => f.folderId === folderId).map((f) => ({ kind: "form" as const, id: f.id, name: f.title, sort: f.sort })),
   ];
+  const row = (l: PjList) => ({ id: l.id, name: l.name, open: openIn(l), private: l.private, level: vis.find((x) => x.list.id === l.id)!.level, items: member ? onList(l.id) : [] });
   const inFolder = new Set(folders.map((f) => f.id));
   return {
     folders: folders
@@ -168,6 +173,27 @@ export function saveList(orgId: number, input: { id?: number; name: string; fold
   }
   return db.work.lists.insert({ organizationId: orgId, statuses: JSON.stringify(input.statuses ? statuses : DEFAULT_STATUSES), fields: JSON.stringify(own), sort: db.work.lists.all(orgId).length, ...patch });
 }
+/** Adds one custom field to a list, or to its folder so every list in the folder gets it. */
+export function addField(orgId: number, input: { listId?: number | null; folderId?: number | null; scope: "list" | "folder"; name: string; type: FieldType; options?: string[]; setup?: string }) {
+  const name = input.name.trim().slice(0, 80);
+  if (!name) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the field." });
+  const id = `f${Date.now().toString(36)}${Math.floor(Math.random() * 1000).toString(36)}`;
+  const options = input.type === "dropdown" || input.type === "labels" ? (input.options ?? []).map((o, i) => ({ id: `o${i}${Date.now().toString(36)}`, name: o.trim().slice(0, 60), color: ["#1b6b4a", "#2563eb", "#b45309", "#7c3aed", "#c2253c", "#0f766e", "#87909e"][i % 7] })).filter((o) => o.name) : undefined;
+  const def: FieldDef = { id, name, type: input.type, ...(options ? { options } : {}), ...(input.setup ? { setup: input.setup.slice(0, 200) } : {}) };
+  const list = input.listId ? mustList(orgId, input.listId) : null;
+  const folderId = input.scope === "folder" ? (input.folderId ?? list?.folderId ?? null) : null;
+  if (input.scope === "folder") {
+    if (!folderId) throw new TRPCError({ code: "BAD_REQUEST", message: "This list isn't in a folder." });
+    const f = db.work.folders.get(orgId, folderId);
+    if (!f) throw new TRPCError({ code: "NOT_FOUND", message: "That folder isn't in this workspace." });
+    db.work.folders.update(orgId, f.id, { fields: JSON.stringify([...parse<FieldDef[]>(f.fields, []), def]) });
+  } else {
+    if (!list) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick a list." });
+    db.work.lists.update(orgId, list.id, { fields: JSON.stringify([...parse<FieldDef[]>(list.fields, []), def]) });
+  }
+  return { ...def, scope: input.scope };
+}
+
 export function removeList(orgId: number, id: number) {
   mustList(orgId, id);
   for (const t of db.work.tasks.where(orgId, "listId", id)) removeTaskRows(orgId, t.id);
@@ -242,8 +268,14 @@ function counts(orgId: number) {
 }
 
 /** A list's tasks (or Everything, or My work) with what every view needs. */
-export async function view(orgId: number, v: Viewer, input: { listId: number | null; scope: "list" | "everything" | "mine"; me: Assignee; closed: boolean }) {
-  const vis = visibleLists(orgId, v);
+export async function view(orgId: number, v: Viewer, input: { listId: number | null; folderId?: number | null; scope: "list" | "everything" | "mine" | "folder"; me: Assignee; closed: boolean }) {
+  let vis = visibleLists(orgId, v);
+  // A folder shows every list in it together.
+  const folderRow = input.scope === "folder" ? db.work.folders.get(orgId, input.folderId ?? 0) : null;
+  if (input.scope === "folder") {
+    if (!folderRow) throw new TRPCError({ code: "NOT_FOUND", message: "That folder isn't in this workspace." });
+    vis = vis.filter((x) => x.list.folderId === folderRow.id);
+  }
   const visIds = new Set(vis.map((x) => x.list.id));
   const people = v.kind === "guest" ? [] : await owners(orgId);
   const all = db.work.tasks.all(orgId).filter((t) => visIds.has(t.listId));
@@ -262,8 +294,12 @@ export async function view(orgId: number, v: Viewer, input: { listId: number | n
   const folder = list?.folderId ? db.work.folders.get(orgId, list.folderId) : null;
   const statuses = list ? statusesOf(list) : mergedStatuses(lists);
   const pickIds = new Set(pick.map((t) => t.id));
+  // Fields shown as columns: the list's own (with the folder's), or across a folder its shared ones, or across everything the fields every list shares.
+  const fields = list ? fieldsOf(orgId, list) : folderRow ? parse<FieldDef[]>(folderRow.fields, []).map((f) => ({ ...f, scope: "folder" as const })) : [];
   return {
-    list: list ? { id: list.id, name: list.name, description: list.description, folderId: list.folderId, folderName: folder?.name ?? null, statuses, fields: fieldsOf(orgId, list), private: list.private, level: vis.find((x) => x.list.id === list!.id)!.level } : null,
+    list: list ? { id: list.id, name: list.name, description: list.description, folderId: list.folderId, folderName: folder?.name ?? null, statuses, fields, private: list.private, level: vis.find((x) => x.list.id === list!.id)!.level } : null,
+    folder: folderRow ? { id: folderRow.id, name: folderRow.name, color: folderRow.color, fields, level: (vis.some((x) => x.level === "full") || (v.kind === "member" && v.role !== "reviewer") ? "full" : vis.some((x) => x.level === "edit") ? "edit" : "view") as Level } : null,
+    fields,
     statuses,
     tasks: pick.sort((a, b) => a.sort - b.sort || a.id - b.id).map((t) => taskRow(t, all, c, goals, lists.find((l) => l.id === t.listId)?.name ?? "")),
     /** Subtasks of the shown tasks, for the Mind map and Timeline. */
@@ -321,6 +357,7 @@ export async function detail(orgId: number, v: Viewer, id: number) {
       entries: entries.map((e) => ({ id: e.id, whoType: e.whoType, whoId: e.whoId, whoName: e.whoName, day: e.day, minutes: e.minutes, running: e.minutes === null, startedAt: e.startedAt, note: e.note, billable: e.billable })),
       total: c.minutes.get(id) ?? 0,
     },
+    today: todayYmd(await zoneOf(orgId)),
     /** Tasks this one could wait on or link to (same workspace, not itself). */
     pickable: all.filter((x) => x.id !== id && !x.parentId).slice(0, 400).map((x) => ({ id: x.id, name: x.name, listName: lists.find((l) => l.id === x.listId)?.name ?? "" })),
     people: v.kind === "guest" ? [] : await owners(orgId),

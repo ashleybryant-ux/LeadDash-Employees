@@ -58,16 +58,18 @@ export function doc(orgId: number, id: number) {
   };
 }
 
-export function saveDoc(orgId: number, input: { id?: number; folderId?: number | null; parentId?: number | null; title: string; blocks?: Block[] }, by: string) {
+export function saveDoc(orgId: number, input: { id?: number; folderId?: number | null; listId?: number | null; parentId?: number | null; title: string; blocks?: Block[] }, by: string) {
   const title = input.title.trim().slice(0, 200);
   if (!title) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the doc." });
   if (input.parentId) mustDoc(orgId, input.parentId);
   if (input.id) {
     mustDoc(orgId, input.id);
-    return db.work.docs.update(orgId, input.id, { title, ...(input.blocks ? { blocks: JSON.stringify(cleanBlocks(input.blocks)) } : {}), ...(input.folderId !== undefined ? { folderId: input.folderId } : {}), editedBy: by })!;
+    return db.work.docs.update(orgId, input.id, { title, ...(input.blocks ? { blocks: JSON.stringify(cleanBlocks(input.blocks)) } : {}), ...(input.folderId !== undefined ? { folderId: input.folderId } : {}), ...(input.listId !== undefined ? { listId: input.listId } : {}), editedBy: by })!;
   }
   const parent = input.parentId ? db.work.docs.get(orgId, input.parentId) : null;
-  return db.work.docs.insert({ organizationId: orgId, folderId: parent ? parent.folderId : input.folderId ?? null, parentId: input.parentId ?? null, title, blocks: JSON.stringify(cleanBlocks(input.blocks ?? [{ id: "b0", type: "p", text: "" }])), editedBy: by, sort: db.work.docs.all(orgId).length });
+  // A doc made on a list lives in that list's folder too.
+  const onList = input.listId ? db.work.lists.get(orgId, input.listId) : null;
+  return db.work.docs.insert({ organizationId: orgId, folderId: parent ? parent.folderId : onList ? onList.folderId : input.folderId ?? null, listId: parent ? parent.listId : input.listId ?? null, parentId: input.parentId ?? null, title, blocks: JSON.stringify(cleanBlocks(input.blocks ?? [{ id: "b0", type: "p", text: "" }])), editedBy: by, sort: db.work.docs.all(orgId).length });
 }
 
 /** Ticking a checklist line works from the read view. */
@@ -156,14 +158,15 @@ export function board(orgId: number, id: number) {
   };
 }
 
-export function saveBoard(orgId: number, input: { id?: number; folderId?: number | null; title: string }, by: string) {
+export function saveBoard(orgId: number, input: { id?: number; folderId?: number | null; listId?: number | null; title: string }, by: string) {
   const title = input.title.trim().slice(0, 200);
   if (!title) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the whiteboard." });
   if (input.id) {
     mustBoard(orgId, input.id);
-    return db.work.boards.update(orgId, input.id, { title, ...(input.folderId !== undefined ? { folderId: input.folderId } : {}), editedBy: by })!;
+    return db.work.boards.update(orgId, input.id, { title, ...(input.folderId !== undefined ? { folderId: input.folderId } : {}), ...(input.listId !== undefined ? { listId: input.listId } : {}), editedBy: by })!;
   }
-  return db.work.boards.insert({ organizationId: orgId, folderId: input.folderId ?? null, title, items: "[]", editedBy: by, sort: db.work.boards.all(orgId).length });
+  const onList = input.listId ? db.work.lists.get(orgId, input.listId) : null;
+  return db.work.boards.insert({ organizationId: orgId, folderId: onList ? onList.folderId : input.folderId ?? null, listId: input.listId ?? null, title, items: "[]", editedBy: by, sort: db.work.boards.all(orgId).length });
 }
 export function saveItems(orgId: number, id: number, items: Item[], by: string) {
   mustBoard(orgId, id);

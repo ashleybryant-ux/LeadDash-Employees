@@ -18,14 +18,20 @@ type Kind = "folder" | "list" | "doc" | "board" | "form";
 const ICON: Record<string, string> = { doc: "📄", board: "▢", form: "☰" };
 const NOUN: Record<Kind, string> = { folder: "Folder", list: "List", doc: "Doc", board: "Whiteboard", form: "Form" };
 
-export type Ask = { kind: "folder" | "list"; n: number } | null;
+/** The page can ask the tree to open a form: a new folder, a new list (in a folder), or editing a folder. */
+export type Ask = { kind: "folder" | "list"; n: number; folderId?: number | null; id?: number } | null;
 
 export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, drawer, onCloseDrawer }: { orgId: number; tree: Tree | undefined; where: Where; onPick: (w: Where) => void; refresh: () => Promise<unknown>; onNewTask: () => void; ask: Ask; drawer: boolean; onCloseDrawer: () => void }) {
   const [form, setForm] = React.useState<{ kind: Kind; id?: number; folderId?: number | null; name: string; color: string } | null>(null);
   // The page can ask for a new folder or list (from the empty state).
   React.useEffect(() => {
     if (!ask) return;
-    setForm(ask.kind === "folder" ? { kind: "folder", name: "", color: COLORS[(tree?.folders.length ?? 0) % COLORS.length] } : { kind: "list", folderId: null, name: "", color: "" });
+    if (ask.kind === "folder" && ask.id) {
+      const f = tree?.folders.find((x) => x.id === ask.id);
+      if (f) setForm({ kind: "folder", id: f.id, name: f.name, color: f.color });
+      return;
+    }
+    setForm(ask.kind === "folder" ? { kind: "folder", name: "", color: COLORS[(tree?.folders.length ?? 0) % COLORS.length] } : { kind: "list", folderId: ask.folderId ?? null, name: "", color: "" });
   }, [ask]); // eslint-disable-line react-hooks/exhaustive-deps
   const [shut, setShut] = React.useState<Set<number>>(new Set());
   const guest = !!tree?.guest;
@@ -40,7 +46,7 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, draw
   const saveDoc = trpc.pj.saveDoc.useMutation({ onSuccess: async (d) => { await done(); onPick({ scope: "doc", id: d.id }); } });
   const saveBoard = trpc.pj.saveBoard.useMutation({ onSuccess: async (b) => { await done(); onPick({ scope: "board", id: b.id }); } });
   const saveForm = trpc.pj.saveForm.useMutation({ onSuccess: async (f) => { await done(); onPick({ scope: "form", id: f.id }); } });
-  const on = (w: Where) => JSON.stringify(w) === JSON.stringify(where) || (w.scope === "list" && where.scope === "list" && w.listId === where.listId) || (w.scope === "dash" && where.scope === "dash");
+  const on = (w: Where) => JSON.stringify(w) === JSON.stringify(where) || (w.scope === "list" && where.scope === "list" && w.listId === where.listId) || (w.scope === "dash" && where.scope === "dash") || (w.scope === "folder" && where.scope === "folder" && w.folderId === where.folderId);
   const submit = () => {
     if (!form || !form.name.trim()) return;
     const folderId = form.folderId ?? null;
@@ -67,11 +73,12 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, draw
       <ErrorLine error={saveFolder.error || saveList.error || saveDoc.error || saveBoard.error || saveForm.error} />
     </div>
   );
-  const listRow = (l: { id: number; name: string; open: number; private: boolean; folderId?: number | null }, folderId: number | null) =>
+  const listRow = (l: { id: number; name: string; open: number; private: boolean; folderId?: number | null; items?: { kind: "doc" | "board"; id: number; name: string }[] }, folderId: number | null) =>
     form?.kind === "list" && form.id === l.id ? (
       <div key={`l${l.id}`}>{Form}</div>
     ) : (
-      <div key={`l${l.id}`} className={`gp-tlr ${on({ scope: "list", listId: l.id }) ? "on" : ""}`}>
+      <div key={`l${l.id}`}>
+      <div className={`gp-tlr ${on({ scope: "list", listId: l.id }) ? "on" : ""}`}>
         <button type="button" className={`gp-tl ${on({ scope: "list", listId: l.id }) ? "on" : ""}`} aria-current={on({ scope: "list", listId: l.id }) ? "page" : undefined} onClick={() => pickAnd({ scope: "list", listId: l.id })}>
           <span className="gp-ell">{l.private ? "🔒 " : ""}{l.name}</span>
           {l.open > 0 && <span className="n">{l.open}</span>}
@@ -87,11 +94,13 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, draw
           </Menu>
         )}
       </div>
+      {(l.items ?? []).map((i) => itemRow(i, true))}
+      </div>
     );
-  const itemRow = (i: { kind: "doc" | "board" | "form"; id: number; name: string }) => {
+  const itemRow = (i: { kind: "doc" | "board" | "form"; id: number; name: string }, under = false) => {
     const w = { scope: i.kind, id: i.id } as Where;
     return (
-      <button key={`${i.kind}${i.id}`} type="button" className={`gp-tl ${on(w) ? "on" : ""}`} aria-current={on(w) ? "page" : undefined} onClick={() => pickAnd(w)}>
+      <button key={`${i.kind}${i.id}`} type="button" className={`gp-tl ${on(w) ? "on" : ""}`} style={under ? { paddingLeft: 46 } : undefined} aria-current={on(w) ? "page" : undefined} onClick={() => pickAnd(w)}>
         <span className="gp-ell">
           <span aria-hidden="true">{ICON[i.kind]} </span>
           {i.name}
@@ -132,6 +141,9 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, draw
             <button type="button" className={`gp-tl top ${where.scope === "everything" ? "on" : ""}`} onClick={() => pickAnd({ scope: "everything" })}>
               <span>⌂ Everything</span>
             </button>
+            <button type="button" className={`gp-tl top ${where.scope === "docs" ? "on" : ""}`} onClick={() => pickAnd({ scope: "docs" })}>
+              <span>📄 Docs</span>
+            </button>
             <button type="button" className={`gp-tl top ${where.scope === "dash" ? "on" : ""}`} onClick={() => pickAnd({ scope: "dash" })}>
               <span>▥ Dashboards</span>
             </button>
@@ -153,9 +165,9 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, draw
             {form?.kind === "folder" && form.id === f.id ? (
               Form
             ) : (
-              <div className="gp-tf">
-                <button type="button" className="gp-tf-name" aria-expanded={!shut.has(f.id)} onClick={() => { const s = new Set(shut); s.has(f.id) ? s.delete(f.id) : s.add(f.id); setShut(s); }}>
-                  <span className="gp-car" aria-hidden="true">{shut.has(f.id) ? "▸" : "▾"}</span>
+              <div className={`gp-tf ${on({ scope: "folder", folderId: f.id }) ? "on" : ""}`}>
+                <button type="button" className="gp-car" aria-label={shut.has(f.id) ? `Show ${f.name}` : `Hide ${f.name}`} aria-expanded={!shut.has(f.id)} onClick={() => { const s = new Set(shut); s.has(f.id) ? s.delete(f.id) : s.add(f.id); setShut(s); }}>{shut.has(f.id) ? "▸" : "▾"}</button>
+                <button type="button" className="gp-tf-name" aria-current={on({ scope: "folder", folderId: f.id }) ? "page" : undefined} onClick={() => (guest ? undefined : pickAnd({ scope: "folder", folderId: f.id, tab: "overview" }))}>
                   <span className="gp-fi" style={{ background: f.color }} />
                   <span className="gp-ell">{f.name}</span>
                 </button>
@@ -179,7 +191,7 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, draw
             {!shut.has(f.id) && (
               <>
                 {f.lists.map((l) => listRow(l, f.id))}
-                {f.items.map(itemRow)}
+                {f.items.map((i) => itemRow(i))}
                 {!guest && !f.lists.length && !f.items.length && !(form && form.folderId === f.id) && (
                   <button type="button" className="gp-tl add" style={{ paddingLeft: 30 }} onClick={() => setForm({ kind: "list", folderId: f.id, name: "", color: "" })}>+ New list</button>
                 )}
@@ -189,7 +201,7 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, draw
         ))}
         {((tree?.loose.length ?? 0) > 0 || (tree?.looseItems.length ?? 0) > 0) && <div className="ph2" style={{ marginTop: 8 }}><span>{guest ? "Lists" : "Not in a folder"}</span></div>}
         {tree?.loose.map((l) => listRow(l, null))}
-        {tree?.looseItems.map(itemRow)}
+        {tree?.looseItems.map((i) => itemRow(i))}
         {form && form.kind !== "folder" && form.folderId === null && !form.id && Form}
         {!guest && (
           <button type="button" className={`gp-tl add ${where.scope === "import" ? "on" : ""}`} style={{ marginTop: 10 }} onClick={() => pickAnd({ scope: "import" })}>⇩ Import from ClickUp</button>
