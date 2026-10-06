@@ -411,19 +411,18 @@ export async function say(orgId: number, id: number, who: string, text: string):
   const org = await db.getOrganizationById(orgId);
   const now = new Date().toLocaleString("en-US", { timeZone: org?.timezone || "America/Chicago", weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 
-  let out: { replies: { kind: string; say: string }[] };
+  let out: { replies: { kind: string; say: string; do: string }[] };
   try {
-    out = await generateJson<{ replies: { kind: string; say: string }[] }>({
+    out = await generateJson<{ replies: { kind: string; say: string; do: string }[] }>({
       system: `You are the voices of ${brain.org?.name ?? "the company"}'s AI employees in a live team huddle, spoken out loud. Right now it is ${now}.
 Who speaks after the latest line:
-- An employee answers when they are named, when the question is clearly about their work, or when the speaker asks the whole team. Otherwise nobody answers (replies is []): people talking to each other, thinking out loud or saying thanks need no answer.
-- At most 2 employees answer, the most relevant first. Never two employees saying the same thing.
-- If an employee just spoke and the person is answering them, that employee can follow up.
+- An employee answers only when they are named, when a question is put to them or to the whole team, or when the person is answering something that employee just said. Otherwise nobody answers (replies is []): people talking to each other, thinking out loud, half-finished sentences, "okay", "thanks", "let me see" and the like need no answer. When in doubt, stay quiet; a person can always say a name.
+- One employee answers unless the whole team was asked; at most 2. Never two employees saying the same thing.
 How they speak:
 - 1 to 3 short spoken sentences each, like a colleague in a meeting. No lists, no headings, no markdown, no emojis, no em dashes.
 - Use only each employee's facts below. Say dates the way people say them ("Friday, November 6"). If they don't know, they say so and offer to check after the huddle.
 - Never say a client's name or anything about a client's health.
-- When asked to do something, they say they'll do it after the huddle (Simone's notes turn it into a task).
+- When asked to do something, the employee starts it now, during the huddle: put the request, as a complete instruction they can act on alone, in "do" (for example "Write the November 10 webinar follow-up email to all registrants"). In "say" they confirm in a few words that they are on it and will post the result in their chat. "do" is "" when nothing was asked of them.
 
 ${BASE_RULES}
 
@@ -431,7 +430,7 @@ The employees in this huddle and what each one knows:
 ${facts.join("\n\n")}`,
       prompt: `Transcript so far (latest last):\n${lines.slice(-30).map((l) => `${l.who}: ${l.text}`).join("\n")}`,
       schemaName: "huddle_turn",
-      schema: obj({ replies: { type: "array", items: obj({ kind: str, say: str }) } }),
+      schema: obj({ replies: { type: "array", items: obj({ kind: str, say: str, do: str }) } }),
       maxTokens: 700,
     });
   } catch (err) {
@@ -440,10 +439,12 @@ ${facts.join("\n\n")}`,
   }
 
   const picked = (out.replies ?? [])
-    .map((r) => ({ emp: emps.find((e) => e.kind === r.kind || e.name.toLowerCase() === r.kind.toLowerCase()), say: (r.say ?? "").replace(/\s*[—–]\s*/g, ", ").trim() }))
-    .filter((r): r is { emp: AIEmployee; say: string } => !!r.emp && !!r.say)
+    .map((r) => ({ emp: emps.find((e) => e.kind === r.kind || e.name.toLowerCase() === r.kind.toLowerCase()), say: (r.say ?? "").replace(/\s*[—–]\s*/g, ", ").trim(), do: (r.do ?? "").trim() }))
+    .filter((r): r is { emp: AIEmployee; say: string; do: string } => !!r.emp && !!r.say)
     .slice(0, 2);
   if (!picked.length) return { huddle: h, replies: [] };
+  // Work asked for in the huddle starts now, in that employee's own chat, not after the huddle ends.
+  for (const r of picked) if (r.do) startWork(orgId, r.emp, who, r.do);
 
   const clips = await Promise.all(picked.map((r) => speak(r.emp.kind, r.say)));
   const fresh = db.getHuddle(id, orgId)!;
@@ -457,6 +458,38 @@ ${facts.join("\n\n")}`,
   return { huddle: h, replies };
 }
 
+const working = new Set<Promise<unknown>>();
+/** Tests wait on work started from a huddle. */
+export async function settled() {
+  await Promise.all(Array.from(working));
+}
+
+/** The request goes through the employee's chat as if the person had typed it there, so the action runs and the result lands in that chat. */
+function startWork(orgId: number, emp: AIEmployee, who: string, ask: string) {
+  const p = (async () => {
+    const { sendChatMessage } = await import("./chat");
+    await sendChatMessage({ organizationId: orgId, employeeId: emp.id, text: ask, authorName: `${who} (in the huddle)`, userId: null });
+  })().catch((err) => console.warn(`[huddle] ${emp.name} could not start work:`, err instanceof Error ? err.message : err));
+  working.add(p);
+  void p.finally(() => working.delete(p));
+}
+
+// ==========================================
+// Someone is talking: the employees stop
+// ==========================================
+
+/** When a person last spoke, by huddle. The bot page stops playing while a person is talking. */
+const talking = new Map<number, number>();
+const HUSH_MS = 2500;
+
+export function personTalking(huddleId: number) {
+  talking.set(huddleId, Date.now());
+}
+
+export function hushed(huddleId: number) {
+  return Date.now() - (talking.get(huddleId) ?? 0) < HUSH_MS;
+}
+
 // ==========================================
 // The meeting bot
 // ==========================================
@@ -466,24 +499,30 @@ export async function botHeard(token: string, payload: unknown) {
   const h = db.huddleByToken(token);
   if (!h || h.status !== "live") return { ok: false };
   const p = payload as { event?: string; data?: { data?: { words?: { text?: string }[]; participant?: { name?: string | null } } } };
-  if (p?.event && p.event !== "transcript.data") return { ok: true };
   const d = p?.data?.data;
-  const text = (d?.words ?? []).map((w) => w.text ?? "").join(" ").replace(/\s+/g, " ").trim();
   const name = (d?.participant?.name ?? "").trim() || "Someone";
+  // A person has started talking (a partial line): the employees go quiet at once.
+  if (p?.event === "transcript.partial_data") {
+    if (name !== BOT_NAME && (d?.words ?? []).length) personTalking(h.id);
+    return { ok: true };
+  }
+  if (p?.event && p.event !== "transcript.data") return { ok: true };
+  const text = (d?.words ?? []).map((w) => w.text ?? "").join(" ").replace(/\s+/g, " ").trim();
   if (!text || name === BOT_NAME) return { ok: true };
+  personTalking(h.id);
   await say(h.organizationId, h.id, name, text).catch((err) => console.warn("[huddle] bot turn failed:", err instanceof Error ? err.message : err));
   return { ok: true };
 }
 
-/** What the bot's page plays next: employee lines after the given index, with their audio. */
+/** What the bot's page plays next: employee lines after the given index, with their audio; hush while a person is talking. */
 export function botNext(token: string, after: number) {
   const h = db.huddleByToken(token);
-  if (!h) return { live: false, lines: [] as { index: number; kind: string; name: string; text: string; audioId: string | null }[] };
+  if (!h) return { live: false, hush: false, lines: [] as { index: number; kind: string; name: string; text: string; audioId: string | null }[] };
   const lines = linesOf(h)
     .map((l, index) => ({ ...l, index }))
     .filter((l) => l.index > after && l.kind)
     .map((l) => ({ index: l.index, kind: l.kind!, name: l.who, text: l.text, audioId: clipFor(h.id, l.index) }));
-  return { live: h.status === "live", lines };
+  return { live: h.status === "live", hush: hushed(h.id), lines };
 }
 
 // Lines spoken by an employee keep a pointer to their clip so the bot page can play them.

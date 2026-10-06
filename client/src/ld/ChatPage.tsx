@@ -36,6 +36,7 @@ import type { Outputs } from "./types";
 import { SpokenTag, TalkButton, VoiceBar, useOneOnOne } from "./chat/OneOnOne";
 import { AvatarVideoCard } from "./chat/Avatar";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
+import { Composer, type Mentionable } from "./team/Composer";
 import { DeckCard, DocCard } from "./chat/Talk";
 import AdsWork from "./work/Ads";
 import Billing from "./work/Billing";
@@ -152,6 +153,13 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   const [pending, setPending] = React.useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = React.useState<{ id: number; name: string; size: number; kind: "image" | "document"; url: string }[]>([]);
   const files = useAttachments(currentOrgId, emp.id);
+  // @mentions: the people on the team and the other AI employees. A tagged employee gets the message in their own chat; a tagged person gets a notice.
+  const members = trpc.members.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, staleTime: 60_000 });
+  const { list: everyone } = useEmployees();
+  const who: Mentionable = {
+    people: (members.data ?? []).filter((m) => m.role !== "reviewer").map((m) => ({ userId: m.userId, name: m.name || m.email, avatarUrl: m.avatarUrl })),
+    employees: everyone.filter((e) => e.id !== emp.id).map((e) => ({ id: e.id, name: e.name, roleTitle: e.roleTitle, kind: e.kind, avatar: e.avatar ?? null })),
+  };
   const send = trpc.chat.send.useMutation({
     onSuccess: async (r, v) => {
       setPending(null);
@@ -375,44 +383,27 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             </button>
           ))}
         </div>}
-        <form
-          className="ld-card"
-          style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 10 }}
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit(text);
-          }}
-          onDragOver={(e) => e.preventDefault()}
+        <div
           onDrop={(e) => {
             e.preventDefault();
             files.onDrop(e.dataTransfer.files);
           }}
         >
-          {files.chips}
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
-          {files.button}
-          <label htmlFor="chat-input" className="ld-sr">Message {emp.name}</label>
-          <textarea
-            id="chat-input"
-            rows={2}
+          <Composer
             value={text}
+            onChange={setText}
+            onSend={() => submit(text)}
             placeholder={`Message ${emp.name}`}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit(text);
-              }
-            }}
-            style={{ flex: 1, border: 0, outline: "none", resize: "none", font: "inherit", fontSize: 15, background: "transparent", color: "#14221c" }}
+            who={who}
+            busy={send.isPending || files.uploading || (!text.trim() && !files.ready.length)}
+            attach={files.button}
+            chips={files.chips}
+            note={files.note}
+            extra={<TalkButton o={talk} name={emp.name} />}
+            employeeNote="AI employee, gets this in their own chat"
+            compact
           />
-          <TalkButton o={talk} name={emp.name} />
-          <button type="submit" className="ld-btn p sm" disabled={send.isPending || files.uploading || (!text.trim() && !files.ready.length)}>
-            Send
-          </button>
-          </div>
-          {files.note && <span className="ld-small" role="alert" style={{ color: "#b42318" }}>{files.note}</span>}
-        </form>
+        </div>
       </div>
     </div>
   );

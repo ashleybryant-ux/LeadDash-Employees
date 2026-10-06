@@ -1577,6 +1577,35 @@ async function nowIn(orgId: number) {
   return `${local} (${iso}, ${tz})`;
 }
 
+/** Who was @tagged in a message to an employee: the other AI employees get it in their own chats, the people get a notice. */
+async function passOnMentions(emp: AIEmployee, opts: { organizationId: number; text: string; authorName: string; userId: number | null }) {
+  const { findMentions } = await import("../team");
+  const members = await db.listMembers(opts.organizationId);
+  const emps = (await db.listEmployeesByOrg(opts.organizationId)).filter((e) => e.id !== emp.id);
+  const m = findMentions(opts.text, { users: members.filter((x) => x.role !== "reviewer").map((x) => ({ id: x.userId, name: x.name || x.email })), employees: emps.map((e) => ({ id: e.id, name: e.name })) });
+  const users = m.users.filter((id) => id !== opts.userId);
+  for (const id of m.employees) {
+    const other = emps.find((e) => e.id === id);
+    if (!other || other.status === "paused") continue;
+    void sendChatMessage({ organizationId: opts.organizationId, employeeId: other.id, text: `${opts.text}\n\n(${opts.authorName} tagged you in ${emp.name}'s chat.)`, authorName: opts.authorName, userId: opts.userId, forwarded: true }).catch((err) => console.warn(`[chat] tag to ${other.name} failed:`, err instanceof Error ? err.message : err));
+  }
+  if (users.length) {
+    const { notify } = await import("../notify");
+    await notify(opts.organizationId, "team_message", { title: `${opts.authorName} tagged you in ${emp.name}'s chat`, body: opts.text.slice(0, 240), url: `/chats/${emp.kind}`, tag: `tag-${emp.kind}` }, { only: users }).catch(() => null);
+  }
+  return { users, employees: m.employees.filter((id) => emps.some((e) => e.id === id && e.status !== "paused")) };
+}
+
+/** A line for the prompt, so the employee knows who else got the message. */
+async function taggedText(orgId: number, emp: AIEmployee, tagged: { users: number[]; employees: number[] }) {
+  if (!tagged.users.length && !tagged.employees.length) return "";
+  const members = await db.listMembers(orgId);
+  const emps = await db.listEmployeesByOrg(orgId);
+  const people = tagged.users.map((id) => members.find((m) => m.userId === id)).filter(Boolean).map((m) => m!.name || m!.email);
+  const others = tagged.employees.map((id) => emps.find((e) => e.id === id)).filter(Boolean).map((e) => e!.name);
+  return `\nTagged in this message: ${[...others.map((n) => `${n} (AI employee; they have this message in their own chat and answer there, so leave their part to them)`), ...people.map((n) => `${n} (a person; they were sent a notice)`)].join("; ")}. Do your own part only.`;
+}
+
 /** A live one-on-one: the person talks and the reply is read out loud. */
 export const ONE_ON_ONE = `This is a live one-on-one meeting: the person is talking to you out loud and your "reply" is read aloud in your voice.
 - Keep "reply" to 1 to 3 short spoken sentences, like a colleague across the table. No lists, headings, markdown, links, emojis or em dashes.
@@ -1614,9 +1643,13 @@ export async function sendChatMessage(opts: {
   attachmentIds?: number[];
   /** Said out loud in a one-on-one: the reply is kept short and conversational, and is played. */
   spoken?: boolean;
+  /** This message was passed on from another employee's chat because of an @mention: its own mentions are not passed on again. */
+  forwarded?: boolean;
 }) {
   const emp = await db.getEmployeeForOrg(opts.employeeId, opts.organizationId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+  // @mentions: a tagged AI employee gets the message in their own chat and answers there; a tagged person gets a notice.
+  const tagged = opts.forwarded ? { users: [] as number[], employees: [] as number[] } : await passOnMentions(emp, opts);
   // Only this chat's own unsent files can go with the message.
   const sent = db.getChatFiles(opts.organizationId, (opts.attachmentIds ?? []).slice(0, 10)).filter((f) => f.employeeId === emp.id && f.messageId == null);
   if (!opts.text.trim() && !sent.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Type a message or attach a file." });
@@ -1648,6 +1681,7 @@ export async function sendChatMessage(opts: {
   if (emp.status === "paused") {
     return { user: userMsg, reply: await reply(`I'm paused right now. Press Resume at the top and send that again.`) };
   }
+  const taggedFacts = await taggedText(opts.organizationId, emp, tagged);
 
   try {
     const history = await db.listChatMessages(opts.organizationId, emp.id, 30);
@@ -1664,7 +1698,7 @@ export async function sendChatMessage(opts: {
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
-Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${await connectedFacts(emp)}${historyFacts(emp.organizationId)}${await webFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
+Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${taggedFacts}${await connectedFacts(emp)}${historyFacts(emp.organizationId)}${await webFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
 ${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}\n${REMEMBER}`}${opts.spoken ? `\n${ONE_ON_ONE}` : ""}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`

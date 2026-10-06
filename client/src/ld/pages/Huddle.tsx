@@ -5,6 +5,17 @@ import { useTenant } from "@/contexts/TenantContext";
 import { Avatar, BottomNav, ErrorLine, Rail, useEmployees } from "../ui";
 import { SILENT, listen, micErrorText, type Listener } from "../voice";
 
+/** True when what the microphone heard is the employee's own line coming back through the speakers. */
+export function isEcho(heard: string, spoken: string) {
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 2);
+  const h = norm(heard);
+  if (h.length < 3) return false;
+  const said = new Set(norm(spoken));
+  if (!said.size) return false;
+  const hits = h.filter((w) => said.has(w)).length;
+  return hits / h.length >= 0.7;
+}
+
 /**
  * Team huddle: you talk, the employees answer out loud in their own voices.
  * The microphone streams to AssemblyAI for live transcription (with a token the
@@ -53,7 +64,10 @@ export default function Huddle() {
   const huddleId = React.useRef<number | null>(null);
   const bottom = React.useRef<HTMLDivElement>(null);
   huddleId.current = live?.id ?? null;
-  mutedRef.current = muted || speaking !== null;
+  // The microphone stays open while an employee talks, so a person can cut in; the employee stops as soon as they do.
+  mutedRef.current = muted;
+  const spokenRef = React.useRef("");
+  const talkingRef = React.useRef(0);
 
   React.useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -80,14 +94,41 @@ export default function Huddle() {
     },
   });
 
+  /** A person is talking: whatever is playing stops and what was lined up is dropped. */
+  const interrupt = React.useCallback(() => {
+    queue.current = [];
+    if (playing.current) {
+      const a = audio.current;
+      if (a) {
+        a.onended = null;
+        a.onerror = null;
+        try {
+          a.pause();
+          a.currentTime = 0;
+        } catch {
+          /* nothing to stop */
+        }
+      }
+      playing.current = false;
+    }
+    setSpeaking(null);
+  }, []);
+
   const playNext = React.useCallback(() => {
     if (playing.current) return;
+    // Someone spoke in the last moment: the answers wait for the next finished line instead of talking over them.
+    if (Date.now() - talkingRef.current < 1200) {
+      queue.current = [];
+      setSpeaking(null);
+      return;
+    }
     const r = queue.current.shift();
     if (!r) {
       setSpeaking(null);
       return;
     }
     playing.current = true;
+    spokenRef.current = `${spokenRef.current} ${r.text}`.slice(-600);
     setSpeaking(r.kind);
     const done = () => {
       playing.current = false;
@@ -131,8 +172,18 @@ export default function Huddle() {
         t.token,
         t.url,
         {
-          partial: setPartial,
+          partial: (text) => {
+            setPartial(text);
+            // Two or more words from the room while an employee is talking: the employee stops.
+            if (text.trim().split(/\s+/).length >= 2) {
+              talkingRef.current = Date.now();
+              if (playing.current || queue.current.length) interrupt();
+            }
+          },
           final: (text) => {
+            talkingRef.current = Date.now();
+            // The microphone can hear the employee through the speakers: a line that is the employee's own words is not sent back.
+            if (isEcho(text, spokenRef.current)) return;
             if (huddleId.current) sayRef.current({ organizationId: currentOrgId, id: huddleId.current, text });
           },
           error: (m) => setMicError(m),

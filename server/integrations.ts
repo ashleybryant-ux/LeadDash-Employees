@@ -1663,7 +1663,7 @@ export async function createRecallTeamBot(orgId: number, b: { meetingUrl: string
       variant: { zoom: "web_4_core", google_meet: "web_4_core", microsoft_teams: "web_4_core" },
       recording_config: {
         transcript: { provider: { recallai_streaming: { mode: "prioritize_low_latency", language_code: "en" } } },
-        realtime_endpoints: [{ type: "webhook", url: b.webhookUrl, events: ["transcript.data"] }],
+        realtime_endpoints: [{ type: "webhook", url: b.webhookUrl, events: ["transcript.data", "transcript.partial_data"] }],
       },
       chat: { on_bot_join: { send_to: "everyone", message: b.message.slice(0, 480) } },
     },

@@ -93,10 +93,16 @@ html,body{margin:0;width:1280px;height:720px;overflow:hidden;background:#0f2a20;
     a.src="/api/voice/audio/"+l.audioId;a.onended=done;a.onerror=done;
     var p=a.play();if(p&&p.catch)p.catch(done);
   }
+  function hush(){
+    // A person is talking: whatever was playing stops, and what was lined up is dropped.
+    queue=[];
+    if(playing){try{a.pause();a.currentTime=0;}catch(e){}playing=false;light(null);cap.textContent="";}
+  }
   function poll(){
     fetch("/api/voice/bot/"+token+"/next?after="+after,{cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
-      (d.lines||[]).forEach(function(l){after=Math.max(after,l.index);queue.push(l);});next();
-      setTimeout(poll,d.live===false?5000:700);
+      (d.lines||[]).forEach(function(l){after=Math.max(after,l.index);queue.push(l);});
+      if(d.hush)hush();else next();
+      setTimeout(poll,d.live===false?5000:d.hush?300:700);
     }).catch(function(){setTimeout(poll,2000);});
   }
   poll();

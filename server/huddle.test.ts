@@ -12,6 +12,7 @@ vi.mock("./_core/llm", async (orig) => {
         return turn;
       }
       if (opts.schemaName === "action_items") return { items: [{ text: "Record the pitch video", owner: "Ashley" }] };
+      if (opts.schemaName === "chat_decision") return { reply: "On it: the follow-up email is drafted and waiting in Approvals.", action: "none", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
       if (opts.schemaName === "huddle_facts") return { facts: [{ topic: "Founding member deadline", fact: "Founding member pricing closes December 31, 2026.", category: "services_offers" }] };
       return {};
     }),
@@ -56,6 +57,16 @@ describe("team huddle", () => {
     expect(systems[1]).not.toContain("## Jordan");
     expect(systems[1]).toContain(`${owner.name}: Morgan, what's due this month?`);
     expect(r.huddle.lines.map((l) => l.who)).toEqual([owner.name, owner.name, "Morgan"]);
+    // Asked to do something: the employee starts now, through their own chat, not after the huddle.
+    turn = { replies: [{ kind: "projects", say: "On it. I'll post it in my chat.", do: "Write the November 10 webinar follow-up email to all registrants" }] };
+    await c.huddle.say({ organizationId: orgId, id: h.id, text: "Nora, write the webinar follow-up email." });
+    await huddle.settled();
+    const nora = (await db.getEmployeeByKind(orgId, "projects"))!;
+    const noraChat = await db.listChatMessages(orgId, nora.id, 5);
+    expect(noraChat.map((m) => [m.role, m.authorName, m.content])).toEqual([
+      ["user", `${owner.name} (in the huddle)`, "Write the November 10 webinar follow-up email to all registrants"],
+      ["employee", "Nora", "On it: the follow-up email is drafted and waiting in Approvals."],
+    ]);
 
     const ended = await c.huddle.end({ organizationId: orgId, id: h.id });
     expect(ended.status).toBe("ended");
@@ -100,6 +111,15 @@ describe("team huddle", () => {
     const next = huddle.botNext(token, -1);
     expect(next.lines).toEqual([{ index: 1, kind: "coo", name: "Simone", text: "Three items for Thursday.", audioId: null }]);
     expect(huddle.botNext(token, 1).lines).toEqual([]);
+    // Someone starts talking (a partial line): the page is told to stop playing; the bot's own partials never hush it.
+    expect(next.hush).toBe(true); // BJ just spoke
+    await new Promise((r) => setTimeout(r, 2600));
+    expect(huddle.botNext(token, 1).hush).toBe(false);
+    await huddle.botHeard(token, { event: "transcript.partial_data", data: { data: { words: [{ text: "Hang" }], participant: { name: "LeadDash Team (AI)" } } } });
+    expect(huddle.botNext(token, 1).hush).toBe(false);
+    await huddle.botHeard(token, { event: "transcript.partial_data", data: { data: { words: [{ text: "Hang" }, { text: "on" }], participant: { name: "BJ" } } } });
+    expect(huddle.botNext(token, 1).hush).toBe(true);
+    expect(huddle.linesOf(db.getHuddle(h.id, orgId)!)).toHaveLength(2); // a partial line is not part of the transcript
     expect(huddle.botNext("f".repeat(48), -1).live).toBe(false);
 
     const remove = vi.spyOn(integrations, "removeRecallBot").mockResolvedValue(undefined as any);

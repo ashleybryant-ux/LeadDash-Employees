@@ -55,9 +55,11 @@ type Props = {
   compact?: boolean;
   autoFocus?: boolean;
   onCancel?: () => void;
+  /** What tagging an AI employee does here; the team chat default is a thread answer. */
+  employeeNote?: string;
 };
 
-export function Composer({ value, onChange, onSend, placeholder, who, disabled, busy, sendLabel = "Send", attach, chips, note, extra, compact, autoFocus, onCancel }: Props) {
+export function Composer({ value, onChange, onSend, placeholder, who, disabled, busy, sendLabel = "Send", attach, chips, note, extra, compact, autoFocus, onCancel, employeeNote = "AI employee, answers in a thread" }: Props) {
   const ta = React.useRef<HTMLTextAreaElement>(null);
   const [emoji, setEmoji] = React.useState(false);
   const [mention, setMention] = React.useState<{ at: number; q: string } | null>(null);
@@ -108,9 +110,9 @@ export function Composer({ value, onChange, onSend, placeholder, who, disabled, 
     if (!mention) return [];
     const q = mention.q.toLowerCase();
     const people = who.people.filter((p) => p.name.toLowerCase().includes(q)).map((p) => ({ key: `u${p.userId}`, name: p.name, sub: "", node: <PersonAvatar name={p.name} src={p.avatarUrl} size={24} /> }));
-    const emps = who.employees.filter((e) => e.name.toLowerCase().includes(q)).map((e) => ({ key: `e${e.id}`, name: e.name, sub: `${e.roleTitle} · AI employee, answers in a thread`, node: <Avatar name={e.name} kind={e.kind} src={e.avatar} size={24} /> }));
+    const emps = who.employees.filter((e) => e.name.toLowerCase().includes(q)).map((e) => ({ key: `e${e.id}`, name: e.name, sub: `${e.roleTitle} · ${employeeNote}`, node: <Avatar name={e.name} kind={e.kind} src={e.avatar} size={24} /> }));
     return [...emps, ...people].slice(0, 8);
-  }, [mention, who]);
+  }, [mention, who, employeeNote]);
 
   const choose = (name: string) => {
     if (!mention) return;
