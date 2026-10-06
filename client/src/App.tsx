@@ -26,6 +26,7 @@ import Team from "./ld/pages/Team";
 import Account from "./ld/pages/Account";
 import More from "./ld/pages/More";
 import Handbook from "./ld/pages/Handbook";
+import SopPage from "./ld/sops/SopPage";
 import BaseInstructions from "./ld/pages/BaseInstructions";
 import { Rail, Switcher } from "./ld/ui";
 import Notices from "./ld/Notices";
@@ -98,6 +99,7 @@ function Router() {
       <Route path="/account" component={Account} />
       <Route path="/more" component={More} />
       <Route path="/handbook" component={Handbook} />
+      <Route path="/handbook/sop/:id" component={SopPage} />
       <Route path="/base" component={BaseInstructions} />
       <Route>{() => <Redirect to="/chats" />}</Route>
     </Switch>

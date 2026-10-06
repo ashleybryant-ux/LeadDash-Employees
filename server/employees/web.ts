@@ -91,7 +91,7 @@ export async function loginFor(orgId: number, id: number | null) {
 // Starting a job from chat
 // ==========================================
 
-export async function startWebTask(emp: AIEmployee, input: { goal: string; url?: string; login?: string; title?: string }) {
+export async function startWebTask(emp: AIEmployee, input: { goal: string; url?: string; login?: string; title?: string; kind?: "browse" | "sop"; shots?: string }) {
   const org = emp.organizationId;
   const goal = input.goal.trim();
   if (!goal) throw new TRPCError({ code: "BAD_REQUEST", message: "What should I do on the site?" });
@@ -103,7 +103,7 @@ export async function startWebTask(emp: AIEmployee, input: { goal: string; url?:
   const guard = login ? lockGuard(login) : undefined;
   if (guard && !guard(startUrl)) throw new TRPCError({ code: "FORBIDDEN", message: `That page is outside the ${login!.lockName} sub-account, and this login only opens that one.` });
   const title = (input.title || goal).replace(/\s+/g, " ").slice(0, 90);
-  const t = db.createWebTask({ organizationId: org, employeeId: emp.id, kind: "browse", loginId: login?.id ?? null, title, goal, startUrl, liveId: newLiveId() });
+  const t = db.createWebTask({ organizationId: org, employeeId: emp.id, kind: input.kind ?? "browse", loginId: login?.id ?? null, title, goal, startUrl, liveId: newLiveId(), ref: JSON.stringify(input.shots ? { shots: input.shots } : {}) });
   queueWebTask(org, t.id);
   return { task: t, login };
 }
@@ -214,7 +214,8 @@ export async function runWebTask(orgId: number, id: number) {
     allowSubmit: t.allowSubmit,
     submitWords: CHANGE_WORDS,
     neverWords: NEVER_WORDS,
-    maxSteps: 40,
+    maxSteps: t.kind === "sop" ? 60 : 40,
+    shots: parseRef<{ shots?: string }>(t.ref, {}).shots,
     live: { id: liveId, onStuck: stuckPoster(emp, liveId, "on that site") },
   }).catch((err) => ({ status: "failed", note: (err as Error).message, result: "", screenshotUrl: null, storageState: null, log: [], downloads: [], helped: [], url: t.startUrl }) as BrowserResult);
   if (login) await keepSession(orgId, login, res.storageState).catch(() => null);
@@ -225,6 +226,25 @@ export async function finishWebTask(emp: AIEmployee, t: WebTask, res: BrowserRes
   const orgId = emp.organizationId;
   const steps = res.log.filter((l) => l.action !== "person" && l.action !== "blocked").length;
   const base = { steps, lastUrl: res.url || null, screenshotUrl: res.screenshotUrl };
+  if (t.kind === "sop" && res.status === "done") {
+    const sops = await import("./sops");
+    const next = db.updateWebTask(t.id, orgId, { ...base, status: "done", result: readResult(res.result).answer.slice(0, 8000), note: null })!;
+    const sop = await sops.finishFromSite(emp, t, res).catch((err) => {
+      console.error("[sops] writing from the site failed:", err instanceof Error ? err.message : err);
+      return null;
+    });
+    if (sop) {
+      const n = sops.stepsOf(sop).length;
+      await post(emp, `Done. I went through the screens and wrote "${sop.title}" as ${n} step${n === 1 ? "" : "s"} with a screenshot under each one. Open the draft, or send it to ${(await sops.reviewer(orgId))?.name ?? "the owner"} for review.`, [sops.card(sop), webCard(next)]);
+    } else {
+      await post(emp, `I went through the screens but could not write the steps up. Ask me to try again, or record it yourself from the SOPs tab.`, [webCard(next)]);
+    }
+    return next;
+  }
+  if (t.kind === "sop") {
+    const sops = await import("./sops");
+    await sops.finishFromSite(emp, t, res).catch(() => null);
+  }
   if (res.status === "done") {
     const { answer, pending } = readResult(res.result);
     const files = await saveFiles(orgId, res);

@@ -48,7 +48,7 @@ export const AVATAR_FILES: Partial<Record<Kind, string>> = {
 };
 
 export const SUGGESTIONS: Record<Kind, string[]> = {
-  coo: ["Write Monday's agenda", "What did we decide in my last meeting?", "Skip my next meeting", "How did we do this week?"],
+  coo: ["Write Monday's agenda", "What did we decide in my last meeting?", "Write up an SOP", "How did we do this week?"],
   projects: ["Plan a launch", "What's behind this week?", "Set up a project meeting", "Send me the status report"],
   grants: ["Find grants for this quarter", "Find pitch competitions", "Apply to the best fit", "Check application status"],
   speaking: ["Find speaking events for the spring", "Find media requests I can answer", "Find podcasts to pitch me to", "Check what's waiting on me"],
@@ -64,7 +64,7 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
   hiring: ["Find LPCs for outreach", "Check hiring status", "Write a job post", "What licenses expire soon?"],
   developer: ["Something's broken", "What are you working on?", "What's ready for me to merge?"],
   onboarding: ["Onboard a new customer", "Who's being onboarded?", "What's due this week?"],
-  platform: ["Audit my workflows", "Put Jordan's page in a funnel", "What needs fixing?"],
+  platform: ["Audit my workflows", "Write an SOP from the site", "Put Jordan's page in a funnel", "What needs fixing?"],
   custom: ["What can you help with?"],
 };
 

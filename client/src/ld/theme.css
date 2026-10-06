@@ -1525,3 +1525,69 @@ button.gp-ts:hover { background: #f8fbf9; }
   .ad-bud .why { display: none; }
   .ad-form { grid-template-columns: 1fr; }
 }
+
+/* ---------- SOPs ---------- */
+.sop-menu { position: absolute; right: 0; top: 44px; width: 380px; max-width: calc(100vw - 32px); padding: 6px; z-index: 30; box-shadow: 0 12px 32px rgba(18, 33, 29, 0.14); display: flex; flex-direction: column; gap: 2px; }
+.sop-menu-it { display: flex; gap: 12px; padding: 10px 12px; border-radius: 10px; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; align-items: flex-start; color: #14221c; }
+.sop-menu-it:hover { background: #f3f6f4; }
+.sop-menu-it b { display: block; font-size: 14px; }
+.sop-menu-it small { display: block; font-size: 12.5px; color: #5b6b64; line-height: 1.45; margin-top: 2px; }
+.sop-menu-ic { width: 36px; height: 36px; border-radius: 9px; background: #eef2f0; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; color: #3d4c45; }
+.sop-menu-ic.record { color: #b42318; }
+.sop-kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 6px 14px; font-size: 14px; margin-bottom: 12px; }
+.sop-kv.wide { grid-template-columns: 150px minmax(0, 1fr) 150px minmax(0, 1fr); margin-bottom: 0; }
+.sop-kv b { color: #3d4c45; font-weight: 700; }
+.sop-kv a { color: #1b6b4a; font-weight: 700; }
+.sop-steps { display: flex; flex-direction: column; gap: 12px; }
+.sop-step { display: grid; grid-template-columns: 28px minmax(0, 1fr) 220px; gap: 14px; align-items: start; }
+.sop-step:has(.sop-shot.s) { grid-template-columns: 28px minmax(0, 1fr) 150px; }
+.sop-step:not(:has(.sop-shot)) { grid-template-columns: 28px minmax(0, 1fr); }
+.sop-n { width: 28px; height: 28px; border-radius: 999px; background: #14221c; color: #fff; font-weight: 800; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sop-st { font-weight: 700; font-size: 14px; line-height: 1.4; margin-top: 4px; }
+.sop-sd { font-size: 13.5px; color: #3d4c45; margin-top: 3px; line-height: 1.5; }
+.sop-shot { display: block; border: 1px solid #dbe4df; border-radius: 8px; overflow: hidden; background: #f3f6f4; }
+.sop-shot img { display: block; width: 100%; height: auto; }
+.sop-hd { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #eef2f0; }
+.sop-hd b { font-size: 15px; font-weight: 800; }
+.sop-hrow { display: grid; grid-template-columns: 110px minmax(0, 1fr) 160px 150px 80px; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #eef2f0; font-size: 13.5px; align-items: center; }
+.sop-hrow:last-child { border-bottom: 0; }
+.sop-form { display: grid; grid-template-columns: 130px minmax(0, 1fr) 130px minmax(0, 1fr); gap: 10px 14px; align-items: center; }
+.sop-estep { display: grid; grid-template-columns: 28px minmax(0, 1fr) 150px 96px; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid #eef2f0; }
+.sop-estep:last-child { border-bottom: 0; }
+.sop-eshot { height: 70px; border: 1px solid #dbe4df; border-radius: 8px; background: #f3f6f4; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.sop-eshot img { width: 100%; height: 100%; object-fit: cover; }
+.ld-btn.xs { height: 30px; font-size: 12.5px; width: 96px; }
+.sop-stages { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.sop-stages span { display: flex; gap: 8px; align-items: center; }
+.sop-stages b { width: 18px; height: 18px; border-radius: 999px; background: #1e8a5a; color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sop-stages b.w { background: #eef2f0; color: #5b6b64; }
+.sop-overlay { position: fixed; inset: 0; background: rgba(18, 33, 29, 0.28); z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding: 80px 16px 16px; overflow: auto; }
+.sop-modal { width: 520px; max-width: 100%; padding: 0; box-shadow: 0 16px 40px rgba(18, 33, 29, 0.18); }
+.sop-mh { padding: 14px 20px; border-bottom: 1px solid #eef2f0; font-weight: 800; font-size: 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.sop-x { border: 0; background: none; font: inherit; font-size: 16px; color: #8a9a93; cursor: pointer; }
+.sop-mb { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; font-size: 14px; line-height: 1.5; }
+.sop-mf { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+.sop-opt { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; background: #f3f6f4; border-radius: 8px; font-size: 13.5px; }
+.sop-opt b { font-size: 14px; }
+.sop-opt span:last-child { color: #5b6b64; font-size: 12.5px; }
+.sop-rec { display: inline-flex; align-items: center; gap: 10px; }
+.sop-rec i { width: 12px; height: 12px; border-radius: 999px; background: #b42318; display: inline-block; }
+.sop-rec i.p { background: #c98a00; }
+.sop-preview { width: 100%; max-height: 260px; border-radius: 8px; background: #14221c; }
+.sop-prog { height: 8px; border-radius: 999px; background: #eef2f0; overflow: hidden; }
+.sop-prog i { display: block; height: 100%; background: #1b6b4a; animation: sop-slide 1.2s ease-in-out infinite alternate; }
+@keyframes sop-slide { from { margin-left: 0; } to { margin-left: 60%; } }
+.sop-card { max-width: 640px; }
+.sop-ft { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid #eef2f0; flex-wrap: wrap; }
+.sop-ft .ld-btn { width: auto; padding: 0 14px; height: 34px; }
+@media (max-width: 760px) {
+  .sop-cols { grid-template-columns: minmax(0, 1fr) 96px !important; }
+  .sop-cols > :nth-child(2), .sop-cols > :nth-child(3), .sop-cols > :nth-child(4), .sop-cols > :nth-child(5), .sop-cols > :nth-child(6) { display: none; }
+  .sop-kv.wide { grid-template-columns: 120px minmax(0, 1fr); }
+  .sop-step, .sop-step:has(.sop-shot.s) { grid-template-columns: 28px minmax(0, 1fr); }
+  .sop-shot { grid-column: 2; }
+  .sop-form { grid-template-columns: 110px minmax(0, 1fr); }
+  .sop-form .ld-in[style] { grid-column: 2 !important; width: 100% !important; }
+  .sop-estep { grid-template-columns: 28px minmax(0, 1fr); }
+  .sop-hrow { grid-template-columns: 90px minmax(0, 1fr); }
+}

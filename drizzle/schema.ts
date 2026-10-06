@@ -309,6 +309,7 @@ export const KNOWLEDGE_CATEGORIES = [
   "team_bios",
   "financial_data",
   "speaking",
+  "procedures",
 ] as const;
 export type KnowledgeCategory = (typeof KNOWLEDGE_CATEGORIES)[number];
 
@@ -1580,7 +1581,7 @@ export const webTasks = sqliteTable(
     organizationId: integer("organizationId").notNull(),
     employeeId: integer("employeeId").notNull(),
     /** browse: anything asked in chat. audit, fix, page, publish: Zara's platform work. */
-    kind: text("kind", { enum: ["browse", "audit", "fix", "page", "publish"] }).notNull().default("browse"),
+    kind: text("kind", { enum: ["browse", "audit", "fix", "page", "publish", "sop"] }).notNull().default("browse"),
     loginId: integer("loginId"),
     title: text("title").notNull(),
     goal: text("goal").notNull(),
@@ -3129,3 +3130,94 @@ export const pjSettings = sqliteTable(
   (t) => [uniqueIndex("pj_settings_key_idx").on(t.organizationId, t.key)]
 );
 export type PjSetting = typeof pjSettings.$inferSelect;
+
+// ==========================================
+// SOPs: how the workspace does things, written by the employees and reviewed by Simone
+// ==========================================
+
+export const SOP_AREAS = ["front_desk", "billing", "clinical", "marketing", "admin"] as const;
+export const SOP_STATUSES = ["draft", "writing", "review", "current", "retired"] as const;
+
+/** One step of an SOP: what to do, why or what to watch for, and the screenshot under it. */
+export type SopStep = { title: string; detail: string; imageUrl: string | null };
+
+export const sops = sqliteTable(
+  "sops",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    title: text("title").notNull(),
+    area: text("area", { enum: SOP_AREAS }).notNull().default("admin"),
+    /** The employee that keeps it current (its roster kind), e.g. "inbox" for Avery. */
+    ownerKind: text("ownerKind").notNull().default("coo"),
+    /** Who at the practice follows it, in plain words. */
+    follows: text("follows").notNull().default(""),
+    /** When it applies, in plain words. */
+    when: text("when").notNull().default(""),
+    status: text("status", { enum: SOP_STATUSES }).notNull().default("draft"),
+    version: integer("version").notNull().default(1),
+    /** JSON SopStep[] */
+    steps: text("steps").notNull().default("[]"),
+    /** record (a screen recording), site (an employee walked the screens), chat (written from what was said), manual (typed). */
+    sourceKind: text("sourceKind", { enum: ["record", "site", "chat", "manual"] }).notNull().default("manual"),
+    sourceNote: text("sourceNote").notNull().default(""),
+    sourceUrl: text("sourceUrl"),
+    /** YYYY-MM-DD of the last review and the next one due. */
+    reviewedAt: text("reviewedAt"),
+    nextReview: text("nextReview"),
+    /** The Brain entry that carries this SOP to the employees while it is current. */
+    knowledgeId: integer("knowledgeId"),
+    createdBy: text("createdBy").notNull().default(""),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("sops_org_idx").on(t.organizationId, t.status)]
+);
+export type Sop = typeof sops.$inferSelect;
+
+/** Every saved version of an SOP, so History shows who changed what. */
+export const sopVersions = sqliteTable(
+  "sop_versions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    sopId: integer("sopId").notNull(),
+    version: integer("version").notNull(),
+    /** JSON snapshot: { title, area, ownerKind, follows, when, steps } */
+    snapshot: text("snapshot").notNull(),
+    changedBy: text("changedBy").notNull().default(""),
+    note: text("note").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("sop_versions_sop_idx").on(t.organizationId, t.sopId)]
+);
+export type SopVersion = typeof sopVersions.$inferSelect;
+
+/** A screen recording or a site walk being turned into an SOP. */
+export const sopJobs = sqliteTable(
+  "sop_jobs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    sopId: integer("sopId"),
+    kind: text("kind", { enum: ["record", "site"] }).notNull(),
+    title: text("title").notNull().default(""),
+    status: text("status", { enum: ["queued", "working", "done", "failed"] }).notNull().default("queued"),
+    /** What is happening now, for the progress card. */
+    stage: text("stage").notNull().default(""),
+    /** JSON of the stages done so far: [{ label, detail }] */
+    stages: text("stages").notNull().default("[]"),
+    note: text("note").notNull().default(""),
+    /** The recording on disk (outside the served files) and, once saved, its public address. */
+    filePath: text("filePath"),
+    fileUrl: text("fileUrl"),
+    /** Seconds recorded. */
+    seconds: integer("seconds"),
+    webTaskId: integer("webTaskId"),
+    createdBy: text("createdBy").notNull().default(""),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("sop_jobs_org_idx").on(t.organizationId, t.status)]
+);
+export type SopJob = typeof sopJobs.$inferSelect;

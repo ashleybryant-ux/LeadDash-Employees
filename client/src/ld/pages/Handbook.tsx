@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, FolderTabs, Page } from "../ui";
 import { PartView, RuleList, RulesEditor, type HbPart } from "../handbook/parts";
+import Sops from "../sops/Sops";
 
 const COLS = "minmax(0,1fr) 120px 140px 128px";
 
@@ -12,15 +13,26 @@ type Row = HbPart & { ruleCount: number; additions: string[] };
 export default function Handbook() {
   const { currentOrgId } = useTenant();
   const q = trpc.handbook.view.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const sopsQ = trpc.sops.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const wantSops = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "sops";
+  const [top, setTop] = React.useState<"handbook" | "sops">(wantSops ? "sops" : "handbook");
   const [tab, setTab] = React.useState<"all" | "mine">("all");
   const [open, setOpen] = React.useState<string | null>(null);
   const parts = (q.data?.parts ?? []) as Row[];
   const mineCount = parts.reduce((n, p) => n + p.additions.length, 0);
   const list = tab === "all" ? parts : parts.filter((p) => p.additions.length > 0);
 
+  const sopCount = sopsQ.data?.counts.all ?? 0;
+  const due = sopsQ.data?.reviewDue ?? 0;
   return (
     <Page rail="workspace" maxWidth={1140}>
       <h1 className="ld-h1">Handbook</h1>
+      <div className="ld-ftabs" role="tablist" style={{ marginBottom: 14 }}>
+        <button type="button" role="tab" aria-selected={top === "handbook"} className={`ld-ft ${top === "handbook" ? "on" : ""}`} onClick={() => setTop("handbook")}>Employee handbook ({parts.length})</button>
+        <button type="button" role="tab" aria-selected={top === "sops"} className={`ld-ft ${top === "sops" ? "on" : ""}`} onClick={() => setTop("sops")}>SOPs ({sopCount}){due ? <span className="ld-pill amber" style={{ marginLeft: 8 }}>{due} to review</span> : null}</button>
+      </div>
+      {top === "sops" && <Sops />}
+      {top === "handbook" && (
       <FolderTabs
         tabs={[
           { key: "all", label: `All parts (${parts.length})` },
@@ -64,7 +76,8 @@ export default function Handbook() {
           );
         })}
       </FolderTabs>
-      <ErrorLine error={q.error} />
+      )}
+      {top === "handbook" && <ErrorLine error={q.error} />}
     </Page>
   );
 }

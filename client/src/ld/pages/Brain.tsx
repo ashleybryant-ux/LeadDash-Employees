@@ -14,6 +14,7 @@ const CATEGORIES = [
   { value: "team_bios", label: "Team" },
   { value: "financial_data", label: "Funding facts" },
   { value: "speaking", label: "Speaking" },
+  { value: "procedures", label: "Procedures (SOPs)" },
 ] as const;
 type Category = (typeof CATEGORIES)[number]["value"];
 

@@ -10,6 +10,7 @@ export const CATEGORY_LABELS: Record<KnowledgeCategory, string> = {
   team_bios: "Team",
   financial_data: "Funding facts",
   speaking: "Speaking",
+  procedures: "Procedures (SOPs)",
 };
 
 /** Documents and pages longer than this are searched per task rather than pasted whole. */

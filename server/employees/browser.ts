@@ -18,7 +18,7 @@ import { storagePut } from "../storage";
 export type Secrets = { email?: string; password?: string; code?: string; content?: string };
 export type BrowserFile = { path: string; name: string };
 export type Download = { name: string; buf: Buffer; mime: string; url: string };
-export type StepLog = { step: number; action: string; detail: string; url: string };
+export type StepLog = { step: number; action: string; detail: string; url: string; title?: string; screenshotUrl?: string | null };
 
 export type BrowserResult = {
   status: "done" | "need_code" | "failed";
@@ -59,6 +59,8 @@ export type BrowserTask = {
   live?: { id: string; onStuck?: (reason: string) => Promise<void>; holdMs?: number; label?: string };
   /** For tests: replaces the AI's choice of action. */
   decide?: (view: PageView, history: StepLog[]) => Promise<Action>;
+  /** Keep a screenshot after every action (an SOP is written from them), saved under this folder. */
+  shots?: string;
 };
 
 export type PageElement = { i: number; tag: string; type: string; label: string; text: string; href: string };
@@ -420,6 +422,17 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         entry(`Could not ${act.action}: ${(err as Error).message.split("\n")[0]}`);
       }
       await page.waitForTimeout(600);
+      if (task.shots) {
+        const last = log[log.length - 1];
+        try {
+          await page.waitForLoadState("domcontentloaded").catch(() => null);
+          const shot = await page.screenshot({ fullPage: false });
+          last.screenshotUrl = (await storagePut(`${task.shots}/step-${String(step).padStart(2, "0")}-${Date.now()}.png`, shot, "image/png")).url;
+          last.title = (await page.title().catch(() => "")).slice(0, 120);
+        } catch {
+          last.screenshotUrl = null;
+        }
+      }
       // A click that lands outside the allowed pages is undone right away.
       if (task.allowUrl && !task.allowUrl(page.url())) {
         log.push({ step, action: "blocked", detail: `That page is outside what this login may open, so I went back. Stay inside it.`, url: hideSecrets({ url: page.url(), title: "", text: "", elements: [] }, task.secrets).url });

@@ -8,6 +8,7 @@ import { aiStatus, describeImage } from "./_core/llm";
 import { decryptJson, encryptJson, hasSecretsKey } from "./_core/crypto";
 import * as db from "./db";
 import {
+  SOP_AREAS,
   KNOWLEDGE_CATEGORIES,
   OPP_KINDS,
   OUTBOUND_KINDS,
@@ -1388,6 +1389,73 @@ export const appRouter = router({
   }),
 
   // Team chat: channels, direct messages and threads in a workspace, like Slack
+  // ==========================================
+  // SOPs: the library, versions, and the three ways one gets written
+  // ==========================================
+  sops: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const m = await requireMember(ctx, input.organizationId, "chat");
+      const sops = await import("./employees/sops");
+      const jobs = db.sops.jobs(input.organizationId).filter((j) => j.status === "queued" || j.status === "working" || (j.status === "failed" && Date.now() - new Date(j.updatedAt).getTime() < 24 * 3600_000)).map((j) => sops.jobView(j));
+      return { ...sops.listView(input.organizationId), jobs, canEdit: RANK[m.role] >= RANK.member };
+    }),
+    get: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      const sops = await import("./employees/sops");
+      const s = db.sops.get(input.organizationId, input.id);
+      if (!s) throw new TRPCError({ code: "NOT_FOUND", message: "That SOP is gone." });
+      const rev = await sops.reviewer(input.organizationId);
+      return { ...sops.view(s), reviewerName: rev?.name ?? null, history: sops.history(input.organizationId, input.id) };
+    }),
+    job: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      const sops = await import("./employees/sops");
+      const j = db.sops.job(input.organizationId, input.id);
+      if (!j) throw new TRPCError({ code: "NOT_FOUND", message: "That job is gone." });
+      return sops.jobView(j);
+    }),
+    create: protectedProcedure
+      .input(orgInput.extend({ title: z.string().trim().min(1).max(160), area: z.enum(SOP_AREAS), ownerKind: z.string().max(40).optional(), follows: z.string().max(300).optional(), when: z.string().max(300).optional(), nextReview: z.string().max(12).optional(), steps: z.array(z.object({ title: z.string().max(240), detail: z.string().max(2000), imageUrl: z.string().max(500).nullable() })).max(60) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const sops = await import("./employees/sops");
+        const { organizationId, ...rest } = input;
+        return sops.view(sops.create(organizationId, rest, ctx.user.name || ctx.user.email));
+      }),
+    save: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), title: z.string().trim().min(1).max(160), area: z.enum(SOP_AREAS), ownerKind: z.string().max(40).optional(), follows: z.string().max(300).optional(), when: z.string().max(300).optional(), nextReview: z.string().max(12).optional(), note: z.string().max(200).optional(), steps: z.array(z.object({ title: z.string().max(240), detail: z.string().max(2000), imageUrl: z.string().max(500).nullable() })).max(60) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const sops = await import("./employees/sops");
+        const { organizationId, id, note, ...rest } = input;
+        return sops.view(await sops.save(organizationId, id, rest, ctx.user.name || ctx.user.email, note));
+      }),
+    setStatus: protectedProcedure.input(orgInput.extend({ id: z.number().int(), status: z.enum(["draft", "review", "current", "retired"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const sops = await import("./employees/sops");
+      return sops.view(await sops.setStatus(input.organizationId, input.id, input.status, ctx.user.name || ctx.user.email));
+    }),
+    reviewed: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const sops = await import("./employees/sops");
+      return sops.view(await sops.markReviewed(input.organizationId, input.id, ctx.user.name || ctx.user.email));
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const sops = await import("./employees/sops");
+      return { ok: await sops.remove(input.organizationId, input.id) };
+    }),
+    /** Send an employee to a site to write one (the same as asking in chat). */
+    fromSite: protectedProcedure.input(orgInput.extend({ title: z.string().trim().min(1).max(160), url: z.string().max(500).optional(), login: z.string().max(100).optional(), employeeKind: z.string().max(40).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const sops = await import("./employees/sops");
+      const emp = (await db.getEmployeeByKind(input.organizationId, (input.employeeKind || "platform") as never)) ?? (await db.getEmployeeByKind(input.organizationId, "coo" as never));
+      if (!emp) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No employee can do that in this workspace yet." });
+      const { task, job } = await sops.startFromSite(emp, { title: input.title, url: input.url, login: input.login, by: ctx.user.name || ctx.user.email });
+      return { jobId: job.id, taskId: task.id, employeeId: emp.id, employeeName: emp.name };
+    }),
+  }),
+
   // ==========================================
   // Ads (Reese): campaigns, one creative set per platform, the budget split
   // ==========================================

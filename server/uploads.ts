@@ -33,6 +33,7 @@ const LIMITS: Record<string, number> = {
   slack: 300_000_000,
   take: 200_000_000,
   leads: 80_000_000,
+  sop_recording: 400_000_000,
 };
 
 const KNOWLEDGE_CATEGORY: Record<string, string> = {
@@ -194,6 +195,32 @@ export function registerUploads(app: Express) {
           req.pipe(out);
         });
         return res.json(await slack.hold(orgId, name, dest));
+      }
+
+      // A screen recording for an SOP: held on disk, written up in the background.
+      if (slot === "sop_recording") {
+        const sops = await import("./employees/sops");
+        const dest = sops.recordingPath(orgId);
+        const fs = await import("node:fs");
+        const declared = Number(req.headers["content-length"] || 0);
+        if (declared > max) return res.status(400).json({ error: `Recordings must be under ${Math.round(max / 1_000_000)} MB.` });
+        await new Promise<void>((resolve, reject) => {
+          const out = fs.createWriteStream(dest);
+          let size = 0;
+          req.on("data", (c: Buffer) => {
+            size += c.length;
+            if (size > max) {
+              reject(new Error(`Recordings must be under ${Math.round(max / 1_000_000)} MB.`));
+              req.destroy();
+            }
+          });
+          req.on("error", reject);
+          out.on("error", reject);
+          out.on("finish", () => resolve());
+          req.pipe(out);
+        });
+        const job = sops.startFromRecording(orgId, { title: String(req.query.title || "").slice(0, 160), filePath: dest, by: who });
+        return res.json({ id: job.id });
       }
 
       const old = unsupportedNote(name);

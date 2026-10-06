@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop";
   id: number;
   /** On a choices card after a bulk close in Projects: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -84,7 +84,7 @@ const ACTIONS: Record<string, string[]> = {
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 // Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
-for (const list of Object.values(ACTIONS)) list.push("browse", "precall_report", "task_due", "task_find", "task_lists", "task_add", "task_change", "task_bulk", "task_undo", "goal_update");
+for (const list of Object.values(ACTIONS)) list.push("browse", "precall_report", "sop_site", "sop_write", "task_due", "task_find", "task_lists", "task_add", "task_change", "task_bulk", "task_undo", "goal_update");
 
 const ACTION_HELP: Record<string, string> = {
   ads_campaign: "ads_campaign: start an ad campaign once you know all four: the goal, who it is for, the page or offer the ads go to, and the budget. Put a short campaign name in `title`, the goal in `goal`, who it is for in `target`, the page or offer in `url`, the platforms they named in `notes` (their words; \"all\" for every platform), the total budget in whole dollars in `count`, the start date as YYYY-MM-DD in `date` and the end date as YYYY-MM-DD in `time` ('' when they gave no dates). You then work out the budget split and post it as a card; nothing is written until they take a split.",
@@ -102,6 +102,8 @@ const ACTION_HELP: Record<string, string> = {
   task_bulk: "task_bulk: change MANY tasks in Projects at once, like \"close everything overdue\" or \"push everything in Goals + Tactics to next Friday\". Put which tasks in `goal`: overdue (past due), all (every open task that matches), or a date YYYY-MM-DD for tasks due before it. Words to narrow by list, folder or task name in `target` ('' for every list), a person in `to` (''), the new status in `focus` (done, open... or ''), and a new due date YYYY-MM-DD in `date` (''). Do it when they say so; never ask first. Never use task_change for more than one task.",
   task_undo: "task_undo: reopen the tasks you just closed with task_bulk (\"Reopen them\", \"undo that\").",
   goal_update: "goal_update: post an update on a goal on the Goals page (\"we're at 13 practices\", \"the webinar is behind\"). Put words from the goal's title in `target`, how it's going in `focus` (on, risk or off), the update in `notes`, and the new number for its main target in `count` (0 when there's no new number).",
+  sop_site: "sop_site: write an SOP (a standard operating procedure, a how-to for staff) by doing the steps yourself on a website in your browser and keeping a screenshot of each one (\"write the SOP for adding a clinician's availability in LeadDash EHR\", \"document how to add a contact in the platform, with screenshots\"). Use it when the procedure happens on a site a saved Website login covers or a web address in this conversation. Put the SOP's name in `title` (as a task: 'Adding a clinician's availability'), the web address in `url` ('' when a saved login covers it), and the saved login's name in `target` ('' for none). For LeadDash EHR use the demo practice login, never a real chart.",
+  sop_write: "sop_write: write an SOP (a standard operating procedure, a how-to for staff) from what the person told you in this conversation, for a procedure that is not on a screen or that they described in words (\"write up how we handle a crisis call\", \"turn what I just said into an SOP\"). Only once you know how it is done step by step: if they only named it, ask how it goes, one question at a time, with 3 or 4 fixed choices where they fit. Put the SOP's name in `title`, everything they said about how it is done in `notes` (their words, in order), the area in `focus` (front_desk, billing, clinical, marketing or admin) and who follows it in `target`.",
   precall_report: "precall_report: run the Pre-call report skill before a meeting with a practice or person (\"run a pre-call report on Bayou Family Therapy\", \"brief me before my call with Dr. Tran\"). Put the person's name in `target`, the practice in `title`, a website in `url` and the meeting date in `date` (YYYY-MM-DD) and `time` (HH:MM) when given. Public business information only; it posts here when ready.",
   cold_campaign: "cold_campaign: write a new cold email campaign for the lead list. Put the angle key in `focus` (switcher, missed_calls, too_many, group_ops, growing or owner_time; pick the closest) and anything else she wants in `notes`. It's a draft until she presses Start.",
   cold_research: "cold_research: research the next best leads on the list (progressive enrichment). Put how many in `count` (default 100, at most 1000) and a state in `target` if she named one.",
@@ -452,6 +454,26 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
     case "task_undo":
     case "goal_update": {
       return projectsAction(emp, d, who);
+    }
+    case "sop_site": {
+      const sops = await import("./sops");
+      const web = await import("./web");
+      try {
+        const { task, login, job } = await sops.startFromSite(emp, { title: d.title || d.goal || d.message, url: d.url, login: d.target, by: who });
+        return { text: `On it. I'll go through "${job.title}" in ${login ? login.name : "my browser"} screen by screen, keep a screenshot of each step, and write it up. You can watch or take over.`, cards: [web.liveCard(task.liveId!, `${emp.name}'s browser`)], queries: [], refs: [{ kind: "web", id: task.id }] };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+    }
+    case "sop_write": {
+      const sops = await import("./sops");
+      const talk = await import("./talk");
+      const lines = talk.userLines(ctx.history, ctx.said ?? "").reverse();
+      const said = [d.notes, ...lines].filter(Boolean).join("\n");
+      const sop = await sops.writeFromChat(emp, { title: d.title, said: said || d.message, area: d.focus, follows: d.target, by: who });
+      const n = sops.stepsOf(sop).length;
+      const rev = await sops.reviewer(org);
+      return { text: `I wrote "${sop.title}" as ${n} step${n === 1 ? "" : "s"} from what you told me. It's a draft on the SOPs tab: read it, fix anything, then send it to ${rev && rev.id !== emp.id ? rev.name : "review"}.`, cards: [sops.card(sop)], queries: [] };
     }
     case "precall_report": {
       const precall = await import("./precall");

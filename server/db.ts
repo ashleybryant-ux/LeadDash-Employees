@@ -2139,6 +2139,52 @@ export const ads = {
   },
 };
 
+export const sops = {
+  list(orgId: number) {
+    const t = schema.sops;
+    return getDb().select().from(t).where(eq(t.organizationId, orgId)).orderBy(t.area, t.title).all();
+  },
+  get(orgId: number, id: number) {
+    const t = schema.sops;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.id, id))).limit(1).all()[0] ?? null;
+  },
+  add(row: typeof schema.sops.$inferInsert) {
+    return getDb().insert(schema.sops).values(row).returning().all()[0];
+  },
+  update(id: number, patch: Partial<typeof schema.sops.$inferInsert>) {
+    return getDb().update(schema.sops).set({ ...patch, updatedAt: new Date() }).where(eq(schema.sops.id, id)).returning().all()[0];
+  },
+  remove(orgId: number, id: number) {
+    getDb().delete(schema.sopVersions).where(and(eq(schema.sopVersions.organizationId, orgId), eq(schema.sopVersions.sopId, id))).run();
+    return getDb().delete(schema.sops).where(and(eq(schema.sops.organizationId, orgId), eq(schema.sops.id, id))).run().changes;
+  },
+  versions(orgId: number, sopId: number) {
+    const t = schema.sopVersions;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.sopId, sopId))).orderBy(desc(t.id)).all();
+  },
+  addVersion(row: typeof schema.sopVersions.$inferInsert) {
+    return getDb().insert(schema.sopVersions).values(row).returning().all()[0];
+  },
+  jobs(orgId: number) {
+    const t = schema.sopJobs;
+    return getDb().select().from(t).where(eq(t.organizationId, orgId)).orderBy(desc(t.id)).limit(50).all();
+  },
+  job(orgId: number, id: number) {
+    const t = schema.sopJobs;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.id, id))).limit(1).all()[0] ?? null;
+  },
+  jobForWebTask(orgId: number, webTaskId: number) {
+    const t = schema.sopJobs;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.webTaskId, webTaskId))).limit(1).all()[0] ?? null;
+  },
+  addJob(row: typeof schema.sopJobs.$inferInsert) {
+    return getDb().insert(schema.sopJobs).values(row).returning().all()[0];
+  },
+  updateJob(id: number, patch: Partial<typeof schema.sopJobs.$inferInsert>) {
+    return getDb().update(schema.sopJobs).set({ ...patch, updatedAt: new Date() }).where(eq(schema.sopJobs.id, id)).returning().all()[0];
+  },
+};
+
 export const team = {
   messages(orgs: Orgs, channel: string, limit = 300) {
     const t = schema.teamMessages;

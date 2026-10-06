@@ -114,6 +114,8 @@ export function startScheduler() {
   void import("../work/clickupImport").then((c) => c.repairNewlines()).catch(() => null);
   // Links in team chat messages that have no card yet (history from Slack, say) get one.
   void import("../teamLinks").then((l) => l.backfill()).catch((err) => console.warn("[team] link previews:", err instanceof Error ? err.message : err));
+  // A screen recording that was being written up when the server restarted starts again.
+  void import("./sops").then((s) => s.resumeJobs()).catch((err) => console.warn("[sops] resume:", err instanceof Error ? err.message : err));
   // The old catch-all "Team action items" list is sorted into projects once.
   void (async () => {
     const pj = await import("./projects");
