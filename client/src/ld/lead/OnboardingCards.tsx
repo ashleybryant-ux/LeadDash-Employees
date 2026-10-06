@@ -188,7 +188,7 @@ export function NotetakerCard({ emp }: { emp: EmployeeRow }) {
             </span>
             {editing ? <input className="ld-in" aria-label="Never-join words" value={d.skipWords} maxLength={500} onChange={(e) => setD({ ...d, skipWords: e.target.value })} /> : <span className="ld-body">{s.skipWords || <span className="ld-muted">No words set</span>}</span>}
           </Row>
-          <Row label="Name in the meeting">
+          <Row label="Name in the meeting" note="His portrait shows as his camera.">
             {editing ? <input className="ld-in" style={{ maxWidth: 420 }} aria-label="Name in the meeting" placeholder={s.botNameShown} value={d.botName} maxLength={60} onChange={(e) => setD({ ...d, botName: e.target.value })} /> : <span className="ld-body">{s.botNameShown}</span>}
           </Row>
           <Row label="When he joins" note="Some states require everyone's consent to record.">

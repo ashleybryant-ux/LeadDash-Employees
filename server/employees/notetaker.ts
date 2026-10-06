@@ -56,15 +56,50 @@ async function ownerOf(orgId: number) {
   return { name, first: name.split(" ")[0], email: owner?.email ?? "" };
 }
 
+/** The name on the bot's tile: just his name, unless the practice typed another. */
 export async function botNameFor(orgId: number, n: Notetaker) {
   if (n.botName) return n.botName;
   const avery = await db.getEmployeeByKind(orgId, "inbox");
-  return `${avery?.name ?? "Avery"} (notes for ${(await ownerOf(orgId)).first})`;
+  return avery?.name ?? "Avery";
 }
 
+/** What he posts in the meeting chat as he joins. */
 async function joinMessage(orgId: number) {
   const avery = await db.getEmployeeByKind(orgId, "inbox");
-  return `I'm ${avery?.name ?? "Avery"}, taking notes for ${(await ownerOf(orgId)).first}. Ask me to leave anytime.`;
+  const org = await db.getOrganizationById(orgId);
+  return `I'm ${avery?.name ?? "Avery"}, a LeadDash employee taking notes for ${org?.name ?? "the practice"}. Ask me to leave anytime.`;
+}
+
+const imageCache = new Map<string, string>();
+
+/**
+ * His portrait as the bot's camera: a 1280x720 JPEG (what Recall.ai takes) with the
+ * portrait centered on the app's neutral background. Built once per avatar file.
+ */
+export async function botImage(orgId: number): Promise<string | null> {
+  const avery = await db.getEmployeeByKind(orgId, "inbox");
+  const { default: fs } = await import("node:fs");
+  const { default: path } = await import("node:path");
+  const { default: sharp } = await import("sharp");
+  const fileUrl = avery?.avatar?.startsWith("/avatars/") ? avery.avatar : "/avatars/inbox.webp";
+  for (const base of ["dist/public", "client/public"]) {
+    const file = path.resolve(process.cwd(), base, fileUrl.slice(1));
+    if (!fs.existsSync(file)) continue;
+    const hit = imageCache.get(file);
+    if (hit) return hit;
+    try {
+      // The portrait, with a soft blur of itself filling the 16:9 tile behind it, the way video apps frame a photo.
+      const portrait = await sharp(file).resize(640, 640, { fit: "cover" }).png().toBuffer();
+      const backdrop = await sharp(file).resize(1280, 720, { fit: "cover" }).blur(40).modulate({ brightness: 0.7 }).png().toBuffer();
+      const b64 = (await sharp(backdrop).composite([{ input: portrait, left: 320, top: 40 }]).jpeg({ quality: 82 }).toBuffer()).toString("base64");
+      imageCache.set(file, b64);
+      return b64;
+    } catch (err) {
+      console.warn("[notetaker] bot image failed:", err instanceof Error ? err.message : err);
+      return null;
+    }
+  }
+  return null;
 }
 
 /** The never-join word an event has, if any. Links to leaddash.io always lock. */
@@ -157,7 +192,7 @@ async function settle(orgId: number, row: NotetakerMeeting, n: Notetaker, now: D
   // Booked ahead when there is time; otherwise sent in now (only once the meeting is about to start).
   if (ahead <= LEAD + MIN && ahead > 2 * MIN) return row;
   try {
-    const botId = await integrations.createRecallBot(orgId, { meetingUrl: row.meetingUrl, joinAt: ahead > LEAD + MIN ? joinAt : null, botName: await botNameFor(orgId, n), message: await joinMessage(orgId) });
+    const botId = await integrations.createRecallBot(orgId, { meetingUrl: row.meetingUrl, joinAt: ahead > LEAD + MIN ? joinAt : null, botName: await botNameFor(orgId, n), message: await joinMessage(orgId), imageB64: await botImage(orgId) });
     return db.updateNotetaker(row.id, orgId, { botId, status: "scheduled", error: null });
   } catch (err) {
     return db.updateNotetaker(row.id, orgId, { error: err instanceof Error ? err.message.slice(0, 300) : "Could not book the bot." });

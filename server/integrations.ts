@@ -1605,8 +1605,10 @@ export async function saveRecallKey(orgId: number, apiKey: string) {
  * Books a bot for a meeting. With joinAt more than 10 minutes away Recall reserves it and it
  * joins on time; without joinAt it joins now. It posts the note in the meeting chat when it joins.
  */
-export async function createRecallBot(orgId: number, b: { meetingUrl: string; joinAt: Date | null; botName: string; message: string }) {
+export async function createRecallBot(orgId: number, b: { meetingUrl: string; joinAt: Date | null; botName: string; message: string; imageB64?: string | null }) {
   const key = await recallKey(orgId);
+  // The portrait shows as the bot's camera the whole time it is in the meeting (a 1280x720 JPEG under 1.3MB, per Recall.ai).
+  const image = b.imageB64 ? { kind: "jpeg", b64_data: b.imageB64 } : null;
   const data = await recallFetch(key, "bot/", {
     method: "POST",
     body: {
@@ -1614,6 +1616,7 @@ export async function createRecallBot(orgId: number, b: { meetingUrl: string; jo
       bot_name: b.botName.slice(0, 100),
       ...(b.joinAt ? { join_at: b.joinAt.toISOString() } : {}),
       chat: { on_bot_join: { send_to: "everyone", message: b.message.slice(0, 480) } },
+      ...(image ? { automatic_video_output: { in_call_recording: image, in_call_not_recording: image } } : {}),
     },
   });
   return String(data.id);

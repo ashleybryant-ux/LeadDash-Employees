@@ -76,8 +76,15 @@ describe("Avery's notetaker (notes go to Simone)", () => {
     expect(booked).toHaveLength(1);
     expect(booked[0].meeting_url).toBe("https://meet.google.com/abc-defg-hij");
     expect(booked[0].join_at).toBeTruthy();
-    expect(booked[0].chat.on_bot_join.message).toMatch(/^I'm Avery, taking notes for/);
-    expect(booked[0].bot_name).toMatch(/^Avery \(notes for /);
+    expect(booked[0].chat.on_bot_join.message).toBe("I'm Avery, a LeadDash employee taking notes for Workspace notetaker. Ask me to leave anytime.");
+    expect(booked[0].bot_name).toBe("Avery");
+    // His portrait is the bot's camera: a 1280x720 JPEG.
+    expect(booked[0].automatic_video_output.in_call_recording.kind).toBe("jpeg");
+    const jpeg = Buffer.from(booked[0].automatic_video_output.in_call_recording.b64_data, "base64");
+    expect(jpeg.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+    expect(jpeg.length).toBeLessThan(1_300_000);
+    const sharp = (await import("sharp")).default;
+    expect(await sharp(jpeg).metadata()).toMatchObject({ width: 1280, height: 720 });
     await expect(c.coo.setJoin({ organizationId: orgId, id: session.id, choice: "join" })).rejects.toThrow(/never joins/);
 
     // The meeting happens: pretend it started already, then follow the bot through to notes.
