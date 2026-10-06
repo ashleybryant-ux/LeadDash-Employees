@@ -33,7 +33,7 @@ const LIMITS: Record<string, number> = {
   slack: 300_000_000,
   take: 200_000_000,
   leads: 80_000_000,
-  sop_recording: 400_000_000,
+  sop_recording: 300_000_000, // the same as nginx: about 25 minutes of screen
 };
 
 const KNOWLEDGE_CATEGORY: Record<string, string> = {
