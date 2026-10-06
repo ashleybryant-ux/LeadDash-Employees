@@ -61,6 +61,16 @@ describe("employees do real work", () => {
     expect(opps[0]).toMatchObject({ kind: "grant", host: "Funder", fitScore: 91, fitCall: "apply", sourceUrl: "https://funder.org/grants/a" });
     expect(JSON.parse(opps[0].searchQueries!)).toEqual(["oklahoma behavioral health grant 2027"]);
 
+    // Skipping keeps it in the list (the screen shows it on the Skipped tab); Bring back makes it worth applying to again, with the reason kept.
+    await caller(owner).opps.skip({ organizationId: orgId, id: opps[0].id });
+    expect((await caller(owner).opps.list({ organizationId: orgId, employee: "grants" }))[0].status).toBe("dismissed");
+    await db.updateOpp(opps[0].id, orgId, { fitCall: "skip", fitReason: "Too small." });
+    const back = await caller(owner).opps.restore({ organizationId: orgId, id: opps[0].id });
+    expect(back).toMatchObject({ status: "new", fitCall: "apply", fitScore: 91 });
+    await db.updateOpp(opps[0].id, orgId, { fitCall: "skip", fitScore: 15 });
+    expect((await caller(owner).opps.restore({ organizationId: orgId, id: opps[0].id })).fitScore).toBe(60); // stays Apply after the restart tidy-up
+    expect(back.fitReason).toBe(`${owner.name} brought this back. Too small.`);
+
     // The Brain is in the instructions, and so is the entity rule.
     expect(calls[0].system).toContain("For-profit LLC in Oklahoma.");
     expect(calls[0].system).toContain("Never use em dashes");

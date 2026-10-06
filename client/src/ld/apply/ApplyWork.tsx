@@ -44,7 +44,7 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
   const { currentOrgId } = useTenant();
   const initial = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
   const [tab, setTab] = React.useState<"opps" | "apps" | "awards">(initial === "applications" ? "apps" : initial === "awards" ? "awards" : "opps");
-  const [kind, setKind] = React.useState<OppKind>(OPP_TABS[empKind][0].key);
+  const [kind, setKind] = React.useState<OppKind | "skipped">(OPP_TABS[empKind][0].key);
   const [adding, setAdding] = React.useState(false);
   const linkedOpp = typeof window !== "undefined" ? Number(new URLSearchParams(window.location.search).get("opp")) || null : null;
   const opps = trpc.opps.list.useQuery({ organizationId: currentOrgId, employee: empKind }, { refetchInterval: (q) => ((q.state.data ?? []).some((o) => o.packageStatus === "fetching") ? 5000 : false) });
@@ -53,6 +53,10 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
   const find = trpc.opps.find.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
 
   const oppList = opps.data ?? [];
+  // Skipped ones (the employee's call, or yours) sit on their own tab so you never review the same thing twice.
+  const isSkipped = (o: OppRow) => o.status === "dismissed" || (o.fitCall === "skip" && (o.fitScore > 0 || !!o.fitReason));
+  const skipped = oppList.filter(isSkipped);
+  const live = oppList.filter((o) => !isSkipped(o));
   // A chat card's Details button opens that row on the right folder tab.
   const linkedKind = linkedOpp ? oppList.find((o) => o.id === linkedOpp)?.kind : undefined;
   React.useEffect(() => {
@@ -71,7 +75,7 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
         <button type="button" className="ld-btn" onClick={() => { setTab("opps"); setAdding((v) => !v); }}>
           Add
         </button>
-        <button type="button" className="ld-btn p" disabled={find.isPending} onClick={() => { setTab("opps"); find.mutate({ organizationId: currentOrgId, employee: empKind, kind }); }}>
+        <button type="button" className="ld-btn p" disabled={find.isPending} onClick={() => { setTab("opps"); find.mutate({ organizationId: currentOrgId, employee: empKind, kind: kind === "skipped" ? OPP_TABS[empKind][0].key : kind }); }}>
           {find.isPending ? "Searching..." : kind === "media" ? "Find press" : empKind === "speaking" ? "Find events" : "Find more"}
         </button>
       </div>
@@ -81,7 +85,7 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
         value={tab}
         onChange={setTab}
         tabs={[
-          { key: "opps", label: `Opportunities (${oppList.length})` },
+          { key: "opps", label: `Opportunities (${live.length})` },
           { key: "apps", label: `Applications (${appList.length})` },
           { key: "awards", label: `${empKind === "speaking" ? "Results" : "Awards"} (${awardList.length})` },
         ]}
@@ -92,16 +96,28 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
           <FolderTabs
             value={kind}
             onChange={setKind}
-            tabs={OPP_TABS[empKind].map((t) => ({ key: t.key, label: `${t.label} (${oppList.filter((o) => o.kind === t.key).length})` }))}
+            tabs={[...OPP_TABS[empKind].map((t) => ({ key: t.key, label: `${t.label} (${live.filter((o) => o.kind === t.key).length})` })), { key: "skipped", label: `Skipped (${skipped.length})` }]}
           >
-            {adding && <AddPanel empKind={empKind} onDone={() => setAdding(false)} />}
-            <OppTable initialOpen={linkedOpp} list={oppList.filter((o) => o.kind === kind)} kind={kind} loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
+            {adding && kind !== "skipped" && <AddPanel empKind={empKind} onDone={() => setAdding(false)} />}
+            {kind === "skipped" ? (
+              <OppTable initialOpen={linkedOpp} list={skipped} kind={OPP_TABS[empKind][0].key} skippedTab loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
+            ) : (
+              <OppTable initialOpen={linkedOpp} list={live.filter((o) => o.kind === kind)} kind={kind} loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
+            )}
           </FolderTabs>
         ) : (
-          <div className="ld-card" style={{ overflow: "hidden" }}>
-            {adding && <AddPanel empKind={empKind} onDone={() => setAdding(false)} />}
-            <OppTable initialOpen={linkedOpp} list={oppList} kind={kind} loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
-          </div>
+          <FolderTabs
+            value={kind}
+            onChange={setKind}
+            tabs={[{ key: OPP_TABS[empKind][0].key, label: `${OPP_TABS[empKind][0].label} (${live.length})` }, { key: "skipped", label: `Skipped (${skipped.length})` }]}
+          >
+            {adding && kind !== "skipped" && <AddPanel empKind={empKind} onDone={() => setAdding(false)} />}
+            {kind === "skipped" ? (
+              <OppTable initialOpen={linkedOpp} list={skipped} kind={OPP_TABS[empKind][0].key} skippedTab loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
+            ) : (
+              <OppTable initialOpen={linkedOpp} list={live} kind={kind} loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
+            )}
+          </FolderTabs>
         ))}
       {tab === "apps" && <AppTable list={appList} loading={apps.isLoading} emp={emp} />}
       {tab === "awards" && <AwardTable list={awardList} loading={apps.isLoading} emp={emp} />}
@@ -181,13 +197,14 @@ function AddPanel({ empKind, onDone }: { empKind: EmpKind; onDone: () => void })
 // Opportunities
 // ==========================================
 
-function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen }: { list: OppRow[]; kind: OppKind; loading: boolean; apps: AppRow[]; emp: EmployeeRow; onOpenApps: () => void; initialOpen?: number | null }) {
+function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen, skippedTab }: { skippedTab?: boolean; list: OppRow[]; kind: OppKind; loading: boolean; apps: AppRow[]; emp: EmployeeRow; onOpenApps: () => void; initialOpen?: number | null }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const [open, setOpen] = React.useState<number | null>(initialOpen ?? null);
   const [asking, setAsking] = React.useState<number | null>(null);
   const start = trpc.applications.start.useMutation({ onSuccess: async () => { await utils.applications.list.invalidate(); await utils.opps.list.invalidate(); onOpenApps(); } });
   const skip = trpc.opps.skip.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
+  const restore = trpc.opps.restore.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
   const refresh = trpc.opps.refreshPackage.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
   const dl = trpc.opps.downloadPackage.useMutation({ onSuccess: openDownload });
 
@@ -201,7 +218,7 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen }: {
         <span>{kind === "bid" ? "Fit" : `${emp.name}'s call`}</span>
         <span />
       </div>
-      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : `Nothing here yet. Press ${kind === "media" ? "Find press" : emp.kind === "speaking" ? "Find events" : "Find more"}, add one, or ask ${emp.name} in Chat.`}</div>}
+      {list.length === 0 && <div className="ld-empty">{loading ? "Loading..." : skippedTab ? `Nothing skipped. Anything ${emp.name} calls Skip, or you skip, lands here.` : `Nothing here yet. Press ${kind === "media" ? "Find press" : emp.kind === "speaking" ? "Find events" : "Find more"}, add one, or ask ${emp.name} in Chat.`}</div>}
       {list.map((o) => {
         const isOpen = open === o.id;
         const app = apps.find((a) => a.opportunityId === o.id);
@@ -220,6 +237,7 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen }: {
               <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                 <span className="ld-strong">{o.title}</span>
                 {o.source === "BidPrime" && <span className="ld-small ld-muted">From BidPrime</span>}
+                {skippedTab && <span className="ld-small ld-muted">{THING[o.kind as OppKind] ?? o.kind}{o.status === "dismissed" ? " · you skipped it" : ` · ${emp.name}'s call`}</span>}
               </span>
               <span>{o.host}</span>
               <span>{o.deadline || reqs.due || "Not posted"}</span>
@@ -227,6 +245,8 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen }: {
               {app ? <span className={`ld-pill ${APP_STATUS[app.status]?.cls ?? "gray"}`}>{APP_STATUS[app.status]?.label ?? app.status}</span> : o.fitScore > 0 || o.fitReason ? callPill(o) : <span className="ld-pill gray">Not scored</span>}
               {app ? (
                 <button type="button" className="ld-btn" onClick={onOpenApps}>Open</button>
+              ) : skippedTab ? (
+                <button type="button" className="ld-btn" disabled={restore.isPending} onClick={() => restore.mutate({ organizationId: currentOrgId, id: o.id })}>Bring back</button>
               ) : (
                 <button type="button" className={`ld-btn ${o.fitCall === "skip" ? "" : "p"}`} disabled={start.isPending} onClick={() => start.mutate({ organizationId: currentOrgId, opportunityId: o.id })}>
                   Apply
@@ -311,7 +331,12 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen }: {
                   {(o.kind === "bid" || /@/.test(`${reqs.questionsTo ?? ""} ${reqs.contact?.email ?? ""}`)) && (
                     <button type="button" className="ld-btn" onClick={() => setAsking(asking === o.id ? null : o.id)}>Ask a question</button>
                   )}
-                  <button type="button" className="ld-btn" onClick={() => skip.mutate({ organizationId: currentOrgId, id: o.id })}>Skip</button>
+                  {skippedTab ? (
+                    <button type="button" className="ld-btn" disabled={restore.isPending} onClick={() => restore.mutate({ organizationId: currentOrgId, id: o.id })}>Bring back</button>
+                  ) : (
+                    <button type="button" className="ld-btn" disabled={skip.isPending} onClick={() => skip.mutate({ organizationId: currentOrgId, id: o.id })}>Skip</button>
+                  )}
+                  <ErrorLine error={skip.error ?? restore.error} />
                 </div>
                 {asking === o.id && (
                   <div style={{ gridColumn: "1 / -1" }}>

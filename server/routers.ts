@@ -630,8 +630,8 @@ export const appRouter = router({
         await requireMember(ctx, input.organizationId);
         const list = await db.listOpps(input.organizationId, apply.KINDS_FOR[input.employee]);
         const files = await db.listOppFilesForOrg(input.organizationId);
+        // Skipped ones (by the employee's call or by a person) come along: the screen keeps them on their own tab.
         return list
-          .filter((o) => o.status !== "dismissed")
           .map((o) => ({
             ...o,
             files: files.filter((f) => f.opportunityId === o.id).map((f) => ({ id: f.id, name: f.name, pages: f.pages, pagesUnit: f.pagesUnit, status: f.status, note: f.note, fileUrl: f.fileUrl })),
@@ -671,6 +671,17 @@ export const appRouter = router({
         const opp = await db.updateOpp(input.id, input.organizationId, { status: "dismissed" });
         if (!opp) throw new TRPCError({ code: "NOT_FOUND", message: "That opportunity is not in this workspace." });
         return opp;
+      }),
+    // Bring a skipped one back: it counts as worth applying to from now on, with the old reason kept.
+    restore: protectedProcedure
+      .input(orgInput.extend({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const have = await db.getOpp(input.id, input.organizationId);
+        if (!have) throw new TRPCError({ code: "NOT_FOUND", message: "That opportunity is not in this workspace." });
+        // A person's call beats the score: the score is lifted to the Apply line so a restart's tidy-up doesn't skip it again.
+        const opp = await db.updateOpp(input.id, input.organizationId, { status: "new", fitCall: have.fitCall === "skip" ? "apply" : have.fitCall, fitScore: have.fitCall === "skip" ? Math.max(60, have.fitScore) : have.fitScore, fitReason: have.fitCall === "skip" ? `${personName(ctx.user)} brought this back. ${have.fitReason ?? ""}`.trim() : have.fitReason });
+        return opp!;
       }),
 
     downloadPackage: protectedProcedure
