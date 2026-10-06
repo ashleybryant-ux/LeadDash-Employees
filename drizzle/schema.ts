@@ -1050,6 +1050,10 @@ export const launches = sqliteTable(
     status: text("status", { enum: LAUNCH_STATUSES }).notNull().default("planning"),
     /** What the owner asked for, kept for re-planning. */
     brief: text("brief"),
+    /** An ongoing project has no launch day; its launchDate is only a far-off placeholder. */
+    ongoing: integer("ongoing", { mode: "boolean" }).notNull().default(false),
+    /** Where it started, in words: "the Oct 5 huddle". */
+    sourceNote: text("sourceNote"),
     /** The launch's list in Projects (this app's own task manager). */
     pjListId: integer("pjListId"),
     /** From before Projects replaced ClickUp; kept so old links still work. */

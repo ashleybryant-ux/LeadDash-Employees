@@ -112,6 +112,11 @@ export function startScheduler() {
   void import("./drama").then((d) => d.resumeDrama()).catch(() => null);
   void import("../work/clickupImport").then((c) => c.failInterrupted()).catch(() => null);
   void import("../work/clickupImport").then((c) => c.repairNewlines()).catch(() => null);
+  // The old catch-all "Team action items" list is sorted into projects once.
+  void (async () => {
+    const pj = await import("./projects");
+    for (const o of await db.listOrganizations()) await pj.sortTeamItems(o.id).catch((err) => console.warn(`[projects] sorting old items in workspace ${o.id} failed:`, err instanceof Error ? err.message : err));
+  })();
   let busy = false;
   const timer = setInterval(async () => {
     if (busy) return;

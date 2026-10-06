@@ -41,6 +41,8 @@ export type Ops = {
   /** Bookkeeping so daily jobs run once a day. */
   lastCheck?: string;
   lastReport?: string;
+  /** The old catch-all "Team action items" list was sorted into projects. */
+  teamItemsSorted?: boolean;
 };
 
 const TIMES = ["07:30", "08:30", "09:30"] as const;
@@ -74,6 +76,7 @@ export function readOps(raw: string | null | undefined): Ops {
     notetaker: readNotetaker(v.notetaker),
     lastCheck: typeof v.lastCheck === "string" ? v.lastCheck : undefined,
     lastReport: typeof v.lastReport === "string" ? v.lastReport : undefined,
+    teamItemsSorted: v.teamItemsSorted === true ? true : undefined,
   };
 }
 

@@ -3909,7 +3909,20 @@ export const appRouter = router({
   projects: router({
     launches: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return (await db.listLaunches(input.organizationId)).filter((l) => l.status !== "dropped").map((l) => ({ id: l.id, name: l.name, launchDate: l.launchDate, status: l.status }));
+      return projects.projectsOverview(input.organizationId);
+    }),
+    saveProject: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int().positive().optional(), name: z.string().max(120), brief: z.string().max(2000).optional(), launchDate: z.string().max(10).nullable().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, ...rest } = input;
+        const l = await projects.saveProject(organizationId, rest, personName(ctx.user));
+        return { id: l.id, name: l.name };
+      }),
+    moveTask: protectedProcedure.input(orgInput.extend({ taskId: z.number().int().positive(), launchId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      await projects.moveTask(input.organizationId, input.taskId, input.launchId);
+      return { ok: true };
     }),
     launch: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

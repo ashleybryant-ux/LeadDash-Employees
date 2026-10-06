@@ -7,6 +7,7 @@ import { Avatar, ErrorLine, FolderTabs, PersonAvatar, useEmployees } from "../ui
 import type { Outputs } from "../types";
 
 type View = Outputs["projects"]["launch"];
+type Card = Outputs["projects"]["launches"][number];
 type Task = View["tasks"][number];
 type Kpi = View["kpis"][number];
 type Tab = "tasks" | "milestones" | "kpis" | "reports";
@@ -36,67 +37,137 @@ function Owner({ t }: { t: Pick<Task, "ownerName" | "ownerType" | "ownerKind"> }
   );
 }
 
-const groupHead: React.CSSProperties = { padding: "10px 18px", fontSize: 12, fontWeight: 700, color: "#5b6b64", textTransform: "uppercase", letterSpacing: ".06em", background: "#f8fafb", borderBottom: "1px solid #e3e9e6", display: "flex", justifyContent: "space-between", gap: 12 };
+const groupHead: React.CSSProperties = { padding: "10px 18px", fontSize: 12, fontWeight: 700, color: "#5b6b64", textTransform: "uppercase", letterSpacing: ".06em", background: "#f8fafb", borderBottom: "1px solid #eef2f0", display: "flex", justifyContent: "space-between" };
 
-/** Nora's Work tab: one launch at a time, with its tasks, milestones, KPIs and reports. */
+/** What a project card says on its right: the thing that needs attention first. */
+function attention(c: Card, tz: string) {
+  if (c.status === "planning") return "";
+  if (c.behind) return `${c.behind} behind`;
+  if (c.needPerson) return `${c.needPerson} need${c.needPerson === 1 ? "s" : ""} a person`;
+  if (c.dueToday) return c.dueToday === 1 ? "due today" : `${c.dueToday} due today`;
+  return c.ongoing ? "" : short(c.launchDate, tz);
+}
+
+/** Nora's Projects tab: every project as a card on the left, the one you pick on the right. */
 export default function Launches({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId, currentOrg } = useTenant();
   const tz = currentOrg?.timezone || "America/Chicago";
-  const list = trpc.projects.launches.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
-  const launches = list.data ?? [];
+  const list = trpc.projects.launches.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 60_000 });
+  const cards = list.data ?? [];
   const [picked, setPicked] = React.useState<number | null>(null);
-  const current = picked ?? (launches.find((l) => l.status === "active") ?? launches.find((l) => l.status === "planning") ?? launches[0])?.id ?? null;
+  const [making, setMaking] = React.useState(false);
+  const current = picked && cards.some((c) => c.id === picked) ? picked : cards[0]?.id ?? null;
   const q = trpc.projects.launch.useQuery({ organizationId: currentOrgId, id: current ?? 0 }, { enabled: currentOrgId > 0 && !!current, refetchInterval: 60_000 });
   const [tab, setTab] = React.useState<Tab>("tasks");
   const utils = trpc.useUtils();
-  const approve = trpc.projects.approvePlan.useMutation({ onSuccess: () => Promise.all([utils.projects.invalidate()]) });
-
-  if (!list.isLoading && launches.length === 0) {
-    return (
-      <main className="ld-main" style={{ padding: "20px 32px" }}>
-        <div className="ld-card ld-empty">No launches yet. Ask {emp.name} in Chat to plan one, for example "Plan the spring launch for Mon, Mar 1, 2027."</div>
-      </main>
-    );
-  }
   const v = q.data;
+  const card = cards.find((c) => c.id === current) ?? null;
+
   return (
     <main className="ld-main" style={{ padding: "20px 32px" }}>
-      <div className="ld-row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <label className="ld-lbl" htmlFor="launch-pick" style={{ margin: 0 }}>Launch</label>
-        <select id="launch-pick" className="ld-in" style={{ width: "auto", minWidth: 320 }} value={current ?? ""} onChange={(e) => setPicked(Number(e.target.value))}>
-          {launches.map((l) => (
-            <option key={l.id} value={l.id}>{`${l.name} · ${day(l.launchDate, tz)}${l.status === "planning" ? " (waiting for you)" : l.status === "done" ? " (done)" : ""}`}</option>
-          ))}
-        </select>
-        {v?.launch.status === "planning" && (
-          <>
-            <span className="ld-pill amber">Plan waiting for you</span>
-            <button type="button" className="ld-btn p" style={{ width: 128 }} disabled={approve.isPending} onClick={() => approve.mutate({ organizationId: currentOrgId, id: v.launch.id })}>Approve plan</button>
-          </>
-        )}
-        {v?.launch.pjListId ? <Link href={`/projects?list=${v.launch.pjListId}`} className="ld-btn" style={{ width: 150, marginLeft: "auto" }}>Open in Projects</Link> : v?.launch.clickupListUrl ? <a href={v.launch.clickupListUrl} target="_blank" rel="noreferrer noopener" className="ld-btn" style={{ width: 150, marginLeft: "auto" }}>Open in ClickUp</a> : null}
+      <div className="ld-pjwrap">
+        <aside className="ld-pjlist" aria-label="Projects">
+          <div className="ld-between">
+            <span className="ld-lbl" style={{ margin: 0 }}>Projects · {cards.length}</span>
+            <button type="button" className="ld-btn p sm" onClick={() => setMaking(true)}>+ New project</button>
+          </div>
+          {making && <ProjectForm onClose={() => setMaking(false)} onSaved={(id) => { setMaking(false); setPicked(id); }} />}
+          {cards.map((c) => {
+            const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+            const on = c.id === current;
+            return (
+              <button key={c.id} type="button" className={`ld-pjcard ${on ? "on" : ""}`} aria-pressed={on} onClick={() => { setPicked(c.id); setTab("tasks"); }}>
+                <span className="nm">
+                  <span className="gp-ell">{c.name}</span>
+                  <span className={`ld-pill ${c.status === "planning" ? "amber" : c.status === "done" ? "gray" : c.ongoing ? "gray" : "green"}`}>{c.status === "planning" ? "Plan waiting for you" : c.status === "done" ? "Done" : c.ongoing ? "Ongoing" : short(c.launchDate, tz)}</span>
+                </span>
+                <span className="ld-pjbar"><i style={{ width: `${pct}%` }} /></span>
+                <span className="meta">
+                  <span>{c.done} of {c.total} tasks done</span>
+                  <span>{attention(c, tz)}</span>
+                </span>
+              </button>
+            );
+          })}
+          {!list.isLoading && cards.length === 0 && <span className="ld-small ld-muted">No projects yet. Make one here, or ask {emp.name} in Chat to plan a launch.</span>}
+          <span className="ld-small ld-muted">Meeting and huddle action items go into the project they are about. {emp.name} makes a project when none fits.</span>
+        </aside>
+        <section className="ld-pjmain">
+          {!current ? null : !v ? (
+            <div className="ld-empty">Loading...</div>
+          ) : (
+            <>
+              <ProjectHead v={v} card={card} tz={tz} onSaved={() => utils.projects.invalidate()} />
+              <FolderTabs
+                value={tab}
+                onChange={setTab}
+                tabs={[
+                  { key: "tasks", label: `Tasks (${v.tasks.length})` },
+                  { key: "milestones", label: `Milestones (${v.milestones.length})` },
+                  { key: "kpis", label: `KPIs (${v.kpis.length})` },
+                  { key: "reports", label: `Reports (${v.reports.length})` },
+                ]}
+              >
+                {tab === "tasks" && <Tasks v={v} tz={tz} emp={emp} projects={cards} />}
+                {tab === "milestones" && <Milestones v={v} tz={tz} />}
+                {tab === "kpis" && <Kpis v={v} tz={tz} />}
+                {tab === "reports" && <Reports v={v} tz={tz} />}
+              </FolderTabs>
+            </>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+/** The project's name, dates and where it started, with Approve plan, Open in Projects, Edit and Move date. Edit opens the fields with Save and Cancel. */
+function ProjectHead({ v, card, tz, onSaved }: { v: View; card: Card | null; tz: string; onSaved: () => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const approve = trpc.projects.approvePlan.useMutation({ onSuccess: () => utils.projects.invalidate() });
+  const [editing, setEditing] = React.useState(false);
+  const l = v.launch;
+  const owners = new Set(v.tasks.map((t) => t.ownerName)).size;
+  const sub = [l.ongoing ? "Ongoing" : `Launch day ${day(l.launchDate, tz)}`, `${v.tasks.length} task${v.tasks.length === 1 ? "" : "s"}, ${owners} owner${owners === 1 ? "" : "s"}`, l.sourceNote ?? ""].filter(Boolean).join(" · ");
+  if (editing) return <ProjectForm editing={{ id: l.id, name: l.name, brief: l.brief ?? "", launchDate: l.ongoing ? "" : mdy(l.launchDate, tz) }} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onSaved(); }} />;
+  return (
+    <div className="ld-pjhead">
+      <div style={{ minWidth: 0 }}>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>{l.name}</h2>
+        <span className="ld-small ld-muted">{l.brief ? `${l.brief.slice(0, 120)}${l.brief.length > 120 ? "…" : ""} · ` : ""}{sub}</span>
+        {card?.status === "planning" && <span className="ld-pill amber" style={{ marginLeft: 8 }}>Plan waiting for you</span>}
+      </div>
+      <div className="ld-row" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+        {l.status === "planning" && <button type="button" className="ld-btn p gp-auto" disabled={approve.isPending} onClick={() => approve.mutate({ organizationId: currentOrgId, id: l.id })}>Approve plan</button>}
+        {l.pjListId ? <Link href={`/projects?list=${l.pjListId}`} className="ld-btn gp-auto">Open in Projects</Link> : l.clickupListUrl ? <a href={l.clickupListUrl} target="_blank" rel="noreferrer noopener" className="ld-btn gp-auto">Open in ClickUp</a> : null}
+        <button type="button" className="ld-btn gp-auto" onClick={() => setEditing(true)}>Edit</button>
+        <button type="button" className="ld-btn gp-auto" onClick={() => setEditing(true)}>{l.ongoing ? "Set a launch date" : "Move date"}</button>
       </div>
       <ErrorLine error={approve.error} />
-      {!v ? (
-        <div className="ld-empty">Loading...</div>
-      ) : (
-        <FolderTabs
-          value={tab}
-          onChange={setTab}
-          tabs={[
-            { key: "tasks", label: `Tasks (${v.tasks.length})` },
-            { key: "milestones", label: `Milestones (${v.milestones.length})` },
-            { key: "kpis", label: `KPIs (${v.kpis.length})` },
-            { key: "reports", label: `Reports (${v.reports.length})` },
-          ]}
-        >
-          {tab === "tasks" && <Tasks v={v} tz={tz} emp={emp} />}
-          {tab === "milestones" && <Milestones v={v} tz={tz} />}
-          {tab === "kpis" && <Kpis v={v} tz={tz} />}
-          {tab === "reports" && <Reports v={v} tz={tz} />}
-        </FolderTabs>
-      )}
-    </main>
+    </div>
+  );
+}
+
+/** New project, or Edit on one: name, what it is for, and the launch date (blank for ongoing). Save and Cancel. */
+function ProjectForm({ editing, onClose, onSaved }: { editing?: { id: number; name: string; brief: string; launchDate: string }; onClose: () => void; onSaved: (id: number) => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const [d, setD] = React.useState({ name: editing?.name ?? "", brief: editing?.brief ?? "", launchDate: editing?.launchDate ?? "" });
+  const save = trpc.projects.saveProject.useMutation({ onSuccess: async (r) => { await utils.projects.invalidate(); onSaved(r.id); } });
+  const go = () => d.name.trim() && save.mutate({ organizationId: currentOrgId, id: editing?.id, name: d.name, brief: d.brief, launchDate: d.launchDate.trim() || null });
+  return (
+    <div className="ld-card editing ld-pjform">
+      <span className="ld-lbl">{editing ? "Change the project" : "New project"}</span>
+      <div className="ld-field"><label className="ld-lbl" htmlFor="pj-name">Name</label><input id="pj-name" className="ld-in" autoFocus value={d.name} placeholder="November 10 webinar" onChange={(e) => setD({ ...d, name: e.target.value })} onKeyDown={(e) => e.key === "Enter" && go()} /></div>
+      <div className="ld-field"><label className="ld-lbl" htmlFor="pj-brief">What it is for</label><input id="pj-brief" className="ld-in" value={d.brief} placeholder="Webinar for group practices" onChange={(e) => setD({ ...d, brief: e.target.value })} onKeyDown={(e) => e.key === "Enter" && go()} /></div>
+      <div className="ld-field"><label className="ld-lbl" htmlFor="pj-date">Launch date (MM/DD/YYYY), blank for ongoing</label><input id="pj-date" className="ld-in" style={{ maxWidth: 160 }} value={d.launchDate} placeholder="MM/DD/YYYY" onChange={(e) => setD({ ...d, launchDate: e.target.value })} onKeyDown={(e) => e.key === "Enter" && go()} /></div>
+      <div className="ld-row">
+        <button type="button" className="ld-btn p sm" disabled={!d.name.trim() || save.isPending} onClick={go}>Save</button>
+        <button type="button" className="ld-btn sm" onClick={onClose}>Cancel</button>
+      </div>
+      <ErrorLine error={save.error} />
+    </div>
   );
 }
 
@@ -104,21 +175,28 @@ export default function Launches({ emp }: { emp: EmployeeRow }) {
 // Tasks
 // ==========================================
 
-const TQ = "minmax(0,2.2fr) minmax(0,1.3fr) 150px 140px 128px";
+const TQ = "minmax(0,2.4fr) minmax(0,1.2fr) 118px 112px 84px";
 
-function Tasks({ v, tz, emp }: { v: View; tz: string; emp: EmployeeRow }) {
+function Tasks({ v, tz, emp, projects }: { v: View; tz: string; emp: EmployeeRow; projects: Card[] }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const owners = trpc.projects.owners.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const [open, setOpen] = React.useState<number | null>(null);
   const [editing, setEditing] = React.useState<number | null>(null);
-  const [d, setD] = React.useState({ title: "", details: "", owner: "", due: "" });
+  const [d, setD] = React.useState({ title: "", details: "", owner: "", due: "", launchId: 0 });
   const refresh = () => utils.projects.invalidate();
   const mark = trpc.projects.markTask.useMutation({ onSuccess: refresh });
-  const save = trpc.projects.updateTask.useMutation({ onSuccess: async () => { setEditing(null); await refresh(); } });
+  const move = trpc.projects.moveTask.useMutation({ onSuccess: refresh });
+  const save = trpc.projects.updateTask.useMutation({
+    onSuccess: async (_r, vars) => {
+      if (d.launchId && d.launchId !== v.launch.id) await move.mutateAsync({ organizationId: currentOrgId, taskId: vars.taskId, launchId: d.launchId });
+      setEditing(null);
+      await refresh();
+    },
+  });
   const groups: { key: string; label: string; right: string; tasks: Task[] }[] = v.milestones.map((m) => ({ key: `m${m.id}`, label: `${m.name} · ${day(m.dueDate, tz)}`, right: `${m.done} of ${m.total} done`, tasks: v.tasks.filter((t) => t.milestoneId === m.id) }));
   const loose = v.tasks.filter((t) => !t.milestoneId || !v.milestones.some((m) => m.id === t.milestoneId));
-  if (loose.length) groups.push({ key: "loose", label: "From meetings", right: `${loose.filter((t) => t.status === "done").length} of ${loose.length} done`, tasks: loose });
+  if (loose.length) groups.push({ key: "loose", label: v.milestones.length ? "Other tasks" : "", right: v.milestones.length ? `${loose.filter((t) => t.status === "done").length} of ${loose.length} done` : "", tasks: loose });
 
   return (
     <>
@@ -129,13 +207,15 @@ function Tasks({ v, tz, emp }: { v: View; tz: string; emp: EmployeeRow }) {
         <span>Status</span>
         <span />
       </div>
-      {v.tasks.length === 0 && <div className="ld-empty">No tasks in this launch.</div>}
+      {v.tasks.length === 0 && <div className="ld-empty">No tasks in this project yet.</div>}
       {groups.map((g) => (
         <React.Fragment key={g.key}>
-          <div style={groupHead}>
-            <span>{g.label}</span>
-            <span>{g.right}</span>
-          </div>
+          {g.label && (
+            <div style={groupHead}>
+              <span>{g.label}</span>
+              <span>{g.right}</span>
+            </div>
+          )}
           {g.tasks.map((t) => {
             const isOpen = open === t.id;
             const isEditing = editing === t.id;
@@ -145,9 +225,9 @@ function Tasks({ v, tz, emp }: { v: View; tz: string; emp: EmployeeRow }) {
                 <div className={`ld-rw ${isOpen ? "open" : ""}`} style={{ gridTemplateColumns: TQ, cursor: "pointer" }} aria-expanded={isOpen} onClick={(e) => { if ((e.target as HTMLElement).closest("button,a,input,select,textarea")) return; setOpen(isOpen ? null : t.id); setEditing(null); }}>
                   <span className="ld-strong">{t.title}</span>
                   <Owner t={t} />
-                  <span>{day(t.dueDate, tz)}</span>
+                  <span className="ld-small">{short(t.dueDate, tz)}</span>
                   <span className={`ld-pill ${STATE_CLS[t.shown.key]}`}>{t.shown.label}</span>
-                  <button type="button" className="ld-btn" onClick={() => { setOpen(isOpen ? null : t.id); setEditing(null); }}>{isOpen ? "Close" : "Open"}</button>
+                  <button type="button" className="ld-btn" style={{ width: 84 }} onClick={() => { setOpen(isOpen ? null : t.id); setEditing(null); }}>{isOpen ? "Close" : "Open"}</button>
                 </div>
                 {isOpen && (
                   <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 128px", gap: 24 }}>
@@ -156,6 +236,12 @@ function Tasks({ v, tz, emp }: { v: View; tz: string; emp: EmployeeRow }) {
                         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                           <div className="ld-field"><label className="ld-lbl" htmlFor={`tt-${t.id}`}>Task</label><input id={`tt-${t.id}`} className="ld-in" value={d.title} onChange={(e) => setD({ ...d, title: e.target.value })} /></div>
                           <div className="ld-field"><label className="ld-lbl" htmlFor={`td-${t.id}`}>Details</label><textarea id={`td-${t.id}`} className="ld-ta" rows={3} value={d.details} onChange={(e) => setD({ ...d, details: e.target.value })} /></div>
+                          <div className="ld-field">
+                            <label className="ld-lbl" htmlFor={`tp-${t.id}`}>Project</label>
+                            <select id={`tp-${t.id}`} className="ld-in" value={d.launchId} onChange={(e) => setD({ ...d, launchId: Number(e.target.value) })}>
+                              {projects.filter((p) => p.status !== "done").map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                           <div className="ld-field">
@@ -164,11 +250,11 @@ function Tasks({ v, tz, emp }: { v: View; tz: string; emp: EmployeeRow }) {
                               {Array.from(new Set([t.ownerName, ...(owners.data ?? [])])).map((o) => <option key={o} value={o}>{o}</option>)}
                             </select>
                           </div>
-                          <div className="ld-field"><label className="ld-lbl" htmlFor={`tdue-${t.id}`}>Due</label><input id={`tdue-${t.id}`} className="ld-in" style={{ maxWidth: 160 }} placeholder="MM/DD/YYYY" aria-label="Due date MM/DD/YYYY" value={d.due} onChange={(e) => setD({ ...d, due: e.target.value })} /></div>
-                          <ErrorLine error={save.error} />
+                          <div className="ld-field"><label className="ld-lbl" htmlFor={`tdue-${t.id}`}>Due (MM/DD/YYYY)</label><input id={`tdue-${t.id}`} className="ld-in" style={{ maxWidth: 160 }} placeholder="MM/DD/YYYY" value={d.due} onChange={(e) => setD({ ...d, due: e.target.value })} /></div>
+                          <ErrorLine error={save.error ?? move.error} />
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          <button type="button" className="ld-btn p" disabled={save.isPending} onClick={() => save.mutate({ organizationId: currentOrgId, taskId: t.id, title: d.title, details: d.details, owner: d.owner, due: d.due })}>Save</button>
+                          <button type="button" className="ld-btn p" disabled={save.isPending || move.isPending} onClick={() => save.mutate({ organizationId: currentOrgId, taskId: t.id, title: d.title, details: d.details, owner: d.owner, due: d.due })}>Save</button>
                           <button type="button" className="ld-btn" onClick={() => setEditing(null)}>Cancel</button>
                         </div>
                       </>
@@ -181,13 +267,13 @@ function Tasks({ v, tz, emp }: { v: View; tz: string; emp: EmployeeRow }) {
                           {t.note && <KV label={`${emp.name}'s note`}>{t.note}</KV>}
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                          <KV label="Milestone">{m ? `${m.name} · ${day(m.dueDate, tz)}` : "From a meeting"}</KV>
+                          <KV label="Project">{v.launch.name}{m ? ` · ${m.name}, ${day(m.dueDate, tz)}` : ""}</KV>
                           <KV label="Owner">{t.ownerType === "employee" ? `${t.ownerName} (your employee)` : t.ownerName}</KV>
                           <KV label="In Projects">{t.pjTaskId && v.launch.pjListId ? <Link href={`/projects?list=${v.launch.pjListId}&task=${t.pjTaskId}`}>{`Launches › ${v.launch.name} › ${t.title}`}</Link> : t.clickupUrl ? <a href={t.clickupUrl} target="_blank" rel="noreferrer noopener">{`In ClickUp: ${v.launch.name} › ${t.title}`}</a> : v.launch.status === "planning" ? "Once you approve the plan" : "Not there yet"}</KV>
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                           {t.pjTaskId && v.launch.pjListId ? <Link className="ld-btn" href={`/projects?list=${v.launch.pjListId}&task=${t.pjTaskId}`}>Open in Projects</Link> : t.clickupUrl ? <a className="ld-btn" href={t.clickupUrl} target="_blank" rel="noreferrer noopener">Open in ClickUp</a> : null}
-                          <button type="button" className="ld-btn" onClick={() => { setEditing(t.id); setD({ title: t.title, details: t.details ?? "", owner: t.ownerName, due: mdy(t.dueDate, tz) }); }}>Edit</button>
+                          <button type="button" className="ld-btn" onClick={() => { setEditing(t.id); setD({ title: t.title, details: t.details ?? "", owner: t.ownerName, due: mdy(t.dueDate, tz), launchId: v.launch.id }); }}>Edit</button>
                           <button type="button" className="ld-btn" disabled={mark.isPending} onClick={() => mark.mutate({ organizationId: currentOrgId, taskId: t.id, done: t.status !== "done" })}>{t.status === "done" ? "Reopen" : "Mark done"}</button>
                           <ErrorLine error={mark.error} />
                         </div>

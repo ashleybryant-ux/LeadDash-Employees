@@ -1407,6 +1407,9 @@ export async function updateLaunchTask(id: number, orgId: number, data: Partial<
   getDb().update(launchTasks).set(data).where(and(eq(launchTasks.id, id), eq(launchTasks.organizationId, orgId))).run();
   return getLaunchTask(id, orgId);
 }
+export async function deleteLaunchTask(id: number, orgId: number) {
+  getDb().delete(launchTasks).where(and(eq(launchTasks.id, id), eq(launchTasks.organizationId, orgId))).run();
+}
 
 export async function listKpis(launchId: number, orgId: number) {
   return getDb().select().from(launchKpis).where(and(eq(launchKpis.launchId, launchId), eq(launchKpis.organizationId, orgId))).orderBy(launchKpis.position, launchKpis.id).all();

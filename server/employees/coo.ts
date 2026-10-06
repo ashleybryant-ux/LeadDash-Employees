@@ -325,13 +325,12 @@ export async function sendItems(orgId: number, meetingId: number) {
     return zonedToUtc(y, mo, d, 17, 0, tz);
   };
   const r = await addActionItems(orgId, open.map((i) => ({ text: i.text, owner: i.owner, due: dueOf(i.due) })), `meeting:${m.id}`, m.launchId);
-  const inProjects = !!r.launch?.pjListId;
   open.forEach((it, idx) => {
     const t = r.tasks[idx];
     if (t) {
       it.taskId = t.id;
-      it.status = inProjects ? "in_projects" : "task";
-    }
+      it.status = r.launchOf(t)?.pjListId ? "in_projects" : "task";
+    } else it.status = "done"; // said the same thing as another item: already tracked
   });
   for (const it of open.filter((i) => i.ownerKind)) {
     await handoff(orgId, m.launchId ? "projects" : "coo", it.ownerKind as AIEmployee["kind"], `From ${m.title}: ${it.text}`, chatLink(m)).catch(() => null);

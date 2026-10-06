@@ -4,7 +4,7 @@ export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | 
 
 export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Leadership" | "Revenue" | "Sales" | "Marketing" | "Operations" | "Other" }> = {
   coo: { color: "#334155", work: "Meetings", group: "Leadership" },
-  projects: { color: "#6b4f1d", work: "Launches", group: "Leadership" },
+  projects: { color: "#6b4f1d", work: "Projects", group: "Leadership" },
   grants: { color: "#1b6b4a", work: "Opportunities", group: "Revenue" },
   speaking: { color: "#9a4d14", work: "Press", group: "Revenue" },
   prospecting: { color: "#4b3f8f", work: "Prospects", group: "Sales" },

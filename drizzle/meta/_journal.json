@@ -253,6 +253,13 @@
       "when": 1791262838620,
       "tag": "0035_launches_in_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1791265043139,
+      "tag": "0036_projects_tab",
+      "breakpoints": true
     }
   ]
 }

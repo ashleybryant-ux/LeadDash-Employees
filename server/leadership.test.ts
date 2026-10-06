@@ -48,6 +48,17 @@ function mockAi() {
     if (opts.schemaName === "launch_report") return { overall: "Behind on one task.", done: "Nothing yet.", behind: "Pricing page.", next: "Article.", needsYou: "Approve pricing." } as any;
     if (opts.schemaName === "meeting_agenda") return { items: [{ item: "Numbers for the week", who: "Simone", minutes: 5 }, { item: "Pricing page is late", who: "Nora", minutes: 10 }, { item: "Decisions", who: "Ashley Bryant", minutes: 10 }] } as any;
     if (opts.schemaName === "action_items") return { items: [{ text: "Approve pricing page copy", owner: "Ashley" }, { text: "Test a shorter first email", owner: "Jada" }] } as any;
+    if (opts.schemaName === "sort_items") {
+      const lines: string[] = String(opts.prompt).split("\n");
+      return { items: lines.map((line, index) => {
+        const text = line.replace(/^\d+\. /, "");
+        if (/pricing/i.test(text)) return { index, project: "EHR launch", title: "Approve the pricing page copy", duplicate: false };
+        if (/email/i.test(text)) return { index, project: "Cold email", title: text.replace(/\.$/, ""), duplicate: false };
+        if (/webinar/i.test(text)) return { index, project: "November 10 webinar", title: text.replace(/\.$/, "").slice(0, 60), duplicate: false };
+        if (/Simone's ClickUp access/i.test(text)) return { index, project: "Team access", title: "Set up Simone's access", duplicate: index > 0 && lines.slice(0, index).some((l) => /Simone's ClickUp access/i.test(l)) };
+        return { index, project: "Other", title: text.replace(/\.$/, ""), duplicate: false };
+      }) } as any;
+    }
     return {} as any;
   });
 }
@@ -117,6 +128,48 @@ describe("Nora (Projects)", () => {
   });
 });
 
+describe("Nora's Projects tab", () => {
+  it("sorts action items into projects, merges duplicates, resolves role names, lists project cards, moves a task, and sorts the old catch-all list once", async () => {
+    mockAi();
+    const { orgId, owner } = await makeWorkspace("pm-sort");
+    const c = caller(owner);
+    // The old catch-all list from before, with a duplicate and an owner written as a role.
+    const old = await db.createLaunch({ organizationId: orgId, name: projects.TEAM_ITEMS, launchDate: new Date(Date.now() + 90 * 86_400_000), status: "active", brief: "", approvedBy: "Nora", approvedAt: new Date() });
+    const mk = (title: string, owner: string) => db.createLaunchTask({ organizationId: orgId, launchId: old.id, milestoneId: null, title, ownerType: "person", ownerKind: null, ownerName: owner, ownerEmail: null, dueDate: new Date(Date.now() + 86_400_000), source: "meeting:1" });
+    await mk("Build the full project plan for the November 10 webinar in ClickUp today.", "Nora");
+    await mk("Set up Simone's ClickUp access", "project_manager");
+    await mk("Set up Simone's ClickUp access once Avery has access", "Avery");
+    await mk("Approve the pricing page copy", "Ashley");
+    expect(await projects.sortTeamItems(orgId)).toBe(3);
+    expect(await projects.sortTeamItems(orgId)).toBeNull(); // only once
+    const cards = await c.projects.launches({ organizationId: orgId });
+    expect(cards.map((x) => [x.name, x.ongoing, x.total]).sort()).toEqual([["EHR launch", true, 1], ["November 10 webinar", true, 1], ["Team access", true, 1]]);
+    expect((await db.getLaunch(old.id, orgId))!.status).toBe("dropped");
+    const access = (await db.listLaunchTasks(cards.find((x) => x.name === "Team access")!.id, orgId))[0];
+    expect(access).toMatchObject({ title: "Set up Simone's access", ownerType: "employee", ownerName: "Nora", details: "Set up Simone's ClickUp access" });
+    // Every project is a list in Projects' Launches folder with its task.
+    const folder = db.work.folders.all(orgId).find((f) => f.name === "Launches")!;
+    expect(db.work.lists.all(orgId).filter((l) => l.folderId === folder.id).map((l) => l.name).sort()).toEqual(["EHR launch", "November 10 webinar", "Team access"]);
+
+    // A new project by hand, then a task moved into it (here and in Projects).
+    const made = await c.projects.saveProject({ organizationId: orgId, name: "Spring open house", brief: "", launchDate: "03/14/2027" });
+    const spring = (await db.getLaunch(made.id, orgId))!;
+    expect(spring.ongoing).toBe(false);
+    await expect(c.projects.saveProject({ organizationId: orgId, name: "spring open house" })).rejects.toThrow(/already a project/);
+    await c.projects.moveTask({ organizationId: orgId, taskId: access.id, launchId: spring.id });
+    expect((await db.getLaunchTask(access.id, orgId))!.launchId).toBe(spring.id);
+    expect(db.work.tasks.get(orgId, (await db.getLaunchTask(access.id, orgId))!.pjTaskId!)!.listId).toBe(spring.pjListId);
+    const after = await c.projects.launches({ organizationId: orgId });
+    expect(after[0].name).toBe("Spring open house"); // launches with a date come before ongoing projects
+    expect(after.map((x) => x.name).sort()).toEqual(["EHR launch", "November 10 webinar", "Spring open house", "Team access"]);
+    // Setting a date on an ongoing project turns it into a launch; a bad date is refused.
+    const web = cards.find((x) => x.name === "November 10 webinar")!;
+    await c.projects.saveProject({ organizationId: orgId, id: web.id, name: "November 10 webinar", launchDate: "11/10/2026" });
+    expect((await db.getLaunch(web.id, orgId))!.ongoing).toBe(false);
+    await expect(c.projects.saveProject({ organizationId: orgId, id: web.id, name: "November 10 webinar", launchDate: "Nov 10" })).rejects.toThrow(/MM\/DD\/YYYY/);
+  });
+});
+
 describe("Simone (COO)", () => {
   it("makes the repeating meeting, writes the agenda, sends the invite with a Meet link, and turns notes into tasks for Nora", async () => {
     mockAi();
@@ -145,10 +198,14 @@ describe("Simone (COO)", () => {
     const after = await c.coo.saveNotes({ organizationId: orgId, id: m.id, notes: "Ashley approves pricing. Jada tests a shorter email." });
     const items = JSON.parse(after.actionItems!);
     expect(items.map((i: any) => i.status)).toEqual(["in_projects", "in_projects"]);
-    // Both action items are tasks on the launch's list in Projects.
+    // Each item went to the project it is about: pricing to the launch, the email test to a new ongoing project, both in Projects.
     const launch = (await db.getLaunch(r.launch.id, orgId))!;
-    expect(db.work.tasks.all(orgId).filter((t) => t.listId === launch.pjListId).map((t) => t.name)).toContain("Test a shorter first email");
-    expect((await db.listLaunchTasks(r.launch.id, orgId)).some((t) => t.source === `meeting:${m.id}` && t.ownerName === "Jada")).toBe(true);
+    expect(db.work.tasks.all(orgId).filter((t) => t.listId === launch.pjListId).map((t) => t.name)).toContain("Approve the pricing page copy");
+    const cold = (await db.listLaunches(orgId)).find((l) => l.name === "Cold email")!;
+    expect(cold).toMatchObject({ ongoing: true, status: "active" });
+    expect(cold.sourceNote).toMatch(/^started from Weekly leadership meeting on /);
+    expect(db.work.tasks.all(orgId).filter((t) => t.listId === cold.pjListId).map((t) => t.name)).toEqual(["Test a shorter first email"]);
+    expect((await db.listLaunchTasks(cold.id, orgId)).some((t) => t.source === `meeting:${m.id}` && t.ownerName === "Jada")).toBe(true);
     const jada = (await db.getEmployeeByKind(orgId, "outreach"))!;
     expect((await db.listChatMessages(orgId, jada.id, 5)).some((x) => x.role === "handoff" && /shorter first email/.test(x.content))).toBe(true);
 

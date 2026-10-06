@@ -867,47 +867,251 @@ export async function morningChecks() {
 
 export const TEAM_ITEMS = "Team action items";
 
-/** The standing list for meeting action items that don't belong to a project. Kept open; its date moves forward. */
-async function teamItemsList(orgId: number) {
-  const ahead = new Date(Date.now() + 90 * DAY);
-  const have = (await db.listLaunches(orgId)).find((l) => l.name === TEAM_ITEMS && l.status !== "dropped");
+const AHEAD = 365 * DAY;
+
+/** Where a batch of action items came from, in words. */
+async function sourceLabel(orgId: number, source: string) {
+  const tz = (await opsFor(orgId)).tz;
+  const when = (d: Date | string) => new Date(d).toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric" });
+  const m = /^meeting:(\d+)$/.exec(source);
+  if (m) {
+    const meeting = await db.getMeeting(Number(m[1]), orgId);
+    if (meeting) return `${/huddle/i.test(meeting.title) ? "the huddle" : meeting.title} on ${when(meeting.startsAt)}`;
+  }
+  if (/^notes:/.test(source)) return `meeting notes on ${when(new Date())}`;
+  return source;
+}
+
+type Sorted = { project: string; title: string; skip: boolean };
+
+/** Nora sorts action items into projects: a running one when it fits, else a project named from what they are about. Duplicates are skipped. */
+async function sortItems(orgId: number, items: { text: string }[], candidates: { name: string; brief: string; open: string[] }[]): Promise<Sorted[]> {
+  // Without the AI: a project whose name shares a word with the item, else the running launch, else the standing list.
+  const fallback = (): Sorted[] =>
+    items.map((it) => {
+      const words = it.text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3);
+      const hit = candidates.find((c) => c.name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3).some((w) => words.includes(w)));
+      return { project: hit?.name ?? candidates[0]?.name ?? TEAM_ITEMS, title: it.text.slice(0, 80), skip: false };
+    });
+  if (!items.length) return [];
+  try {
+    const r = await generateJson<{ items: { index: number; project: string; title: string; duplicate: boolean }[] }>({
+      system: `You are Nora, a project manager. Sort each action item into a project.
+Projects already running (use the exact name when the item is about it):
+${candidates.map((c) => `- ${c.name}${c.brief ? `: ${c.brief.slice(0, 160)}` : ""}${c.open.length ? `\n  open tasks: ${c.open.slice(0, 20).join("; ")}` : ""}`).join("\n") || "- none yet"}
+When no running project fits, name a new one from what the item is about: short, plain, the thing being worked on (for example "November 10 webinar", "Founding member offer page", "Prospecting", "Team access"). Items about the same thing share one project name; never make a project per item, and never use a date or a person as the project name.
+title: the item as a short task name (under 70 characters, no trailing period), keeping names, numbers and dates that matter.
+duplicate: true when the item says the same thing as an earlier item in this list or as an open task already in that project.
+Return every item once, by index.`,
+      prompt: items.map((it, i) => `${i}. ${it.text}`).join("\n"),
+      schemaName: "sort_items",
+      schema: obj({ items: arr(obj({ index: int, project: str, title: str, duplicate: { type: "boolean" } })) }),
+      maxTokens: 3000,
+    });
+    const out = fallback();
+    for (const x of r.items ?? []) {
+      if (!Number.isInteger(x.index) || !out[x.index]) continue;
+      const match = candidates.find((c) => c.name.toLowerCase() === (x.project ?? "").trim().toLowerCase());
+      out[x.index] = { project: (match?.name ?? x.project ?? "").trim().slice(0, 80) || out[x.index].project, title: (x.title ?? "").trim().slice(0, 120) || out[x.index].title, skip: !!x.duplicate };
+    }
+    return out;
+  } catch (err) {
+    console.warn("[projects] sorting fell back:", err instanceof Error ? err.message : err);
+    return fallback();
+  }
+}
+
+/** The projects action items can land in: active launches and ongoing projects, with their open task names. */
+async function candidateProjects(orgId: number) {
+  const out: { launch: Launch; name: string; brief: string; open: string[] }[] = [];
+  for (const l of (await db.listLaunches(orgId)).filter((x) => x.status === "active" && x.name !== TEAM_ITEMS)) {
+    const tasks = await db.listLaunchTasks(l.id, orgId);
+    out.push({ launch: l, name: l.name, brief: l.brief ?? "", open: tasks.filter((t) => t.status !== "done").map((t) => t.title) });
+  }
+  return out;
+}
+
+/** An ongoing project (no launch day) that Nora made for action items, or the one with that name. */
+export async function ensureProject(orgId: number, name: string, sourceNote: string | null) {
+  const have = (await db.listLaunches(orgId)).find((l) => l.name.toLowerCase() === name.toLowerCase() && l.status !== "dropped");
   if (have) {
-    if (have.status !== "active" || new Date(have.launchDate) < new Date(Date.now() + 30 * DAY)) await db.updateLaunch(have.id, orgId, { status: "active", launchDate: ahead });
+    if (have.status !== "active") await db.updateLaunch(have.id, orgId, { status: "active" });
     return (await db.getLaunch(have.id, orgId))!;
   }
-  return db.createLaunch({ organizationId: orgId, name: TEAM_ITEMS, launchDate: ahead, status: "active", brief: "Action items from meetings and huddles that don't belong to a project.", approvedBy: "Nora", approvedAt: new Date() });
+  const nora = await db.getEmployeeByKind(orgId, "projects");
+  const l = await db.createLaunch({ organizationId: orgId, name: name.slice(0, 120), launchDate: new Date(Date.now() + AHEAD), status: "active", ongoing: true, sourceNote, brief: "", approvedBy: nora?.name ?? "Nora", approvedAt: new Date() });
+  await pushToProjects(orgId, l.id).catch(() => null);
+  return (await db.getLaunch(l.id, orgId))!;
+}
+
+/** Who an action item is for: an employee by name, kind or role title, else a person on the team, else the name as written. */
+async function ownerFor(orgId: number, owner: string) {
+  const emps = await db.listEmployeesByOrg(orgId);
+  const members = await db.listMembers(orgId);
+  const o = owner.trim().toLowerCase();
+  const slug = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const emp = emps.find((e) => e.name.toLowerCase() === o || e.kind === o || slug(e.roleTitle) === slug(o) || e.name.toLowerCase() === o.split(" ")[0]);
+  const member = emp ? null : members.find((m) => (m.name || "").toLowerCase() === o || (m.name || "").toLowerCase().split(" ")[0] === o.split(" ")[0] || m.email.toLowerCase() === o);
+  return {
+    ownerType: (emp ? "employee" : "person") as "employee" | "person",
+    ownerKind: emp?.kind ?? null,
+    ownerName: emp ? emp.name : member ? member.name || member.email : owner.slice(0, 120) || "You",
+    ownerEmail: emp ? null : member?.email ?? null,
+  };
 }
 
 export async function addActionItems(orgId: number, items: { text: string; owner: string; due?: Date }[], source: string, launchId?: number | null) {
   const fromMeeting = launchId ? await db.getLaunch(launchId, orgId) : null;
-  let launch = (fromMeeting && fromMeeting.status === "active" ? fromMeeting : null) ?? (await db.listLaunches(orgId)).filter((l) => l.status === "active").sort((a, b) => new Date(a.launchDate).getTime() - new Date(b.launchDate).getTime())[0];
-  // No project running: items still get an owner, a due date and tracking, under a standing list.
-  if (!launch) launch = await teamItemsList(orgId);
-  const emps = await db.listEmployeesByOrg(orgId);
-  const members = await db.listMembers(orgId);
-  const out: LaunchTask[] = [];
-  for (const it of items) {
-    const o = it.owner.trim().toLowerCase();
-    const emp = emps.find((e) => e.name.toLowerCase() === o || e.kind === o);
-    const member = members.find((m) => (m.name || "").toLowerCase().split(" ")[0] === o.split(" ")[0] || m.email.toLowerCase() === o);
+  const pinned = fromMeeting && fromMeeting.status === "active" ? fromMeeting : null;
+  const note = `started from ${await sourceLabel(orgId, source)}`;
+  const candidates = await candidateProjects(orgId);
+  // A meeting about one project keeps its items there; anything else is sorted into the project it is about.
+  const sorted = pinned ? items.map((it) => ({ project: pinned.name, title: it.text.slice(0, 80), skip: false })) : await sortItems(orgId, items, candidates);
+  // One entry per item, in order; null where the item was a duplicate.
+  const out: (LaunchTask | null)[] = [];
+  const touched = new Map<number, Launch>();
+  let first: Launch | null = pinned;
+  for (const [i, it] of Array.from(items.entries())) {
+    const s = sorted[i];
+    if (s.skip) {
+      out.push(null);
+      continue;
+    }
+    const launch = pinned ?? candidates.find((c) => c.name.toLowerCase() === s.project.toLowerCase())?.launch ?? (await ensureProject(orgId, s.project, note));
+    if (!candidates.some((c) => c.launch.id === launch.id)) candidates.push({ launch, name: launch.name, brief: launch.brief ?? "", open: [] });
+    first ??= launch;
+    touched.set(launch.id, launch);
+    const who = await ownerFor(orgId, it.owner);
     out.push(
       await db.createLaunchTask({
         organizationId: orgId,
         launchId: launch.id,
         milestoneId: null,
-        title: it.text.slice(0, 200),
-        ownerType: emp ? "employee" : "person",
-        ownerKind: emp?.kind ?? null,
-        ownerName: emp ? emp.name : member ? member.name || member.email : it.owner.slice(0, 120) || "You",
-        ownerEmail: emp ? null : member?.email ?? null,
+        title: s.title.slice(0, 200),
+        details: it.text !== s.title ? it.text.slice(0, 2000) : null,
+        ...who,
         dueDate: it.due ?? new Date(Date.now() + 7 * DAY),
         source,
       })
     );
   }
-  if (launch.pjListId) await pushToProjects(orgId, launch.id).catch(() => null);
+  for (const l of Array.from(touched.values())) await pushToProjects(orgId, l.id).catch(() => null);
   await startReadyTasks(orgId).catch(() => null);
-  return { launch, tasks: out };
+  return { launch: first ? (await db.getLaunch(first.id, orgId))! : null, launches: Array.from(touched.values()), tasks: out, launchOf: (t: LaunchTask) => touched.get(t.launchId) ?? null };
+}
+
+/** The old catch-all list, sorted into projects once. Runs at startup; does nothing when there is no such list. */
+export async function sortTeamItems(orgId: number) {
+  const { ops } = await opsFor(orgId);
+  if (ops.teamItemsSorted) return null;
+  const old = (await db.listLaunches(orgId)).find((l) => l.name === TEAM_ITEMS && l.status !== "dropped");
+  if (!old) {
+    await saveOps(orgId, { teamItemsSorted: true });
+    return null;
+  }
+  const tasks = await db.listLaunchTasks(old.id, orgId);
+  const candidates = (await candidateProjects(orgId)).filter((c) => c.launch.id !== old.id);
+  const sorted = await sortItems(orgId, tasks.map((t) => ({ text: t.details || t.title })), candidates);
+  if (sorted.every((x) => x.project === TEAM_ITEMS)) return null; // the AI wasn't reachable: try again next start
+  const pj = await import("../work/projects");
+  const nora = await db.getEmployeeByKind(orgId, "projects");
+  const by = { type: "employee" as const, id: nora?.id ?? null, name: nora?.name ?? "Nora" };
+  let moved = 0;
+  for (const [i, t] of Array.from(tasks.entries())) {
+    const s = sorted[i];
+    if (s.skip && t.status !== "done") {
+      // A duplicate: it goes away here and in Projects.
+      if (t.pjTaskId && db.work.tasks.get(orgId, t.pjTaskId)) pj.removeTask(orgId, t.pjTaskId);
+      await db.deleteLaunchTask(t.id, orgId);
+      continue;
+    }
+    const target = candidates.find((c) => c.name.toLowerCase() === s.project.toLowerCase())?.launch ?? (await ensureProject(orgId, s.project, old.sourceNote ?? "started from the team's meetings"));
+    if (!candidates.some((c) => c.launch.id === target.id)) candidates.push({ launch: target, name: target.name, brief: target.brief ?? "", open: [] });
+    const who = t.ownerName.includes("_") ? await ownerFor(orgId, t.ownerName) : null;
+    await db.updateLaunchTask(t.id, orgId, { launchId: target.id, milestoneId: null, title: s.title.slice(0, 200), details: t.details || (t.title !== s.title ? t.title : null), ...(who ?? {}) });
+    if (t.pjTaskId && db.work.tasks.get(orgId, t.pjTaskId) && target.pjListId) await pj.updateTask(orgId, t.pjTaskId, { listId: target.pjListId, name: s.title.slice(0, 300) }, by, { quiet: true }).catch(() => null);
+    moved++;
+  }
+  for (const c of candidates) await pushToProjects(orgId, c.launch.id).catch(() => null);
+  await db.updateLaunch(old.id, orgId, { status: "dropped" });
+  if (old.pjListId && db.work.lists.get(orgId, old.pjListId) && !db.work.tasks.all(orgId).some((t) => t.listId === old.pjListId)) pj.removeList(orgId, old.pjListId);
+  await saveOps(orgId, { teamItemsSorted: true });
+  return moved;
+}
+
+// ==========================================
+// The Projects tab: every project as a card, one open at a time
+// ==========================================
+
+export async function projectsOverview(orgId: number) {
+  const now = new Date();
+  const { tz } = await opsFor(orgId);
+  const today = ymdIn(now, tz);
+  type Card = { id: number; name: string; ongoing: boolean; launchDate: Date; status: Launch["status"]; sourceNote: string | null; pjListId: number | null; total: number; done: number; behind: number; needPerson: number; dueToday: number; lastActivity: number };
+  const out: Card[] = [];
+  for (const l of (await db.listLaunches(orgId)).filter((x) => x.status !== "dropped" && x.name !== TEAM_ITEMS)) {
+    const tasks = await db.listLaunchTasks(l.id, orgId);
+    const open = tasks.filter((t) => t.status !== "done");
+    out.push({
+      id: l.id,
+      name: l.name,
+      ongoing: l.ongoing,
+      launchDate: l.launchDate,
+      status: l.status,
+      sourceNote: l.sourceNote,
+      pjListId: l.pjListId,
+      total: tasks.length,
+      done: tasks.length - open.length,
+      behind: open.filter((t) => taskState(t, now).key === "behind").length,
+      needPerson: open.filter((t) => readWork(t)?.state === "needs_person").length,
+      dueToday: open.filter((t) => ymdIn(new Date(t.dueDate), tz) === today).length,
+      lastActivity: tasks.reduce((m, t) => Math.max(m, new Date(t.createdAt).getTime(), t.doneAt ? new Date(t.doneAt).getTime() : 0), new Date(l.createdAt).getTime()),
+    });
+  }
+  const rank = (p: (typeof out)[number]) => (p.status === "planning" ? 0 : p.status === "active" ? 1 : 2);
+  return out.sort((a, b) => rank(a) - rank(b) || (a.ongoing === b.ongoing ? (a.ongoing ? b.lastActivity - a.lastActivity : new Date(a.launchDate).getTime() - new Date(b.launchDate).getTime()) : a.ongoing ? 1 : -1));
+}
+
+/** Make or change a project: its name, what it is for, and its launch day (none for an ongoing project). */
+export async function saveProject(orgId: number, input: { id?: number; name: string; brief?: string; launchDate?: string | null }, who: string) {
+  const { tz } = await opsFor(orgId);
+  const name = input.name.trim().slice(0, 120);
+  if (!name) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the project." });
+  let date: Date | null = null;
+  if (input.launchDate) {
+    const m = input.launchDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) throw new TRPCError({ code: "BAD_REQUEST", message: "Type the launch date as MM/DD/YYYY." });
+    date = dayAt(`${m[3]}-${m[1]}-${m[2]}`, tz, 9);
+  }
+  const others = (await db.listLaunches(orgId)).filter((l) => l.status !== "dropped" && l.id !== input.id);
+  if (others.some((l) => l.name.toLowerCase() === name.toLowerCase())) throw new TRPCError({ code: "BAD_REQUEST", message: `There's already a project named ${name}.` });
+  if (input.id) {
+    const l = await db.getLaunch(input.id, orgId);
+    if (!l) throw new TRPCError({ code: "NOT_FOUND", message: "That project is not in this workspace." });
+    const next = (await db.updateLaunch(l.id, orgId, { name, brief: input.brief?.trim().slice(0, 2000) ?? l.brief, ongoing: !date, launchDate: date ?? (l.ongoing ? l.launchDate : date ?? l.launchDate) }))!;
+    if (next.pjListId && db.work.lists.get(orgId, next.pjListId)) (await import("../work/projects")).saveList(orgId, { id: next.pjListId, name: next.name.slice(0, 100), folderId: db.work.lists.get(orgId, next.pjListId)!.folderId, description: next.brief ?? "" });
+    return next;
+  }
+  const l = await db.createLaunch({ organizationId: orgId, name, launchDate: date ?? new Date(Date.now() + AHEAD), status: "active", ongoing: !date, brief: input.brief?.trim().slice(0, 2000) ?? "", sourceNote: `made by ${who}`, approvedBy: who, approvedAt: new Date() });
+  await pushToProjects(orgId, l.id).catch(() => null);
+  return (await db.getLaunch(l.id, orgId))!;
+}
+
+/** Moves a task to another project, here and in Projects. */
+export async function moveTask(orgId: number, taskId: number, launchId: number) {
+  const t = await db.getLaunchTask(taskId, orgId);
+  const target = await db.getLaunch(launchId, orgId);
+  if (!t || !target || target.status === "dropped") throw new TRPCError({ code: "NOT_FOUND", message: "That project is not in this workspace." });
+  if (t.launchId === target.id) return t;
+  const next = (await db.updateLaunchTask(t.id, orgId, { launchId: target.id, milestoneId: null }))!;
+  await pushToProjects(orgId, target.id).catch(() => null);
+  const fresh = (await db.getLaunch(target.id, orgId))!;
+  if (next.pjTaskId && db.work.tasks.get(orgId, next.pjTaskId) && fresh.pjListId) {
+    const pj = await import("../work/projects");
+    const nora = await db.getEmployeeByKind(orgId, "projects");
+    await pj.updateTask(orgId, next.pjTaskId, { listId: fresh.pjListId }, { type: "employee", id: nora?.id ?? null, name: nora?.name ?? "Nora" }, { quiet: true }).catch(() => null);
+  }
+  return next;
 }
 
 // ==========================================

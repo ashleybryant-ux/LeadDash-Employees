@@ -305,13 +305,12 @@ export async function sendItems(orgId: number, id: number) {
     return m ? new Date(Date.UTC(Number(m[3]), Number(m[1]) - 1, Number(m[2]), 17)) : undefined;
   };
   const r = await addActionItems(orgId, open.map((i) => ({ text: i.text, owner: i.owner, due: toDate(i.due) })), `notes:${row.id}`);
-  const inProjects = !!r.launch?.pjListId;
   open.forEach((it, idx) => {
     const t = r.tasks[idx];
     if (t) {
       it.taskId = t.id;
-      it.status = inProjects ? "in_projects" : "task";
-    }
+      it.status = r.launchOf(t)?.pjListId ? "in_projects" : "task";
+    } else it.status = "done"; // said the same thing as another item: already tracked
   });
   for (const it of open.filter((i) => i.ownerKind && i.ownerKind !== "coo")) {
     await handoff(orgId, "coo", it.ownerKind as AIEmployee["kind"], `From ${row.title}: ${it.text}`, "/chats/coo/work").catch(() => null);

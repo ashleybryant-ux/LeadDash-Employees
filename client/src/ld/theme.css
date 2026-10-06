@@ -1442,3 +1442,21 @@ button.gp-ts:hover { background: #f8fbf9; }
   .tc-imp.h > :nth-child(3), .tc-imp.h > :nth-child(4) { display: none; }
   .tc-dlg { width: 100%; }
 }
+
+/* Nora's Projects tab: cards on the left, one project on the right */
+.ld-pjwrap { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 18px; align-items: start; }
+.ld-pjmain .ld-hd, .ld-pjmain .ld-rw { padding-left: 14px; padding-right: 14px; gap: 10px; }
+.ld-pjlist { display: flex; flex-direction: column; gap: 8px; }
+.ld-pjlist .ld-btn.sm { width: auto; padding: 0 12px; height: 32px; font-size: 13px; }
+.ld-pjcard { background: #fff; border: 1px solid #e3e9e6; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; text-align: left; font: inherit; color: #14221c; cursor: pointer; width: 100%; box-sizing: border-box; }
+.ld-pjcard:hover { background: #f8fafb; }
+.ld-pjcard.on { border-color: #1b6b4a; box-shadow: 0 0 0 1px #1b6b4a; }
+.ld-pjcard .nm { font-weight: 800; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; align-items: center; min-width: 0; }
+.ld-pjcard .nm .ld-pill { flex-shrink: 0; }
+.ld-pjbar { height: 6px; border-radius: 999px; background: #eef2f0; overflow: hidden; display: block; }
+.ld-pjbar i { display: block; height: 100%; background: #1b6b4a; }
+.ld-pjcard .meta { display: flex; justify-content: space-between; font-size: 12px; color: #5b6b64; }
+.ld-pjmain { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ld-pjhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.ld-pjform { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+@media (max-width: 1100px) { .ld-pjwrap { grid-template-columns: 1fr; } }
