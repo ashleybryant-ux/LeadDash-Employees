@@ -6,7 +6,7 @@ import { ErrorLine } from "./ui";
 import { fmtDate } from "./meta";
 import type { Outputs } from "./types";
 import { LeadSetupCard, SellsCard, WorksOnOwnCard, LinkedInStepCard } from "./sales/OnboardingCards";
-import { ClickUpCard, MeetingsCard, NotetakerCard } from "./lead/OnboardingCards";
+import { ProjectsCard, MeetingsCard, NotetakerCard } from "./lead/OnboardingCards";
 import { InterviewPanel } from "./onboarding/Interview";
 
 type Data = Outputs["onboarding"]["get"];
@@ -57,7 +57,7 @@ export default function Onboarding({ emp }: { emp: EmployeeRow }) {
       <InterviewPanel emp={emp} view={d.interview} />
       {emp.kind === "prospecting" && <SellsCard />}
       {emp.kind === "outreach" && <LinkedInStepCard emp={emp} />}
-      {emp.kind === "projects" && <ClickUpCard emp={emp} />}
+      {emp.kind === "projects" && <ProjectsCard emp={emp} />}
       {emp.kind === "coo" && <MeetingsCard emp={emp} />}
       {emp.kind === "inbox" && <NotetakerCard emp={emp} />}
       {emp.kind === "leads" && <LeadSetupCard emp={emp} rule={d.rules.find((r) => r.key === "reply")} />}

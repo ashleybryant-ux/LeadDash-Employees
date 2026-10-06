@@ -16,7 +16,7 @@ vi.mock("./_core/llm", async (orig) => {
   };
 });
 
-import { caller, makeWorkspace } from "./test/helpers";
+import { caller, makeUser, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
 import * as pages from "./employees/pages";
 import * as apply from "./employees/apply";
@@ -205,7 +205,7 @@ describe("Simone works from her meeting notes", () => {
   });
 });
 
-describe("every employee knows what's connected; Avery works in ClickUp", () => {
+describe("every employee knows what's connected and works in Projects", () => {
   beforeEach(async () => {
     decision = null;
     systems = [];
@@ -220,45 +220,46 @@ describe("every employee knows what's connected; Avery works in ClickUp", () => 
     });
   });
 
-  it("tells every employee which tools are connected, and Avery lists what's due and adds tasks in ClickUp", async () => {
+  const ymd = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+
+  it("tells every employee which tools are connected and that tasks live in Projects, and Avery lists what's due and adds tasks there", async () => {
     const { orgId, owner } = await makeWorkspace("talk-avery");
-    await db.upsertExternalConnection({ organizationId: orgId, provider: "clickup", accountLabel: "ClickUp", status: "connected", settings: JSON.stringify({ teamId: "9", teamName: "LeadDash", userId: 7, spaces: [{ id: "s1", name: "Ops" }], spaceId: "s1", spaceName: "Ops" }), secretsEncrypted: (await import("./_core/crypto")).encryptJson({ accessToken: "t" }), connectedAt: new Date(), lastCheckedAt: new Date() });
+    await db.upsertExternalConnection({ organizationId: orgId, provider: "clickup", accountLabel: "ClickUp", status: "connected", settings: JSON.stringify({ teamId: "9", teamName: "LeadDash", userId: 7, spaces: [] }), secretsEncrypted: null, connectedAt: new Date(), lastCheckedAt: null });
+    const bj = await makeUser("bj@talk-avery.test", "user", "BJ Bryant");
+    await db.addOrganizationMember({ organizationId: orgId, userId: bj.id, role: "member" });
     const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
-    const integrations = await import("./integrations");
-    const calls: string[] = [];
-    const soon = Date.now() + 2 * 86_400_000;
-    vi.spyOn(integrations, "clickup").mockImplementation(async (_o: number, path: string, init: any = {}) => {
-      calls.push(`${init.method ?? "GET"} ${path}`);
-      if (path.startsWith("/team/9/task")) return { tasks: [{ name: "Send W-9 to funder", due_date: String(soon), status: { status: "to do" }, list: { name: "Admin" }, assignees: [{ username: "BJ Bryant" }] }, { name: "Late invoice", due_date: String(Date.now() - 86_400_000), status: { status: "to do" }, list: { name: "Admin" }, assignees: [] }], last_page: true };
-      if (path === "/team") return { teams: [{ id: "9", members: [{ user: { id: 42, email: "bj@legacy.test", username: "BJ Bryant" } }] }] };
-      if (path.startsWith("/space/s1/list?")) return { lists: [] };
-      if (path === "/space/s1/list") return { id: "L9" };
-      if (path === "/list/L9/task") return { id: "T1", url: "https://app.clickup.com/t/T1" };
-      return {};
-    });
+    const pj = await import("./work/projects");
+    const admin = pj.saveList(orgId, { name: "Admin", folderId: null });
+    const by = { type: "user" as const, id: owner.id, name: owner.name };
+    await pj.createTask(orgId, { listId: admin.id, name: "Send W-9 to funder", dueDate: ymd(2), assignees: [{ type: "user", id: bj.id, name: "BJ Bryant" }] }, by);
+    await pj.createTask(orgId, { listId: admin.id, name: "Late invoice", dueDate: ymd(-3), assignees: [{ type: "user", id: owner.id, name: owner.name }] }, by);
+    await pj.createTask(orgId, { listId: admin.id, name: "Next month's thing", dueDate: ymd(30) }, by);
 
-    vi.spyOn(integrations, "clickupMembers").mockResolvedValue([{ id: 42, email: "bj@legacy.test", name: "BJ Bryant" }]);
-    decision = { ...blank, reply: "Yes, it's connected." };
-    await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Do you have access to ClickUp?" });
-    expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (every employee has full access: what's due, finding any task or list, adding tasks, marking done, changing dates and owners, commenting; Nora also tracks launches there)");
+    decision = { ...blank, reply: "Yes." };
+    await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Where do tasks live?" });
+    expect(systems[0]).toContain("Tasks and projects live in Projects, this app's own task manager");
+    expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (only for importing old ClickUp tasks into Projects; nobody works in ClickUp anymore");
     expect(systems[0]).toContain("Never say a connected tool isn't connected");
+    expect(systems[0]).not.toContain("clickup_due");
+    expect(systems[0]).toContain("task_due:");
+    expect(systems[0]).toContain("task_bulk:");
 
-    decision = { ...blank, action: "clickup_due", count: 7 };
-    const due = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "What's due this week in ClickUp?" });
-    expect(due.reply.content).toMatch(/2 open ClickUp tasks due in the next 7 days, 1 overdue/);
+    decision = { ...blank, action: "task_due", count: 7 };
+    const due = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "What's due this week?" });
+    expect(due.reply.content).toMatch(/^2 open tasks in Projects due in the next 7 days, 1 overdue:/);
     expect(due.reply.content.indexOf("Late invoice")).toBeLessThan(due.reply.content.indexOf("Send W-9"));
+    expect(due.reply.content).not.toContain("Next month's thing");
 
-    decision = { ...blank, action: "clickup_add", title: "Book the venue", notes: "For the March workshop", date: "2026-11-02", to: "BJ" };
+    decision = { ...blank, action: "task_add", title: "Book the venue", notes: "For the March workshop", date: "2026-11-02", to: "BJ", page: "Admin" };
     const add = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Add a task for BJ to book the venue by Nov 2" });
-    expect(add.reply.content).toMatch(/Added "Book the venue" to ClickUp \(LeadDash Employees tasks\) for BJ Bryant, due Mon, Nov 2, 2026/);
-    expect(calls).toContain("POST /space/s1/list");
-    expect(calls).toContain("POST /list/L9/task");
+    expect(add.reply.content).toMatch(/Added "Book the venue" to Admin in Projects for BJ Bryant, due Nov 2, 2026/);
+    expect(db.work.tasks.all(orgId).some((t) => t.name === "Book the venue" && JSON.parse(t.assignees)[0].id === bj.id)).toBe(true);
 
-    // Every employee has the same ClickUp actions.
+    // Every employee has the same Projects actions.
     const theo = (await db.getEmployeeByKind(orgId, "blog"))!;
-    decision = { ...blank, action: "clickup_due", count: 7, target: "BJ" };
-    const theoDue = await caller(owner).chat.send({ organizationId: orgId, employeeId: theo.id, text: "What does BJ have due in ClickUp?" });
-    expect(theoDue.reply.content).toMatch(/1 open ClickUp task for BJ due in the next 7 days/);
+    decision = { ...blank, action: "task_due", count: 7, target: "BJ" };
+    const theoDue = await caller(owner).chat.send({ organizationId: orgId, employeeId: theo.id, text: "What does BJ have due?" });
+    expect(theoDue.reply.content).toMatch(/^1 open task in Projects for BJ due in the next 7 days:/);
   });
 });
 
@@ -299,7 +300,7 @@ describe("employees remember new facts for the whole team", () => {
   });
 });
 
-describe("full ClickUp access for every employee", () => {
+describe("full Projects access for every employee", () => {
   beforeEach(async () => {
     decision = null;
     systems = [];
@@ -312,97 +313,79 @@ describe("full ClickUp access for every employee", () => {
       return {};
     });
   });
+  const ymd = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 
   it("finds tasks anywhere, shows the lists, marks a task done, moves its date and comments", async () => {
-    const { orgId, owner } = await makeWorkspace("talk-cu-full");
-    await db.upsertExternalConnection({ organizationId: orgId, provider: "clickup", accountLabel: "ClickUp", status: "connected", settings: JSON.stringify({ teamId: "9", teamName: "LeadDash", userId: 7, spaces: [{ id: "s1", name: "Ops" }], spaceId: "s1", spaceName: "Ops" }), secretsEncrypted: (await import("./_core/crypto")).encryptJson({ accessToken: "t" }), connectedAt: new Date(), lastCheckedAt: new Date() });
+    const { orgId, owner } = await makeWorkspace("talk-pj-full");
     const sienna = (await db.getEmployeeByKind(orgId, "social"))!;
-    const integrations = await import("./integrations");
-    const calls: { path: string; init: any }[] = [];
-    vi.spyOn(integrations, "clickupMembers").mockResolvedValue([{ id: 42, email: "bj@legacy.test", name: "BJ Bryant" }]);
-    vi.spyOn(integrations, "clickup").mockImplementation(async (_o: number, path: string, init: any = {}) => {
-      calls.push({ path, init });
-      if (path.startsWith("/team/9/task")) return { tasks: [
-        { id: "a1", name: "October newsletter", due_date: String(Date.now() + 86_400_000), status: { status: "in progress", type: "custom" }, list: { id: "L1", name: "Content calendar" }, folder: { name: "Marketing" }, space: { id: "s1" }, assignees: [{ username: "Caroline" }] },
-        { id: "a2", name: "Instagram reels plan", due_date: null, status: { status: "to do", type: "open" }, list: { id: "L1", name: "Content calendar" }, folder: { name: "Marketing" }, space: { id: "s1" }, assignees: [] },
-        { id: "a3", name: "Renew liability insurance", due_date: String(Date.now() + 5 * 86_400_000), status: { status: "to do", type: "open" }, list: { id: "L2", name: "Admin" }, folder: { hidden: true }, space: { id: "s1" }, assignees: [{ username: "BJ Bryant" }] },
-      ], last_page: true };
-      if (path === "/team/9/space?archived=false") return { spaces: [{ id: "s1", name: "Ops" }] };
-      if (path === "/space/s1/folder?archived=false") return { folders: [{ name: "Marketing", lists: [{ id: "L1", name: "Content calendar" }] }] };
-      if (path === "/space/s1/list?archived=false") return { lists: [{ id: "L2", name: "Admin" }] };
-      if (path === "/list/L1") return { statuses: [{ status: "to do", type: "open" }, { status: "in progress", type: "custom" }, { status: "complete", type: "closed" }] };
-      if (path === "/list/L1/task") return { id: "n1", url: "https://app.clickup.com/t/n1" };
-      return {};
-    });
+    const pj = await import("./work/projects");
+    const by = { type: "user" as const, id: owner.id, name: owner.name };
+    const marketing = pj.saveFolder(orgId, { name: "Marketing", color: "#1b6b4a" });
+    const cal = pj.saveList(orgId, { name: "Content calendar", folderId: marketing.id });
+    const admin = pj.saveList(orgId, { name: "Admin", folderId: null });
+    await pj.createTask(orgId, { listId: cal.id, name: "October newsletter", dueDate: ymd(1), status: "in progress", assignees: [{ type: "user", id: owner.id, name: owner.name }] }, by);
+    await pj.createTask(orgId, { listId: cal.id, name: "Instagram reels plan" }, by);
+    await pj.createTask(orgId, { listId: admin.id, name: "Renew liability insurance", dueDate: ymd(5) }, by);
     const send = (text: string) => caller(owner).chat.send({ organizationId: orgId, employeeId: sienna.id, text });
 
-    decision = { ...blank, action: "clickup_find", target: "marketing" };
-    const found = await send("What's in the marketing folder in ClickUp?");
-    expect(found.reply.content).toMatch(/^2 open ClickUp tasks matching "marketing":/);
-    expect(found.reply.content).toMatch(/October newsletter \(Ops › Marketing › Content calendar; Caroline; in progress; due /);
+    decision = { ...blank, action: "task_find", target: "content calendar" };
+    const found = await send("What's on the content calendar?");
+    expect(found.reply.content).toMatch(/^2 tasks in Projects:/);
+    expect(found.reply.content).toMatch(/October newsletter \(Content calendar; Owner talk-pj-full; in progress; due /);
 
-    decision = { ...blank, action: "clickup_lists" };
+    decision = { ...blank, action: "task_lists" };
     const lists = await send("What lists do I have?");
-    expect(lists.reply.content).toBe("Here's your ClickUp:\n- Ops: Marketing › Content calendar, Admin");
+    expect(lists.reply.content).toBe("Here's Projects:\n- Marketing: Content calendar\n- No folder: Admin");
 
-    decision = { ...blank, action: "clickup_change", target: "October newsletter", focus: "done", date: "2026-10-09", notes: "Sent to the list." };
+    decision = { ...blank, action: "task_change", target: "October newsletter", focus: "done", date: "2026-10-09", notes: "Sent to the list." };
     const done = await send("Mark the October newsletter done and note it went out");
-    expect(done.reply.content).toMatch(/^Updated "October newsletter" in ClickUp: status complete, due Fri, Oct 9, 2026, comment added\./);
-    const put = calls.find((c) => c.path === "/task/a1" && c.init.method === "PUT")!;
-    expect(put.init.body.status).toBe("complete");
-    expect(calls.find((c) => c.path === "/task/a1/comment")!.init.body.comment_text).toBe("Sent to the list. (from Sienna, LeadDash Employees)");
+    expect(done.reply.content).toBe('Done: "October newsletter", moved it to complete, set the due date to Oct 9, 2026, added your comment.');
+    const t = db.work.tasks.all(orgId).find((x) => x.name === "October newsletter")!;
+    expect(t.closedAt).not.toBeNull();
+    expect(t.dueDate).toBe("2026-10-09");
+    expect(db.work.comments.where(orgId, "taskId", t.id).some((c) => c.kind === "comment" && c.body === "Sent to the list." && c.authorName === "Sienna")).toBe(true);
 
-    decision = { ...blank, action: "clickup_change", target: "content calendar", focus: "done" };
-    const many = await send("mark the content calendar task done");
-    expect(many.reply.content).toBe('More than one task fits "content calendar". Which one?');
+    decision = { ...blank, action: "task_change", target: "plan", focus: "done" };
+    await pj.createTask(orgId, { listId: admin.id, name: "Holiday plan" }, by);
+    const many = await send("mark the plan task done");
+    expect(many.reply.content).toMatch(/^Which one\?/);
 
-    decision = { ...blank, action: "clickup_add", title: "Holiday post ideas", page: "Content calendar" };
+    decision = { ...blank, action: "task_add", title: "Holiday post ideas", page: "Content calendar" };
     const add = await send("Add holiday post ideas to the content calendar");
-    expect(add.reply.content).toMatch(/Added "Holiday post ideas" to ClickUp \(Content calendar\)/);
+    expect(add.reply.content).toMatch(/Added "Holiday post ideas" to Content calendar in Projects/);
   });
-  it("closes every overdue task in one go without asking first, posts when done, and reopens them on request", async () => {
-    const { orgId, owner } = await makeWorkspace("talk-cu-bulk");
-    await db.upsertExternalConnection({ organizationId: orgId, provider: "clickup", accountLabel: "ClickUp", status: "connected", settings: JSON.stringify({ teamId: "9", teamName: "LeadDash", userId: 7, spaces: [{ id: "s1", name: "Ops" }], spaceId: "s1", spaceName: "Ops" }), secretsEncrypted: (await import("./_core/crypto")).encryptJson({ accessToken: "t" }), connectedAt: new Date(), lastCheckedAt: new Date() });
-    const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
-    const integrations = await import("./integrations");
-    const puts: { path: string; body: any }[] = [];
-    let limited = false;
-    const day = 86_400_000;
-    const task = (id: string, name: string, due: number | null, list = "L1") => ({ id, name, due_date: due ? String(due) : null, status: { status: "to do", type: "open" }, list: { id: list, name: list === "L1" ? "Goals + Tactics" : "PR + Publicity" }, folder: { hidden: true }, space: { id: "s1" }, assignees: [] });
-    vi.spyOn(integrations, "clickup").mockImplementation(async (_o: number, path: string, init: any = {}) => {
-      if (path.startsWith("/team/9/task")) return { tasks: [task("o1", "Claim Seat", Date.now() - 30 * day), task("o2", "Pitch Documents", Date.now() - 20 * day, "L2"), task("f1", "Next week's post", Date.now() + 5 * day), task("n1", "No date", null)], last_page: true };
-      if (path.startsWith("/list/")) return { statuses: [{ status: "to do", type: "open" }, { status: "complete", type: "closed" }] };
-      if (init.method === "PUT") {
-        // ClickUp says slow down once; the change still goes through on the retry.
-        if (!limited) {
-          limited = true;
-          throw new Error("ClickUp error 429: Rate limit reached");
-        }
-        puts.push({ path, body: init.body });
-        return {};
-      }
-      return {};
-    });
-    const send = (text: string) => caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text });
-    const until = async (fn: () => Promise<boolean>) => {
-      for (let i = 0; i < 200 && !(await fn()); i++) await new Promise((r) => setTimeout(r, 5));
-    };
 
-    decision = { ...blank, action: "clickup_bulk", goal: "overdue", focus: "done" };
+  it("closes every overdue task in one go without asking first, and reopens them on request", async () => {
+    const { orgId, owner } = await makeWorkspace("talk-pj-bulk");
+    const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
+    const pj = await import("./work/projects");
+    const by = { type: "user" as const, id: owner.id, name: owner.name };
+    const goals = pj.saveList(orgId, { name: "Goals + Tactics", folderId: null });
+    const other = pj.saveList(orgId, { name: "Admin", folderId: null });
+    await pj.createTask(orgId, { listId: goals.id, name: "Claim Seat", dueDate: ymd(-30) }, by);
+    await pj.createTask(orgId, { listId: other.id, name: "Pitch Documents", dueDate: ymd(-20) }, by);
+    await pj.createTask(orgId, { listId: goals.id, name: "Next week's post", dueDate: ymd(5) }, by);
+    await pj.createTask(orgId, { listId: goals.id, name: "No date yet" }, by);
+    const send = (text: string) => caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text });
+
+    decision = { ...blank, action: "task_bulk", goal: "overdue", focus: "done" };
     const r = await send("Close everything overdue");
     expect(systems[0]).toContain("Don't ask questions first");
-    expect(r.reply.content).toMatch(/^On it: closing 2 overdue tasks in ClickUp\./);
-    await until(async () => (await db.listChatMessages(orgId, avery.id)).length >= 3);
-    const posted = (await db.listChatMessages(orgId, avery.id)).at(-1)!;
-    expect(posted.content).toBe("Done. Closing worked for 2 tasks in ClickUp.");
-    expect(puts.map((p) => `${p.path} ${p.body.status}`)).toEqual(["/task/o1 complete", "/task/o2 complete"]);
-    expect(JSON.parse(posted.cards!)[0]).toMatchObject({ type: "choices", options: ["Reopen them", "What's still open?"], undo: ["o1", "o2"] });
+    expect(r.reply.content).toMatch(/^Done: closed 2 overdue tasks in Projects\./);
+    const closed = db.work.tasks.all(orgId).filter((t) => t.closedAt).map((t) => t.name).sort();
+    expect(closed).toEqual(["Claim Seat", "Pitch Documents"]);
+    expect(JSON.parse(r.reply.cards!)[0]).toMatchObject({ type: "choices", options: ["Reopen them", "What's still open?"] });
+    expect(JSON.parse(r.reply.cards!)[0].undo).toHaveLength(2);
 
-    puts.length = 0;
-    decision = { ...blank, action: "clickup_undo" };
+    decision = { ...blank, action: "task_undo" };
     const undo = await send("Reopen them");
-    expect(undo.reply.content).toBe("Reopening 2 tasks in ClickUp now. I'll post here when it's done.");
-    await until(async () => (await db.listChatMessages(orgId, avery.id)).at(-1)!.content.startsWith("Reopened"));
-    expect(puts.map((p) => `${p.path} ${p.body.status}`)).toEqual(["/task/o1 to do", "/task/o2 to do"]);
+    expect(undo.reply.content).toBe("Reopened 2 tasks in Projects.");
+    expect(db.work.tasks.all(orgId).filter((t) => t.closedAt)).toHaveLength(0);
+
+    // Moving a list's open tasks to a date.
+    decision = { ...blank, action: "task_bulk", goal: "all", target: "Goals + Tactics", date: "2026-11-06" };
+    const moved = await send("Push everything in Goals + Tactics to Nov 6");
+    expect(moved.reply.content).toMatch(/^Done: moved to Nov 6, 2026 3 tasks in Projects\./);
+    expect(db.work.tasks.all(orgId).filter((t) => t.listId === goals.id).every((t) => t.dueDate === "2026-11-06")).toBe(true);
   });
 });

@@ -5,7 +5,7 @@ import * as db from "../db";
  * Leadership settings, stored as JSON on the workspace (organizations.ops).
  * - Simone (COO): the meeting link, repeating meetings, when agendas go out,
  *   what happens after a meeting, and the scorecard's weekly goals.
- * - Nora (Projects): who gets ClickUp tasks, the morning check time, the report day,
+ * - Nora (Projects): the morning check time, the report day,
  *   and her repeating project meetings (one per project, kept apart from Simone's).
  * - Simone's notetaker: which meetings she sits in on, the words that keep her out,
  *   her name in the meeting, who gets the notes, and how long the recording is kept.

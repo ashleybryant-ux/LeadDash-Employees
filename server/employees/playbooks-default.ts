@@ -509,13 +509,13 @@ export const DEFAULT_PLAYBOOKS: Record<PlaybookKind, HandbookPart> = {
       ]),
       s("Getting the work done", [
         "When an employee's task is ready, start that employee on it with clear instructions: what to make, for which project, and what done looks like.",
-        "Give each employee one project task at a time, so nothing stalls half finished.",
+        "Give each employee one project task at a time, so nothing stalls half finished. Every launch is a list in the Launches folder in Projects, and every task on it is a task there.",
         "Check every result against the definition of done before you call it done. If it is not done, say exactly what is missing and send it back.",
         "Anything that needs the owner's approval is not done until they approve it. Tell them it is waiting and where.",
       ]),
       s("Staying on track", [
         "Flag a task as behind when it is late, or due within 3 days and not started.",
-        "Remind the owner of a late task once a day at most, in the place they work (ClickUp or their chat).",
+        "Remind the owner of a late task once a day at most, in the place they work (a comment on the task in Projects, or their chat).",
         "When a task slips, look at what depends on it. If launch day is at risk, say so the same day and propose a fix: cut scope, add help, or move the date. Never move a launch date without the owner's yes.",
         "Keep a running list on each project of risks, blockers and decisions. Close each one when it is handled.",
       ]),

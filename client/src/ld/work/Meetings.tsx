@@ -223,7 +223,7 @@ function UpcomingMeeting({ m, tz }: { m: M; tz: string }) {
 // Past: notes and action items
 // ==========================================
 
-const ITEM_PILL: Record<string, { l: string; c: string }> = { in_clickup: { l: "In ClickUp", c: "green" }, task: { l: "With Nora", c: "green" }, open: { l: "Not sent", c: "amber" }, done: { l: "Done", c: "gray" } };
+const ITEM_PILL: Record<string, { l: string; c: string }> = { in_projects: { l: "In Projects", c: "green" }, in_clickup: { l: "In ClickUp", c: "green" }, task: { l: "With Nora", c: "green" }, open: { l: "Not sent", c: "amber" }, done: { l: "Done", c: "gray" } };
 
 function PastMeeting({ m, tz, onClose }: { m: M; tz: string; onClose: () => void }) {
   const { currentOrgId } = useTenant();
@@ -262,7 +262,7 @@ function PastMeeting({ m, tz, onClose }: { m: M; tz: string; onClose: () => void
             ))}
           </div>
         )}
-        {m.actionItems.some((i) => i.status === "in_clickup") && <span className="ld-small ld-muted">Nora added these to the launch list in ClickUp.</span>}
+        {m.actionItems.some((i) => i.status === "in_projects") && <span className="ld-small ld-muted">Nora added these to the launch list in Projects.</span>}
         {m.recapSentAt && <span className="ld-small ld-muted">{`Recap sent ${day(m.recapSentAt, tz)}.`}</span>}
         <ErrorLine error={err} />
       </div>
@@ -450,7 +450,7 @@ export function NotesDetail({ r, tz, onClose }: { r: NT; tz: string; onClose?: (
     setEditing(true);
   };
   const facts = [
-    r.actionItems.some((i) => i.status === "in_clickup" || i.status === "task") ? "Sent to Nora" : null,
+    r.actionItems.some((i) => i.status === "in_projects" || i.status === "task") ? "Sent to Nora" : null,
     r.mediaDeletedAt ? "Recording deleted" : r.status === "ready" ? (settings.data?.keep === "7" ? "Recording kept 7 days" : settings.data?.keep === "30" ? "Recording kept 30 days" : null) : null,
     r.hasTranscript ? "Transcript kept" : null,
     r.recapSentAt ? `Recap sent ${day(r.recapSentAt, tz)}` : null,

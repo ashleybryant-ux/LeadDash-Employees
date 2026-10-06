@@ -30,7 +30,7 @@ const arr = (items: JsonSchema): JsonSchema => ({ type: "array", items });
 const DAY = 86_400_000;
 
 export type AgendaItem = { at: string; item: string; who: string; minutes: number };
-export type ActionItem = { text: string; owner: string; ownerKind: string | null; taskId: number | null; status: "in_clickup" | "task" | "open" | "done"; due?: string };
+export type ActionItem = { text: string; owner: string; ownerKind: string | null; taskId: number | null; status: "in_projects" | "task" | "open" | "done"; due?: string };
 export type Attendee = { name: string; email: string };
 
 const parse = <T,>(raw: string | null | undefined, fallback: T): T => {
@@ -325,12 +325,12 @@ export async function sendItems(orgId: number, meetingId: number) {
     return zonedToUtc(y, mo, d, 17, 0, tz);
   };
   const r = await addActionItems(orgId, open.map((i) => ({ text: i.text, owner: i.owner, due: dueOf(i.due) })), `meeting:${m.id}`, m.launchId);
-  const inClickup = !!r.launch?.clickupListId;
+  const inProjects = !!r.launch?.pjListId;
   open.forEach((it, idx) => {
     const t = r.tasks[idx];
     if (t) {
       it.taskId = t.id;
-      it.status = inClickup ? "in_clickup" : "task";
+      it.status = inProjects ? "in_projects" : "task";
     }
   });
   for (const it of open.filter((i) => i.ownerKind)) {

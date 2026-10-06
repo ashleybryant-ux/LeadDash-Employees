@@ -14,11 +14,11 @@ import { opsFor, saveOps } from "./ops";
  * Nora (Projects), the project manager.
  * - Plans a launch back from its date: milestones, tasks with one owner and a
  *   definition of done each, and KPIs.
- * - Once the plan is approved, creates a ClickUp list for it with every task.
+ * - Once the plan is approved, puts the plan in Projects: a list in the Launches folder with every task.
  * - Starts each employee on their ready task (one at a time per employee), then
  *   checks the result against the definition of done. Work waiting for the
  *   owner's approval is not done until they approve it.
- * - Every morning: reads ClickUp, marks what is done, flags what is behind and
+ * - Every morning: reads Projects, marks what is done, flags what is behind and
  *   reminds owners. On the report day: the weekly status report, rated green,
  *   amber or red.
  * - Keeps a running list: ideas, and each project's risks, blockers and decisions.
@@ -40,10 +40,10 @@ export const KPI_LABELS: Record<KpiSource, string> = {
   reply_rate: "Jada: reply rate",
   posts_published: "Sienna: posts published",
   articles_published: "Theo: articles published",
-  tasks_on_time: "ClickUp: tasks done on time",
+  tasks_on_time: "Projects: tasks done on time",
   manual: "You enter it",
 };
-const KPI_WHO: Record<KpiSource, string> = { demos_booked: "Malik", new_leads: "Malik", practices_contacted: "Jada", reply_rate: "Jada", posts_published: "Sienna", articles_published: "Theo", tasks_on_time: "ClickUp", manual: "You" };
+const KPI_WHO: Record<KpiSource, string> = { demos_booked: "Malik", new_leads: "Malik", practices_contacted: "Jada", reply_rate: "Jada", posts_published: "Sienna", articles_published: "Theo", tasks_on_time: "Projects", manual: "You" };
 
 // ==========================================
 // Dates
@@ -219,18 +219,18 @@ export async function planLaunch(orgId: number, input: { name?: string; date: st
 export async function approvePlan(orgId: number, launchId: number, who: string) {
   const launch = await db.getLaunch(launchId, orgId);
   if (!launch) throw new TRPCError({ code: "NOT_FOUND", message: "That launch is not in this workspace." });
-  if (launch.status !== "planning") return { launch, clickup: !!launch.clickupListId, error: null as string | null };
+  if (launch.status !== "planning") return { launch, projects: !!launch.pjListId, error: null as string | null };
   await db.updateLaunch(launch.id, orgId, { status: "active", approvedBy: who, approvedAt: new Date() });
   const nora = await employeeFor(orgId, "projects");
   let error: string | null = null;
   try {
-    if (await integrations.clickupSettings(orgId)) await pushToClickup(orgId, launch.id);
+    await pushToProjects(orgId, launch.id);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
   const fresh = (await db.getLaunch(launch.id, orgId))!;
   const tasks = await db.listLaunchTasks(launch.id, orgId);
-  await logActivity(nora, "done", `Started the ${fresh.name} plan: ${tasks.length} tasks${fresh.clickupListId ? " in ClickUp" : ""}. Launch day ${fmt(fresh.launchDate, (await opsFor(orgId)).tz)}.`, "/chats/projects/work");
+  await logActivity(nora, "done", `Started the ${fresh.name} plan: ${tasks.length} tasks in Projects. Launch day ${fmt(fresh.launchDate, (await opsFor(orgId)).tz)}.`, "/chats/projects/work");
   // Each employee with tasks hears about them in their own chat.
   for (const kind of Array.from(new Set(tasks.filter((t) => t.ownerType === "employee" && t.ownerKind).map((t) => t.ownerKind!)))) {
     const mine = tasks.filter((t) => t.ownerKind === kind);
@@ -238,7 +238,7 @@ export async function approvePlan(orgId: number, launchId: number, who: string) 
   }
   // Employees whose first task is ready start on it now, not tomorrow morning.
   await startReadyTasks(orgId).catch((err) => console.warn("[projects] start failed:", err instanceof Error ? err.message : err));
-  return { launch: fresh, clickup: !!fresh.clickupListId, error };
+  return { launch: fresh, projects: !!fresh.pjListId, error };
 }
 
 export async function dropLaunch(orgId: number, launchId: number) {
@@ -248,100 +248,100 @@ export async function dropLaunch(orgId: number, launchId: number) {
 }
 
 // ==========================================
-// ClickUp
+// Projects: every launch is a list in the Launches folder
 // ==========================================
 
-function clickupMeta(l: Launch) {
-  try {
-    return JSON.parse(l.clickup || "{}") as { doneStatus?: string; openStatus?: string; syncedAt?: number };
-  } catch {
-    return {};
-  }
-}
-
 function describe(t: LaunchTask, milestone: string | undefined) {
-  return [t.details, t.doneWhen ? `Done when: ${t.doneWhen}` : "", milestone ? `Milestone: ${milestone}` : "", `Owner: ${t.ownerName}${t.ownerType === "employee" ? " (LeadDash Employees)" : ""}`, t.waitingOn ? `Waiting on: ${t.waitingOn}` : ""].filter(Boolean).join("\n");
+  return [t.details, t.doneWhen ? `Done when: ${t.doneWhen}` : "", milestone ? `Milestone: ${milestone}` : "", t.waitingOn ? `Waiting on: ${t.waitingOn}` : ""].filter(Boolean).join("\n\n");
 }
 
-async function assigneesFor(orgId: number, t: LaunchTask, members: { id: number; email: string }[], ownerId: number | null) {
-  const ops = (await opsFor(orgId)).ops;
-  if (t.ownerType === "person") {
-    const m = t.ownerEmail ? members.find((x) => x.email === t.ownerEmail!.toLowerCase()) : null;
-    return m ? [m.id] : ownerId ? [ownerId] : [];
+async function assigneeFor(orgId: number, t: LaunchTask): Promise<{ type: "user" | "employee" | "name"; id: number; name: string }[]> {
+  if (t.ownerType === "employee") {
+    const emp = t.ownerKind ? await db.getEmployeeByKind(orgId, t.ownerKind as AIEmployee["kind"]) : null;
+    return emp ? [{ type: "employee", id: emp.id, name: emp.name }] : [];
   }
-  return ops.taskOwners === "employees" && ownerId ? [ownerId] : [];
+  const m = (await db.listMembers(orgId)).find((x) => (t.ownerEmail && x.email.toLowerCase() === t.ownerEmail.toLowerCase()) || (x.name || x.email).toLowerCase() === t.ownerName.toLowerCase());
+  return m ? [{ type: "user", id: m.userId, name: m.name || m.email }] : t.ownerName ? [{ type: "name", id: 0, name: t.ownerName }] : [];
 }
 
-async function createClickupTask(orgId: number, launch: Launch, t: LaunchTask, milestone: string | undefined, members: { id: number; email: string }[], ownerId: number | null) {
-  const data = await integrations.clickup(orgId, `/list/${launch.clickupListId}/task`, {
-    method: "POST",
-    body: { name: t.title, description: describe(t, milestone), due_date: new Date(t.dueDate).getTime(), due_date_time: false, assignees: await assigneesFor(orgId, t, members, ownerId), tags: t.ownerType === "employee" ? [t.ownerName.toLowerCase()] : [] },
-  });
-  await db.updateLaunchTask(t.id, orgId, { clickupTaskId: String(data.id), clickupUrl: data.url ?? null, clickupStatus: data.status?.status ?? null });
-}
+const ymdOf = (d: Date, tz: string) => ymdIn(d, tz);
 
-/** Creates the launch's list in the chosen Space and adds every task. */
-export async function pushToClickup(orgId: number, launchId: number) {
+/** Creates the launch's list in Projects (in the Launches folder) and adds every task that isn't there yet. */
+export async function pushToProjects(orgId: number, launchId: number) {
   const launch = await db.getLaunch(launchId, orgId);
-  const cu = await integrations.clickupSettings(orgId);
-  if (!launch || !cu) return null;
-  if (!cu.spaceId) throw new Error("Choose a ClickUp Space on Nora's Onboarding tab");
-  let listId = launch.clickupListId;
-  if (!listId) {
-    const list = await integrations.clickup(orgId, `/space/${cu.spaceId}/list`, { method: "POST", body: { name: launch.name.slice(0, 100), due_date: new Date(launch.launchDate).getTime(), due_date_time: false } });
-    listId = String(list.id);
-    const full = await integrations.clickup(orgId, `/list/${listId}`);
-    const statuses: { status: string; type: string }[] = full.statuses ?? list.statuses ?? [];
-    await db.updateLaunch(launch.id, orgId, {
-      clickupListId: listId,
-      clickupListUrl: `https://app.clickup.com/${cu.teamId}/v/li/${listId}`,
-      clickup: JSON.stringify({ doneStatus: statuses.find((x) => x.type === "closed")?.status ?? "complete", openStatus: statuses.find((x) => x.type === "open")?.status ?? "to do", syncedAt: 0 }),
-    });
+  if (!launch) return null;
+  const pj = await import("../work/projects");
+  const { tz } = await opsFor(orgId);
+  const nora = await db.getEmployeeByKind(orgId, "projects");
+  const by = { type: "employee" as const, id: nora?.id ?? null, name: nora?.name ?? "Nora" };
+  let listId = launch.pjListId;
+  if (!listId || !db.work.lists.get(orgId, listId)) {
+    const folder = db.work.folders.all(orgId).find((f) => f.name === "Launches") ?? pj.saveFolder(orgId, { name: "Launches", color: "#1b6b4a" });
+    const list = pj.saveList(orgId, { name: launch.name.slice(0, 100), folderId: folder.id, description: launch.brief?.slice(0, 2000) ?? "" });
+    listId = list.id;
+    await db.updateLaunch(launch.id, orgId, { pjListId: listId });
   }
-  const fresh = (await db.getLaunch(launch.id, orgId))!;
-  const members = await integrations.clickupMembers(orgId).catch(() => []);
-  const ownerId = cu.userId ? Number(cu.userId) : null;
   const ms = await db.listMilestones(launch.id, orgId);
   for (const t of await db.listLaunchTasks(launch.id, orgId)) {
-    if (t.clickupTaskId) continue;
-    await createClickupTask(orgId, fresh, t, ms.find((m) => m.id === t.milestoneId)?.name, members, ownerId);
+    if (t.pjTaskId && db.work.tasks.get(orgId, t.pjTaskId)) continue;
+    // Nora assigns the task herself, so the employee is started by her, not by the assignment.
+    const made = await pj.createTask(orgId, { listId, name: t.title, description: describe(t, ms.find((m) => m.id === t.milestoneId)?.name), dueDate: ymdOf(new Date(t.dueDate), tz), tags: [launch.name.slice(0, 40)] }, by, { quiet: true });
+    db.work.tasks.update(orgId, made.id, { assignees: JSON.stringify(await assigneeFor(orgId, t)) });
+    if (t.status === "done") await pj.updateTask(orgId, made.id, { status: doneStatus(pj, orgId, listId) }, by, { quiet: true });
+    await db.updateLaunchTask(t.id, orgId, { pjTaskId: made.id });
   }
-  return fresh;
+  return (await db.getLaunch(launch.id, orgId))!;
 }
 
-/** Reads every task's status from ClickUp. Skips when it synced in the last 2 minutes unless forced. */
-export async function syncClickup(orgId: number, launchId: number, force = false) {
+function doneStatus(pj: typeof import("../work/projects"), orgId: number, listId: number) {
+  const st = pj.statusesOf(db.work.lists.get(orgId, listId)!);
+  return (st.find((x) => x.type === "done") ?? st.find((x) => x.type === "closed") ?? st[st.length - 1]).name;
+}
+function openStatus(pj: typeof import("../work/projects"), orgId: number, listId: number) {
+  const st = pj.statusesOf(db.work.lists.get(orgId, listId)!);
+  return (st.find((x) => x.type === "open") ?? st[0]).name;
+}
+
+/** Reads each task's state from Projects: what the team closed or moved there counts here too. */
+export async function syncFromProjects(orgId: number, launchId: number) {
   const launch = await db.getLaunch(launchId, orgId);
-  if (!launch?.clickupListId || !(await integrations.clickupSettings(orgId))) return false;
-  const meta = clickupMeta(launch);
-  if (!force && meta.syncedAt && Date.now() - meta.syncedAt < 120_000) return false;
-  const tasks = await db.listLaunchTasks(launch.id, orgId);
-  const byId = new Map(tasks.filter((t) => t.clickupTaskId).map((t) => [t.clickupTaskId!, t]));
-  for (let page = 0; page < 5; page++) {
-    const data = await integrations.clickup(orgId, `/list/${launch.clickupListId}/task?include_closed=true&subtasks=false&page=${page}`);
-    for (const ct of data.tasks ?? []) {
-      const t = byId.get(String(ct.id));
-      if (!t) continue;
-      const type = ct.status?.type;
-      const status = type === "closed" || type === "done" ? "done" : String(ct.status?.status ?? "").toLowerCase() === (meta.openStatus ?? "to do").toLowerCase() ? "todo" : "in_progress";
-      if (status !== t.status || ct.status?.status !== t.clickupStatus) {
-        await db.updateLaunchTask(t.id, orgId, { status, clickupStatus: ct.status?.status ?? null, doneAt: status === "done" ? (t.doneAt ?? (ct.date_closed ? new Date(Number(ct.date_closed)) : new Date())) : null });
-      }
+  if (!launch?.pjListId) return false;
+  const pj = await import("../work/projects");
+  const { tz } = await opsFor(orgId);
+  for (const t of await db.listLaunchTasks(launch.id, orgId)) {
+    if (!t.pjTaskId) continue;
+    const p = db.work.tasks.get(orgId, t.pjTaskId);
+    if (!p) continue;
+    const list = db.work.lists.get(orgId, p.listId)!;
+    const st = pj.statusesOf(list).find((x) => x.name === p.status);
+    const status = p.closedAt || st?.type === "done" || st?.type === "closed" ? "done" : st?.type === "active" ? "in_progress" : "todo";
+    const patch: Partial<LaunchTask> = {};
+    if (status !== t.status && !(t.status === "in_progress" && status === "todo")) {
+      patch.status = status;
+      patch.doneAt = status === "done" ? (t.doneAt ?? p.closedAt ?? new Date()) : null;
     }
-    if (data.last_page !== false) break;
+    if (p.dueDate && p.dueDate !== ymdOf(new Date(t.dueDate), tz)) patch.dueDate = dayAt(p.dueDate, tz);
+    if (p.name.trim() && p.name.trim() !== t.title) patch.title = p.name.trim().slice(0, 200);
+    if (Object.keys(patch).length) await db.updateLaunchTask(t.id, orgId, patch);
   }
-  await db.updateLaunch(launch.id, orgId, { clickup: JSON.stringify({ ...meta, syncedAt: Date.now() }) });
   return true;
+}
+
+/** Where this launch lives in Projects, for links. */
+export function projectsUrl(launch: Pick<Launch, "pjListId">, taskId?: number | null) {
+  if (!launch.pjListId) return null;
+  return `/projects?list=${launch.pjListId}${taskId ? `&task=${taskId}` : ""}`;
 }
 
 export async function markTaskDone(orgId: number, taskId: number, done = true) {
   const t = await db.getLaunchTask(taskId, orgId);
   if (!t) throw new TRPCError({ code: "NOT_FOUND", message: "That task is not in this workspace." });
   await db.updateLaunchTask(t.id, orgId, { status: done ? "done" : "todo", doneAt: done ? new Date() : null });
-  const launch = await db.getLaunch(t.launchId, orgId);
-  if (launch && t.clickupTaskId && (await integrations.clickupSettings(orgId))) {
-    const meta = clickupMeta(launch);
-    await integrations.clickup(orgId, `/task/${t.clickupTaskId}`, { method: "PUT", body: { status: done ? meta.doneStatus ?? "complete" : meta.openStatus ?? "to do" } }).catch(() => null);
+  if (t.pjTaskId && db.work.tasks.get(orgId, t.pjTaskId)) {
+    const pj = await import("../work/projects");
+    const nora = await db.getEmployeeByKind(orgId, "projects");
+    const listId = db.work.tasks.get(orgId, t.pjTaskId)!.listId;
+    await pj.updateTask(orgId, t.pjTaskId, { status: done ? doneStatus(pj, orgId, listId) : openStatus(pj, orgId, listId) }, { type: "employee", id: nora?.id ?? null, name: nora?.name ?? "Nora" }).catch(() => null);
   }
   return db.getLaunchTask(t.id, orgId);
 }
@@ -366,9 +366,11 @@ export async function updateTask(orgId: number, taskId: number, input: { title?:
     Object.assign(patch, emp ? { ownerType: "employee", ownerKind: emp.kind, ownerName: emp.name, ownerEmail: null } : { ownerType: "person", ownerKind: null, ownerName: member ? member.name || member.email : o.slice(0, 120), ownerEmail: member?.email ?? null });
   }
   const next = (await db.updateLaunchTask(t.id, orgId, patch))!;
-  if (next.clickupTaskId && (await integrations.clickupSettings(orgId))) {
+  if (next.pjTaskId && db.work.tasks.get(orgId, next.pjTaskId)) {
+    const pj = await import("../work/projects");
     const ms = await db.listMilestones(next.launchId, orgId);
-    await integrations.clickup(orgId, `/task/${next.clickupTaskId}`, { method: "PUT", body: { name: next.title, description: describe(next, ms.find((m) => m.id === next.milestoneId)?.name), due_date: new Date(next.dueDate).getTime(), due_date_time: false } }).catch(() => null);
+    const nora = await db.getEmployeeByKind(orgId, "projects");
+    await pj.updateTask(orgId, next.pjTaskId, { name: next.title, description: describe(next, ms.find((m) => m.id === next.milestoneId)?.name), dueDate: ymdOf(new Date(next.dueDate), tz), assignees: await assigneeFor(orgId, next) }, { type: "employee", id: nora?.id ?? null, name: nora?.name ?? "Nora" }, { quiet: true }).catch(() => null);
   }
   return next;
 }
@@ -385,15 +387,15 @@ export async function moveLaunch(orgId: number, launchId: number, newDate: strin
   for (const m of await db.listMilestones(launch.id, orgId)) await db.updateMilestone(m.id, orgId, { dueDate: new Date(new Date(m.dueDate).getTime() + shift) });
   for (const k of await db.listKpis(launch.id, orgId)) await db.updateKpi(k.id, orgId, { byDate: new Date(new Date(k.byDate).getTime() + shift) });
   let moved = 0;
-  const cu = !!launch.clickupListId && !!(await integrations.clickupSettings(orgId));
+  const pj = await import("../work/projects");
+  const nora = await db.getEmployeeByKind(orgId, "projects");
   for (const t of await db.listLaunchTasks(launch.id, orgId)) {
     if (t.status === "done") continue;
     const due = new Date(new Date(t.dueDate).getTime() + shift);
     await db.updateLaunchTask(t.id, orgId, { dueDate: due });
-    if (cu && t.clickupTaskId) await integrations.clickup(orgId, `/task/${t.clickupTaskId}`, { method: "PUT", body: { due_date: due.getTime(), due_date_time: false } }).catch(() => null);
+    if (t.pjTaskId && db.work.tasks.get(orgId, t.pjTaskId)) await pj.updateTask(orgId, t.pjTaskId, { dueDate: ymdOf(due, tz) }, { type: "employee", id: nora?.id ?? null, name: nora?.name ?? "Nora" }, { quiet: true }).catch(() => null);
     moved++;
   }
-  if (cu) await integrations.clickup(orgId, `/list/${launch.clickupListId}`, { method: "PUT", body: { due_date: to.getTime(), due_date_time: false } }).catch(() => null);
   return { launch: (await db.getLaunch(launch.id, orgId))!, moved, days: Math.round(shift / DAY) };
 }
 
@@ -712,7 +714,7 @@ export async function saveKpi(orgId: number, input: { id?: number; launchId: num
 export async function launchView(orgId: number, launchId: number) {
   const launch = await db.getLaunch(launchId, orgId);
   if (!launch) throw new TRPCError({ code: "NOT_FOUND", message: "That launch is not in this workspace." });
-  await syncClickup(orgId, launch.id).catch(() => false);
+  await syncFromProjects(orgId, launch.id).catch(() => false);
   const now = new Date();
   const ms = await db.listMilestones(launch.id, orgId);
   const tasks = await db.listLaunchTasks(launch.id, orgId);
@@ -797,7 +799,7 @@ export async function weeklyReport(orgId: number, launchId: number) {
   return report;
 }
 
-/** Every morning at the check time: sync ClickUp, flag what is behind, remind owners. On the report day, the report. */
+/** Every morning at the check time: read Projects, flag what is behind, remind owners. On the report day, the report. */
 export async function morningCheck(orgId: number, opts: { force?: boolean } = {}) {
   const nora = await db.getEmployeeByKind(orgId, "projects");
   if (!nora || nora.status === "paused") return null;
@@ -814,10 +816,9 @@ export async function morningCheck(orgId: number, opts: { force?: boolean } = {}
       await db.updateLaunch(launch.id, orgId, { status: "done" });
       continue;
     }
-    await syncClickup(orgId, launch.id, true).catch(() => false);
+    await syncFromProjects(orgId, launch.id).catch(() => false);
     const tasks = await db.listLaunchTasks(launch.id, orgId);
     const behind = tasks.filter((t) => taskState(t, now).key === "behind");
-    const cu = !!launch.clickupListId && !!(await integrations.clickupSettings(orgId));
     const waiting = tasks.filter((t) => t.status !== "done" && readWork(t)?.state === "waiting");
     const needPerson = tasks.filter((t) => t.status !== "done" && readWork(t)?.state === "needs_person");
     for (const t of behind) {
@@ -829,9 +830,10 @@ export async function morningCheck(orgId: number, opts: { force?: boolean } = {}
       let note = `${when[0].toUpperCase()}${when.slice(1)} and ${t.status === "todo" ? "not started" : "not done"}.`;
       const remindedToday = t.remindedAt && ymdIn(new Date(t.remindedAt), tz) === today;
       if (!remindedToday && gate(nora, "remind") === "auto") {
-        if (cu && t.clickupTaskId) {
-          await integrations.clickup(orgId, `/task/${t.clickupTaskId}/comment`, { method: "POST", body: { comment_text: `Reminder from ${nora.name}: "${t.title}" is ${when}.`, notify_all: true } }).catch(() => null);
-          note += ` I reminded ${t.ownerName} in ClickUp this morning.`;
+        if (t.ownerType === "person" && t.pjTaskId && db.work.tasks.get(orgId, t.pjTaskId)) {
+          const pj = await import("../work/projects");
+          await pj.comment(orgId, t.pjTaskId, `Reminder: "${t.title}" is ${when}.`, { type: "employee", id: nora.id, name: nora.name }).catch(() => null);
+          note += ` I reminded ${t.ownerName} on the task in Projects this morning.`;
         } else if (t.ownerType === "employee" && t.ownerKind) {
           await handoff(orgId, "projects", t.ownerKind as AIEmployee["kind"], `Reminder: "${t.title}" for the ${launch.name} launch is ${when}.`, "/chats/projects/work");
           note += ` I reminded ${t.ownerName} this morning.`;
@@ -903,7 +905,7 @@ export async function addActionItems(orgId: number, items: { text: string; owner
       })
     );
   }
-  if (launch.clickupListId && (await integrations.clickupSettings(orgId))) await pushToClickup(orgId, launch.id).catch(() => null);
+  if (launch.pjListId) await pushToProjects(orgId, launch.id).catch(() => null);
   await startReadyTasks(orgId).catch(() => null);
   return { launch, tasks: out };
 }

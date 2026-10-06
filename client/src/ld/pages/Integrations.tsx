@@ -13,7 +13,7 @@ type CatalogItem = { key: string; name: string; provider: Provider; logo: string
 /** One-click cards: each signs in with the company. WordPress, Submittable and Sessionize still take a sign-in. */
 const CATALOG: CatalogItem[] = [
   { key: "google", name: "Google", provider: "google_workspace", app: "google", logo: "G", color: "#db4437", desc: "Gmail, Calendar and Google Meet. Avery sends replies you approve, and Simone adds a Meet link to each meeting she schedules." },
-  { key: "clickup", name: "ClickUp", provider: "clickup", app: "clickup", logo: "CU", color: "#7b68ee", desc: "Nora creates a list for each launch and keeps tasks, owners and due dates in sync." },
+  { key: "clickup", name: "ClickUp", provider: "clickup", app: "clickup", logo: "CU", color: "#7b68ee", desc: "Only for bringing your old ClickUp tasks into Projects. Nobody works in ClickUp anymore." },
   { key: "zoom", name: "Zoom", provider: "zoom", app: "zoom", logo: "Z", color: "#0b5cff", desc: "Simone adds a Zoom link instead of Google Meet, and can read the transcript when cloud recording is on." },
   { key: "recall", name: "Recall.ai", provider: "recall", logo: "R", color: "#2f54eb", desc: "Avery joins your Zoom and Google Meet meetings, takes notes and sends them to Simone. About $0.65 an hour, paid to Recall.ai." },
   { key: "linkedin", name: "LinkedIn", provider: "linkedin", app: "linkedin", logo: "in", color: "#0a66c2", desc: "Sienna posts to your profile after you approve." },
@@ -192,7 +192,7 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
     right = (
       <>
         <span style={okTile}>Connected</span>
-        {item.app === "clickup" && <Link href="/chats/projects/onboarding" className="ld-btn">Change space</Link>}
+        {item.app === "clickup" && <Link href="/projects?import=1" className="ld-btn">Import</Link>}
         <button type="button" className="ld-btn" disabled={disconnect.isPending} onClick={() => disconnect.mutate({ organizationId: currentOrgId, provider: item.provider })}>Disconnect</button>
       </>
     );
@@ -214,7 +214,7 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
       ? item.app === "meta"
         ? `Posting to ${settings.pageName ?? "your page"}${settings.igUsername ? ` and Instagram @${settings.igUsername}` : ""}`
         : item.app === "clickup"
-          ? `${conn?.accountLabel}${settings.spaceName ? ` · ${settings.spaceName} space` : " · choose a space on Nora's Onboarding tab"}`
+          ? `${conn?.accountLabel} · import from Projects, Import`
         : `Connected as ${conn?.accountLabel}`
       : status === "error"
         ? "The sign-in expired. Press Reconnect."

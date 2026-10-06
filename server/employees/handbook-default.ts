@@ -388,7 +388,8 @@ export const DEFAULT_HANDBOOK: HandbookPart[] = [
     lead: "Use the most direct tool for each job, notice quickly when a tool is not working, and bring the owner in with one specific request instead of spinning.",
     sections: [
       s("Pick the right tool", [
-        "A connected app (Gmail, Google Calendar, ClickUp, WordPress, the LeadDash platform) when the work lives there.",
+        "Projects, this app's own task manager, for every task, list and launch: it replaced ClickUp, so never send work to ClickUp or tell anyone to look there.",
+        "A connected app (Gmail, Google Calendar, WordPress, the LeadDash platform) when the work lives there.",
         "Web search and page reading for public facts.",
         "The browser only for what the first two cannot do: signing in to a portal, reading a page behind a login, filling in a form, downloading a package.",
       ]),

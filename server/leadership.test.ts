@@ -52,40 +52,50 @@ function mockAi() {
   });
 }
 
-async function connect(orgId: number, provider: "clickup" | "google_workspace" | "zoom", settings: any = {}) {
+async function connect(orgId: number, provider: "google_workspace" | "zoom", settings: any = {}) {
   await db.upsertExternalConnection({ organizationId: orgId, provider, accountLabel: provider, status: "connected", settings: JSON.stringify(settings), secretsEncrypted: encryptJson({ accessToken: "t" }), connectedAt: new Date(), lastCheckedAt: new Date() });
 }
 
 describe("Nora (Projects)", () => {
-  it("plans a launch that waits for approval, then creates the ClickUp list and tasks", async () => {
+  it("plans a launch that waits for approval, then puts the list and tasks in Projects, and reads what the team closes there", async () => {
     mockAi();
     const { orgId, owner } = await makeWorkspace("pm-plan");
-    await connect(orgId, "clickup", { teamId: "9", teamName: "LeadDash", userId: 7, spaces: [{ id: "s1", name: "Marketing" }], spaceId: "s1", spaceName: "Marketing" });
-    routes.push([/\/space\/s1\/list$/, () => json({ id: "L1", statuses: [] })]);
-    routes.push([/\/list\/L1$/, () => json({ id: "L1", statuses: [{ status: "to do", type: "open" }, { status: "complete", type: "closed" }] })]);
-    routes.push([/\/team$/, () => json({ teams: [{ id: "9", members: [{ user: { id: 7, email: "owner@pm-plan.test", username: "Ashley" } }] }] })]);
-    let n = 0;
-    routes.push([/\/list\/L1\/task$/, () => json({ id: `T${++n}`, url: `https://app.clickup.com/t/T${n}`, status: { status: "to do" } })]);
-    routes.push([/\/list\/L1\/task\?/, () => json({ tasks: [{ id: "T1", status: { status: "complete", type: "closed" }, date_closed: String(Date.now()) }], last_page: true })]);
-
     const r = await projects.planLaunch(orgId, { date: ymd(20), brief: "20 demos by launch day" });
     expect(r.auto).toBe(false);
     expect(r.launch.status).toBe("planning");
     const tasks = await db.listLaunchTasks(r.launch.id, orgId);
     expect(tasks.map((t) => t.ownerName)).toEqual(["Jordan", "Ashley Bryant", "Theo"]);
-    expect(calls.some((c) => c.url.includes("clickup"))).toBe(false);
+    expect(db.work.lists.all(orgId)).toHaveLength(0);
 
     const c = caller(owner);
     const a = await c.projects.approvePlan({ organizationId: orgId, id: r.launch.id });
     expect(a.launch.status).toBe("active");
-    expect(a.launch.clickupListUrl).toBe("https://app.clickup.com/9/v/li/L1");
-    expect(calls.filter((x) => /\/list\/L1\/task$/.test(x.url))).toHaveLength(3);
-    const first = JSON.parse(calls.find((x) => /\/list\/L1\/task$/.test(x.url))!.init.body);
-    expect(first.assignees).toEqual([7]);
+    expect(a.projects).toBe(true);
+    expect(a.error).toBeNull();
+    // A Launches folder with one list named after the launch, and a task per launch task with the owner on it.
+    const folder = db.work.folders.all(orgId).find((f) => f.name === "Launches")!;
+    const list = db.work.lists.get(orgId, a.launch.pjListId!)!;
+    expect(list).toMatchObject({ name: "EHR launch", folderId: folder.id });
+    const pjTasks = db.work.tasks.all(orgId).filter((t) => t.listId === list.id);
+    expect(pjTasks.map((t) => t.name)).toEqual(["Pricing page", "Approve pricing", "Launch article"]);
+    const jordan = (await db.getEmployeeByKind(orgId, "website"))!;
+    expect(JSON.parse(pjTasks[0].assignees)).toEqual([{ type: "employee", id: jordan.id, name: "Jordan" }]);
+    // A person the plan named who isn't on the team here stays by name.
+    expect(JSON.parse(pjTasks[1].assignees)).toEqual([{ type: "name", id: 0, name: "Ashley Bryant" }]);
+    expect(pjTasks[1].description).toContain("Milestone: Website ready");
+    expect((await db.listLaunchTasks(r.launch.id, orgId)).map((t) => t.pjTaskId)).toEqual(pjTasks.map((t) => t.id));
 
+    // Closing the task in Projects counts on the launch; Nora's "Mark done" shows in Projects too.
+    const pj = await import("./work/projects");
+    await pj.updateTask(orgId, pjTasks[0].id, { status: "complete" }, { type: "user", id: owner.id, name: owner.name });
     const v = await c.projects.launch({ organizationId: orgId, id: r.launch.id });
     expect(v.tasks.find((t) => t.title === "Pricing page")!.state.key).toBe("done");
     expect(v.kpis.map((k) => k.counted)).toEqual(["Malik: demos booked", "You enter it"]);
+    await c.projects.markTask({ organizationId: orgId, taskId: tasks[2].id, done: true });
+    expect(db.work.tasks.get(orgId, pjTasks[2].id)!.closedAt).not.toBeNull();
+    // Moving the launch moves the open task in Projects with it.
+    await projects.moveLaunch(orgId, r.launch.id, ymd(27));
+    expect(db.work.tasks.get(orgId, pjTasks[1].id)!.dueDate).toBe(ymd(15));
     // Theo got a handoff line about his task.
     const theo = (await db.getEmployeeByKind(orgId, "blog"))!;
     expect((await db.listChatMessages(orgId, theo.id, 5)).some((m) => m.role === "handoff" && /Nora added a task/.test(m.content))).toBe(true);
@@ -134,7 +144,10 @@ describe("Simone (COO)", () => {
     await projects.approvePlan(orgId, r.launch.id, "Ashley");
     const after = await c.coo.saveNotes({ organizationId: orgId, id: m.id, notes: "Ashley approves pricing. Jada tests a shorter email." });
     const items = JSON.parse(after.actionItems!);
-    expect(items.map((i: any) => i.status)).toEqual(["task", "task"]);
+    expect(items.map((i: any) => i.status)).toEqual(["in_projects", "in_projects"]);
+    // Both action items are tasks on the launch's list in Projects.
+    const launch = (await db.getLaunch(r.launch.id, orgId))!;
+    expect(db.work.tasks.all(orgId).filter((t) => t.listId === launch.pjListId).map((t) => t.name)).toContain("Test a shorter first email");
     expect((await db.listLaunchTasks(r.launch.id, orgId)).some((t) => t.source === `meeting:${m.id}` && t.ownerName === "Jada")).toBe(true);
     const jada = (await db.getEmployeeByKind(orgId, "outreach"))!;
     expect((await db.listChatMessages(orgId, jada.id, 5)).some((x) => x.role === "handoff" && /shorter first email/.test(x.content))).toBe(true);

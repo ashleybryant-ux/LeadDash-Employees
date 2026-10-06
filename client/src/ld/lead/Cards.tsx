@@ -15,14 +15,12 @@ export function LaunchPlanCard({ id }: { id: number }) {
   const tz = currentOrg?.timezone || "America/Chicago";
   const utils = trpc.useUtils();
   const q = trpc.projects.launch.useQuery({ organizationId: currentOrgId, id }, { enabled: currentOrgId > 0 });
-  const settings = trpc.projects.settings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const approve = trpc.projects.approvePlan.useMutation({ onSuccess: () => utils.projects.invalidate() });
   const drop = trpc.projects.dropLaunch.useMutation({ onSuccess: () => utils.projects.invalidate() });
   const v = q.data;
   if (!v) return <div className="ld-card" style={{ padding: "16px 18px" }}><span className="ld-muted">{q.error ? "This plan was removed." : "Loading the plan..."}</span></div>;
   const owners = new Set(v.tasks.map((t) => t.ownerName)).size;
   const st = v.launch.status;
-  const cu = settings.data?.clickup;
   return (
     <div className="ld-card ld-resultcard" style={card}>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
@@ -40,11 +38,10 @@ export function LaunchPlanCard({ id }: { id: number }) {
           ))}
         </div>
         <span style={{ fontSize: 13, color: "#5b6b64" }}>
-          {v.launch.clickupListUrl ? "In ClickUp: " : cu ? "Goes to ClickUp: " : ""}
-          {v.launch.clickupListUrl ? <a href={v.launch.clickupListUrl} target="_blank" rel="noreferrer noopener">{`${cu?.spaceName ?? "your"} space, list "${v.launch.name}"`}</a> : cu ? `${cu.spaceName ?? "choose a space"} space, new list "${v.launch.name}"` : "Connect ClickUp on Integrations and the plan goes there too."}
+          {v.launch.pjListId ? <>In Projects: <Link href={`/projects?list=${v.launch.pjListId}`}>{`Launches › ${v.launch.name}`}</Link></> : `Goes to Projects: Launches folder, new list "${v.launch.name}"`}
         </span>
         <ErrorLine error={approve.error || drop.error} />
-        {approve.data?.error && <span className="ld-small" style={{ color: "#b42318" }}>{`Started, but ClickUp said: ${approve.data.error}`}</span>}
+        {approve.data?.error && <span className="ld-small" style={{ color: "#b42318" }}>{`Started, but Projects said: ${approve.data.error}`}</span>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {st === "planning" && <button type="button" className="ld-btn p" disabled={approve.isPending} onClick={() => approve.mutate({ organizationId: currentOrgId, id })}>{approve.isPending ? "Starting..." : "Approve plan"}</button>}

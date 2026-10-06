@@ -29,7 +29,7 @@ const MIN = 60_000;
 const DAY = 86_400_000;
 const LEAD = 10 * MIN; // Recall only guarantees on-time joins for bots booked more than 10 minutes ahead.
 
-export type NotesItem = { text: string; owner: string; ownerKind: string | null; taskId: number | null; status: "in_clickup" | "task" | "open" | "done"; due: string | null };
+export type NotesItem = { text: string; owner: string; ownerKind: string | null; taskId: number | null; status: "in_projects" | "task" | "open" | "done"; due: string | null };
 export type NotesSummary = { summary: string; decisions: string[]; questions: string[] };
 type Attendee = { name: string; email: string };
 
@@ -305,12 +305,12 @@ export async function sendItems(orgId: number, id: number) {
     return m ? new Date(Date.UTC(Number(m[3]), Number(m[1]) - 1, Number(m[2]), 17)) : undefined;
   };
   const r = await addActionItems(orgId, open.map((i) => ({ text: i.text, owner: i.owner, due: toDate(i.due) })), `notes:${row.id}`);
-  const inClickup = !!r.launch?.clickupListId;
+  const inProjects = !!r.launch?.pjListId;
   open.forEach((it, idx) => {
     const t = r.tasks[idx];
     if (t) {
       it.taskId = t.id;
-      it.status = inClickup ? "in_clickup" : "task";
+      it.status = inProjects ? "in_projects" : "task";
     }
   });
   for (const it of open.filter((i) => i.ownerKind && i.ownerKind !== "coo")) {

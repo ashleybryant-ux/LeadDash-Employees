@@ -28,7 +28,7 @@ import * as interview from "./interview";
 export type ChatCard = {
   type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck";
   id: number;
-  /** On a choices card after a bulk ClickUp close: the task ids, so "Reopen them" can undo it. */
+  /** On a choices card after a bulk close in Projects: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
   title: string;
   subtitle?: string;
@@ -64,31 +64,35 @@ export const LAYOUTS = [
 ];
 
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  website: ["none", "report", "site_audit", "mockup_site", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
-  custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "start_onboarding"],
+  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  website: ["none", "report", "site_audit", "mockup_site", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 // Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
-for (const list of Object.values(ACTIONS)) list.push("browse", "precall_report", "task_find", "task_add", "task_change", "goal_update");
+for (const list of Object.values(ACTIONS)) list.push("browse", "precall_report", "task_due", "task_find", "task_lists", "task_add", "task_change", "task_bulk", "task_undo", "goal_update");
 
 const ACTION_HELP: Record<string, string> = {
-  task_find: "task_find: look up tasks in Projects (the app's own folders, lists and tasks): by words in the task or list name, by person, or what's due. Put the words in `target` ('' for all), the person in `to` ('' for anyone), a last due date as YYYY-MM-DD in `date` ('' for any), and \"all\" in `focus` to include finished tasks.",
+  task_due: "task_due: the person asks what's due or overdue in Projects (for everyone, or for one person). Put the person's name in `target` ('' for everyone) and how many days ahead to look in `count` (default 7).",
+  task_find: "task_find: look up tasks in Projects (this app's own folders, lists and tasks, where all the team's work lives): by words in the task, list or folder name, by person, or what's due. Put the words in `target` ('' for all), the person in `to` ('' for anyone), a last due date as YYYY-MM-DD in `date` ('' for any), and \"all\" in `focus` to include finished tasks.",
+  task_lists: "task_lists: the person asks what's in Projects (folders and lists) or where something lives.",
   task_add: "task_add: add a task in Projects. Put the task in `title`, details in `notes`, the due date as YYYY-MM-DD in `date` ('' for none), who it's for (a person's or an employee's name, \"me\" for yourself) in `to` ('' for no one), and the list's name in `page` ('' for the newest list).",
-  task_change: "task_change: change a task in Projects: its status (like \"complete\" or \"in progress\"), due date, who it's for, or add a comment. Put words from the task's name in `target`, the new status in `focus` (''), the new due date as YYYY-MM-DD in `date` (''), who to assign in `to` (''), and a comment in `notes` ('').",
+  task_change: "task_change: change ONE task in Projects: its status (like \"complete\" or \"in progress\"), due date, who it's for, or add a comment. Put words from the task's name in `target`, the new status in `focus` (''), the new due date as YYYY-MM-DD in `date` (''), who to assign in `to` (''), and a comment in `notes` ('').",
+  task_bulk: "task_bulk: change MANY tasks in Projects at once, like \"close everything overdue\" or \"push everything in Goals + Tactics to next Friday\". Put which tasks in `goal`: overdue (past due), all (every open task that matches), or a date YYYY-MM-DD for tasks due before it. Words to narrow by list, folder or task name in `target` ('' for every list), a person in `to` (''), the new status in `focus` (done, open... or ''), and a new due date YYYY-MM-DD in `date` (''). Do it when they say so; never ask first. Never use task_change for more than one task.",
+  task_undo: "task_undo: reopen the tasks you just closed with task_bulk (\"Reopen them\", \"undo that\").",
   goal_update: "goal_update: post an update on a goal on the Goals page (\"we're at 13 practices\", \"the webinar is behind\"). Put words from the goal's title in `target`, how it's going in `focus` (on, risk or off), the update in `notes`, and the new number for its main target in `count` (0 when there's no new number).",
   precall_report: "precall_report: run the Pre-call report skill before a meeting with a practice or person (\"run a pre-call report on Bayou Family Therapy\", \"brief me before my call with Dr. Tran\"). Put the person's name in `target`, the practice in `title`, a website in `url` and the meeting date in `date` (YYYY-MM-DD) and `time` (HH:MM) when given. Public business information only; it posts here when ready.",
   cold_campaign: "cold_campaign: write a new cold email campaign for the lead list. Put the angle key in `focus` (switcher, missed_calls, too_many, group_ops, growing or owner_time; pick the closest) and anything else she wants in `notes`. It's a draft until she presses Start.",
@@ -101,7 +105,7 @@ const ACTION_HELP: Record<string, string> = {
   add_waiting: "add_waiting: someone owes the owner something (\"Dana owes me the W-9 by Wednesday\"). Put who in `target`, their email in `to` if given, what they owe in `title`, the date it's expected in `date` (YYYY-MM-DD) and what it holds up in `notes`.",
   add_promise: "add_promise: the owner promised someone something (\"I told Obsidian I'd send pricing Friday\"). Put who it's for in `target`, what in `title` and the date in `date` (YYYY-MM-DD).",
   to_nora: "to_nora: the person wants an employee to do some work (\"get Kai to fix the booking page today\"). Nora runs the team's work, so it goes to her as a task. Put the task in `title`, the employee's job key or name in `teammate`, the due date in `date` (YYYY-MM-DD, '' if none) and details in `notes`.",
-  browse: "browse: do something on a website in your own browser: read a page, look something up on a site, check a portal or account, fill in a form. Never use it for an app connected on Integrations (ClickUp, Gmail, Google Calendar, Zoom, social accounts): use that app's own actions. Never use it for an account that needs signing in unless a saved Website login covers it, and never ask anyone for a password. Put the whole job in `goal`, with exactly what to bring back. Put the web address in `url` only when it appeared in this conversation, on a saved opportunity, or in a search result; never guess a domain. Leave `url` '' when you don't have it (your browser looks the site up from the goal) or when a saved Website login covers it. the saved login's name in `target` ('' for none), and a short title in `title`. You do everything up to a Save, Submit, Send or Publish button and the owner presses Finish it to approve it. Use it instead of saying you can't open a website.",
+  browse: "browse: do something on a website in your own browser: read a page, look something up on a site, check a portal or account, fill in a form. Never use it for an app connected on Integrations (Gmail, Google Calendar, Zoom, social accounts) or for tasks (those live in Projects): use the matching actions. Never use it for an account that needs signing in unless a saved Website login covers it, and never ask anyone for a password. Put the whole job in `goal`, with exactly what to bring back. Put the web address in `url` only when it appeared in this conversation, on a saved opportunity, or in a search result; never guess a domain. Leave `url` '' when you don't have it (your browser looks the site up from the goal) or when a saved Website login covers it. the saved login's name in `target` ('' for none), and a short title in `title`. You do everything up to a Save, Submit, Send or Publish button and the owner presses Finish it to approve it. Use it instead of saying you can't open a website.",
   audit_workflows: "audit_workflows: open every workflow in the LeadDash platform, read the trigger and each step, change nothing, and list what needs fixing with one exact fix each.",
   fix_workflow: "fix_workflow: make the fix for a finding you listed, only when the owner says to (\"fix it\", \"fix the first two\", \"fix the reminders one\"). Put words from the workflow's name in `target` ('' when they gave a count), and in `focus` put fix_now (every one marked Fix now), all (every open one), or how many from the top (\"2\"); '' for one.",
   platform_page: "platform_page: put one of Jordan's pages into a funnel in the LeadDash platform, as a draft. Put the page's name in `page` ('' for Jordan's newest), the funnel's name in `target` (ask if they didn't say), and the path in `url` ('' to make one from the title). It's never published until the owner presses Publish.",
@@ -109,10 +113,6 @@ const ACTION_HELP: Record<string, string> = {
   add_file: "add_file: the person attached an RFP, call for proposals or opportunity document and wants you to look at it or add it. It is added to Opportunities and scored.",
   revise_answer: "revise_answer: change one answer on an application you wrote. Put words from the question (\"problem\", \"traction\") in `target`, the application's name in `title` ('' for the most recent), what to change in `notes`, and concise or detailed in `to` when they ask for shorter or longer ('' otherwise).",
   restore_answer: "restore_answer: the person wants the answer you just rewrote put back the way it was (\"go back to the old one\").",
-  clickup_due: "clickup_due: the person asks what's due or overdue in ClickUp (for everyone, or for one person). Put the person's name in `target` ('' for everyone) and how many days ahead to look in `count` (default 7).",
-  clickup_find: "clickup_find: look something up in ClickUp: tasks by words (task, list, folder or Space name, like \"marketing\" or \"W-9\"), by person, or both. Put the words in `target` ('' for all), the person in `to` ('' for anyone), and \"all\" in `focus` to include finished tasks ('' for open only).",
-  clickup_lists: "clickup_lists: the person asks what's in their ClickUp (Spaces, folders, lists) or where something lives.",
-  clickup_add: "clickup_add: add a task to ClickUp. Put the task in `title`, any details in `notes`, the due date as YYYY-MM-DD in `date` ('' for none), who it's for (a name or email) in `to` ('' for no one), and the ClickUp list to put it in in `page` ('' for the LeadDash Employees tasks list).",
   fix_code: "fix_code: have Claude fix a bug or make a change in the owner's code. Put which code in `target` (the code's name from your list), a short title in `title` (under 10 words), and in `notes` a clear write-up for Claude: what's wrong or wanted, where it shows up (screen, button, who sees it), what should happen instead, and how to check it's fixed. Never put client data in it. Do it as soon as you know which code and what's wrong; ask only if you can't tell.",
   merge_change: "merge_change: merge a change Claude finished, when the owner says to (\"merge it\", \"looks good, merge\"). Words from its title in `target` ('' for the newest one ready).",
   change_request: "change_request: send a finished change back to Claude with what to change. Words from its title in `target` ('' for the newest), what to change in `notes`.",
@@ -126,9 +126,6 @@ const ACTION_HELP: Record<string, string> = {
   make_episode: "make_episode: make an episode you wrote into a finished video (\"make episode 1\", \"make it\"). Put the episode number in `count` (0 for the next one not made yet).",
   avatar_script: "avatar_script: write a video of the owner talking, made by AI from her photo and her own voice. Put a short title in `title` and the exact words she says in `message`, written the way she talks out loud (about 2.5 words a second, so 110 words is about 45 seconds; aim for the length she asked for, 30 to 60 seconds if she didn't say). No stage directions, no labels, only her words. Several scripts at once: write the first and offer the rest.",
   make_avatar: "make_avatar: make the video from a script you wrote (\"Make it\", \"make the video\", \"make the double entry one\"). Put words from its title in `target` ('' for the newest script).",
-  clickup_bulk: "clickup_bulk: change MANY ClickUp tasks at once, like \"close everything overdue\" or \"push everything in Goals + Tactics to next Friday\". Put which tasks in `goal`: overdue (past due), all (every open task that matches), or a date YYYY-MM-DD for tasks due before it. Words to narrow by list, folder or task name in `target` ('' for every list), a person in `to` (''), the new status in `focus` (done, open... or ''), and a new due date YYYY-MM-DD in `date` (''). Do it when they say so; never ask first. Never use clickup_change for more than one task.",
-  clickup_undo: "clickup_undo: reopen the tasks you just closed with clickup_bulk (\"Reopen them\", \"undo that\").",
-  clickup_change: "clickup_change: change a ClickUp task: mark it done or another status, move its due date, assign it, or comment on it. Put words from the task's name in `target`, the new status in `focus` (done, open, in progress... or ''), the new due date as YYYY-MM-DD in `date` (''), who to assign in `to` (''), and a comment in `notes` ('').",
   set_deadlines: "set_deadlines: give every action item from a meeting or huddle a due date and make sure each one is a tracked task with its owner (\"assign deadlines from the last meeting\"). Put the meeting's name in `target` ('' for the most recent, huddles included) and any timing the person gave (\"by Friday\", \"next week\") in `notes`.",
   restore_page: "restore_page: the person wants the page you built put back to the version before (\"go back to the last version\"). Put the page's name in `target` ('' for the most recent page).",
   ask_layout: "ask_layout: before building a NEW page, ask the person to pick a layout and where the button goes. In `reply`, say in one or two sentences what you took from what they gave you (attachments included), then ask them to pick a layout.",
@@ -199,7 +196,7 @@ function decisionSchema(kind: string): JsonSchema {
       focus: str,
       topic: str,
       platforms: { type: "array", items: { type: "string", enum: ["linkedin", "instagram", "facebook", "x", "threads"] } },
-      count: { type: "integer", description: "A number the action asks for (posts for schedule_posts, days for check_schedule and clickup_due). 0 otherwise." },
+      count: { type: "integer", description: "A number the action asks for (posts for schedule_posts, days for check_schedule and task_due). 0 otherwise." },
       title: str,
       notes: str,
       page: str,
@@ -302,13 +299,14 @@ async function applyFacts(emp: AIEmployee) {
 }
 
 const TOOL_NAMES: Record<string, string> = { google_workspace: "Google (Gmail and Calendar)", clickup: "ClickUp", zoom: "Zoom", recall: "Recall.ai (meeting bot)", linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", threads: "Threads", x: "X", tiktok: "TikTok", wordpress: "WordPress", google_business: "Google Business Profile", submittable: "Submittable", sessionize: "Sessionize" };
-const TOOL_USERS: Record<string, string> = { clickup: "every employee has full access: what's due, finding any task or list, adding tasks, marking done, changing dates and owners, commenting; Nora also tracks launches there", recall: "Avery sits in on Zoom and Google Meet meetings and sends the notes to Simone; the team joins huddles", zoom: "Simone uses it for meeting links", google_workspace: "Avery, Simone and Nora use it for email and calendar" };
+const TOOL_USERS: Record<string, string> = { clickup: "only for importing old ClickUp tasks into Projects; nobody works in ClickUp anymore, every task lives in Projects here", recall: "Avery sits in on Zoom and Google Meet meetings and sends the notes to Simone; the team joins huddles", zoom: "Simone uses it for meeting links", google_workspace: "Avery, Simone and Nora use it for email and calendar" };
 
 /** Which tools are connected on Integrations, so no employee ever says a connected tool isn't there. */
 async function connectedFacts(emp: AIEmployee) {
   const on = (await db.listConnectionsByOrg(emp.organizationId)).filter((c) => c.status === "connected").map((c) => c.provider);
-  if (!on.length) return "\nConnected tools on Integrations: none yet.";
-  return `\nConnected tools on Integrations: ${on.map((p) => `${TOOL_NAMES[p] ?? p}${TOOL_USERS[p] ? ` (${TOOL_USERS[p]})` : ""}`).join("; ")}. Never say a connected tool isn't connected. If none of your actions use it, say it's connected and which teammate works in it.`;
+  const tasksLine = "\nTasks and projects live in Projects, this app's own task manager (folders, lists, tasks, launches): use the task_ actions for them. It replaced ClickUp; never send work to ClickUp.";
+  if (!on.length) return `${tasksLine}\nConnected tools on Integrations: none yet.`;
+  return `${tasksLine}\nConnected tools on Integrations: ${on.map((p) => `${TOOL_NAMES[p] ?? p}${TOOL_USERS[p] ? ` (${TOOL_USERS[p]})` : ""}`).join("; ")}. Never say a connected tool isn't connected. If none of your actions use it, say it's connected and which teammate works in it.`;
 }
 
 /** Simone and Nora see recent meetings (Avery's notes), huddles and their action items (and Nora her projects), so they never say they have no notes. */
@@ -433,9 +431,13 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
   const files = ctx.files ?? [];
   const docText = files.filter((f) => f.kind === "document").map((f) => `${f.name}:\n${f.text.slice(0, 6000)}`).join("\n\n");
   switch (d.action) {
+    case "task_due":
     case "task_find":
+    case "task_lists":
     case "task_add":
     case "task_change":
+    case "task_bulk":
+    case "task_undo":
     case "goal_update": {
       return projectsAction(emp, d, who);
     }
@@ -721,15 +723,15 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const r = await projects.planLaunch(org, { name: d.title || undefined, date: d.date, brief: [d.notes, d.message].filter(Boolean).join("\n") || d.reply });
       const counts = await projects.planCounts(org, r.launch.id);
       const text = r.auto
-        ? `I planned ${r.launch.name} with ${plural(counts.milestones, "milestone")} and ${plural(counts.tasks, "task")}, and started it${r.launch.clickupListId ? " in ClickUp" : ""}. I'll check it every morning.`
-        : `I worked back from the launch date and built ${plural(counts.milestones, "milestone")} and ${plural(counts.tasks, "task")} with ${plural(counts.owners, "owner")}. Once you approve, ${(await db.getConnectionByProvider(org, "clickup"))?.status === "connected" ? "I'll create the list in ClickUp and " : "I'll "}check it every morning.`;
+        ? `I planned ${r.launch.name} with ${plural(counts.milestones, "milestone")} and ${plural(counts.tasks, "task")}, and started it in Projects. I'll check it every morning.`
+        : `I worked back from the launch date and built ${plural(counts.milestones, "milestone")} and ${plural(counts.tasks, "task")} with ${plural(counts.owners, "owner")}. Once you approve, I'll put the list in Projects and check it every morning.`;
       return { text, cards: [projects.planCard(r.launch, counts) as ChatCard], queries: [] };
     }
     case "move_launch": {
       const l = await projects.findLaunch(org, d.target);
       if (!l) return { text: "There's no launch to move yet.", cards: [], queries: [] };
       const r = await projects.moveLaunch(org, l.id, d.date);
-      return { text: `I moved ${r.launch.name} ${Math.abs(r.days)} day${Math.abs(r.days) === 1 ? "" : "s"} ${r.days >= 0 ? "later" : "earlier"} and shifted ${plural(r.moved, "open task")} with it${r.launch.clickupListId ? " in ClickUp too" : ""}.`, cards: [], queries: [] };
+      return { text: `I moved ${r.launch.name} ${Math.abs(r.days)} day${Math.abs(r.days) === 1 ? "" : "s"} ${r.days >= 0 ? "later" : "earlier"} and shifted ${plural(r.moved, "open task")} with it in Projects.`, cards: [], queries: [] };
     }
     case "send_report": {
       const l = await projects.findLaunch(org, d.target);
@@ -766,53 +768,8 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       if (!m) return { text: "I don't have a past meeting to attach these to yet.", cards: [], queries: [] };
       const r = await coo.saveNotes(org, m.id, d.message || d.notes);
       const items = JSON.parse(r.actionItems || "[]") as coo.ActionItem[];
-      const sent = items.some((i) => i.status === "in_clickup" || i.status === "task");
+      const sent = items.some((i) => i.status === "in_projects" || i.status === "task");
       return { text: `I found ${plural(items.length, "action item")} in your notes from ${m.title}${items.length ? `: ${items.map((i) => `${i.text} (${i.owner})`).join("; ")}` : ""}.${sent ? (emp.kind === "projects" ? " I added them to the launch plan and I'll track each one." : " Nora added them to the launch plan.") : ""}`, cards: [], queries: [] };
-    }
-    case "clickup_due": {
-      const ck = await import("./clickup-tasks");
-      const zone = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
-      const list = await ck.dueSoon(org, Number(d.count) || 7, d.target);
-      if (!list.length) return { text: `Nothing is due in ClickUp${d.target ? ` for ${d.target}` : ""} in the next ${Number(d.count) || 7} days.`, cards: [], queries: [] };
-      const late = list.filter((t) => t.due && t.due.getTime() < Date.now());
-      return {
-        text: `${list.length} open ClickUp task${list.length === 1 ? "" : "s"}${d.target ? ` for ${d.target}` : ""} due in the next ${Number(d.count) || 7} days${late.length ? `, ${late.length} overdue` : ""}:\n${list.slice(0, 15).map((t) => `- ${t.name} (${t.assignees.join(", ") || "no one assigned"}, ${t.due && t.due.getTime() < Date.now() ? "overdue since " : "due "}${ck.fmtDue(t.due, zone)}, ${t.list})`).join("\n")}${list.length > 15 ? `\nand ${list.length - 15} more in ClickUp.` : ""}`,
-        cards: [],
-        queries: [],
-        choices: late.length ? ["Remind them", "Add a task", "Just the overdue ones"] : ["Add a task", "Look 2 weeks ahead"],
-      };
-    }
-    case "clickup_add": {
-      if (!d.title.trim()) return { text: "What should the task say?", cards: [], queries: [] };
-      const ck = await import("./clickup-tasks");
-      const zone = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
-      const t = await ck.addTask(org, { name: d.title, details: d.notes, due: d.date, assignee: d.to, list: d.page });
-      return { text: `Added "${d.title}" to ClickUp (${t.list})${t.assignee ? ` for ${t.assignee}` : ""}${t.due ? `, due ${ck.fmtDue(t.due, zone)}` : ""}.${d.to && !t.assignee ? ` I couldn't find ${d.to} in your ClickUp workspace, so it's unassigned.` : ""}${t.url ? `\n${t.url}` : ""}`, cards: [], queries: [] };
-    }
-    case "clickup_find": {
-      const ck = await import("./clickup-tasks");
-      const zone = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
-      const all = d.focus.trim().toLowerCase() === "all";
-      const list = await ck.findTasks(org, { words: d.target, who: d.to, includeDone: all });
-      const what = [d.target && `"${d.target}"`, d.to && `for ${d.to}`].filter(Boolean).join(" ");
-      if (!list.length) return { text: `I didn't find ${all ? "any" : "any open"} ClickUp tasks${what ? ` matching ${what}` : ""}.`, cards: [], queries: [], choices: all ? ["Add a task", "Show my lists"] : ["Include finished tasks", "Show my lists"] };
-      return {
-        text: `${list.length} ${all ? "" : "open "}ClickUp task${list.length === 1 ? "" : "s"}${what ? ` matching ${what}` : ""}:\n${list.slice(0, 20).map((t) => `- ${t.name} (${[t.space, t.folder, t.list].filter(Boolean).join(" › ")}; ${t.assignees.join(", ") || "no one assigned"}; ${t.closed ? "done" : t.status}; ${t.due && !t.closed && t.due.getTime() < Date.now() ? "overdue since " : "due "}${ck.fmtDue(t.due, zone)})`).join("\n")}${list.length > 20 ? `\nand ${list.length - 20} more.` : ""}`,
-        cards: [],
-        queries: [],
-        choices: ["Mark one done", "Move a due date", "Add a task"],
-      };
-    }
-    case "clickup_lists": {
-      const ck = await import("./clickup-tasks");
-      const map = await ck.workspaceMap(org);
-      if (!map.length) return { text: "Your ClickUp workspace has no Spaces I can see.", cards: [], queries: [] };
-      return {
-        text: `Here's your ClickUp:\n${map.map((sp) => `- ${sp.space}: ${sp.lists.length ? sp.lists.map((l) => (l.folder ? `${l.folder} › ${l.name}` : l.name)).join(", ") : "no lists"}`).join("\n")}`,
-        cards: [],
-        queries: [],
-        choices: ["What's due this week?", "Add a task"],
-      };
     }
     case "fix_code": {
       const dev = await import("./dev");
@@ -1042,52 +999,6 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       } catch (err) {
         return { text: `I couldn't start it: ${err instanceof Error ? err.message : String(err)}`, cards: [{ type: "avatar_video", id: v.id, title: v.title }], queries: [] };
       }
-    }
-    case "clickup_bulk": {
-      const ck = await import("./clickup-tasks");
-      const g = d.goal.trim().toLowerCase();
-      const pick = { overdue: g === "overdue" || (!g && !d.target.trim() && !d.to.trim()), dueBefore: /^\d{4}-\d{2}-\d{2}$/.test(g) ? g : undefined, words: d.target, who: d.to };
-      const status = d.focus.trim();
-      if (!status && !d.date) return { text: "What should I change on them: mark them done, or move the due date?", cards: [], queries: [], choices: ["Mark them done", "Move to next Friday"] };
-      const list = (await ck.pickTasks(org, pick)).slice(0, 500);
-      if (!list.length) return { text: `I didn't find any open ClickUp tasks that fit${pick.overdue ? " and are past due" : ""}.`, cards: [], queries: [] };
-      const what = [status ? (/^(done|complete|completed|close|closed|finished)$/i.test(status) ? "closing" : `setting to ${status}`) : "", d.date ? `moving to ${fmtYmd(d.date)}` : ""].filter(Boolean).join(" and ");
-      // Many tasks take a few minutes (ClickUp limits how fast we can go), so this runs on and posts when it's done.
-      void tasks.working(emp, () => ck.changeMany(org, list, { status, due: d.date }))
-        .then(async (r) => {
-          const closing = /^(done|complete|completed|close|closed|finished)$/i.test(status);
-          const lines = [`Done. ${what.charAt(0).toUpperCase() + what.slice(1)} worked for ${plural(r.changed.length, "task")} in ClickUp.`];
-          if (r.failed.length) lines.push(`${plural(r.failed.length, "task")} didn't change:\n${r.failed.slice(0, 8).map((f) => `- ${f.task.name} (${f.why})`).join("\n")}`);
-          const cards: ChatCard[] = closing && r.changed.length ? [{ ...choicesCard(["Reopen them", "What's still open?"]), undo: r.changed.map((t) => t.id) }] : [choicesCard(["What's still open?"])];
-          await db.createChatMessage({ organizationId: org, employeeId: emp.id, role: "employee", authorName: emp.name, content: lines.join("\n\n"), cards: JSON.stringify(cards) });
-        })
-        .catch(async (err) => {
-          await db.createChatMessage({ organizationId: org, employeeId: emp.id, role: "employee", authorName: emp.name, content: `ClickUp stopped me partway: ${err instanceof Error ? err.message : String(err)}. Ask me again and I'll pick up what's left.` });
-        });
-      return { text: `On it: ${what} ${plural(list.length, `${pick.overdue ? "overdue " : ""}task`)} in ClickUp. ClickUp only lets me go so fast, so it can take a few minutes. I'll post here when it's done.`, cards: [], queries: [] };
-    }
-    case "clickup_undo": {
-      const ck = await import("./clickup-tasks");
-      const last = (await db.listChatMessages(org, emp.id, 40)).reverse().find((m) => m.role === "employee" && parseList<ChatCard>(m.cards).some((c) => c.undo?.length));
-      const ids = last ? parseList<ChatCard>(last.cards).find((c) => c.undo?.length)!.undo! : [];
-      if (!ids.length) return { text: "I don't have a recent batch of closed tasks to reopen.", cards: [], queries: [] };
-      const list = await ck.pickTasks(org, { ids });
-      void tasks.working(emp, () => ck.changeMany(org, list, { status: "open" })).then((r) =>
-        db.createChatMessage({ organizationId: org, employeeId: emp.id, role: "employee", authorName: emp.name, content: `Reopened ${plural(r.changed.length, "task")} in ClickUp.${r.failed.length ? ` ${plural(r.failed.length, "task")} didn't reopen.` : ""}` })
-      );
-      return { text: `Reopening ${plural(list.length, "task")} in ClickUp now. I'll post here when it's done.`, cards: [], queries: [] };
-    }
-    case "clickup_change": {
-      if (!d.target.trim()) return { text: "Which task? Tell me words from its name.", cards: [], queries: [] };
-      const ck = await import("./clickup-tasks");
-      const r = await ck.changeTask(org, { task: d.target, status: d.focus, due: d.date, assignee: d.to, comment: d.notes, who: emp.name });
-      if (!r.task) {
-        return r.matches.length
-          ? { text: `More than one task fits "${d.target}". Which one?`, cards: [], queries: [], choices: r.matches.slice(0, 4).map((t) => t.name.slice(0, 60)) }
-          : { text: `I couldn't find a ClickUp task matching "${d.target}".`, cards: [], queries: [] };
-      }
-      if (!r.changed.length) return { text: `I found "${r.task.name}" but nothing to change. Tell me the new status, date, person or comment.`, cards: [], queries: [] };
-      return { text: `Updated "${r.task.name}" in ClickUp: ${r.changed.join(", ")}.${r.task.url ? `\n${r.task.url}` : ""}`, cards: [], queries: [] };
     }
     case "set_deadlines": {
       const m = await coo.lastMeetingFor(org, d.target, emp.kind === "projects" ? "project" : "all");
@@ -1454,7 +1365,7 @@ export function findHold(holds: OutboundItem[], want: { date: string; time: stri
 }
 
 /** Actions that only talk about the work; a project task needs one that does it. */
-const NOT_WORK = new Set(["task_find", "clickup_due", "clickup_find", "clickup_lists", "clickup_add", "clickup_change", "clickup_bulk", "clickup_undo", "clickup_bulk", "clickup_undo", "none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
+const NOT_WORK = new Set(["task_find", "task_due", "task_lists", "task_undo", "none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
 
 /**
  * An employee does a project task Nora assigned, with the same actions their
@@ -1471,7 +1382,7 @@ export async function doTask(emp: AIEmployee, task: { title: string; details: st
     `${task.from}, your project manager, assigned you a task on the ${task.project} project. Do it now: choose the action that produces what the task asks for and fill its fields so the result meets "Done when". Put everything the task says into the fields (topic, title, notes, goal, focus).
 Right now it is ${await nowIn(emp.organizationId)}.
 If none of your actions can produce it, choose "none" and say in "reply", in one sentence, what a person needs to do instead.
-Apps connected on Integrations are reached through their own actions, never the browser: to check that you can reach ClickUp, use clickup_lists or clickup_find and report what you see. If the task means reading someone's email or signing in to an account you can't reach with your actions (like checking whether an invite arrived), choose "none" and say who needs to check it. Never ask for a password or try to sign in to someone's account.
+Apps connected on Integrations are reached through their own actions, never the browser. Tasks live in Projects in this app: use task_lists or task_find to see them and task_add or task_change to work them. If the task means reading someone's email or signing in to an account you can't reach with your actions (like checking whether an invite arrived), choose "none" and say who needs to check it. Never ask for a password or try to sign in to someone's account.
 Fill every field; use "" or [] for fields the action does not use.
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n")}`
@@ -1678,6 +1589,92 @@ async function projectsAction(emp: AIEmployee, d: Decision, who: string): Promis
   };
   const fmt = (ymd: string) => g.fmtDay(ymd);
   try {
+    const statusNamed = (list: { statuses: string }, want: string) => {
+      const w = want.trim().toLowerCase();
+      const st = pj.statusesOf(list);
+      if (!w) return null;
+      if (/^(done|complete|completed|close|closed|finished)$/.test(w)) return st.find((x) => x.type === "done") ?? st.find((x) => x.type === "closed") ?? null;
+      if (/^(open|reopen|to do|todo|not started)$/.test(w)) return st.find((x) => x.type === "open") ?? st[0] ?? null;
+      return st.find((x) => x.name === w) ?? st.find((x) => x.name.includes(w)) ?? null;
+    };
+    const today = g.todayYmd(await g.zoneOf(org));
+    if (d.action === "task_due") {
+      const days = Number(d.count) || 7;
+      const by = pj.addDaysYmd(today, days);
+      const list = pj.find(org, { who: d.target, dueBy: by }, me).filter((t) => t.due !== "no due date");
+      if (!list.length) return { text: `Nothing is due in Projects${d.target ? ` for ${d.target}` : ""} in the next ${days} days.`, cards: [], queries: [] };
+      const late = list.filter((t) => (db.work.tasks.get(org, t.id)?.dueDate ?? "9999") < today);
+      const order = [...late, ...list.filter((t) => !late.includes(t))];
+      return {
+        text: `${list.length} open task${list.length === 1 ? "" : "s"} in Projects${d.target ? ` for ${d.target}` : ""} due in the next ${days} days${late.length ? `, ${late.length} overdue` : ""}:\n${order.slice(0, 15).map((t) => `- ${t.name} (${t.assignees.join(", ") || "no one assigned"}, ${late.includes(t) ? "overdue since " : "due "}${t.due}, ${t.list})`).join("\n")}${list.length > 15 ? `\nand ${list.length - 15} more in Projects.` : ""}`,
+        cards: [],
+        queries: [],
+        choices: late.length ? ["Remind them", "Add a task", "Just the overdue ones"] : ["Add a task", "Look 2 weeks ahead"],
+      };
+    }
+    if (d.action === "task_lists") {
+      const acc = await import("../work/pjAccess");
+      const lists = acc.visibleLists(org, me).map((x) => x.list);
+      const folders = db.work.folders.all(org);
+      if (!lists.length) return { text: "Projects is empty so far. Say what to add and I'll make the first list.", cards: [], queries: [] };
+      const byFolder = new Map<string, string[]>();
+      for (const f of folders) if (lists.some((l) => l.folderId === f.id)) byFolder.set(f.name, []);
+      for (const l of lists) {
+        const f = folders.find((x) => x.id === l.folderId)?.name ?? "No folder";
+        byFolder.set(f, [...(byFolder.get(f) ?? []), l.name]);
+      }
+      return { text: `Here's Projects:\n${Array.from(byFolder.entries()).map(([f, ls]) => `- ${f}: ${ls.join(", ")}`).join("\n")}`, cards: [], queries: [], choices: ["What's due this week?", "Add a task"] };
+    }
+    if (d.action === "task_bulk") {
+      const goal = d.goal.trim().toLowerCase();
+      const overdue = goal === "overdue" || (!goal && !d.target.trim() && !d.to.trim());
+      const dueBefore = /^\d{4}-\d{2}-\d{2}$/.test(goal) ? goal : overdue ? pj.addDaysYmd(today, -1) : undefined;
+      const status = d.focus.trim();
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : "";
+      if (!status && !date) return { text: "What should I change on them: mark them done, or move the due date?", cards: [], queries: [], choices: ["Mark them done", "Move to next Friday"] };
+      const hits = pj.find(org, { words: d.target, who: d.to, dueBy: dueBefore }, me).filter((t) => !dueBefore || t.due !== "no due date").slice(0, 500);
+      if (!hits.length) return { text: `I didn't find any open tasks in Projects that fit${overdue ? " and are past due" : ""}.`, cards: [], queries: [] };
+      const closing = /^(done|complete|completed|close|closed|finished)$/i.test(status);
+      const changed: number[] = [];
+      const failed: string[] = [];
+      for (const h of hits) {
+        const t = db.work.tasks.get(org, h.id);
+        if (!t) continue;
+        const list = db.work.lists.get(org, t.listId)!;
+        const patch: Parameters<typeof pj.updateTask>[2] = {};
+        if (status) {
+          const st = statusNamed(list, status);
+          if (!st) {
+            failed.push(`${t.name} (${list.name} has no "${status}" status)`);
+            continue;
+          }
+          patch.status = st.name;
+        }
+        if (date) patch.dueDate = date;
+        await pj.updateTask(org, t.id, patch, by, { quiet: true });
+        changed.push(t.id);
+      }
+      const what = [status ? (closing ? "closed" : `set to ${status}`) : "", date ? `moved to ${fmt(date)}` : ""].filter(Boolean).join(" and ");
+      const lines = [`Done: ${what} ${changed.length} ${overdue ? "overdue " : ""}task${changed.length === 1 ? "" : "s"} in Projects.`];
+      if (failed.length) lines.push(`${failed.length} didn't change:\n${failed.slice(0, 8).map((f) => `- ${f}`).join("\n")}`);
+      const cards: ChatCard[] = closing && changed.length ? [{ ...choicesCard(["Reopen them", "What's still open?"]), undo: changed.map(String) }] : [choicesCard(["What's still open?"])];
+      return { text: lines.join("\n\n"), cards, queries: [] };
+    }
+    if (d.action === "task_undo") {
+      const last = (await db.listChatMessages(org, emp.id, 40)).reverse().find((m) => m.role === "employee" && parseList<ChatCard>(m.cards).some((c) => c.undo?.length));
+      const ids = last ? parseList<ChatCard>(last.cards).find((c) => c.undo?.length)!.undo!.map(Number) : [];
+      if (!ids.length) return { text: "I don't have a recent batch of closed tasks to reopen.", cards: [], queries: [] };
+      let n = 0;
+      for (const id of ids) {
+        const t = db.work.tasks.get(org, id);
+        if (!t) continue;
+        const st = statusNamed(db.work.lists.get(org, t.listId)!, "open");
+        if (!st) continue;
+        await pj.updateTask(org, t.id, { status: st.name }, by, { quiet: true });
+        n++;
+      }
+      return { text: `Reopened ${n} task${n === 1 ? "" : "s"} in Projects.`, cards: [], queries: [] };
+    }
     if (d.action === "task_find") {
       const list = pj.find(org, { words: d.target, who: d.to, dueBy: /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : undefined, includeDone: d.focus.toLowerCase() === "all" }, me);
       if (!list.length) return { text: "I didn't find any tasks like that in Projects.", cards: [], queries: [] };

@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import type { EmployeeRow } from "../ChatPage";
@@ -73,7 +74,7 @@ export default function Launches({ emp }: { emp: EmployeeRow }) {
             <button type="button" className="ld-btn p" style={{ width: 128 }} disabled={approve.isPending} onClick={() => approve.mutate({ organizationId: currentOrgId, id: v.launch.id })}>Approve plan</button>
           </>
         )}
-        {v?.launch.clickupListUrl && <a href={v.launch.clickupListUrl} target="_blank" rel="noreferrer noopener" className="ld-btn" style={{ width: 150, marginLeft: "auto" }}>Open in ClickUp</a>}
+        {v?.launch.pjListId ? <Link href={`/projects?list=${v.launch.pjListId}`} className="ld-btn" style={{ width: 150, marginLeft: "auto" }}>Open in Projects</Link> : v?.launch.clickupListUrl ? <a href={v.launch.clickupListUrl} target="_blank" rel="noreferrer noopener" className="ld-btn" style={{ width: 150, marginLeft: "auto" }}>Open in ClickUp</a> : null}
       </div>
       <ErrorLine error={approve.error} />
       {!v ? (
@@ -182,10 +183,10 @@ function Tasks({ v, tz, emp }: { v: View; tz: string; emp: EmployeeRow }) {
                         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                           <KV label="Milestone">{m ? `${m.name} · ${day(m.dueDate, tz)}` : "From a meeting"}</KV>
                           <KV label="Owner">{t.ownerType === "employee" ? `${t.ownerName} (your employee)` : t.ownerName}</KV>
-                          <KV label="In ClickUp">{t.clickupUrl ? <><a href={t.clickupUrl} target="_blank" rel="noreferrer noopener">{`${v.launch.name} › ${t.title}`}</a>{t.clickupStatus ? ` · ${t.clickupStatus[0].toUpperCase()}${t.clickupStatus.slice(1)}` : ""}</> : v.launch.status === "planning" ? "After you approve the plan" : "Not in ClickUp"}</KV>
+                          <KV label="In Projects">{t.pjTaskId && v.launch.pjListId ? <Link href={`/projects?list=${v.launch.pjListId}&task=${t.pjTaskId}`}>{`Launches › ${v.launch.name} › ${t.title}`}</Link> : t.clickupUrl ? <a href={t.clickupUrl} target="_blank" rel="noreferrer noopener">{`In ClickUp: ${v.launch.name} › ${t.title}`}</a> : v.launch.status === "planning" ? "Once you approve the plan" : "Not there yet"}</KV>
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {t.clickupUrl && <a className="ld-btn" href={t.clickupUrl} target="_blank" rel="noreferrer noopener">Open in ClickUp</a>}
+                          {t.pjTaskId && v.launch.pjListId ? <Link className="ld-btn" href={`/projects?list=${v.launch.pjListId}&task=${t.pjTaskId}`}>Open in Projects</Link> : t.clickupUrl ? <a className="ld-btn" href={t.clickupUrl} target="_blank" rel="noreferrer noopener">Open in ClickUp</a> : null}
                           <button type="button" className="ld-btn" onClick={() => { setEditing(t.id); setD({ title: t.title, details: t.details ?? "", owner: t.ownerName, due: mdy(t.dueDate, tz) }); }}>Edit</button>
                           <button type="button" className="ld-btn" disabled={mark.isPending} onClick={() => mark.mutate({ organizationId: currentOrgId, taskId: t.id, done: t.status !== "done" })}>{t.status === "done" ? "Reopen" : "Mark done"}</button>
                           <ErrorLine error={mark.error} />
@@ -368,7 +369,7 @@ function Reports({ v, tz }: { v: View; tz: string }) {
                   <KV label="Needs you">{r.body.needsYou}</KV>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {v.launch.clickupListUrl && <a className="ld-btn" href={v.launch.clickupListUrl} target="_blank" rel="noreferrer noopener">Open in ClickUp</a>}
+                  {v.launch.pjListId && <Link className="ld-btn" href={`/projects?list=${v.launch.pjListId}`}>Open in Projects</Link>}
                   <button type="button" className="ld-btn" onClick={() => copy(r)}>{copied === r.id ? "Copied" : "Copy"}</button>
                   <button type="button" className="ld-btn" onClick={() => setOpen(null)}>Close</button>
                 </div>

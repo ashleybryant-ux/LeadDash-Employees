@@ -3959,20 +3959,12 @@ export const appRouter = router({
     settings: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       const { ops } = await opsFor(input.organizationId);
-      const cu = await integrations.clickupSettings(input.organizationId);
-      return { clickup: cu ? { teamName: cu.teamName, spaces: cu.spaces, spaceId: cu.spaceId, spaceName: cu.spaceName } : null, taskOwners: ops.taskOwners, checkTime: ops.checkTime, reportDay: ops.reportDay };
+      return { checkTime: ops.checkTime, reportDay: ops.reportDay };
     }),
-    saveSettings: protectedProcedure
-      .input(orgInput.extend({ spaceId: z.string().max(40).optional(), taskOwners: z.enum(["people", "employees"]), checkTime: z.enum(["07:30", "08:30", "09:30"]), reportDay: z.union([z.literal(1), z.literal(5)]) }))
-      .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "admin");
-        if (input.spaceId && (await integrations.clickupSettings(input.organizationId))) await integrations.chooseClickupSpace(input.organizationId, input.spaceId);
-        await saveOps(input.organizationId, { taskOwners: input.taskOwners, checkTime: input.checkTime, reportDay: input.reportDay });
-        return { ok: true };
-      }),
-    refreshSpaces: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+    saveSettings: protectedProcedure.input(orgInput.extend({ checkTime: z.enum(["07:30", "08:30", "09:30"]), reportDay: z.union([z.literal(1), z.literal(5)]) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "admin");
-      return integrations.chooseClickupSpace(input.organizationId);
+      await saveOps(input.organizationId, { checkTime: input.checkTime, reportDay: input.reportDay });
+      return { ok: true };
     }),
   }),
 

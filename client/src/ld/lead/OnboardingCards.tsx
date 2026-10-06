@@ -27,49 +27,33 @@ const CHECK = [
   { key: "09:30", label: "9:30 AM" },
 ] as const;
 
-/** Nora: the ClickUp Space, who gets tasks, the morning check and the report day. */
-export function ClickUpCard({ emp }: { emp: EmployeeRow }) {
+/** Nora: the morning check and the report day. Her launches live in Projects, in the Launches folder. */
+export function ProjectsCard({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const q = trpc.projects.settings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const [editing, setEditing] = React.useState(false);
-  const [d, setD] = React.useState({ spaceId: "", taskOwners: "employees" as "people" | "employees", checkTime: "08:30" as "07:30" | "08:30" | "09:30", reportDay: 5 as 1 | 5 });
-  const save = trpc.projects.saveSettings.useMutation({ onSuccess: async () => { setEditing(false); await Promise.all([utils.projects.settings.invalidate(), utils.publishing.listConnections.invalidate()]); } });
-  const refresh = trpc.projects.refreshSpaces.useMutation({ onSuccess: () => utils.projects.settings.invalidate() });
+  const [d, setD] = React.useState({ checkTime: "08:30" as "07:30" | "08:30" | "09:30", reportDay: 5 as 1 | 5 });
+  const save = trpc.projects.saveSettings.useMutation({ onSuccess: async () => { setEditing(false); await utils.projects.settings.invalidate(); } });
   if (!q.data) return null;
   const s = q.data;
-  const cu = s.clickup;
   return (
     <section className={`ld-card ${editing ? "editing" : ""}`}>
       <div style={grid} className="ld-keep-check">
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-          <span className="ld-lbl">ClickUp</span>
-          <Row label="Space" note={cu ? `${emp.name} makes a new list here for each launch.` : undefined}>
-            {!cu ? (
-              <span className="ld-body">Not connected. <Link href="/integrations">Connect ClickUp on Integrations.</Link></span>
-            ) : editing ? (
-              <div className="ld-row" style={{ gap: 8 }}>
-                <select className="ld-in" style={{ maxWidth: 320 }} aria-label="ClickUp Space" value={d.spaceId} onChange={(e) => setD({ ...d, spaceId: e.target.value })}>
-                  {cu.spaces.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
-                </select>
-                <button type="button" className="ld-btn" style={{ width: 128 }} disabled={refresh.isPending} onClick={() => refresh.mutate({ organizationId: currentOrgId })}>Refresh list</button>
-              </div>
-            ) : (
-              <span className="ld-body">{cu.spaceName ? `${cu.spaceName} (${cu.teamName ?? "ClickUp"})` : "Not chosen"}</span>
-            )}
+          <span className="ld-lbl">Projects</span>
+          <Row label="Where launches go" note={`${emp.name} makes a list in the Launches folder for each launch, with a task for every owner.`}>
+            <span className="ld-body"><Link href="/projects">Projects</Link>, Launches folder</span>
           </Row>
-          <Row label="Who gets tasks" note="Employees' tasks are assigned to you in ClickUp and tagged with the employee's name.">
-            {editing ? <Choice options={[{ key: "people", label: "People on your team" }, { key: "employees", label: "Your employees too" }]} value={d.taskOwners} onChange={(v) => setD({ ...d, taskOwners: v })} /> : <span className="ld-body">{s.taskOwners === "people" ? "People on your team" : "Your employees too"}</span>}
-          </Row>
-          <Row label="Morning check" note="Overdue and at-risk tasks. Owners get a reminder in ClickUp.">
+          <Row label="Morning check" note="Overdue and at-risk tasks. People get a reminder on the task; employees get one in their chat.">
             {editing ? <Choice options={CHECK.map((c) => ({ key: c.key, label: c.label }))} value={d.checkTime} onChange={(v) => setD({ ...d, checkTime: v })} /> : <span className="ld-body">{CHECK.find((c) => c.key === s.checkTime)?.label}</span>}
           </Row>
           <Row label="Status report">
             {editing ? <Choice options={[{ key: "5", label: "Friday" }, { key: "1", label: "Monday" }]} value={String(d.reportDay) as "1" | "5"} onChange={(v) => setD({ ...d, reportDay: Number(v) as 1 | 5 })} /> : <span className="ld-body">{s.reportDay === 1 ? "Monday" : "Friday"}</span>}
           </Row>
-          <ErrorLine error={save.error || refresh.error} />
+          <ErrorLine error={save.error} />
         </div>
-        <Buttons editing={editing} saving={save.isPending} onEdit={() => { setD({ spaceId: cu?.spaceId ?? "", taskOwners: s.taskOwners, checkTime: s.checkTime, reportDay: s.reportDay }); setEditing(true); }} onSave={() => save.mutate({ organizationId: currentOrgId, spaceId: d.spaceId || undefined, taskOwners: d.taskOwners, checkTime: d.checkTime, reportDay: d.reportDay })} onCancel={() => setEditing(false)} />
+        <Buttons editing={editing} saving={save.isPending} onEdit={() => { setD({ checkTime: s.checkTime, reportDay: s.reportDay }); setEditing(true); }} onSave={() => save.mutate({ organizationId: currentOrgId, ...d })} onCancel={() => setEditing(false)} />
       </div>
     </section>
   );

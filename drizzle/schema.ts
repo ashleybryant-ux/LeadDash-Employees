@@ -1050,6 +1050,9 @@ export const launches = sqliteTable(
     status: text("status", { enum: LAUNCH_STATUSES }).notNull().default("planning"),
     /** What the owner asked for, kept for re-planning. */
     brief: text("brief"),
+    /** The launch's list in Projects (this app's own task manager). */
+    pjListId: integer("pjListId"),
+    /** From before Projects replaced ClickUp; kept so old links still work. */
     clickupListId: text("clickupListId"),
     clickupListUrl: text("clickupListUrl"),
     /** JSON {doneStatus, openStatus, syncedAt}. */
@@ -1100,6 +1103,9 @@ export const launchTasks = sqliteTable(
     waitingOn: text("waitingOn"),
     /** Nora's latest note, e.g. "Due in 3 days and not started. I reminded Jordan." */
     note: text("note"),
+    /** The same task in Projects. */
+    pjTaskId: integer("pjTaskId"),
+    /** From before Projects replaced ClickUp. */
     clickupTaskId: text("clickupTaskId"),
     clickupUrl: text("clickupUrl"),
     clickupStatus: text("clickupStatus"),
