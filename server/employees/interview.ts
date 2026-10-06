@@ -367,6 +367,7 @@ const HELLO: Record<EmployeeKind, string> = {
   developer: "Before I touch any code, I'd like to learn what I can work on and what I should never change on my own.",
   onboarding: "Before I onboard a customer, I'd like to learn your steps from signed to live and how you want them to feel.",
   platform: "Before I open anything in the LeadDash platform, I'd like to learn which workflows matter most and what I should never touch.",
+  ads: "Before I write an ad, I'd like to learn what you sell, who buys it, where you already run ads and what must never show up in one.",
   custom: "Before I start, I'd like to learn what you need from me.",
 };
 
@@ -387,6 +388,7 @@ const ROLE: Record<EmployeeKind, string> = {
   developer: "developer",
   onboarding: "onboarding specialist",
   platform: "platform specialist",
+  ads: "ads manager",
   custom: "",
 };
 

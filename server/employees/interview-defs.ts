@@ -432,6 +432,36 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
     "a first reply to a new lead"
   ),
 
+  ads: build(
+    [COLORS, BOOKING],
+    [
+      job("What should the ads do?", ["Bring in clients", "Sell a product or plan", "Book demos", "Fill a webinar or event", "Recruit staff"], "offers"),
+      {
+        key: "offers",
+        title: "Offers and audiences",
+        intro: "What I send people to, and who they are.",
+        questions: [
+          { key: "offers", label: "The offers or pages ads should send people to", type: "text", placeholder: "leaddash.io/founding (the $299 founding member rate), the demo page", short: "Offers", guide: "offers" },
+          { key: "audience", label: "Who buys, in their own words", type: "text", placeholder: "Owners of group therapy practices with 3 to 20 clinicians", short: "Audience", guide: "offers" },
+          { key: "platforms", label: "Where you run ads now, or want to", type: "multi", options: ["Meta", "Google Search", "YouTube", "Microsoft Ads", "LinkedIn", "TikTok", "Reddit", "Spotify", "Nextdoor", "Yelp"], short: "Platforms", guide: "offers" },
+          { key: "budget", label: "A usual monthly ad budget", type: "text", placeholder: "$1,000 a month", short: "Usual budget", guide: "offers" },
+        ],
+      },
+      voice("writing", [
+        { key: "proof", label: "Proof I can use in an ad", type: "text", placeholder: "Built by a practice owner; no add-on fees; founding members since 2026", short: "Proof", guide: "writing" },
+        { key: "neverSay", label: "Words or claims that must never be in an ad", type: "text", placeholder: "Guaranteed results, anything about a client, cure", short: "Never in an ad", guide: "rules" },
+      ]),
+      examples("ads", "writing"),
+    ],
+    [
+      { key: "offers", title: "Offers and audiences" },
+      { key: "writing", title: "Writing style" },
+      { key: "rules", title: "What should never be in an ad?" },
+    ],
+    { label: "Write a test ad", prompt: "Write a Meta ad for my main offer." },
+    "a short ad"
+  ),
+
   social: build(
     [COLORS, BOOKING],
     [

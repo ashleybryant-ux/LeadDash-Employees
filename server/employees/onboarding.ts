@@ -41,6 +41,10 @@ export const TEMPLATES: Record<EmployeeKind, Template[]> = {
     { label: "Find events", title: "Find speaking calls", instructions: "Find events taking speaker proposals that fit and start pitches for the best.", repeat: "weekly", time: "08:00", weekday: 1 },
     { label: "Find press", title: "Find media opportunities", instructions: "Find journalist requests, podcasts booking guests and op-ed openings that fit my topics, and start pitches for the best.", repeat: "weekly", time: "08:00", weekday: 3 },
   ],
+  ads: [
+    REPORT("ad sets waiting for my approval, campaigns still being written, and what was approved this week."),
+    { label: "Weekly ad check", title: "Weekly ad creative check", instructions: "Tell me which campaigns have sets waiting for me and which ones are finished.", repeat: "weekly", time: "08:30", weekday: 1 },
+  ],
   social: [
     REPORT("posts waiting for approval and what went out this week."),
     { label: "Write posts", title: "Write today's post", instructions: "Write today's post for my main platforms.", repeat: "weekdays", time: "08:30" },

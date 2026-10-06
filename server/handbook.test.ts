@@ -59,7 +59,7 @@ describe("handbook: the LeadDash base plus each workspace's additions", () => {
     expect(simone).not.toContain("# Your job playbook");
 
     const base = await caller(staff).handbook.base();
-    expect(base.playbooks.map((p) => p.kind)).toEqual(["grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "projects"]);
+    expect(base.playbooks.map((p) => p.kind)).toEqual(["grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "ads", "projects"]);
     const pb = base.playbooks.find((p) => p.kind === "outreach")!;
     await caller(staff).handbook.saveBase({ partKey: pb.key, part: { title: pb.title, lead: pb.lead, sections: [...pb.sections, { title: "House rule", rules: ["Always mention the free booking-flow review."] }] } });
     const jada = (await systemPromptFor(by("outreach"), "Write a sequence.")).system;

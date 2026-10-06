@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set";
   id: number;
   /** On a choices card after a bulk close in Projects: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -80,12 +80,20 @@ const ACTIONS: Record<string, string[]> = {
   projects: ["none", "report", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   coo: ["none", "report", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
+  ads: ["none", "report", "ads_campaign", "ads_note", "ads_rewrite", "ads_approve", "ads_skip", "ads_platform", "ads_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 // Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
 for (const list of Object.values(ACTIONS)) list.push("browse", "precall_report", "task_due", "task_find", "task_lists", "task_add", "task_change", "task_bulk", "task_undo", "goal_update");
 
 const ACTION_HELP: Record<string, string> = {
+  ads_campaign: "ads_campaign: start an ad campaign once you know all four: the goal, who it is for, the page or offer the ads go to, and the budget. Put a short campaign name in `title`, the goal in `goal`, who it is for in `target`, the page or offer in `url`, the platforms they named in `notes` (their words; \"all\" for every platform), the total budget in whole dollars in `count`, the start date as YYYY-MM-DD in `date` and the end date as YYYY-MM-DD in `time` ('' when they gave no dates). You then work out the budget split and post it as a card; nothing is written until they take a split.",
+  ads_note: "ads_note: the person gives a standing instruction for the rest of the campaign's ads (\"make the headlines shorter\", \"always mention the founding rate\"), not a change to the one in front of them. Put it as one plain sentence in `notes`. It applies to every set written after.",
+  ads_rewrite: "ads_rewrite: the person wants the set in front of them written again, a different version (\"another version\", \"try again with a softer hook\", \"rewrite the Meta one\"). Put what to change in `notes` ('' for simply another version) and the platform's name in `target` ('' for the one waiting now).",
+  ads_approve: "ads_approve: the person approves the set in front of them in words (\"approved\", \"that works, next\", \"good, go on\"). Put the platform's name in `target` ('' for the one waiting now). Approving one set is what brings the next platform.",
+  ads_skip: "ads_skip: the person does not want the platform in front of them (\"skip TikTok\", \"leave that one out\"). Put the platform's name in `target` ('' for the one waiting now).",
+  ads_platform: "ads_platform: the person asks you to write a platform you left out or that failed (\"write Nextdoor anyway\", \"try Spotify again\"). Put the platform's name in `target`.",
+  ads_status: "ads_status: the person asks where a campaign stands, what is waiting for them, or what is finished.",
   task_due: "task_due: the person asks what's due or overdue in Projects (for everyone, or for one person). Put the person's name in `target` ('' for everyone) and how many days ahead to look in `count` (default 7).",
   task_find: "task_find: look up tasks in Projects (this app's own folders, lists and tasks, where all the team's work lives): by words in the task, list or folder name, by person, or what's due. Put the words in `target` ('' for all), the person in `to` ('' for anyone), a last due date as YYYY-MM-DD in `date` ('' for any), and \"all\" in `focus` to include finished tasks.",
   task_lists: "task_lists: the person asks what's in Projects (folders and lists) or where something lives.",
@@ -380,6 +388,10 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 TALK_BY_KIND.speaking = `${TALK_BY_KIND.grants}
 - You are also the publicist, running this workspace's press desk in a newsroom the owner may share across her workspaces. A media campaign or media list for a story is press_campaign; finding reporters and stories now is press_scout; "what's happening with press" is press_brief. Speaking events stay find_events.
 - Never invent a reporter, an article, an email, a quote or a statistic. Every pitch waits for her approval (unless she raised the sending level), and a reporter another desk pitched in the cooling period is left alone.`;
+TALK_BY_KIND.ads = `- You write ads; you never run them. A campaign starts from four things: the goal, who it is for, the page or offer the ads go to, and the budget (with dates when they give them). Take what the person's message already says. For each one still missing, choose "none" and ask for that ONE thing with 3 or 4 fixed choices in "choices" (for the goal: sign-ups, demo requests, new clients, webinar registrations; for the audience: the audiences the Brain names; for the page: the offers and pages the Brain names), one question per message, in that order. Once you have all four, choose ads_campaign.
+- One platform at a time: a set waits in the chat until the person approves it, asks for another version, edits it or skips it. Never write two platforms in one message.
+- Never invent a result, a cost per click or a platform rule. The platforms' specs come from your training; a number the person did not give you is a question, not a guess.`;
+
 TALK_BY_KIND.inbox = `- You are the owner's executive assistant. You protect her time and attention: you sort what comes in, decide whether she needs it, and keep the one list of decisions for her and her team.
 - Lead with a recommendation, not a pile of options: "Nov 17 works and Nov 19 clashes with your board call. I suggest Nov 17 and can confirm it."
 - Some decisions only the owner makes (see your desk); anyone on the team can make the rest, and you always say who decided.
@@ -1116,6 +1128,15 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         : `I ran ${plural(r.queries.length, "search", "searches")} but couldn't build a plan with a source I trust. Try giving me a topic.`;
       return { text, cards, queries: r.queries };
     }
+    case "ads_campaign":
+    case "ads_note":
+    case "ads_rewrite":
+    case "ads_approve":
+    case "ads_skip":
+    case "ads_platform":
+    case "ads_status": {
+      return adsAction(emp, d, { id: ctx.userId ?? 0, name: who });
+    }
     case "write_post": {
       const platforms = d.platforms?.length ? d.platforms : (["linkedin", "instagram"] as Decision["platforms"]);
       const p = await tasks.writeSocialPost(org, { topic: d.topic || d.reply, targetPlatforms: platforms, tone: "thought_leadership", generateImageFlag: true });
@@ -1365,7 +1386,7 @@ export function findHold(holds: OutboundItem[], want: { date: string; time: stri
 }
 
 /** Actions that only talk about the work; a project task needs one that does it. */
-const NOT_WORK = new Set(["task_find", "task_due", "task_lists", "task_undo", "none", "report", "check_status", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
+const NOT_WORK = new Set(["task_find", "task_due", "task_lists", "task_undo", "none", "report", "check_status", "ads_status", "ads_note", "ads_approve", "ads_skip", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
 
 /**
  * An employee does a project task Nora assigned, with the same actions their
@@ -1571,6 +1592,84 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
   }
 }
 
+
+/** Reese's work from chat: the brief becomes a campaign; approvals, notes and rewrites move the open set along. */
+async function adsAction(emp: AIEmployee, d: Decision, me: { id: number; name: string }): Promise<ActionResult> {
+  const ads = await import("./ads");
+  const org = emp.organizationId;
+  const none = { cards: [] as ChatCard[], queries: [] as string[] };
+  const current = ads.currentCampaign(org);
+  const platformNamed = (text: string) => ads.platformFromWords(text).filter((p) => !/\b(all|every)\b/i.test(text))[0] ?? null;
+  const openSet = (c: import("../db").AdCampaignRow | null, named: string) => {
+    if (!c) return null;
+    const p = platformNamed(named) ?? (c.currentPlatform as import("../../drizzle/schema").AdPlatform | null);
+    const sets = db.ads.sets(c.id).filter((s) => s.status !== "replaced");
+    return (p ? sets.filter((s) => s.platform === p).slice(-1)[0] : null) ?? sets.filter((s) => s.status === "review").slice(-1)[0] ?? null;
+  };
+  switch (d.action) {
+    case "ads_campaign": {
+      const platforms = ads.platformFromWords(d.notes || "all");
+      const budgetCents = Math.round((Number(d.count) || 0) * 100);
+      const c = await ads.createCampaign(org, me, {
+        name: d.title || d.goal || "New campaign",
+        goal: d.goal,
+        audience: d.target,
+        page: d.url,
+        platforms: platforms.length ? platforms : ads.ORDER,
+        budgetCents,
+        startDate: ads.dateIn(d.date),
+        endDate: ads.dateIn(d.time),
+      }, { quiet: true });
+      const v = ads.campaignView(c);
+      const left = v.rows.filter((r) => r.leftOut);
+      const text = `Here is the split for ${v.budget}${v.days ? ` over ${v.days} days` : ""}.${left.length ? ` ${left.map((r) => r.name).join(" and ")} ${left.length === 1 ? "is" : "are"} left out: ${(v.leftOutWhy || "they reach neighbors, not this audience").replace(/\.$/, "")}.` : ""} Use it, change it, or split it evenly, and I start writing.`;
+      return { text, cards: [{ type: "ad_budget", id: c.id, title: c.name }], queries: [] };
+    }
+    case "ads_note": {
+      if (!current) return { text: "There's no campaign open yet. Tell me the goal, who it's for, the page and the budget and I'll start one.", ...none };
+      ads.addNote(org, current.id, d.notes);
+      const names = ads.platformsOf(current).map((p) => ads.PLATFORM[p].name);
+      return { text: `Noted for the rest of the set: ${d.notes.trim().replace(/\.$/, "")}. It applies to every platform I write from here${names.length ? "" : ""}.`, ...none };
+    }
+    case "ads_rewrite": {
+      const s = openSet(current, d.target);
+      if (!s || !current) return { text: "There's no set in front of you to rewrite right now.", ...none };
+      await ads.rewriteSet(org, me, s.id, d.notes);
+      return { text: `Writing another ${ads.PLATFORM[s.platform].name} version${d.notes.trim() ? ` with that in mind` : ""}. It lands here in a moment.`, ...none };
+    }
+    case "ads_approve": {
+      const s = openSet(current, d.target);
+      if (!s || !current) return { text: "Nothing is waiting for your approval right now.", ...none };
+      if (s.status !== "review") return { text: `The ${ads.PLATFORM[s.platform].name} set is already ${s.status}.`, ...none };
+      await ads.approveSet(org, me, s.id);
+      return { text: `${ads.PLATFORM[s.platform].name} approved.`, ...none };
+    }
+    case "ads_skip": {
+      const s = openSet(current, d.target);
+      if (!s || !current) return { text: "Nothing is waiting right now.", ...none };
+      if (s.status !== "review") return { text: `The ${ads.PLATFORM[s.platform].name} set is already ${s.status}.`, ...none };
+      await ads.skipSet(org, me, s.id);
+      return { text: `${ads.PLATFORM[s.platform].name} skipped.`, ...none };
+    }
+    case "ads_platform": {
+      const p = platformNamed(d.target);
+      if (!p || !current) return { text: "Which platform, and for which campaign?", ...none };
+      await ads.writePlatform(org, current.id, p);
+      return { text: `Writing ${ads.PLATFORM[p].name} for ${current.name} now.`, ...none };
+    }
+    case "ads_status": {
+      const all = db.ads.campaigns(org);
+      if (!all.length) return { text: "No campaigns yet. Tell me the goal, who it's for, the page and the budget and I'll start one.", ...none };
+      const lines = all.slice(0, 6).map((c) => {
+        const v = ads.campaignView(c);
+        const waiting = v.rows.find((r) => r.set?.status === "review");
+        return `${v.name}: ${v.counts.approved} of ${v.counts.platforms} approved${waiting ? `, ${waiting.name} waiting for you` : v.status === "writing" ? ", writing" : v.status === "budget" ? ", the split waits for you" : v.status === "done" ? ", finished" : ""}.`;
+      });
+      return { text: lines.join("\n"), ...none };
+    }
+  }
+  return { text: d.reply, ...none };
+}
 
 /** Projects and Goals from chat, for every employee. */
 async function projectsAction(emp: AIEmployee, d: Decision, who: string): Promise<ActionResult> {

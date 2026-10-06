@@ -149,6 +149,7 @@ export const EMPLOYEE_KINDS = [
   "developer",
   "onboarding",
   "platform",
+  "ads",
   "custom",
 ] as const;
 export type EmployeeKind = (typeof EMPLOYEE_KINDS)[number];
@@ -2487,6 +2488,89 @@ export const teamSaved = sqliteTable(
   (t) => [uniqueIndex("team_saved_unique").on(t.userId, t.messageId)]
 );
 export type TeamSaved = typeof teamSaved.$inferSelect;
+
+// ==========================================
+// Ads: Reese's campaigns, one creative set per platform
+// ==========================================
+
+export const AD_PLATFORMS = ["meta", "google", "youtube", "microsoft", "linkedin", "tiktok", "reddit", "spotify", "nextdoor", "yelp"] as const;
+export type AdPlatform = (typeof AD_PLATFORMS)[number];
+
+/**
+ * A campaign brief: the goal, who it is for, the page the ads go to, which
+ * platforms, the budget and its split. Reese writes one set per platform from
+ * it, one at a time, and the owner approves each in chat.
+ */
+export const adCampaigns = sqliteTable(
+  "ad_campaigns",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    goal: text("goal").notNull().default(""),
+    audience: text("audience").notNull().default(""),
+    /** The offer or page the ads go to. */
+    page: text("page").notNull().default(""),
+    /** JSON [platform] in the order Reese writes them. */
+    platforms: text("platforms").notNull().default("[]"),
+    budgetCents: integer("budgetCents").notNull().default(0),
+    /** YYYY-MM-DD, or "" when not set. */
+    startDate: text("startDate").notNull().default(""),
+    endDate: text("endDate").notNull().default(""),
+    /** reese: Reese's split; even: the same for every platform; custom: the owner's numbers. */
+    splitMode: text("splitMode", { enum: ["reese", "even", "custom"] }).notNull().default("reese"),
+    /** JSON {platform: {share, why}} with share as a whole percent. */
+    split: text("split").notNull().default("{}"),
+    formats: text("formats").notNull().default("any"),
+    versions: integer("versions").notNull().default(1),
+    mustSay: text("mustSay").notNull().default(""),
+    neverSay: text("neverSay").notNull().default(""),
+    /** JSON [notes the owner gave along the way], carried into every set written after. */
+    notes: text("notes").notNull().default("[]"),
+    /** budget: the split waits for the owner; writing: Reese is on a set; review: a set waits for the owner; done: every set approved or skipped. */
+    status: text("status", { enum: ["budget", "writing", "review", "done"] }).notNull().default("budget"),
+    /** The platform whose set is open right now. */
+    currentPlatform: text("currentPlatform"),
+    /** JSON [platform] Reese left out with a reason, e.g. local platforms on a practice-owner campaign. */
+    leftOut: text("leftOut").notNull().default("[]"),
+    leftOutWhy: text("leftOutWhy").notNull().default(""),
+    createdBy: integer("createdBy"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("ad_campaigns_org_idx").on(t.organizationId, t.id)]
+);
+export type AdCampaign = typeof adCampaigns.$inferSelect;
+
+/** One platform's creative for a campaign: the copy as JSON fields, the picture, and where it stands. */
+export const adSets = sqliteTable(
+  "ad_sets",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    campaignId: integer("campaignId").notNull(),
+    platform: text("platform", { enum: AD_PLATFORMS }).notNull(),
+    version: integer("version").notNull().default(1),
+    status: text("status", { enum: ["writing", "review", "approved", "skipped", "replaced"] }).notNull().default("writing"),
+    /** JSON {field: string | string[]} as the platform's fields define. */
+    content: text("content").notNull().default("{}"),
+    /** One line of the ad for lists. */
+    summary: text("summary").notNull().default(""),
+    imagePrompt: text("imagePrompt"),
+    imageUrl: text("imageUrl"),
+    imageError: text("imageError"),
+    audioUrl: text("audioUrl"),
+    audioError: text("audioError"),
+    /** Why it could not be written, when writing failed. */
+    error: text("error"),
+    approvedBy: text("approvedBy"),
+    approvedAt: integer("approvedAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("ad_sets_campaign_idx").on(t.campaignId, t.platform)]
+);
+export type AdSet = typeof adSets.$inferSelect;
 
 // ==========================================
 // Goals: each workspace's own, set by the owner and Simone together

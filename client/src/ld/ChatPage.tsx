@@ -37,6 +37,8 @@ import { SpokenTag, TalkButton, VoiceBar, useOneOnOne } from "./chat/OneOnOne";
 import { AvatarVideoCard } from "./chat/Avatar";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 import { DeckCard, DocCard } from "./chat/Talk";
+import AdsWork from "./work/Ads";
+import { AdBudgetCard, AdSetCard } from "./chat/Ads";
 
 export type EmployeeRow = ReturnType<typeof useEmployees>["list"][number];
 
@@ -56,6 +58,7 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   coo: Meetings,
   developer: Changes,
   platform: Workflows,
+  ads: AdsWork,
 };
 
 /** /chats, /chats/:kind, /chats/:kind/work, /chats/:kind/guidelines, /chats/e/:id[...] */
@@ -108,7 +111,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set";
   items?: BriefItem[];
   counts?: { decisions: number; meetings: number; waiting: number; handled: number };
   id: number;
@@ -537,6 +540,8 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   if (card.type === "application_draft") return <ApplicationDraftCard id={card.id} base={base} />;
   if (card.type === "answer") return <AnswerCard title={card.title} body={card.body ?? ""} before={card.before ?? ""} subtitle={card.subtitle} />;
   if (card.type === "launch_plan") return <LaunchPlanCard id={card.id} />;
+  if (card.type === "ad_budget") return <AdBudgetCard id={card.id} />;
+  if (card.type === "ad_set") return <AdSetCard id={card.id} />;
   if (card.type === "meeting_agenda") return <MeetingAgendaCard id={card.id} />;
   if (card.type === "meeting_notes") return <MeetingNotesCard id={card.id} />;
   if (card.type === "onboarding") return <OnboardingCard emp={emp} />;

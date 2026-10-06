@@ -2100,6 +2100,45 @@ export type TeamChannelRow = schema.TeamChannel;
 export type TeamMessageRow = schema.TeamMessage;
 export type TeamLinkRow = schema.TeamLink;
 
+// ==========================================
+// Ads (Reese): campaigns and their sets
+// ==========================================
+
+export type AdCampaignRow = schema.AdCampaign;
+export type AdSetRow = schema.AdSet;
+
+export const ads = {
+  campaigns(orgId: number) {
+    const t = schema.adCampaigns;
+    return getDb().select().from(t).where(eq(t.organizationId, orgId)).orderBy(desc(t.id)).all();
+  },
+  campaign(orgId: number, id: number) {
+    const t = schema.adCampaigns;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.id, id))).limit(1).all()[0] ?? null;
+  },
+  addCampaign(row: typeof schema.adCampaigns.$inferInsert) {
+    return getDb().insert(schema.adCampaigns).values(row).returning().all()[0];
+  },
+  updateCampaign(id: number, patch: Partial<typeof schema.adCampaigns.$inferInsert>) {
+    return getDb().update(schema.adCampaigns).set({ ...patch, updatedAt: new Date() }).where(eq(schema.adCampaigns.id, id)).returning().all()[0];
+  },
+  /** Every set of a campaign, oldest first (older versions included; status says which is current). */
+  sets(campaignId: number) {
+    const t = schema.adSets;
+    return getDb().select().from(t).where(eq(t.campaignId, campaignId)).orderBy(t.id).all();
+  },
+  set(orgId: number, id: number) {
+    const t = schema.adSets;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.id, id))).limit(1).all()[0] ?? null;
+  },
+  addSet(row: typeof schema.adSets.$inferInsert) {
+    return getDb().insert(schema.adSets).values(row).returning().all()[0];
+  },
+  updateSet(id: number, patch: Partial<typeof schema.adSets.$inferInsert>) {
+    return getDb().update(schema.adSets).set({ ...patch, updatedAt: new Date() }).where(eq(schema.adSets.id, id)).returning().all()[0];
+  },
+};
+
 export const team = {
   messages(orgs: Orgs, channel: string, limit = 300) {
     const t = schema.teamMessages;

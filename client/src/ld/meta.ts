@@ -1,6 +1,6 @@
 /** Display facts about each employee job, shared by every screen. */
 
-export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "developer" | "onboarding" | "platform" | "custom";
+export type Kind = "coo" | "projects" | "grants" | "speaking" | "prospecting" | "outreach" | "leads" | "social" | "blog" | "website" | "video" | "inbox" | "hiring" | "developer" | "onboarding" | "platform" | "ads" | "custom";
 
 export const KIND_META: Record<Kind, { color: string; work: string | null; group: "Leadership" | "Revenue" | "Sales" | "Marketing" | "Operations" | "Other" }> = {
   coo: { color: "#334155", work: "Meetings", group: "Leadership" },
@@ -14,6 +14,7 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
   blog: { color: "#2f5d8a", work: "Articles", group: "Marketing" },
   website: { color: "#4a5a1e", work: "Pages", group: "Marketing" },
   video: { color: "#8a2f3a", work: "Videos", group: "Marketing" },
+  ads: { color: "#8a3d2f", work: "Ads", group: "Marketing" },
   inbox: { color: "#3c4a8a", work: "Desk", group: "Operations" },
   hiring: { color: "#0f6e74", work: "Hiring", group: "Operations" },
   developer: { color: "#3b4a6b", work: "Changes", group: "Operations" },
@@ -22,7 +23,7 @@ export const KIND_META: Record<Kind, { color: string; work: string | null; group
   custom: { color: "#3d4c45", work: null, group: "Other" },
 };
 
-export const KIND_ORDER: Kind[] = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "inbox", "hiring", "onboarding", "developer", "platform", "custom"];
+export const KIND_ORDER: Kind[] = ["coo", "projects", "grants", "speaking", "prospecting", "outreach", "leads", "social", "blog", "website", "video", "ads", "inbox", "hiring", "onboarding", "developer", "platform", "custom"];
 export const GROUP_ORDER = ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"] as const;
 
 /** Portraits live in client/public/avatars/<kind>.webp (256 px, cut from the LeadDash Employees team sheet). */
@@ -58,6 +59,7 @@ export const SUGGESTIONS: Record<Kind, string[]> = {
   blog: ["Write an article about intake mistakes", "Suggest five article topics", "Write a how-to article"],
   website: ["Audit my website", "Mock up my website", "Build a landing page", "Change my last page"],
   video: ["Find video ideas for this week", "Find trends for practice owners", "Plan a 30-second video"],
+  ads: ["Write ads for my main offer", "Where do my campaigns stand?", "Another version of the one waiting"],
   inbox: ["Paste an email and I'll draft the reply", "Email someone to set a meeting", "Put a meeting on my calendar"],
   hiring: ["Find LPCs for outreach", "Check hiring status", "Write a job post", "What licenses expire soon?"],
   developer: ["Something's broken", "What are you working on?", "What's ready for me to merge?"],
@@ -75,6 +77,7 @@ export const GUIDELINE_LABELS: Record<Kind, { focus: string; avoid: string; sign
   blog: { focus: "Topics", avoid: "Avoid", signAs: "Author name" },
   website: { focus: "Pages to focus on", avoid: "Avoid", signAs: "Main call to action" },
   video: { focus: "Formats", avoid: "Avoid", signAs: "On-camera name" },
+  ads: { focus: "Offers and audiences to lead with", avoid: "Never say in an ad", signAs: "Brand name in ads" },
   inbox: { focus: "How to reply", avoid: "Never", signAs: "Sign replies as" },
   hiring: { focus: "Roles to fill", avoid: "Never", signAs: "Sign messages as" },
   developer: { focus: "What to work on", avoid: "Never change", signAs: "Sign changes as" },
@@ -123,6 +126,11 @@ export const ALWAYS_FOLLOWED: Record<Kind, string[]> = {
   ],
   website: ["Copy uses the facts in your Brain. Missing facts become placeholders.", "No invented reviews or credentials."],
   video: ["Every trend comes with the page it was found on.", "Plans only. Nothing is posted for you."],
+  ads: [
+    "One platform at a time: the next set is written only when you approve or skip the one in front of you.",
+    "Nothing is posted anywhere. You put each approved set into the platform's ads manager yourself.",
+    "No invented numbers, results or testimonials, and no words aimed at a person's condition.",
+  ],
   inbox: [
     "Replies wait for your approval before anything is sent.",
     "Clients are referred to by initials only.",

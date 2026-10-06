@@ -100,6 +100,16 @@ export const ROSTER: RosterEntry[] = [
     minutesPerTask: 30,
   },
   {
+    kind: "ads",
+    name: "Reese",
+    roleTitle: "Ads Manager",
+    department: "Marketing",
+    description: "Writes the ad creative for each platform (Meta, Google Search, YouTube, Microsoft Ads, LinkedIn, TikTok, Reddit, Spotify, Nextdoor, Yelp) from one brief, one platform at a time, with the picture for each, and splits the budget across them. You approve every set and put it into the platform yourself.",
+    capabilities: ["One creative set per platform, to each platform's specs", "Ad images and audio spots", "Budget split with a per-day amount", "Approval one platform at a time"],
+    searches: false,
+    minutesPerTask: 50,
+  },
+  {
     kind: "blog",
     name: "Theo",
     roleTitle: "Blog Writer",
@@ -235,6 +245,7 @@ export const GUIDELINE_LABELS: Record<Exclude<EmployeeKind, "custom">, { focus: 
   developer: { focus: "What to work on", avoid: "Never change", signAs: "Sign changes as" },
   onboarding: { focus: "Every onboarding includes", avoid: "Never promise", signAs: "Sign emails as" },
   platform: { focus: "What to check first", avoid: "Never change", signAs: "Name pages as" },
+  ads: { focus: "Offers and audiences to lead with", avoid: "Never say in an ad", signAs: "Brand name in ads" },
 };
 
 export type Guidelines = { focus: string; avoid: string; signAs: string };

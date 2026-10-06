@@ -146,7 +146,7 @@ export function assignVoices(voices: ElevenVoice[], overrides: Record<string, st
 
 let elevenCache: { at: number; map: Record<string, string> } | null = null;
 
-async function elevenVoiceFor(kind: string) {
+export async function elevenVoiceFor(kind: string) {
   if (!elevenCache || Date.now() - elevenCache.at > 60 * 60_000) {
     const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": ENV.elevenLabsKey }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`ElevenLabs didn't list voices (${res.status}): ${(await res.text()).slice(0, 200)}`);

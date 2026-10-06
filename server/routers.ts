@@ -1388,6 +1388,108 @@ export const appRouter = router({
   }),
 
   // Team chat: channels, direct messages and threads in a workspace, like Slack
+  // ==========================================
+  // Ads (Reese): campaigns, one creative set per platform, the budget split
+  // ==========================================
+  ads: router({
+    campaigns: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const ads = await import("./employees/ads");
+      return db.ads.campaigns(input.organizationId).map((c) => ads.campaignView(c));
+    }),
+    campaign: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const ads = await import("./employees/ads");
+      const c = db.ads.campaign(input.organizationId, input.id);
+      if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "That campaign is gone." });
+      return ads.campaignView(c);
+    }),
+    set: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const ads = await import("./employees/ads");
+      const s = db.ads.set(input.organizationId, input.id);
+      if (!s) throw new TRPCError({ code: "NOT_FOUND", message: "That set is gone." });
+      const c = db.ads.campaign(input.organizationId, s.campaignId)!;
+      const v = ads.campaignView(c);
+      return { ...ads.setView(s), campaignName: c.name, page: c.page, text: ads.setText(s, c), position: { n: v.rows.filter((r) => !r.leftOut).findIndex((r) => r.platform === s.platform) + 1, of: v.counts.platforms }, done: v.rows.filter((r) => r.set?.status === "approved" || r.set?.status === "skipped").map((r) => r.platform) };
+    }),
+    create: protectedProcedure
+      .input(
+        orgInput.extend({
+          name: z.string().max(120),
+          goal: z.string().max(300).default(""),
+          audience: z.string().max(500).default(""),
+          page: z.string().max(500).default(""),
+          platforms: z.array(z.enum(["meta", "google", "youtube", "microsoft", "linkedin", "tiktok", "reddit", "spotify", "nextdoor", "yelp"])).max(10),
+          budget: z.string().max(20).default(""),
+          startDate: z.string().max(12).default(""),
+          endDate: z.string().max(12).default(""),
+          splitMode: z.enum(["reese", "even"]).default("reese"),
+          formats: z.string().max(80).default("any"),
+          versions: z.number().int().min(1).max(3).default(1),
+          mustSay: z.string().max(500).default(""),
+          neverSay: z.string().max(500).default(""),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const ads = await import("./employees/ads");
+        const cents = Math.round(Number(input.budget.replace(/[^0-9.]/g, "")) * 100) || 0;
+        const c = await ads.createCampaign(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, { ...input, budgetCents: cents, startDate: ads.dateIn(input.startDate), endDate: ads.dateIn(input.endDate) });
+        return { id: c.id };
+      }),
+    save: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), name: z.string().max(120).optional(), goal: z.string().max(300).optional(), audience: z.string().max(500).optional(), page: z.string().max(500).optional(), platforms: z.array(z.enum(["meta", "google", "youtube", "microsoft", "linkedin", "tiktok", "reddit", "spotify", "nextdoor", "yelp"])).max(10).optional(), mustSay: z.string().max(500).optional(), neverSay: z.string().max(500).optional(), formats: z.string().max(80).optional(), versions: z.number().int().min(1).max(3).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const ads = await import("./employees/ads");
+        const { organizationId, id, ...patch } = input;
+        return ads.campaignView(ads.saveCampaign(organizationId, id, patch));
+      }),
+    saveBudget: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), budget: z.string().max(20), startDate: z.string().max(12), endDate: z.string().max(12), shares: z.record(z.string(), z.number()), mode: z.enum(["reese", "even", "custom"]) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const ads = await import("./employees/ads");
+        const cents = Math.round(Number(input.budget.replace(/[^0-9.]/g, "")) * 100) || 0;
+        return ads.campaignView(ads.saveBudget(input.organizationId, input.id, { budgetCents: cents, startDate: ads.dateIn(input.startDate), endDate: ads.dateIn(input.endDate), shares: input.shares, mode: input.mode }));
+      }),
+    start: protectedProcedure.input(orgInput.extend({ id: z.number().int(), mode: z.enum(["reese", "even", "custom"]).default("reese") })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const ads = await import("./employees/ads");
+      return ads.campaignView(await ads.startWriting(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.id, input.mode));
+    }),
+    approve: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/ads")).approveSet(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.id);
+    }),
+    skip: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/ads")).skipSet(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.id);
+    }),
+    rewrite: protectedProcedure.input(orgInput.extend({ id: z.number().int(), note: z.string().max(300).default("") })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/ads")).rewriteSet(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.id, input.note);
+    }),
+    saveSet: protectedProcedure.input(orgInput.extend({ id: z.number().int(), content: z.record(z.string(), z.union([z.string().max(4000), z.array(z.string().max(400)).max(30)])) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/ads")).saveSet(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, input.id, input.content);
+    }),
+    note: protectedProcedure.input(orgInput.extend({ id: z.number().int(), note: z.string().max(300) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const ads = await import("./employees/ads");
+      return ads.campaignView(ads.addNote(input.organizationId, input.id, input.note));
+    }),
+    writePlatform: protectedProcedure.input(orgInput.extend({ id: z.number().int(), platform: z.enum(["meta", "google", "youtube", "microsoft", "linkedin", "tiktok", "reddit", "spotify", "nextdoor", "yelp"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/ads")).writePlatform(input.organizationId, input.id, input.platform);
+    }),
+    download: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/ads")).zipCampaign(input.organizationId, input.id);
+    }),
+  }),
+
   teamChat: router({
     channels: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "chat");
