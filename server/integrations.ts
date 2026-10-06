@@ -1575,39 +1575,32 @@ async function recallFetch(key: string, pathName: string, init: { method?: strin
   return data;
 }
 
-async function recallKey(orgId: number) {
+/**
+ * Meeting notes run on LeadDash's own Recall.ai account (RECALL_API_KEY) for every
+ * workspace; the minutes are rebilled as usage. A workspace is never asked for a key.
+ * A key a workspace saved before this stays usable as a fallback.
+ */
+const serverRecallKey = () => (process.env.RECALL_API_KEY || "").trim();
+
+async function legacyRecallKey(orgId: number) {
   const conn = await db.getConnectionByProvider(orgId, "recall");
-  if (!conn || conn.status !== "connected") throw new NotConnected("Connect Recall.ai on Integrations so Simone can sit in on meetings.");
-  let key = "";
+  if (!conn || conn.status !== "connected") return "";
   try {
-    key = decryptJson<{ apiKey?: string }>(conn.secretsEncrypted)?.apiKey ?? "";
+    return decryptJson<{ apiKey?: string }>(conn.secretsEncrypted)?.apiKey ?? "";
   } catch {
-    key = "";
+    return "";
   }
-  if (!key) throw new NotConnected("Save the Recall.ai key again on Integrations.");
+}
+
+async function recallKey(orgId: number) {
+  const key = serverRecallKey() || (await legacyRecallKey(orgId));
+  if (!key) throw new NotConnected("Meeting notes aren't set up on this server yet (RECALL_API_KEY).");
   return key;
 }
 
+/** Whether Avery can sit in on meetings in this workspace: the server has a Recall.ai key. */
 export async function recallConnected(orgId: number) {
-  return (await db.getConnectionByProvider(orgId, "recall"))?.status === "connected";
-}
-
-/** Checks the key with Recall.ai, then saves it encrypted. The key is never sent back to the browser. */
-export async function saveRecallKey(orgId: number, apiKey: string) {
-  const key = apiKey.trim();
-  if (key.length < 20) throw new Error("That doesn't look like a Recall.ai API key.");
-  await recallFetch(key, "bot/?page_size=1");
-  return db.upsertExternalConnection({
-    organizationId: orgId,
-    provider: "recall",
-    accountLabel: "Recall.ai",
-    accountHandle: null,
-    status: "connected",
-    settings: JSON.stringify({ region: process.env.RECALL_REGION || "us-west-2" }),
-    secretsEncrypted: encryptJson({ apiKey: key }),
-    connectedAt: new Date(),
-    lastCheckedAt: new Date(),
-  });
+  return !!serverRecallKey() || !!(await legacyRecallKey(orgId));
 }
 
 /**

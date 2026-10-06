@@ -444,7 +444,7 @@ export async function setChoice(orgId: number, id: number, choice: "join" | "ski
   return (await settle(orgId, next, ops.notetaker, new Date()))!;
 }
 
-/** Cancels every booked bot (Recall.ai disconnected, or the settings changed). */
+/** Cancels every booked bot (Avery paused, or the settings changed). */
 export async function cancelAll(orgId: number) {
   for (const row of await db.listNotetaker(orgId)) {
     if (row.botId && row.status === "scheduled") {
@@ -465,7 +465,7 @@ export async function notetakerSettings(orgId: number) {
     ...ops.notetaker,
     botNameShown: await botNameFor(orgId, ops.notetaker),
     joinMessage: await joinMessage(orgId),
-    recall: conns.some((c) => c.provider === "recall" && c.status === "connected"),
+    recall: await integrations.recallConnected(orgId),
     google: conns.some((c) => c.provider === "google_workspace" && c.status === "connected"),
   };
 }
@@ -577,7 +577,7 @@ export function notesText(r: ReturnType<typeof viewOf>, tz: string) {
 
 export async function notetakerStatus(orgId: number) {
   const { tz } = await opsFor(orgId);
-  if (!(await integrations.recallConnected(orgId))) return "Sitting in: Recall.ai is not connected on Integrations, so Avery is not joining any meetings.";
+  if (!(await integrations.recallConnected(orgId))) return "Sitting in: meeting notes aren't set up on this server yet, so Avery is not joining any meetings.";
   if (!(await hasCalendar(orgId))) return "Sitting in: no calendar is connected on Integrations, so Avery has no meetings to join.";
   const v = await notetakerView(orgId);
   const joining = v.upcoming.filter((r) => r.status === "scheduled" || r.status === "joining" || r.status === "in_call").slice(0, 4);
@@ -628,7 +628,7 @@ function voiceOf(who: Voice) {
 export async function explainMissing(orgId: number, target: string, who: Voice = "me"): Promise<string> {
   const V = voiceOf(who);
   const { ops, tz } = await opsFor(orgId);
-  if (!(await integrations.recallConnected(orgId))) return `${V.Im} not joining any meetings right now: Recall.ai isn't connected on Integrations. Connect it there and ${V.Ill} start sitting in.`;
+  if (!(await integrations.recallConnected(orgId))) return `${V.Im} not joining any meetings right now: meeting notes aren't set up on this server yet. LeadDash turns them on; nothing for you to connect.`;
   if (!(await hasCalendar(orgId))) return `${V.I} ${V.have} no calendar to read yet. Connect Google on Integrations, or add your calendars under Calendars, and ${V.Ill} start sitting in.`;
   await syncCalendar(orgId, new Date(), true).catch(() => null);
   const again = await findMeeting(orgId, target, "upcoming");

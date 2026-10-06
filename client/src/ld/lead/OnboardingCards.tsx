@@ -174,13 +174,12 @@ export function NotetakerCard({ emp }: { emp: EmployeeRow }) {
       <div style={grid} className="ld-keep-check">
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
           <span className="ld-lbl">Notetaker</span>
-          {(!s.recall || !s.google) && (
+          {!s.google && (
             <span className="ld-body" style={{ padding: "6px 0" }}>
-              {!s.google ? "Connect Google so he can read your calendar. " : ""}
-              {!s.recall ? "Connect Recall.ai so he can join meetings. " : ""}
-              <Link href="/integrations">Open Integrations</Link>
+              Connect Google so he can read your calendar. <Link href="/integrations">Open Integrations</Link>
             </span>
           )}
+          {!s.recall && <span className="ld-body" style={{ padding: "6px 0" }}>Meeting notes aren't set up on this server yet. LeadDash turns them on; nothing for you to connect.</span>}
           <Row label="Joins" note="From every calendar on Integrations: Zoom, Google Meet and Teams links. Busy-only calendars hide their links.">
             {editing ? <Choice options={[{ key: "mine", label: "Meetings I set up" }, { key: "any", label: "Every meeting with a video link" }, { key: "picked", label: "Only meetings I turn on" }]} value={d.joins} onChange={(v) => setD({ ...d, joins: v })} /> : <span className="ld-body">{JOINS_LABEL[s.joins]}</span>}
           </Row>

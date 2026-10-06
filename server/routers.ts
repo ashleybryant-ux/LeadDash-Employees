@@ -4320,24 +4320,13 @@ export const appRouter = router({
         await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved notetaker settings", details: rest.joins === "any" ? "Joins every meeting with a link" : rest.joins === "picked" ? "Joins meetings you turn on" : "Joins the meetings you set up" });
         return saved;
       }),
-    saveRecallKey: protectedProcedure.input(orgInput.extend({ apiKey: z.string().min(1).max(300) })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "admin");
-      try {
-        await integrations.saveRecallKey(input.organizationId, input.apiKey);
-      } catch (e) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: e instanceof Error ? (/401|403/.test(e.message) ? "Recall.ai didn't accept that key. Copy it again from Recall.ai, API Keys." : e.message) : "Could not save the key." });
-      }
-      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Connected Recall.ai", details: "Key checked with Recall.ai and saved encrypted." });
-      await notetaker.syncCalendar(input.organizationId, new Date(), true).catch(() => null);
-      return { ok: true };
-    }),
     setJoin: protectedProcedure.input(orgInput.extend({ id: z.number().int().positive(), choice: z.enum(["join", "skip"]) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       return notetaker.setChoice(input.organizationId, input.id, input.choice);
     }),
     refreshCalendar: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
-      if (!(await integrations.recallConnected(input.organizationId))) throw new TRPCError({ code: "BAD_REQUEST", message: "Connect Recall.ai on Integrations first." });
+      if (!(await integrations.recallConnected(input.organizationId))) throw new TRPCError({ code: "BAD_REQUEST", message: "Meeting notes aren't set up on this server yet." });
       await notetaker.syncCalendar(input.organizationId, new Date(), true);
       return { ok: true };
     }),

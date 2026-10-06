@@ -14,6 +14,7 @@ let llm: typeof import("./_core/llm");
 beforeEach(async () => {
   calls = [];
   routes = [];
+  process.env.RECALL_API_KEY = "recall-key-1234567890abcdef";
   llm = await import("./_core/llm");
   vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
     calls.push({ url: String(url), init });
@@ -58,9 +59,11 @@ describe("Avery's notetaker (notes go to Simone)", () => {
     const { orgId, owner } = await makeWorkspace("notetaker");
     await db.upsertExternalConnection({ organizationId: orgId, provider: "google_workspace", accountLabel: "Google", status: "connected", settings: "{}", secretsEncrypted: encryptJson({ accessToken: "t" }), connectedAt: new Date(), lastCheckedAt: new Date() });
 
-    routes.push([/recall\.ai\/api\/v1\/bot\/\?page_size=1/, () => json({ results: [] })]);
     const c = caller(owner);
-    await expect(c.coo.saveRecallKey({ organizationId: orgId, apiKey: "short" })).rejects.toThrow();
+    // The key is LeadDash's, on the server; no workspace is asked for one.
+    process.env.RECALL_API_KEY = "";
+    expect(await notetaker.notetakerStatus(orgId)).toMatch(/meeting notes aren't set up on this server yet/);
+    process.env.RECALL_API_KEY = "recall-key-1234567890abcdef";
     routes.push([
       /googleapis\.com\/calendar\/v3\/calendars\/primary\/events\?/,
       () =>
@@ -76,7 +79,8 @@ describe("Avery's notetaker (notes go to Simone)", () => {
     ]);
     let botN = 0;
     routes.push([/recall\.ai\/api\/v1\/bot\/$/, (_u, init) => (init.method === "POST" ? json({ id: `bot-${++botN}` }) : json({}))]);
-    await c.coo.saveRecallKey({ organizationId: orgId, apiKey: "recall-key-1234567890abcdef" });
+    await notetaker.syncCalendar(orgId, new Date(), true);
+    expect(calls.find((x) => /\/bot\/$/.test(x.url))!.init.headers.authorization).toBe("recall-key-1234567890abcdef");
 
     const view = await notetaker.notetakerView(orgId);
     expect(view.upcoming.map((r) => [r.title, r.platform, r.host, r.status])).toEqual([["Demo: Riverbend Counseling", "meet", true, "scheduled"], ["Client session", "zoom", true, "skipped"], ["Payer webinar", "teams", false, "skipped"]]);
@@ -133,8 +137,10 @@ describe("Avery's notetaker (notes go to Simone)", () => {
     expect(mine.some((m) => /sent the notes to Simone/.test(m.content))).toBe(true);
   });
 
-  it("cancels a booked bot when you press Skip, and every bot when Recall.ai is disconnected", async () => {
+  it("cancels a booked bot when you press Skip, and every bot when a workspace's old key is disconnected", async () => {
     const { orgId, owner } = await makeWorkspace("notetaker-skip");
+    // A key saved by a workspace before the server key existed still works, as a fallback.
+    process.env.RECALL_API_KEY = "";
     await db.upsertExternalConnection({ organizationId: orgId, provider: "recall", accountLabel: "Recall.ai", status: "connected", settings: "{}", secretsEncrypted: encryptJson({ apiKey: "recall-key-1234567890abcdef" }), connectedAt: new Date(), lastCheckedAt: new Date() });
     const a = await db.createNotetaker({ organizationId: orgId, eventId: "e1", title: "Board prep", startsAt: new Date(Date.now() + 3 * 3600_000), endsAt: new Date(Date.now() + 4 * 3600_000), platform: "meet", meetingUrl: "https://meet.google.com/abc-defg-hij", status: "scheduled", botId: "bot-a" });
     const b = await db.createNotetaker({ organizationId: orgId, eventId: "e2", title: "Sales check-in", startsAt: new Date(Date.now() + 5 * 3600_000), endsAt: new Date(Date.now() + 6 * 3600_000), platform: "zoom", meetingUrl: "https://zoom.us/j/1", status: "scheduled", botId: "bot-b" });

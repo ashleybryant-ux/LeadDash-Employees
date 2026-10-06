@@ -314,9 +314,7 @@ function SittingIn({ list, tz, loading, emp }: { list: NT[]; tz: string; loading
   if (s && (!s.recall || !s.google)) {
     return (
       <div className="ld-empty" style={{ textAlign: "left" }}>
-        {!s.google ? "Connect Google on Integrations so Avery can read your calendar. " : ""}
-        {!s.recall ? "Connect Recall.ai on Integrations so Avery can sit in on your Zoom, Google Meet and Teams meetings. " : ""}
-        <Link href="/integrations">Open Integrations</Link>
+        {!s.google ? <>Connect Google on Integrations so Avery can read your calendar. <Link href="/integrations">Open Integrations</Link></> : "Meeting notes aren't set up on this server yet. LeadDash turns them on; nothing for you to connect."}
       </div>
     );
   }

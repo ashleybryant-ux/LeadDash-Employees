@@ -3,7 +3,6 @@ import { caller, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
 import * as calendars from "./employees/calendars";
 import * as notetaker from "./employees/notetaker";
-import { encryptJson } from "./_core/crypto";
 
 type Call = { url: string; init: any };
 let calls: Call[] = [];
@@ -14,6 +13,7 @@ const blank = { reply: "", action: "none", focus: "", topic: "", platforms: [], 
 beforeEach(() => {
   calls = [];
   routes = [];
+  process.env.RECALL_API_KEY = "";
   process.env.GOOGLE_CLIENT_ID = "g-id";
   process.env.GOOGLE_CLIENT_SECRET = "g-secret";
   vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
@@ -37,7 +37,7 @@ const iso = (min: number) => at(min).toISOString();
 
 /** Recall.ai connected, and two Google accounts added under Calendars (no main Google connection). */
 async function connect(orgId: number) {
-  await db.upsertExternalConnection({ organizationId: orgId, provider: "recall", accountLabel: "Recall.ai", status: "connected", settings: "{}", secretsEncrypted: encryptJson({ apiKey: "recall-key-1234567890abcdef" }), connectedAt: new Date(), lastCheckedAt: new Date() });
+  process.env.RECALL_API_KEY = "recall-key-1234567890abcdef";
   routes.push([/recall\.ai\/api\/v1\/bot\/$/, (_u, init) => (init.method === "POST" ? json({ id: `bot-${calls.filter((c) => /bot\/$/.test(c.url) && c.init.method === "POST").length}` }) : json({}))]);
   let who = "leaddash";
   routes.push([/oauth2\.googleapis\.com\/token/, () => json({ access_token: `tok-${who}`, refresh_token: `ref-${who}`, expires_in: 3600 })]);
@@ -79,9 +79,10 @@ describe("Avery reads every calendar on Integrations for meetings to sit in on",
     const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
     const c = caller(owner);
 
+    process.env.RECALL_API_KEY = "";
     await mockAi({ action: "sitting_in", target: "11am" });
     let r = await c.chat.send({ organizationId: orgId, employeeId: simone.id, text: "are you joining the 11am meeting to take notes?" });
-    expect(r.reply.content).toBe("Avery is not joining any meetings right now: Recall.ai isn't connected on Integrations. Connect it there and Avery will start sitting in.");
+    expect(r.reply.content).toBe("Avery is not joining any meetings right now: meeting notes aren't set up on this server yet. LeadDash turns them on; nothing for you to connect.");
 
     const { lg } = await connect(orgId);
     // An 11:00 AM meeting tomorrow with no Zoom or Meet link, a locked session, and a Zoom meeting on the busy-only calendar.
