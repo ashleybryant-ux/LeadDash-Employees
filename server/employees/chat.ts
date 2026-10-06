@@ -172,7 +172,7 @@ const ACTION_HELP: Record<string, string> = {
   write_slides: "write_slides: build the slide deck (PowerPoint) for a talk (\"build the slides\", \"make the PPT\"). It uses the latest script you wrote, with what she says on each slide in the speaker notes; without a script it builds from the Brain. Put the talk's title in `title` and anything they asked for in `notes`. It arrives in this chat, where she can flip through it right there.",
   meeting_link: "meeting_link: about a meeting you already booked: the person asks for its Zoom or Meet link, or wants it on Zoom (\"put it on Zoom\", \"did you add it to Zoom?\"). Put words from its title or a guest's name or email in `target`, its date as YYYY-MM-DD in `date` when they say it (''), and \"zoom\" in `focus` when they want it on Zoom ('' when they only want the link). Use this, never calendar_hold or browse, for a meeting that's already booked.",
   calendar_hold: "calendar_hold: the person wants a NEW meeting or hold on their calendar (for one you already booked, use meeting_link). Put \"zoom\" in `focus` when they ask for it on Zoom. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, the agenda in `notes`, and the calendar's name in `target` when they name one ('' for the usual one). It waits for their approval, then goes on that calendar. With guests it is a call: it gets a Zoom link (or Google Meet when Zoom isn't the meeting link) and the invites go out once approved, and Avery sits in to take notes.",
-  check_schedule: "check_schedule: the person asks what's on their calendar or schedule (today, tomorrow, a day, this week, \"am I free Friday at 2\"). Put the first day as YYYY-MM-DD in `date` and how many days in `count` (1 for a day, 7 for a week). You check every calendar connected on Integrations.",
+  check_schedule: "check_schedule: read the person's calendars (today, tomorrow, a day, this week, \"am I free Friday at 2\"). Put the first day as YYYY-MM-DD in `date` and how many days in `count` (1 for a day, 7 for a week). You check every calendar connected on Integrations. It only lists what is there: when they want a time picked, a recommendation, or something booked, say so in `plan` and you get the busy and open times back to decide from.",
   report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
   find_people: "find_people: search the web for professionals to reach out to for an open role. Put the role or any focus (city, license, specialty) in `focus`.",
   write_job_post: "write_job_post: write or rewrite the job post for a role. Put the role title in `target` ('' for the newest open role).",
@@ -203,10 +203,11 @@ function decisionSchema(kind: string): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["reply", "action", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate", "choices", "remember_topic", "remember_fact", "remember_category"],
+    required: ["reply", "action", "plan", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate", "choices", "remember_topic", "remember_fact", "remember_category"],
     properties: {
       reply: { type: "string", description: "What you say back. If you are about to do a job, one short sentence saying what you are doing." },
       action: { type: "string", enum: ACTIONS[kind] ?? ["none"] },
+      plan: { type: "string", description: "What you still have to do after this action runs, in one line, when the request takes more than this one step (look something up, then decide or book; set up a meeting, then write the agenda). '' when this action finishes the request or you are only answering." },
       focus: str,
       topic: str,
       platforms: { type: "array", items: { type: "string", enum: ["linkedin", "instagram", "facebook", "x", "threads"] } },
@@ -237,6 +238,7 @@ function decisionSchema(kind: string): JsonSchema {
 type Decision = {
   reply: string;
   action: string;
+  plan?: string;
   focus: string;
   topic: string;
   platforms: ("linkedin" | "instagram" | "facebook" | "x" | "threads")[];
@@ -261,6 +263,16 @@ type Decision = {
   remember_fact?: string;
   remember_category?: string;
 };
+
+/** The fields a decision filled in, as one line: tells one step from another and shows the employee what each step was. */
+function stepFields(d: Decision) {
+  const keys = ["target", "title", "date", "time", "count", "attendees", "notes", "to", "focus", "topic", "goal", "page", "url", "from", "subject", "teammate"] as const;
+  return keys
+    .map((k) => [k, d[k]] as const)
+    .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "" && v !== 0)
+    .map(([k, v]) => `${k}: ${String(v).replace(/\s+/g, " ").slice(0, 80)}`)
+    .join(", ");
+}
 
 function transcript(history: ChatMessage[]) {
   return history
@@ -391,7 +403,8 @@ const TALK = `Talk with the person like a colleague, back and forth, not like a 
 - Otherwise do the job. After you finish or answer, put up to 4 short next steps the person is likely to want in "choices" (each under 6 words, written as what they would say). Leave "choices" empty when nothing obvious comes next.
 - Questions about your work, a result or a score get a plain, specific answer from your facts.
 - When the person tells you plainly what to do, do it now. Don't ask questions first unless a wrong guess would do something that can't be undone. Closing or moving tasks can be undone, so just do it.
-- Never say you're writing, making, sending or doing something ("I'll have it in a moment", "writing it now") unless you chose the action that does it in this same reply. If none of your actions can do it, say so plainly and say what can.`;
+- Never say you're writing, making, sending or doing something ("I'll have it in a moment", "writing it now") unless you chose the action that does it in this same reply. If none of your actions can do it, say so plainly and say what can.
+- A request can take several steps. Choose the first action and put what comes after it in "plan" (for example "pick the best open hour, then schedule_meeting with Nora and write the agenda"). After each step you see what it found and choose the next one, until the request is done; then choose "none" and sum up in "reply" what you did and decided, with the specifics (the time you picked and why). Never ask the person for something a step can find for you (an open time, a status, a number).`;
 
 const TALK_BY_KIND: Partial<Record<string, string>> = {
   website: `- Before you build a NEW page, if the person has not picked a layout earlier in this conversation, choose ask_layout. When they answer, choose build_page with their layout in "focus" and where the button goes in "to". To change a page you built, choose change_page with exactly what to change.
@@ -451,7 +464,17 @@ function worth(n: number, total: number) {
 
 /** Where an action's output lives, so Nora can follow a task's work until it is approved. */
 type Ref = projects.WorkRef;
-type ActionResult = { text: string; cards: ChatCard[]; queries: string[]; refs?: Ref[]; choices?: string[] };
+type ActionResult = {
+  text: string;
+  cards: ChatCard[];
+  queries: string[];
+  refs?: Ref[];
+  choices?: string[];
+  /** What the step found, as plain lines for the employee to reason over on the next step. Never shown to the person. */
+  facts?: string;
+  /** A lookup step: when more steps follow, its text and cards stay out of the reply (the facts carry what it found). */
+  quiet?: boolean;
+};
 type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[]; said?: string; userId?: number | null };
 
 async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promise<ActionResult> {
@@ -1334,10 +1357,11 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const days = Math.max(1, Math.min(14, d.count || 1));
       try {
         const r = await cal.scheduleReply(org, d.date, days);
-        if (!r.events.length) return { text: r.text, cards: [], queries: [] };
+        const facts = r.events.length || r.text.startsWith("I don't have") ? undefined : cal.scheduleFacts([], cal.range(d.date, days, r.tz).from, days, r.tz);
+        if (!r.events.length) return { text: r.text, cards: [], queries: [], facts, quiet: true };
         const clashing = new Set((r.clash ?? []).flat());
         const events = r.events.slice(0, 40).map((e) => ({ when: cal.whenText(e, r.tz), day: days > 1 ? e.start.toLocaleDateString("en-US", { timeZone: r.tz, weekday: "short", month: "short", day: "numeric", year: "numeric" }) : undefined, title: e.title, calendar: e.calendar, color: e.color, clash: clashing.has(e) }));
-        return { text: r.text, cards: [{ type: "schedule", id: Date.now(), title: "Schedule", events }], queries: [] };
+        return { text: r.text, cards: [{ type: "schedule", id: Date.now(), title: "Schedule", events }], queries: [], facts: cal.scheduleFacts(r.events, cal.range(d.date, days, r.tz).from, days, r.tz), quiet: true };
       } catch (err) {
         return { text: `I couldn't read your calendars: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
       }
@@ -1709,13 +1733,9 @@ ${scheduled ? "This message comes from a scheduled task: never ask a question an
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     );
-    const decision = await generateJson<Decision>({
-      system,
-      prompt: `Conversation so far:\n${transcript(history.slice(0, -1))}\n\n${opts.authorName}: ${said}`,
-      schemaName: "chat_decision",
-      schema: decisionSchema(emp.kind),
-      maxTokens: 2000,
-    });
+    const base = `Conversation so far:\n${transcript(history.slice(0, -1))}\n\n${opts.authorName}: ${said}`;
+    const decide = (prompt: string) => generateJson<Decision>({ system, prompt, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 2000 });
+    const decision = await decide(base);
     const quick = (list?: string[]) => (!scheduled && list?.length ? [choicesCard(list)] : []);
     // Something new and lasting: saved to the Brain so nobody has to be told twice.
     let learned = "";
@@ -1727,9 +1747,33 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
       return { user: userMsg, reply: await reply(`${decision.reply || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
     }
-    const result = await runAction(emp, decision, { who: opts.authorName, files: sent.length ? sent : files, history, said: opts.text, userId: opts.userId ?? null });
-    const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];
-    return { user: userMsg, reply: await reply(`${result.text || decision.reply}${learned}`, cards, result.queries) };
+    const ctx = { who: opts.authorName, files: sent.length ? sent : files, history, said: opts.text, userId: opts.userId ?? null };
+    const result = await runAction(emp, decision, ctx);
+    if (!decision.plan?.trim()) {
+      const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];
+      return { user: userMsg, reply: await reply(`${result.text || decision.reply}${learned}`, cards, result.queries) };
+    }
+
+    // More than one step: each step's findings go back to the employee, who chooses the next step or sums up. Up to 5 steps.
+    const steps: { d: Decision; r: ActionResult }[] = [{ d: decision, r: result }];
+    let final: Decision | null = null;
+    for (let i = 0; i < 4; i++) {
+      const done = steps.map((s, n) => `Step ${n + 1}: ${s.d.action} (${stepFields(s.d)}). Result: ${s.r.text || "done"}${s.r.facts ? `\nWhat it found:\n${s.r.facts}` : ""}`).join("\n\n");
+      const next = await decide(`${base}\n\nYou are part way through this request. Your plan after the last step was: ${steps[steps.length - 1].d.plan || "finish up"}.\n${done}\n\nChoose the next action, or "none" when the request is done or you need the person. With "none", "reply" is the whole message the person sees: what you did, what you decided and why, and anything from the results they still need to do (a button to press). Never repeat a step that already ran.`);
+      // A step chosen again with the same fields would loop: the steps so far speak for themselves.
+      if (steps.some((s) => s.d.action === next.action && stepFields(s.d) === stepFields(next))) break;
+      if (!next.action || next.action === "none" || !actions.includes(next.action)) {
+        final = next;
+        break;
+      }
+      steps.push({ d: next, r: await runAction(emp, next, ctx) });
+    }
+    // Lookup steps stay out of the reply once a later step used what they found; the summary (or the last step) speaks.
+    const shown = steps.filter((s, n) => !(s.r.quiet && (n < steps.length - 1 || final?.reply?.trim())));
+    const text = final?.reply?.trim() || shown.map((s) => s.r.text || s.d.reply).filter((t) => t.trim()).join("\n\n");
+    const last = steps[steps.length - 1];
+    const cards = [...shown.flatMap((s) => s.r.cards), ...quick(final?.choices ?? last.r.choices ?? last.d.choices)];
+    return { user: userMsg, reply: await reply(`${text || last.d.reply}${learned}`, cards, steps.flatMap((s) => s.r.queries)) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[chat] ${emp.name} failed:`, message);

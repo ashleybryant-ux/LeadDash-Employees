@@ -420,6 +420,38 @@ export async function scheduleReply(orgId: number, ymd: string, days: number) {
   return { text: parts.join(" "), events: s.events, tz, clash };
 }
 
+/**
+ * The day's busy blocks and open stretches between 8:00 AM and 6:00 PM, as plain lines an employee can
+ * reason over ("find a time", "when should we meet"). Open stretches under 30 minutes are left out.
+ */
+export function scheduleFacts(events: Event[], from: Date, days: number, tz: string) {
+  const lines: string[] = [];
+  const short = (d: Date) => d.toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  for (let i = 0; i < Math.max(1, Math.min(14, days)); i++) {
+    const n = new Date(from.getTime() + i * 86_400_000 + 12 * 3600_000);
+    const ymd = n.toLocaleDateString("en-CA", { timeZone: tz });
+    const [y, m, d] = ymd.split("-").map(Number);
+    const dayStart = zonedToUtc(y, m, d, 8, 0, tz);
+    const dayEnd = zonedToUtc(y, m, d, 18, 0, tz);
+    const midnight = zonedToUtc(y, m, d, 0, 0, tz);
+    const next = new Date(midnight.getTime() + 86_400_000 + 3600_000);
+    const today = events.filter((e) => e.start < next && e.end > midnight);
+    const busy = today.filter((e) => !e.allDay).sort((a, b) => a.start.getTime() - b.start.getTime());
+    const open: string[] = [];
+    let cursor = dayStart;
+    for (const e of busy) {
+      if (e.start.getTime() - cursor.getTime() >= 30 * 60_000 && e.start > cursor) open.push(`${fmtTime(cursor, tz)} to ${fmtTime(new Date(Math.min(e.start.getTime(), dayEnd.getTime())), tz)}`);
+      if (e.end > cursor) cursor = e.end;
+      if (cursor >= dayEnd) break;
+    }
+    if (dayEnd.getTime() - cursor.getTime() >= 30 * 60_000) open.push(`${fmtTime(cursor, tz)} to ${fmtTime(dayEnd, tz)}`);
+    const busyText = busy.map((e) => `${whenText(e, tz)} ${e.title}${e.calendar ? ` (${e.calendar})` : ""}`).join("; ");
+    const allDay = today.filter((e) => e.allDay).map((e) => e.title);
+    lines.push(`${short(n)}: ${busy.length ? `busy ${busyText}.` : "nothing booked."}${allDay.length ? ` All day: ${allDay.join(", ")}.` : ""} Open between 8:00 AM and 6:00 PM: ${open.length ? open.join(", ") : "nothing"}.`);
+  }
+  return lines.join("\n");
+}
+
 /** For a hold: is that hour open on every calendar? */
 export async function freeAt(orgId: number, start: Date, minutes = 60) {
   const s = await schedule(orgId, start, new Date(start.getTime() + minutes * 60_000));
