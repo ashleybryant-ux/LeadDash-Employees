@@ -19,7 +19,7 @@ Names can be changed per workspace. The `kind` column decides what an employee d
 - **Sign-in:** email and a 6-digit code (sent through Amazon SES). Codes last 10 minutes, lock after 5 wrong tries, and only a hash is stored. Sessions are server-side and revoked on sign-out.
 - **Who sees what:** every route requires a signed-in person who is on that workspace. LeadDash staff (`ADMIN_EMAILS`) have support access to every workspace without appearing on its team, and are the only ones who create workspaces.
 - **The Brain:** the workspace profile plus every Brain entry goes into every employee's instructions on every task (`server/employees/brain.ts`).
-- **Writing** goes through the AssemblyAI LLM Gateway (same key and BAA as DashNotes). **Web search** goes to Anthropic directly, because it needs Anthropic's search tool. **Images** go to OpenAI. Each is optional: if a key is missing, that employee says so instead of failing.
+- **Writing** goes through the AssemblyAI LLM Gateway (same key and BAA as DashNotes). **Web search** goes to OpenAI's web search tool by default (`SEARCH_PROVIDER=anthropic` switches it to Anthropic's). **Images** go to OpenAI. Each is optional: if a key is missing, that employee says so instead of failing.
 - **Sources:** a grant, event or trend is saved only if it carries a link from a site the search actually returned. The searches each employee ran are saved with the result.
 - **Connection secrets** (client secrets, app passwords) are encrypted with `SECRETS_KEY` (AES-256-GCM) and never sent back to the browser.
 - **Database:** SQLite, one file at `data/employees.db`. Migrations run on start.

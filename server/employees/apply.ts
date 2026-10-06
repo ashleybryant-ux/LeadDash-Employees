@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import type { AIEmployee, Application, Opportunity, OppKind } from "../../drizzle/schema";
 import { ENV } from "../_core/env";
-import { generateJson, searchJson, type JsonSchema } from "../_core/llm";
+import { generateJson, searchJson, searchReady, type JsonSchema } from "../_core/llm";
 import { storagePut } from "../storage";
 import { download, fetchWebpage, htmlToText, packageLinks } from "./files";
 import { readFile, unsupportedNote, chunkText } from "./docs";
@@ -809,7 +809,7 @@ export async function fetchPackage(orgId: number, oppId: number) {
     }
 
     let funderHistory: { history: string; url: string } | null = null;
-    if (opp.kind === "grant" && ENV.anthropicKey) {
+    if (opp.kind === "grant" && searchReady()) {
       funderHistory = await funderHistoryFor(emp!, opp).catch(() => null);
     }
 

@@ -29,6 +29,9 @@ export function usageContext() {
 
 /** Per million tokens: [input, output]. Checked against Anthropic's pricing page on 2026-10-03. */
 const TOKEN_PRICES: [RegExp, number, number][] = [
+  [/gpt-6-astra/, 10, 50],
+  [/gpt-6\.1-sol/, 2, 10],
+  [/gpt-6-luna/, 0.1, 0.5],
   [/fable|mythos/, 10, 50],
   [/opus-5-5/, 4, 20],
   [/opus-4-1|opus-4(-\d{8})?$/, 15, 75],
@@ -38,7 +41,7 @@ const TOKEN_PRICES: [RegExp, number, number][] = [
   [/haiku-3/, 0.8, 4],
   [/haiku/, 1, 5],
 ];
-export const SEARCH_PRICE = 10 / 1000; // per web search
+export const SEARCH_PRICE = 10 / 1000; // per web search, the same on OpenAI and Anthropic
 /** gpt-image-2, medium quality. */
 export const IMAGE_PRICE: Record<string, number> = { "1024x1024": 0.053, "1024x1536": 0.041, "1536x1024": 0.041 };
 /** Recall.ai: recording plus its own transcription, per hour. */

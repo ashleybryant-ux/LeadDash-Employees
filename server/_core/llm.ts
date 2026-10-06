@@ -9,9 +9,10 @@ import { SEARCH_PRICE, recordSearch, recordTokens, tokenCost } from "../usage";
  *    LLM Gateway: the same key, endpoint and BAA DashNotes already uses. It is
  *    OpenAI-compatible and supports JSON-schema structured output.
  *
- * 2. Finding things on the web (grants, speaking events, video trends) goes to
- *    Anthropic directly, because it needs Anthropic's server-side web search
- *    tool. Nothing from a client chart is ever sent on this route.
+ * 2. Finding things on the web (grants, speaking events, video trends) needs a
+ *    server-side web search tool. SEARCH_PROVIDER picks OpenAI's (the default,
+ *    Responses API) or Anthropic's. Nothing from a client chart is ever sent
+ *    on this route.
  */
 
 /** A setup problem, not a crash: shown to the person as-is. */
@@ -162,12 +163,6 @@ export type SearchResult<T> = {
 };
 
 /**
- * Runs a web-search turn on Anthropic's API, then returns structured output.
- * The model is told to answer only from what it found, and the parsed result
- * is converted to the schema through the gateway if the model's own JSON is
- * malformed.
- */
-/**
  * Headers for a direct Anthropic call. Works with a classic key (sk-ant-api03-)
  * and a personal or service account key (sk-ant-usr-). A personal key that is
  * not scoped to one workspace also needs ANTHROPIC_WORKSPACE_ID.
@@ -180,34 +175,129 @@ export function anthropicHeaders(): Record<string, string> {
   return h;
 }
 
-export async function searchJson<T>(opts: {
+/** True when the chosen search provider has its key. */
+export function searchReady() {
+  return ENV.searchProvider === "anthropic" ? Boolean(ENV.anthropicKey) : Boolean(ENV.openAiKey);
+}
+
+/** The model web searches run on, for usage records. */
+export function searchModel() {
+  return ENV.searchProvider === "anthropic" ? ENV.anthropicModel : ENV.openAiSearchModel;
+}
+
+type SearchOpts = {
   system: string;
   prompt: string;
   schemaName: string;
   schema: JsonSchema;
   maxUses?: number;
   maxTokens?: number;
-}): Promise<SearchResult<T>> {
-  if (!ENV.anthropicKey) {
+};
+
+type Found = { text: string; queries: string[]; sources: Map<string, string>; used: { input: number; output: number; cacheRead: number; searches: number } };
+
+/**
+ * Runs a web-search turn on the chosen provider, then returns structured
+ * output. The model is told to answer only from what it found, and the parsed
+ * result is converted to the schema through the gateway if the model's own
+ * JSON is malformed.
+ */
+export async function searchJson<T>(opts: SearchOpts): Promise<SearchResult<T>> {
+  if (!searchReady()) {
     throw new AiNotConfiguredError(
-      "Web search is not set up yet: ANTHROPIC_API_KEY is missing on the server."
+      ENV.searchProvider === "anthropic"
+        ? "Web search is not set up yet: ANTHROPIC_API_KEY is missing on the server."
+        : "Web search is not set up yet: OPENAI_API_KEY is missing on the server."
     );
   }
-
+  const maxUses = opts.maxUses ?? ENV.searchMaxUses;
   const system =
     opts.system +
     `\n\nToday's date is ${new Date().toISOString().slice(0, 10)}.` +
-    "\nUse web search. Describe only what you found in search results, never from memory. Every item must carry the exact URL of the page it came from." +
+    `\nUse web search, at most ${maxUses} searches. Describe only what you found in search results, never from memory. Every item must carry the exact URL of the page it came from.` +
     "\nWhen you are done searching, reply with one JSON object that matches this schema, wrapped in <json></json> tags, and nothing after it:\n" +
     JSON.stringify(opts.schema);
 
+  const found = ENV.searchProvider === "anthropic" ? await searchAnthropic(system, opts, maxUses) : await searchOpenAi(system, opts);
+  const model = searchModel();
+  const { used } = found;
+  await recordSearch(model, used.input, used.output, used.searches, used.cacheRead);
+
+  let parsed = extractJson(found.text);
+  if (parsed === undefined) {
+    // Let the gateway restructure the findings rather than failing the whole run.
+    parsed = await generateJson<T>({
+      system: "Convert the research notes into the JSON schema exactly. Do not add facts that are not in the notes.",
+      prompt: found.text,
+      schemaName: opts.schemaName,
+      schema: opts.schema,
+    });
+  }
+
+  return {
+    data: parsed as T,
+    queries: found.queries,
+    sources: Array.from(found.sources, ([url, title]) => ({ url, title })),
+    costUsd: tokenCost(model, used.input, used.output, used.cacheRead) + used.searches * SEARCH_PRICE,
+  };
+}
+
+/** OpenAI Responses API with its web_search tool. One request; the tool runs server-side. */
+async function searchOpenAi(system: string, opts: SearchOpts): Promise<Found> {
+  const res = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { authorization: `Bearer ${ENV.openAiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: ENV.openAiSearchModel,
+      instructions: system,
+      input: opts.prompt,
+      max_output_tokens: opts.maxTokens ?? 8000,
+      tools: [{ type: "web_search", search_context_size: "medium" }],
+      include: ["web_search_call.action.sources"],
+      store: false,
+    }),
+    signal: AbortSignal.timeout(240_000),
+  });
+  const raw = await res.text();
+  if (!res.ok) throw new Error(`Web search error ${res.status}: ${raw.slice(0, 300)}`);
+  const data = JSON.parse(raw);
+  if (data.error) throw new Error(`Web search error: ${String(data.error.message ?? data.error).slice(0, 300)}`);
+  const queries: string[] = [];
+  const sources = new Map<string, string>();
+  let text = "";
+  let searches = 0;
+  for (const item of data.output ?? []) {
+    if (item.type === "web_search_call") {
+      searches++;
+      const a = item.action ?? {};
+      if (a.type === "search" && a.query) queries.push(String(a.query));
+      for (const s of a.sources ?? []) if (s?.url) sources.set(s.url, s.title || s.url);
+    } else if (item.type === "message") {
+      for (const c of item.content ?? []) {
+        if (c.type !== "output_text") continue;
+        text += c.text ?? "";
+        for (const an of c.annotations ?? []) if (an?.type === "url_citation" && an.url) sources.set(an.url, an.title || an.url);
+      }
+    }
+  }
+  const u = data.usage ?? {};
+  const cacheRead = Number(u.input_tokens_details?.cached_tokens) || 0;
+  return {
+    text,
+    queries,
+    sources,
+    used: { input: Math.max(0, (Number(u.input_tokens) || 0) - cacheRead), output: Number(u.output_tokens) || 0, cacheRead, searches },
+  };
+}
+
+/** Anthropic Messages API with its web search tool. pause_turn means a long search was paused; the turn is sent back to resume it. */
+async function searchAnthropic(system: string, opts: SearchOpts, maxUses: number): Promise<Found> {
   const messages: any[] = [{ role: "user", content: opts.prompt }];
   const queries: string[] = [];
   const sources = new Map<string, string>();
-  let finalText = "";
+  let text = "";
   const used = { input: 0, output: 0, cacheRead: 0, searches: 0 };
 
-  // pause_turn means a long search was paused; send the turn back to resume it.
   for (let round = 0; round < 4; round++) {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -217,7 +307,7 @@ export async function searchJson<T>(opts: {
         max_tokens: opts.maxTokens ?? 8000,
         system,
         messages,
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: opts.maxUses ?? ENV.searchMaxUses }],
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxUses }],
       }),
       signal: AbortSignal.timeout(240_000),
     });
@@ -237,7 +327,7 @@ export async function searchJson<T>(opts: {
           if (r?.url) sources.set(r.url, r.title || r.url);
         }
       } else if (block.type === "text") {
-        finalText += block.text;
+        text += block.text;
         for (const c of block.citations ?? []) {
           if (c?.url) sources.set(c.url, c.title || c.url);
         }
@@ -250,32 +340,13 @@ export async function searchJson<T>(opts: {
     }
     break;
   }
-
-  await recordSearch(ENV.anthropicModel, used.input, used.output, used.searches, used.cacheRead);
-
-  let parsed = extractJson(finalText);
-  if (parsed === undefined) {
-    // Let the gateway restructure the findings rather than failing the whole run.
-    parsed = await generateJson<T>({
-      system: "Convert the research notes into the JSON schema exactly. Do not add facts that are not in the notes.",
-      prompt: finalText,
-      schemaName: opts.schemaName,
-      schema: opts.schema,
-    });
-  }
-
-  return {
-    data: parsed as T,
-    queries,
-    sources: Array.from(sources, ([url, title]) => ({ url, title })),
-    costUsd: tokenCost(ENV.anthropicModel, used.input, used.output, used.cacheRead) + used.searches * SEARCH_PRICE,
-  };
+  return { text, queries, sources, used };
 }
 
 /**
  * One or two sentences describing a photo for the team that picks images:
  * setting, outfit, pose, expression, framing and what it suits (headshot,
- * website banner, speaker one-sheet, social post). Empty when search is off.
+ * website banner, speaker one-sheet, social post). Empty when the Anthropic key is off.
  */
 export async function describeImage(buf: Buffer, mime: string): Promise<string> {
   if (!ENV.anthropicKey || process.env.NODE_ENV === "test") return "";
@@ -309,7 +380,7 @@ export async function describeImage(buf: Buffer, mime: string): Promise<string> 
 export function aiStatus() {
   return {
     writing: Boolean(ENV.assemblyAiKey),
-    webSearch: Boolean(ENV.anthropicKey),
+    webSearch: searchReady(),
     google: Boolean(ENV.serperKey),
     images: Boolean(ENV.openAiKey),
   };

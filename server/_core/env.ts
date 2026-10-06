@@ -33,7 +33,14 @@ export const ENV = {
   assemblyAiKey: process.env.ASSEMBLYAI_API_KEY || "",
   llmGatewayUrl: process.env.LLM_GATEWAY_URL || "https://llm-gateway.assemblyai.com/v1/chat/completions",
   llmModel: process.env.LLM_MODEL || "claude-sonnet-4-6",
-  /** Anthropic key, used only for employees that search the web (grants, speaking, video trends). */
+  /**
+   * Who runs web searches (grants, speaking events, video trends, license
+   * checks): "openai" (the OpenAI key, Responses API web search tool) or
+   * "anthropic" (the Anthropic key, its web search tool).
+   */
+  searchProvider: (process.env.SEARCH_PROVIDER || "openai").toLowerCase() === "anthropic" ? "anthropic" : "openai",
+  openAiSearchModel: process.env.OPENAI_SEARCH_MODEL || "gpt-6.1-sol",
+  /** Anthropic key: web search when SEARCH_PROVIDER=anthropic, and reading scanned PDFs and photos. */
   anthropicKey: process.env.ANTHROPIC_API_KEY || "",
   /** Needed only for a personal key (sk-ant-usr-) that is not scoped to one workspace. Looks like wrkspc_... */
   anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || "",
@@ -50,7 +57,7 @@ export const ENV = {
   /** GitHub fine-grained token for Kai: issues, pull requests and contents on the owner's repos. */
   githubToken: process.env.GITHUB_TOKEN || "",
   elevenLabsModel: process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5",
-  /** OpenAI key, used only for social and blog images. */
+  /** OpenAI key: images, web search (the default), and voices when ElevenLabs is not set. */
   openAiKey: process.env.OPENAI_API_KEY || "",
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",
 

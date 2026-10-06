@@ -9,7 +9,7 @@ import { ENV } from "./env";
 import { getDb, getOrganizationMembership, guestSharesForUser, publicFileByToken, purgeExpiredAuthRecords } from "../db";
 import path from "node:path";
 import { uploadsRoot } from "../storage";
-import { aiStatus } from "./llm";
+import { aiStatus, searchModel } from "./llm";
 import { hasSecretsKey } from "./crypto";
 import { startScheduler } from "../employees/runner";
 import { registerUploads } from "../uploads";
@@ -152,7 +152,7 @@ async function startServer() {
     const ai = aiStatus();
     console.log(`LeadDash Employees listening on http://127.0.0.1:${ENV.port}/`);
     console.log(
-      `AI: writing ${ai.writing ? "on" : "OFF"}, web search ${ai.webSearch ? "on" : "OFF"}, images ${ai.images ? "on" : "OFF"}; secrets key ${hasSecretsKey() ? "set" : "MISSING"}`
+      `AI: writing ${ai.writing ? "on" : "OFF"}, web search ${ai.webSearch ? `on (${ENV.searchProvider}, ${searchModel()})` : "OFF"}, images ${ai.images ? "on" : "OFF"}; secrets key ${hasSecretsKey() ? "set" : "MISSING"}`
     );
     if (ENV.adminEmails.length === 0) console.warn("ADMIN_EMAILS is empty: nobody can create workspaces.");
   });

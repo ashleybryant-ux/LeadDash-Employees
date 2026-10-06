@@ -5,7 +5,7 @@ import * as db from "../db";
 import { withUsage } from "../usage";
 import type { AIEmployee, HrPerson, HrRole } from "../../drizzle/schema";
 import { ENV } from "../_core/env";
-import { generateJson, generateText, searchJson, type JsonSchema } from "../_core/llm";
+import { generateJson, generateText, searchJson, searchReady, type JsonSchema } from "../_core/llm";
 import { uploadsRoot } from "../storage";
 import { notify } from "../notify";
 import { employeeFor, systemPromptFor, working, actor, withRealSource } from "./tasks";
@@ -518,7 +518,7 @@ async function samCheck(name: string): Promise<Check> {
 async function licenseCheck(emp: AIEmployee, person: HrPerson, state: string, npiLicense?: { license: string; state: string; desc: string }): Promise<Check> {
   const base = { name: "License", checkedAt: stamp() };
   if (process.env.NODE_ENV === "test") return { ...base, detail: "Not checked in tests", status: "manual", url: null };
-  if (!ENV.anthropicKey) return { ...base, detail: npiLicense?.license ? `License ${npiLicense.license} (${npiLicense.state}) on the NPI record; confirm on the state lookup` : "Confirm on the state board's lookup", status: "manual", url: null };
+  if (!searchReady()) return { ...base, detail: npiLicense?.license ? `License ${npiLicense.license} (${npiLicense.state}) on the NPI record; confirm on the state lookup` : "Confirm on the state board's lookup", status: "manual", url: null };
   try {
     const { system } = await systemPromptFor(emp, `Your job: look up one person's professional license on the state licensing board's public lookup and report what it shows. If the lookup is a form search engines cannot read, say "unknown" and give the lookup page URL.`);
     const r = await searchJson<{ status: "active" | "expired" | "not_found" | "unknown"; licenseType: string; expires: string; url: string }>({
