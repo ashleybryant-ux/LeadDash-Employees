@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { caller, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
+import * as integrations from "./integrations";
 import * as calendars from "./employees/calendars";
 import * as notetaker from "./employees/notetaker";
 
@@ -38,6 +39,7 @@ const iso = (min: number) => at(min).toISOString();
 /** Recall.ai connected, and two Google accounts added under Calendars (no main Google connection). */
 async function connect(orgId: number) {
   process.env.RECALL_API_KEY = "recall-key-1234567890abcdef";
+  integrations.forgetRecallKey();
   routes.push([/recall\.ai\/api\/v1\/bot\/$/, (_u, init) => (init.method === "POST" ? json({ id: `bot-${calls.filter((c) => /bot\/$/.test(c.url) && c.init.method === "POST").length}` }) : json({}))]);
   let who = "leaddash";
   routes.push([/oauth2\.googleapis\.com\/token/, () => json({ access_token: `tok-${who}`, refresh_token: `ref-${who}`, expires_in: 3600 })]);
@@ -80,6 +82,7 @@ describe("Avery reads every calendar on Integrations for meetings to sit in on",
     const c = caller(owner);
 
     process.env.RECALL_API_KEY = "";
+    integrations.forgetRecallKey();
     await mockAi({ action: "sitting_in", target: "11am" });
     let r = await c.chat.send({ organizationId: orgId, employeeId: simone.id, text: "are you joining the 11am meeting to take notes?" });
     expect(r.reply.content).toBe("Avery is not joining any meetings right now: meeting notes aren't set up on this server yet. LeadDash turns them on; nothing for you to connect.");

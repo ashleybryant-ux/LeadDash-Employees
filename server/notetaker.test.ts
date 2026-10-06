@@ -15,6 +15,7 @@ beforeEach(async () => {
   calls = [];
   routes = [];
   process.env.RECALL_API_KEY = "recall-key-1234567890abcdef";
+  integrations.forgetRecallKey();
   llm = await import("./_core/llm");
   vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
     calls.push({ url: String(url), init });
@@ -137,11 +138,14 @@ describe("Avery's notetaker (notes go to Simone)", () => {
     expect(mine.some((m) => /sent the notes to Simone/.test(m.content))).toBe(true);
   });
 
-  it("cancels a booked bot when you press Skip, and every bot when a workspace's old key is disconnected", async () => {
+  it("cancels a booked bot when you press Skip, and every bot when Avery is paused; a key saved in one workspace serves every workspace", async () => {
     const { orgId, owner } = await makeWorkspace("notetaker-skip");
-    // A key saved by a workspace before the server key existed still works, as a fallback.
+    // No server key: the key LeadDash saved in another workspace is the one every workspace uses.
     process.env.RECALL_API_KEY = "";
-    await db.upsertExternalConnection({ organizationId: orgId, provider: "recall", accountLabel: "Recall.ai", status: "connected", settings: "{}", secretsEncrypted: encryptJson({ apiKey: "recall-key-1234567890abcdef" }), connectedAt: new Date(), lastCheckedAt: new Date() });
+    integrations.forgetRecallKey();
+    const other = await makeWorkspace("notetaker-keyhome");
+    await db.upsertExternalConnection({ organizationId: other.orgId, provider: "recall", accountLabel: "Recall.ai", status: "connected", settings: "{}", secretsEncrypted: encryptJson({ apiKey: "recall-key-1234567890abcdef" }), connectedAt: new Date(), lastCheckedAt: new Date() });
+    expect(await integrations.recallConnected(orgId)).toBe(true);
     const a = await db.createNotetaker({ organizationId: orgId, eventId: "e1", title: "Board prep", startsAt: new Date(Date.now() + 3 * 3600_000), endsAt: new Date(Date.now() + 4 * 3600_000), platform: "meet", meetingUrl: "https://meet.google.com/abc-defg-hij", status: "scheduled", botId: "bot-a" });
     const b = await db.createNotetaker({ organizationId: orgId, eventId: "e2", title: "Sales check-in", startsAt: new Date(Date.now() + 5 * 3600_000), endsAt: new Date(Date.now() + 6 * 3600_000), platform: "zoom", meetingUrl: "https://zoom.us/j/1", status: "scheduled", botId: "bot-b" });
     routes.push([/recall\.ai\/api\/v1\/bot\/bot-[ab]\/$/, () => json({})]);
@@ -150,9 +154,11 @@ describe("Avery's notetaker (notes go to Simone)", () => {
     expect(skipped.status).toBe("skipped");
     expect(skipped.botId).toBeNull();
     expect(calls.some((x) => /bot-a\/$/.test(x.url) && x.init.method === "DELETE")).toBe(true);
-    await c.publishing.disconnect({ organizationId: orgId, provider: "recall" });
+    expect(calls.find((x) => /bot-a\/$/.test(x.url))!.init.headers.authorization).toBe("recall-key-1234567890abcdef");
+    await notetaker.cancelAll(orgId);
     expect(calls.some((x) => /bot-b\/$/.test(x.url) && x.init.method === "DELETE")).toBe(true);
     expect((await db.getNotetaker(b.id, orgId))!.status).toBe("skipped");
+    integrations.forgetRecallKey();
   });
   it("follows Avery: pausing Avery cancels booked bots, pausing Simone does not", async () => {
     const { orgId } = await makeWorkspace("notetaker-pause");

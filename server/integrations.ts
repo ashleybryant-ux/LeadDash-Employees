@@ -1576,14 +1576,14 @@ async function recallFetch(key: string, pathName: string, init: { method?: strin
 }
 
 /**
- * Meeting notes run on LeadDash's own Recall.ai account (RECALL_API_KEY) for every
- * workspace; the minutes are rebilled as usage. A workspace is never asked for a key.
- * A key a workspace saved before this stays usable as a fallback.
+ * Meeting notes run on LeadDash's own Recall.ai account for every workspace; the
+ * minutes are rebilled as usage. A workspace is never asked for a key. The key is
+ * RECALL_API_KEY on the server, or, until that is set, the one LeadDash saved in
+ * any workspace before this (it is shared with every workspace from here).
  */
 const serverRecallKey = () => (process.env.RECALL_API_KEY || "").trim();
 
-async function legacyRecallKey(orgId: number) {
-  const conn = await db.getConnectionByProvider(orgId, "recall");
+function keyOfConnection(conn: { status: string; secretsEncrypted: string | null } | null | undefined) {
   if (!conn || conn.status !== "connected") return "";
   try {
     return decryptJson<{ apiKey?: string }>(conn.secretsEncrypted)?.apiKey ?? "";
@@ -1592,15 +1592,38 @@ async function legacyRecallKey(orgId: number) {
   }
 }
 
-async function recallKey(orgId: number) {
-  const key = serverRecallKey() || (await legacyRecallKey(orgId));
+let sharedKeyCache: { key: string; at: number } | null = null;
+
+/** The one Recall.ai key for the whole server: the env setting, else the newest key saved in any workspace. */
+async function sharedRecallKey() {
+  const env = serverRecallKey();
+  if (env) return env;
+  if (sharedKeyCache && Date.now() - sharedKeyCache.at < 60_000) return sharedKeyCache.key;
+  let newest: { key: string; at: number } | null = null;
+  for (const orgId of await db.listAllOrganizationIds()) {
+    const conn = await db.getConnectionByProvider(orgId, "recall");
+    const key = keyOfConnection(conn);
+    const at = conn?.connectedAt ? new Date(conn.connectedAt).getTime() : 0;
+    if (key && (!newest || at > newest.at)) newest = { key, at };
+  }
+  sharedKeyCache = { key: newest?.key ?? "", at: Date.now() };
+  return sharedKeyCache.key;
+}
+
+async function recallKey(_orgId: number) {
+  const key = await sharedRecallKey();
   if (!key) throw new NotConnected("Meeting notes aren't set up on this server yet (RECALL_API_KEY).");
   return key;
 }
 
-/** Whether Avery can sit in on meetings in this workspace: the server has a Recall.ai key. */
-export async function recallConnected(orgId: number) {
-  return !!serverRecallKey() || !!(await legacyRecallKey(orgId));
+/** Whether Avery can sit in on meetings: the server has a Recall.ai key (shared by every workspace). */
+export async function recallConnected(_orgId: number) {
+  return !!(await sharedRecallKey());
+}
+
+/** Tests and key changes: forget the cached shared key. */
+export function forgetRecallKey() {
+  sharedKeyCache = null;
 }
 
 /**
