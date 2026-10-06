@@ -41,7 +41,9 @@ async function startServer() {
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-    res.setHeader("X-Frame-Options", "DENY");
+    // Pages can't be framed by other sites. Stored files may be framed by this app itself, for the preview window.
+    if (_req.path.startsWith("/files/")) res.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
+    else res.setHeader("X-Frame-Options", "DENY");
     next();
   });
 

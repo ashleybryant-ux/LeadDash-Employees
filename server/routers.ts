@@ -1543,6 +1543,11 @@ export const appRouter = router({
       const { organizationId, ...rest } = input;
       return (await import("./work/projects")).addField(organizationId, rest);
     }),
+    // A file preview in the app instead of a download
+    preview: protectedProcedure.input(orgInput.extend({ fileId: z.number().int() })).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjPreview")).preview(input.organizationId, v, input.fileId);
+    }),
     // Saved views, the folder Overview and the Docs page
     views: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable().optional(), folderId: z.number().int().nullable().optional() })).query(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);

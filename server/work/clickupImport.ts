@@ -544,3 +544,23 @@ async function runCsv(orgId: number, importId: number, rows: CsvRow[], picks: Pi
   }
   db.work.imports.update(orgId, importId, { status: "done", progress: "Done", counts: JSON.stringify(counts), finishedAt: new Date() });
 }
+
+/** Tasks and comments that came over with "\\n" written out (from an earlier CSV import) get real line breaks. Safe to run every start. */
+export function repairNewlines() {
+  let n = 0;
+  for (const org of db.orgsWithProjects()) {
+    for (const t of db.work.tasks.all(org)) {
+      if (t.clickupId && /\\n/.test(t.description)) {
+        db.work.tasks.update(org, t.id, { description: unescapeText(t.description) });
+        n++;
+      }
+    }
+    for (const c of db.work.comments.all(org)) {
+      if (c.kind === "comment" && /\\n/.test(c.body)) {
+        db.work.comments.update(org, c.id, { body: unescapeText(c.body) });
+        n++;
+      }
+    }
+  }
+  return n;
+}

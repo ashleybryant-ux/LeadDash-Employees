@@ -1265,3 +1265,16 @@ button.gp-ts:hover { background: #f8fbf9; }
   .gp-qpop, .gp-qpop.up { position: fixed; left: 12px !important; right: 12px !important; top: auto !important; bottom: 84px; width: auto !important; max-height: 60vh; z-index: 80; }
   .gp-tr .gp-qghost { display: none !important; }
 }
+.gp-af button.p { width: 100%; border: 0; font: inherit; font-weight: 800; font-size: 13px; cursor: pointer; padding: 0; }
+.gp-pvwrap { padding: 24px 16px; z-index: 75; }
+.gp-pv { width: 1100px; display: flex; flex-direction: column; max-height: calc(100vh - 48px); }
+.gp-pv .gp-mhead { gap: 12px; }
+.gp-pv .gp-mhead .ld-btn.sm { width: auto; padding: 0 12px; }
+.gp-pvbody { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.gp-pvimg { max-width: 100%; max-height: calc(100vh - 140px); object-fit: contain; margin: 16px auto; display: block; }
+.gp-pvpdf { width: 100%; height: calc(100vh - 130px); border: 0; }
+.gp-pvtext { margin: 0; padding: 20px 24px; font: 14px/1.6 inherit; font-family: inherit; white-space: pre-wrap; word-break: break-word; }
+.gp-pvtable td, .gp-pvtable th { max-width: 320px; }
+@media (max-width: 760px) { .gp-pvwrap { padding: 8px; } .gp-pv { max-height: calc(100vh - 16px); } .gp-pv .gp-mhead .ld-row { flex-wrap: wrap; } }
+.gp-tf2 .gp-qbtn { white-space: nowrap; margin-right: 0; }
+.gp-tf2 .gp-qbtn .gp-avs { white-space: normal; }

@@ -179,15 +179,22 @@ export type FileRow = { linkId?: number; id: number; name: string; url: string; 
 const EXT_COLOR: Record<string, string> = { PDF: "#c2253c", DOC: "#2563eb", DOCX: "#2563eb", XLS: "#0f766e", XLSX: "#0f766e", CSV: "#0f766e", PPT: "#d97706", PPTX: "#d97706", HTML: "#0f766e", TXT: "#475569" };
 export const extOf = (name: string) => (name.split(".").pop() || "FILE").toUpperCase().slice(0, 4);
 
-export function FileTiles({ files, onRemove, cols = 4 }: { files: FileRow[]; onRemove?: (f: FileRow) => void; cols?: number }) {
+/** File tiles. With `onOpen`, clicking a tile previews the file in the app; otherwise it opens in a new tab. */
+export function FileTiles({ files, onRemove, cols = 4, onOpen }: { files: FileRow[]; onRemove?: (f: FileRow) => void; cols?: number; onOpen?: (f: FileRow) => void }) {
   if (!files.length) return null;
   return (
     <div className="gp-att" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
       {files.map((f) => (
         <div key={`${f.linkId ?? f.id}`} className="gp-af">
-          <a href={f.url} target="_blank" rel="noreferrer" className="p" style={f.kind === "image" ? undefined : { background: EXT_COLOR[extOf(f.name)] ?? "#475569" }}>
-            {f.kind === "image" ? <img src={f.url} alt="" /> : extOf(f.name)}
-          </a>
+          {onOpen ? (
+            <button type="button" className="p" style={f.kind === "image" ? undefined : { background: EXT_COLOR[extOf(f.name)] ?? "#475569" }} onClick={() => onOpen(f)} aria-label={`Preview ${f.name}`}>
+              {f.kind === "image" ? <img src={f.url} alt="" /> : extOf(f.name)}
+            </button>
+          ) : (
+            <a href={f.url} target="_blank" rel="noreferrer" className="p" style={f.kind === "image" ? undefined : { background: EXT_COLOR[extOf(f.name)] ?? "#475569" }}>
+              {f.kind === "image" ? <img src={f.url} alt="" /> : extOf(f.name)}
+            </a>
+          )}
           <span className="nm" title={f.name}>{f.name}</span>
           {onRemove && f.linkId && (
             <button type="button" className="gp-x" aria-label={`Remove ${f.name}`} onClick={() => onRemove(f)}>

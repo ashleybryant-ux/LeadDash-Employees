@@ -111,6 +111,7 @@ export function startScheduler() {
   void import("./web").then((w) => w.failInterrupted()).catch(() => null);
   void import("./drama").then((d) => d.resumeDrama()).catch(() => null);
   void import("../work/clickupImport").then((c) => c.failInterrupted()).catch(() => null);
+  void import("../work/clickupImport").then((c) => c.repairNewlines()).catch(() => null);
   let busy = false;
   const timer = setInterval(async () => {
     if (busy) return;

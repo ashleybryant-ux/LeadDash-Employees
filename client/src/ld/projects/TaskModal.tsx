@@ -5,6 +5,7 @@ import { AddFiles, fmtAt, fmtYmd, FileTiles, Menu, OwnerAvatar } from "../goals/
 import { Flag, PRIORITY_TEXT, StatusTag } from "./bits";
 import { FieldInput, FieldValue, fieldText } from "./fields";
 import { AssigneeCell, Cell, DateCell, FieldCell, PeoplePick, PriorityCell, StatusCell, type QuickCtx } from "./Quick";
+import { FilePreview, type PreviewFile } from "./Preview";
 import type { Outputs } from "../types";
 
 /**
@@ -101,6 +102,7 @@ function ReadTask({ orgId, d, onEdit, onOpen, onEditFields, onSaveTemplate }: { 
   const detach = trpc.pj.detach.useMutation({ onSuccess: refresh });
   const [sub, setSub] = React.useState("");
   const [item, setItem] = React.useState("");
+  const [preview, setPreview] = React.useState<PreviewFile | null>(null);
   const canEdit = RANK[d.level] >= RANK.edit;
   const canComment = RANK[d.level] >= RANK.comment;
   const status = d.list.statuses.find((s) => s.name === t.status);
@@ -242,7 +244,8 @@ function ReadTask({ orgId, d, onEdit, onOpen, onEditFields, onSaveTemplate }: { 
           {canEdit && <AddFiles orgId={orgId} label="Drop files here · + Add" onAdded={(ids) => attach.mutate({ organizationId: orgId, taskId: t.id, fileIds: ids })} />}
         </b>
         <DropZone orgId={orgId} disabled={!canEdit} onAdded={(ids) => attach.mutate({ organizationId: orgId, taskId: t.id, fileIds: ids })}>
-          {d.files.length ? <FileTiles files={d.files} onRemove={canEdit ? (f) => f.linkId && detach.mutate({ organizationId: orgId, taskId: t.id, linkId: f.linkId }) : undefined} /> : <span className="ld-small ld-muted">{canEdit ? "No files yet. Drop files here." : "No files."}</span>}
+          {d.files.length ? <FileTiles files={d.files} onOpen={setPreview} onRemove={canEdit ? (f) => f.linkId && detach.mutate({ organizationId: orgId, taskId: t.id, linkId: f.linkId }) : undefined} /> : <span className="ld-small ld-muted">{canEdit ? "No files yet. Drop files here." : "No files."}</span>}
+          {preview && <FilePreview orgId={orgId} file={preview} onClose={() => setPreview(null)} />}
         </DropZone>
       </div>
       <ErrorLine error={up.error || create.error || attach.error || detach.error} />
@@ -778,6 +781,7 @@ function EditTask({ orgId, d, onDone, onClose }: { orgId: number; d: Detail; onD
 
 function Activity({ orgId, d, onClose }: { orgId: number; d: Detail; onClose: () => void }) {
   const utils = trpc.useUtils();
+  const [preview, setPreview] = React.useState<PreviewFile | null>(null);
   const [text, setText] = React.useState("");
   const [fileIds, setFileIds] = React.useState<number[]>([]);
   const canComment = RANK[d.level] >= RANK.comment;
@@ -801,6 +805,7 @@ function Activity({ orgId, d, onClose }: { orgId: number; d: Detail; onClose: ()
   }, [send.isSuccess, utils]);
   return (
     <div className="tmr">
+      {preview && <FilePreview orgId={orgId} file={preview} onClose={() => setPreview(null)} />}
       <div className="ld-between" style={{ padding: "14px 16px", borderBottom: "1px solid #e3e9e6" }}>
         <b>Activity</b>
         <button type="button" className="gp-x big" aria-label="Close" onClick={onClose}>×</button>
@@ -817,7 +822,7 @@ function Activity({ orgId, d, onClose }: { orgId: number; d: Detail; onClose: ()
               <span style={{ minWidth: 0 }}>
                 <b>{c.authorName}</b> <span className="ld-small ld-muted">{fmtAt(c.at)}</span>
                 <span className="body">{c.body}</span>
-                {c.files.length > 0 && <FileTiles files={c.files} cols={2} />}
+                {c.files.length > 0 && <FileTiles files={c.files} cols={2} onOpen={setPreview} />}
               </span>
             </div>
           )

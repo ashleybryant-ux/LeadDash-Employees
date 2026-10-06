@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { ErrorLine } from "../ui";
 import { fmtYmd, OwnerAvatar } from "../goals/shared";
 import { PRIORITY_COLOR, PRIORITY_TEXT } from "./bits";
+import { FilePreview, type PreviewFile } from "./Preview";
 import type { Where } from "../pages/Projects";
 
 /**
@@ -15,6 +16,7 @@ const ICON: Record<string, string> = { list: "☰", doc: "📄", board: "▢", f
 
 export function FolderOverview({ orgId, folderId, onPick, onOpenTask, onNewList, onNewDoc }: { orgId: number; folderId: number; onPick: (w: Where) => void; onOpenTask: (id: number) => void; onNewList: () => void; onNewDoc: () => void }) {
   const q = trpc.pj.overview.useQuery({ organizationId: orgId, folderId }, { refetchInterval: 30_000 });
+  const [preview, setPreview] = React.useState<PreviewFile | null>(null);
   const d = q.data;
   if (q.error) return <ErrorLine error={q.error} />;
   if (!d) return <p className="ld-muted" style={{ padding: 20 }}>Loading</p>;
@@ -23,6 +25,7 @@ export function FolderOverview({ orgId, folderId, onPick, onOpenTask, onNewList,
   const most = Math.max(1, ...d.byPerson.map((p) => p.n));
   return (
     <div className="gp-ov">
+      {preview && <FilePreview orgId={orgId} file={preview} onClose={() => setPreview(null)} />}
       <div className="gp-ov3">
         <div className="gp-ovc">
           <h4>Recent</h4>
@@ -88,7 +91,7 @@ export function FolderOverview({ orgId, folderId, onPick, onOpenTask, onNewList,
             <span key={f.id} className="gp-ovfile">
               <span aria-hidden="true">📎</span>
               <span>
-                <a className="gp-ell" href={f.url} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 700 }}>{f.name}</a>
+                <button type="button" className="gp-link gp-ell" style={{ fontWeight: 700, textAlign: "left" }} onClick={() => setPreview({ id: f.id, name: f.name, url: f.url, kind: f.kind })}>{f.name}</button>
                 <button type="button" className="ld-small gp-link gp-ell" style={{ textAlign: "left" }} onClick={() => onOpenTask(f.taskId)} title={f.taskName}>on {f.taskName}</button>
               </span>
               <span className="ld-small ld-muted">{fmtAt(f.at)}</span>
