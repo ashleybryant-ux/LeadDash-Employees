@@ -86,7 +86,7 @@ const ACTIONS: Record<string, string[]> = {
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 // Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
-for (const list of Object.values(ACTIONS)) list.push("approve", "write_doc", "make_chart", "browse", "precall_report", "sop_site", "sop_write", "task_due", "task_find", "task_lists", "task_add", "task_change", "task_bulk", "task_undo", "goal_update");
+for (const list of Object.values(ACTIONS)) list.push("approve", "hand_off", "write_doc", "make_chart", "browse", "precall_report", "sop_site", "sop_write", "task_due", "task_find", "task_lists", "task_add", "task_change", "task_bulk", "task_undo", "goal_update");
 
 const ACTION_HELP: Record<string, string> = {
   ads_campaign: "ads_campaign: start an ad campaign once you know all four: the goal, who it is for, the page or offer the ads go to, and the budget. Put a short campaign name in `title`, the goal in `goal`, who it is for in `target`, the page or offer in `url`, the platforms they named in `notes` (their words; \"all\" for every platform), the total budget in whole dollars in `count`, the start date as YYYY-MM-DD in `date` and the end date as YYYY-MM-DD in `time` ('' when they gave no dates). You then work out the budget split and post it as a card; nothing is written until they take a split.",
@@ -105,6 +105,7 @@ const ACTION_HELP: Record<string, string> = {
   task_undo: "task_undo: reopen the tasks you just closed with task_bulk (\"Reopen them\", \"undo that\").",
   goal_update: "goal_update: post an update on a goal on the Goals page (\"we're at 13 practices\", \"the webinar is behind\"). Put words from the goal's title in `target`, how it's going in `focus` (on, risk or off), the update in `notes`, and the new number for its main target in `count` (0 when there's no new number).",
   approve: "approve: the person approves, in words, something of yours that is waiting for them: an item in Approvals, or an application you wrote that is ready for review (\"approved\", \"approve it\", \"yes, send it\", \"approve, let's submit\", \"go ahead with the hold\"). Put words from its title in `target` ('' for the newest one waiting). It goes out at once, the same as pressing Approve on the Approvals page, and you report what happened (the calendar event, the meeting link, where it posted). Use this, never meeting_link or none, when they say they approve. If they ask for the link after approving, use meeting_link.",
+  hand_off: "hand_off: the job (or the next part of it) belongs to a teammate, like meetings and Zoom links to Simone, a page to Jordan, a post to Sienna. The teammate does it right now in their own chat and you report back what they did; never only add a task for it. Put the teammate's name in `teammate` and in `message` the whole job as one clear instruction with everything they need (names, dates, times, who attends, which of your documents go with it). Your documents from this chat go with it on their own. Use the teammates already on each role yourself; never ask the person who belongs where.",
   write_doc: "write_doc: make a document the person keeps or shares (a plan, a structure, a memo, a one-pager, a policy), saved as a Word file that opens right here in the chat. Use it whenever they ask for something written up as a document, or say \"draft that\" about something longer than a few lines. Put the document's title in `title` and what goes in it in `notes`. Never say you can't make or save a file.",
   make_chart: "make_chart: draw an org chart (who leads whom, a team structure, reporting lines) as a picture that shows right here in the chat. Put the chart's title in `title` and anything about what it should show in `notes`. You draw it yourself; never hand it to another employee and never say you can't make an image.",
   sop_site: "sop_site: write an SOP (a standard operating procedure, a how-to for staff) by doing the steps yourself on a website in your browser and keeping a screenshot of each one (\"write the SOP for adding a clinician's availability in LeadDash EHR\", \"document how to add a contact in the platform, with screenshots\"). Use it when the procedure happens on a site a saved Website login covers or a web address in this conversation. Put the SOP's name in `title` (as a task: 'Adding a clinician's availability'), the web address in `url` ('' when a saved login covers it), and the saved login's name in `target` ('' for none). For LeadDash EHR use the demo practice login, never a real chart. Never start it again while you are already in the browser on it: anything they say then (\"use test information\", \"skip that screen\") is passed to the run you have open. A video walkthrough is recorded by a person from the SOPs page (Record); you keep screenshots, not video, so say that instead of starting over.",
@@ -206,7 +207,7 @@ const ACTION_HELP: Record<string, string> = {
   draft_reply: "draft_reply: the person pasted a message they received. Put the sender in `from`, the subject in `subject` (make one up from the content if missing) and the full pasted message in `message`.",
 };
 
-function decisionSchema(kind: string): JsonSchema {
+function decisionSchema(kind: string, allowed?: string[]): JsonSchema {
   const str = { type: "string" };
   return {
     type: "object",
@@ -215,7 +216,7 @@ function decisionSchema(kind: string): JsonSchema {
     required: ["thinking", "action", "plan", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate", "choices", "remember_topic", "remember_fact", "remember_category", "reply"],
     properties: {
       thinking: { type: "string", description: "Think before you act, the way a sharp colleague would. What is the person actually asking for, and what outcome do they want? What do you already know from this conversation, your facts and the Brain that answers it or changes it? Did they tell you something earlier in this chat that still applies (a decision, a limit, a correction)? Is there anything you were about to ask that you can work out or look up yourself? Then: what will you do, and why. A few plain sentences. The person never sees this." },
-      action: { type: "string", enum: ACTIONS[kind] ?? ["none"] },
+      action: { type: "string", enum: allowed ? ["none", ...allowed] : ACTIONS[kind] ?? ["none"] },
       plan: { type: "string", description: "What you still have to do after this action runs, in one line, when the request takes more than this one step (look something up, then decide or book; set up a meeting, then write the agenda). '' when this action finishes the request or you are only answering." },
       focus: str,
       topic: str,
@@ -435,6 +436,7 @@ const TALK = `Talk with the person like a colleague, back and forth, not like a 
 - Otherwise do the job. After you finish or answer, put up to 4 short next steps the person is likely to want in "choices" (each under 6 words, written as what they would say). Leave "choices" empty when nothing obvious comes next.
 - Questions about your work, a result or a score get a plain, specific answer from your facts.
 - Never make the owner a step in your work. Work she asked for, and routine work that is plainly your job (drafts, plans, research, schedules, internal meetings and invites to her own team, tasks, documents), you finish and report as done. Never write that something waits for her approval, that it stays a draft until she confirms, or list "open decisions" for things you can settle yourself from the Brain, your facts or a teammate. Only these wait for her: anything that signs for her or makes an offer (grant, bid and speaking submissions, contracts, job offers), spends money, posts publicly in her name, or emails someone outside the company for the first time. For those, do all the work first, then ask once.
+- Never tell the person something is done when you only passed it on or added a task. Use hand_off so the teammate does it now, and report what they actually did.
 - When the person tells you plainly what to do, do it now, all the way through. Their words are the go-ahead: never answer a direct instruction with a button for them to press or a step for them to take, unless the thing truly can't be undone and they haven't seen it. Don't ask questions first unless a wrong guess would do something that can't be undone. Closing or moving tasks can be undone, so just do it.
 - Never say you're writing, making, sending or doing something ("I'll have it in a moment", "writing it now") unless you chose the action that does it in this same reply. If none of your actions can do it, say so plainly and say what can.
 - What the person told you earlier in this chat still holds until they change it: a limit ("only the webinar and Black Friday"), a decision, a correction, a date. Carry it into the work itself. Never just repeat it back as a line of the work.
@@ -716,6 +718,20 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       if (!db.press.getSettings(org)) db.press.saveSettings(org, {});
       const r = await newsroom.scout(org, { focus: d.focus || undefined, quiet: true });
       return { text: `I scouted the news: ${plural(r.added, "new reporter")} with recent articles as proof${r.moved ? `, ${plural(r.moved, "reporter")} changed outlets` : ""}, ${plural(r.stories, "story", "stories")} routed to the desk each fits best${r.coverage ? `, and ${plural(r.coverage, "new coverage mention")}` : ""}. It's all on my Newsroom tab.`, cards: [{ type: "press_brief", id: Date.now(), title: "Newsroom" }], queries: [] };
+    }
+    case "hand_off": {
+      const mate = await findTeammate(org, d.teammate || d.target || "");
+      if (!mate || mate.id === emp.id) return { text: `I couldn't tell which teammate should take this. Who should do it?`, cards: [], queries: [] };
+      // The documents this employee made in this chat go along, so the teammate has the material, not just a pointer to it.
+      const docIds = (ctx.history ?? []).filter((m) => m.role === "employee" && m.cards).flatMap((m) => parseList<ChatCard>(m.cards).filter((c) => c.type === "doc").map((c) => c.id)).slice(-6);
+      const docs = docIds.length ? db.getChatFiles(org, docIds).filter((f) => f.text) : [];
+      const brief = `${d.message || d.notes || d.reply}${docs.length ? `\n\nDocuments from ${emp.name} for this (use them; don't ask for them):\n${docs.map((f) => `--- ${f.name} ---\n${(f.text ?? "").slice(0, 3500)}`).join("\n\n")}` : ""}`;
+      try {
+        const r = await sendChatMessage({ organizationId: org, employeeId: mate.id, text: brief, authorName: `${emp.name}, for ${ctx.who ?? "the owner"}`, userId: ctx.userId ?? null, forwarded: true });
+        return { text: `I handed it to ${mate.name}, who did it right away. ${mate.name}: ${r.reply.content}`, cards: parseList<ChatCard>(r.reply.cards), queries: [], facts: `${mate.name} answered: ${r.reply.content}` };
+      } catch (err) {
+        return { text: `I couldn't hand it to ${mate.name}: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
     }
     case "write_doc": {
       const visuals = await import("./visuals");
@@ -1712,7 +1728,7 @@ Fill every field; use "" or [] for fields the action does not use.
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n")}`
   );
-  const decision = await generateJson<Decision>({ system, prompt: request, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 2000 });
+  const decision = await generateJson<Decision>({ system, prompt: request, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 3000, reason: true });
   if (!decision?.action || !actions.includes(decision.action)) return { action: "none", text: decision?.reply ?? "", cards: [] as ChatCard[], refs: [] as Ref[] };
   const result = await runAction(emp, decision, { who: task.from });
   const refs: Ref[] = [...(result.refs ?? []), ...result.cards.filter((c) => c.type === "post" || c.type === "article" || c.type === "reply").map((c) => ({ kind: "outbound" as const, id: c.id }))];
@@ -1890,7 +1906,8 @@ export async function sendChatMessage(opts: {
 
   try {
     const history = await db.listChatMessages(opts.organizationId, emp.id, 30);
-    const actions = (ACTIONS[emp.kind] ?? ["none"]).filter((a) => a !== "none");
+    // Work handed over by a teammate is done here, never handed on again (no loops between employees).
+    const actions = (ACTIONS[emp.kind] ?? ["none"]).filter((a) => a !== "none" && !(opts.forwarded && a === "hand_off"));
     // The files this message can use: the ones sent with it, else the latest ones sent in this chat.
     const recentIds = new Set(history.slice(-12).map((m) => m.id));
     const files = sent.length ? sent : db.recentChatFiles(opts.organizationId, emp.id, 6).filter((f) => f.messageId != null && recentIds.has(f.messageId)).slice(0, 4);
@@ -1911,7 +1928,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     const base = `Conversation so far:\n${transcript(history.slice(0, -1))}\n\n${opts.authorName}: ${said}`;
     // A healthcare workspace's chats can hold client information, so they stay on the BAA-covered route.
     const clientInfo = brain.org?.orgType === "healthcare";
-    const decide = (prompt: string) => generateJson<Decision>({ system, prompt, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 3000, reason: true, clientInfo });
+    const decide = (prompt: string) => generateJson<Decision>({ system, prompt, schemaName: "chat_decision", schema: decisionSchema(emp.kind, actions), maxTokens: 3000, reason: true, clientInfo });
     const decision = await decide(base);
     const quick = (list?: string[]) => (!scheduled && list?.length ? [choicesCard(list)] : []);
     // Something new and lasting: saved to the Brain so nobody has to be told twice.
