@@ -65,7 +65,7 @@ export const LAYOUTS = [
 
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_beats", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   social: ["none", "report", "write_post", "post_graphic", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -183,6 +183,7 @@ const ACTION_HELP: Record<string, string> = {
   check_bidprime: "check_bidprime: the person asks about BidPrime (their leads inbox, saved bids, \"did you look in BidPrime\", \"check BidPrime\"). You sign in to their BidPrime account with the sign-in saved on Integrations; you never need them to share a login.",
   find_grants: "find_grants: search the web now. Set `oppKind` to grant, pitch (pitch competitions), accelerator (accelerator or incubator programs) or bid (government or agency RFPs and bids); default grant. Put any focus the person gave in `focus`.",
   press_campaign: "press_campaign: she wants a media campaign or a media list for a story, launch or topic (\"build a media list for the LeadDash Employees launch\", \"pitch me on burnout\"). Put what it's about in `notes`. You plan it (goal, story, angles), then match reporters and write pitches; every pitch waits for her approval.",
+  press_beats: "press_beats: the person tells you what this workspace's media list, reporters or pitches should be about (\"the media list should be about tech, women in tech and women founders\", \"stop pitching HR reporters\"). Put their words in `notes`. This rewrites the beats your scout watches for this desk and then scouts again on them; use it instead of add_guideline for anything about who to pitch or what to pitch.",
   press_scout: "press_scout: she wants you to find reporters and stories now (\"who's covering AI in healthcare this week\", \"scout the news\"). Put any focus in `focus`.",
   press_brief: "press_brief: she asks for the weekly press briefing or what's going on with the press desk.",
   find_events: "find_events: search the web now for NEW opportunities, only when the person asks you to look for some. A question about a talk, proposal, event or pitch she already has (\"do you have the info on my SHRM Arkansas presentation?\") is never a search: choose none and answer from the Brain, your documents and your Opportunities. Set `oppKind` to speaking (events taking speaker proposals) or media (press: journalist source requests, podcasts booking guests, reporters covering the topic, op-ed and contributed article openings). Put any focus in `focus`.",
@@ -447,7 +448,8 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 TALK_BY_KIND.grants = `${TALK_BY_KIND.grants}
 - Your applications are in your facts with their exact state. "Submit it", "send it", "send it now" or "approve" on one of them is the approve action, every time; never answer those with "none". Never say an application was submitted unless your facts list it under Submitted, and never say you can't find one that your facts list.`;
 TALK_BY_KIND.speaking = `${TALK_BY_KIND.grants}
-- You are also the publicist, running this workspace's press desk in a newsroom the owner may share across her workspaces. A media campaign or media list for a story is press_campaign; finding reporters and stories now is press_scout; "what's happening with press" is press_brief. Speaking events stay find_events.
+- When the person says what the media list or pitches should be about, that is press_beats, every time, never add_guideline: it changes who the scout looks for.
+- You are also the publicist, running this workspace's press desk in a newsroom the owner may share across her workspaces. This desk speaks for this workspace's company (what it sells, its market, its founder's story), not for the owner's talks; a talk you wrote never decides who this desk pitches. A media campaign or media list for a story is press_campaign; finding reporters and stories now is press_scout; "what's happening with press" is press_brief. Speaking events stay find_events.
 - Never invent a reporter, an article, an email, a quote or a statistic. Every pitch waits for her approval (unless she raised the sending level), and a reporter another desk pitched in the cooling period is left alone.`;
 TALK_BY_KIND.ads = `- You write ads; you never run them. A campaign starts from four things: the goal, who it is for, the page or offer the ads go to, and the budget (with dates when they give them). Take what the person's message already says. For each one still missing, choose "none" and ask for that ONE thing with 3 or 4 fixed choices in "choices" (for the goal: sign-ups, demo requests, new clients, webinar registrations; for the audience: the audiences the Brain names; for the page: the offers and pages the Brain names), one question per message, in that order. Once you have all four, choose ads_campaign.
 - One platform at a time: a set waits in the chat until the person approves it, asks for another version, edits it or skips it. Never write two platforms in one message.
@@ -711,6 +713,19 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       if (!db.press.getSettings(org)) db.press.saveSettings(org, {});
       const r = await newsroom.scout(org, { focus: d.focus || undefined, quiet: true });
       return { text: `I scouted the news: ${plural(r.added, "new reporter")} with recent articles as proof${r.moved ? `, ${plural(r.moved, "reporter")} changed outlets` : ""}, ${plural(r.stories, "story", "stories")} routed to the desk each fits best${r.coverage ? `, and ${plural(r.coverage, "new coverage mention")}` : ""}. It's all on my Newsroom tab.`, cards: [{ type: "press_brief", id: Date.now(), title: "Newsroom" }], queries: [] };
+    }
+    case "press_beats": {
+      const newsroom = await import("./newsroom");
+      if (!db.press.getSettings(org)) db.press.saveSettings(org, {});
+      const p = await newsroom.setDeskProfile(emp, d.notes || ctx.said || d.focus);
+      let found = "";
+      try {
+        const r = await newsroom.scout(org, { quiet: true });
+        found = ` Then I scouted on them: ${plural(r.added, "new reporter")} with recent articles as proof and ${plural(r.stories, "story", "stories")} for this desk, on my Newsroom tab.`;
+      } catch (err) {
+        found = ` I couldn't scout on them yet: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      return { text: `This desk now covers: ${p.owns} The scout watches ${p.beats.join(", ")}.${found}`, cards: [{ type: "press_brief", id: Date.now(), title: "Newsroom" }], queries: [], choices: ["Show me the new reporters", "Write pitches for them"] };
     }
     case "press_brief": {
       if (!db.press.getSettings(org)) db.press.saveSettings(org, {});

@@ -262,3 +262,25 @@ describe("Taylor's newsroom", () => {
     expect(stats).toMatchObject({ placements: 0, replyRate: 0 });
   });
 });
+
+describe("the desk speaks for this workspace's company", () => {
+  it("rewrites the beats around what the owner says, and the scout serves the desk it runs from", async () => {
+    const { orgId } = await makeWorkspace("desk-beats");
+    const taylor = (await db.getEmployeeByKind(orgId, "speaking"))!;
+    db.press.saveSettings(orgId, { owns: "Talks for HR leaders", beats: JSON.stringify(["HR conferences", "workplace mental health"]) });
+
+    const p = await (await import("./employees/newsroom")).setDeskProfile(taylor, "media list should be about tech, women in tech, women founders");
+    expect(p.beats).toEqual(["AI in healthcare", "behavioral health technology"]);
+    const ask = prompts.desk_profile[prompts.desk_profile.length - 1];
+    expect(ask).toContain("Her words lead");
+    expect(ask).toContain("tech, women in tech, women founders");
+    expect(ask).toMatch(/Never let a talk you wrote decide this desk's beats/);
+    expect(JSON.parse(db.press.getSettings(orgId)!.beats!)).toEqual(["AI in healthcare", "behavioral health technology"]);
+    expect(db.press.getSettings(orgId)!.owns).toBe("Product, health tech, AI employees");
+
+    await (await import("./employees/newsroom")).scout(orgId, { quiet: true });
+    const scoutAsk = prompts.press_scout[prompts.press_scout.length - 1];
+    expect(scoutAsk).toMatch(/This scout is for the Workspace desk-beats desk/);
+    expect(scoutAsk).toContain("not the owner's speaking topics");
+  });
+});

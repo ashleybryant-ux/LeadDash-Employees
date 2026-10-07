@@ -126,15 +126,38 @@ export async function desks(orgId: number): Promise<Desk[]> {
 async function ensureDeskProfile(emp: AIEmployee) {
   const st = settingsOf(emp.organizationId);
   if (st.owns && parse<string[]>(st.beats, []).length) return;
-  const { system } = await systemPromptFor(emp, "Your job now: you are the publicist. From the Brain, say which stories this desk owns and which beats (subjects reporters cover) the weekly scout should watch.");
+  await setDeskProfile(emp, "");
+}
+
+/**
+ * Writes what this desk owns and the beats its scout watches. The desk speaks
+ * for this workspace's own company: its product or service, its market, its
+ * founder's story. What the owner says ("tech, women in tech, women founders")
+ * leads; the Brain fills in the rest.
+ */
+export async function setDeskProfile(emp: AIEmployee, said: string) {
+  const org = await db.getOrganizationById(emp.organizationId);
+  const name = org?.name ?? "this workspace";
+  const { system } = await systemPromptFor(
+    emp,
+    `Your job now: you are the publicist for ${name}. Decide which stories this desk owns and which beats (subjects reporters cover) its scout watches.
+- This desk speaks for ${name} itself: what it sells or does, the market it serves, the problem it solves, its news (launches, customers, results, funding, awards), and its founder's story as the founder of ${name}.
+- The owner's talks and speaking topics belong to the speaking desk, not here, unless ${name} is the owner's personal brand. Never let a talk you wrote decide this desk's beats.
+- Beats are what reporters actually cover, in their words (for example "health tech", "women founders", "small business software"), so the scout finds the reporters who would write about ${name}.${said.trim() ? `
+- The owner told you what this desk's media list and pitches should be about. Her words lead; build every beat around them and drop anything that doesn't serve them: ${said.trim().slice(0, 800)}` : ""}`
+  );
   const r = await generateJson<{ owns: string; beats: string[] }>({
     system,
     prompt: "Write what this desk owns in one line (the kinds of stories), and 8 to 14 beats, each two to four words, most specific first.",
     schemaName: "desk_profile",
     schema: obj({ owns: str, beats: arr(str) }),
     maxTokens: 1500,
+    reason: true,
   });
-  db.press.saveSettings(emp.organizationId, { owns: st.owns || (r.owns ?? "").slice(0, 500), beats: JSON.stringify((r.beats ?? []).slice(0, 14)) });
+  const owns = said.trim() ? (r.owns ?? "").slice(0, 500) : settingsOf(emp.organizationId).owns || (r.owns ?? "").slice(0, 500);
+  const beats = (r.beats ?? []).map((b) => b.trim()).filter(Boolean).slice(0, 14);
+  db.press.saveSettings(emp.organizationId, { owns, beats: JSON.stringify(beats) });
+  return { owns, beats };
 }
 
 // ==========================================
@@ -322,8 +345,9 @@ export async function scout(orgId: number, opts: { focus?: string; quiet?: boole
       const ds = await desks(orgId);
       const { system, brain } = await systemPromptFor(emp, SCOUT_JOB);
       const known = contactsFor(orgId).slice(0, 150).map((c) => `${c.name} (${c.outlet})`);
+      const here = ds.find((d) => d.id === orgId);
       const prompt = `Desks in this newsroom (use these ids):\n${ds.map((d) => `- id ${d.id}: ${d.name}. Owns: ${d.owns || "see the Brain"}. Beats: ${d.beats.join(", ") || "from the Brain"}`).join("\n")}
-${opts.focus ? `\nFocus this search on: ${opts.focus}` : ""}
+${here ? `\nThis scout is for the ${here.name} desk (id ${here.id}). Search its beats first: at least two thirds of the reporters and stories must fit it, about ${here.name} itself, not the owner's speaking topics. Other desks only get what you happen across.` : ""}${opts.focus ? `\nFocus this search on: ${opts.focus}` : ""}
 Reporters already on file (find new ones; update these only with newer articles): ${known.join("; ") || "none"}
 The owner: ${brain.org?.signerName ?? ""}${brain.org?.signerTitle ? `, ${brain.org.signerTitle}` : ""}, ${brain.org?.name ?? ""}.
 Return up to 15 reporters, up to 8 stories and any coverage found.`;
