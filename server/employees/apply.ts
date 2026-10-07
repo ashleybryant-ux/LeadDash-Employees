@@ -1241,7 +1241,8 @@ export async function rewriteQuestion(orgId: number, appId: number, questionId: 
   if (i === -1) throw new TRPCError({ code: "NOT_FOUND", message: "That question is not on this application." });
   const g = [guidance, style === "detailed" ? "Make it more detailed and specific, using the full limit." : style === "concise" ? "Make it shorter and tighter without losing facts." : null].filter(Boolean).join(" ");
   qs[i] = await writeQuestion(orgId, ctx, app, qs[i], qs, g || undefined);
-  return db.updateApplication(appId, orgId, { questions: JSON.stringify(qs) });
+  const saved = (await db.updateApplication(appId, orgId, { questions: JSON.stringify(qs) }))!;
+  return closeMootQuestions(orgId, saved);
 }
 
 export async function saveAnswer(orgId: number, appId: number, questionId: string, answer: string) {
@@ -1252,7 +1253,8 @@ export async function saveAnswer(orgId: number, appId: number, questionId: strin
   if (!q) throw new TRPCError({ code: "NOT_FOUND", message: "That question is not on this application." });
   q.answer = answer;
   q.status = app.mode === "outline" ? "yours" : "done";
-  return db.updateApplication(appId, orgId, { questions: JSON.stringify(qs) });
+  const saved = (await db.updateApplication(appId, orgId, { questions: JSON.stringify(qs) }))!;
+  return closeMootQuestions(orgId, saved);
 }
 
 // ==========================================
@@ -1470,8 +1472,36 @@ export async function answerQuestion(orgId: number, questionId: number, answer: 
 // ==========================================
 
 /** What still blocks Submit, in plain words. Empty when it can go. */
+/** The placeholders still in the answers, by question: "[INDIRECT RATE] (question 2)". */
+export function placeholdersLeft(app: Application) {
+  if (app.mode !== "draft") return [];
+  const qs = parse<Question[]>(app.questions, []);
+  const out: string[] = [];
+  qs.forEach((q, i) => {
+    const found = Array.from(new Set(q.answer.match(PLACEHOLDER) ?? []));
+    if (found.length) out.push(`${found.join(", ")} (question ${i + 1})`);
+  });
+  return out;
+}
+
+/**
+ * A question the employee asked the owner is only needed while a placeholder waits for it. Once the
+ * answers are rewritten without placeholders (in chat or on Opportunities), the open questions are moot:
+ * they close on their own, and an application waiting on them becomes ready.
+ */
+export async function closeMootQuestions(orgId: number, app: Application) {
+  if (placeholdersLeft(app).length) return app;
+  const open = await db.listOpenQuestions(orgId, app.id);
+  if (!open.length) return app;
+  const emp = app.employeeId ? await db.getEmployeeForOrg(app.employeeId, orgId) : null;
+  for (const q of open) await db.answerEmployeeQuestion(q.id, orgId, "No longer needed: the answer was written without it.", emp?.name ?? "LeadDash");
+  if (app.status === "needs_answer") return finishStatus(orgId, app.id);
+  return app;
+}
+
 export async function blockers(orgId: number, app: Application) {
   const out: string[] = [];
+  app = (await closeMootQuestions(orgId, app)) ?? app;
   const opp = await db.getOpp(app.opportunityId, orgId);
   const reqs = parse<Partial<Requirements>>(opp?.requirements, {});
   const qs = parse<Question[]>(app.questions, []);
@@ -1479,7 +1509,8 @@ export async function blockers(orgId: number, app: Application) {
   const extras = parse<Extras>(app.extras, {});
   if (app.status === "writing") out.push("Still being written");
   if (qs.some((q) => !q.answer.trim())) out.push(app.mode === "outline" ? "Your sections are not all written" : "Some questions have no answer");
-  if (app.mode === "draft" && qs.some((q) => (q.answer.match(PLACEHOLDER) ?? []).length)) out.push("Placeholders are left to fill");
+  const left = placeholdersLeft(app);
+  if (left.length) out.push(`Placeholders are left to fill: ${left.join("; ")}`);
   if (atts.some((a) => a.required && a.source === "missing")) out.push("A required attachment is missing");
   if (atts.some((a) => a.needsSignature && a.source !== "upload")) out.push("A form needs your signature");
   if ((opp?.kind === "pitch" || opp?.kind === "accelerator") && reqs.videoRequired && !extras.videoUrl) out.push("Needs your video");

@@ -181,6 +181,38 @@ describe("applying, end to end", () => {
     expect(kn[0]).toMatchObject({ folder: "Answers", title: "Indirect cost rate" });
   });
 
+  it("a question the owner never answered closes on its own once the answers are rewritten without placeholders, and approve then submits", async () => {
+    const { orgId, owner } = await makeWorkspace("moot");
+    answerFor = () => ({ answer: "Indirect costs are [INDIRECT RATE].", missing: [{ label: "Indirect cost rate", question: "Which rate does Legacy use?", options: ["15% de minimis", "Negotiated rate", "No indirect costs"] }], sources: [] });
+    const opp = await readyOpp(orgId, { attachments: [] });
+    const app = await caller(owner).applications.start({ organizationId: orgId, opportunityId: opp.id });
+    await apply.idle();
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    const blank = { reply: "", action: "none", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+
+    // Approve while the placeholder is still there: she names the placeholder and the question it sits in.
+    decisionFor = () => ({ ...blank, action: "approve", reply: "Submitting." });
+    let r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "Approve, submit it" });
+    expect(r.reply.content).toBe("I can't submit Rural Telehealth Access Program yet: Placeholders are left to fill: [INDIRECT RATE] (question 1); [INDIRECT RATE] (question 2). Needs an answer from you. It's on my Opportunities tab.");
+
+    // The owner has her rewrite the answers without the placeholder instead of answering the question.
+    answerFor = () => ({ answer: "Indirect costs are not charged to this award.", missing: [], sources: [] });
+    decisionFor = () => ({ ...blank, action: "revise_answer", target: "community", notes: "Drop the indirect rate; say indirect costs are not charged.", reply: "Here's the new answer." });
+    r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "rewrite the community answer without the placeholder" });
+    expect(r.reply.content).toBe("Here's the new answer. Before I can submit: Placeholders are left to fill: [INDIRECT RATE] (question 2). Needs an answer from you.");
+    decisionFor = () => ({ ...blank, action: "revise_answer", target: "measure success", notes: "Same here.", reply: "Done." });
+    r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "and the success one" });
+    expect(r.reply.content).toBe('Done. Nothing else blocks it. Say "approve" and I submit it.');
+    // The open question closed by itself and the application is ready.
+    expect(await db.listOpenQuestions(orgId, app.id)).toEqual([]);
+    expect((await db.getApplication(app.id, orgId))!.status).toBe("ready");
+
+    decisionFor = () => ({ ...blank, action: "approve", reply: "Submitting." });
+    r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "Approve, submit it" });
+    expect(r.reply.content).toMatch(/^Approved Rural Telehealth Access Program\. You certified it is true and complete\./);
+    expect((await db.getApplication(app.id, orgId))!).toMatchObject({ status: "approved", certifiedBy: owner.name });
+  });
+
   it("switches to outline-only when the host restricts AI-written applications", async () => {
     const { orgId, owner } = await makeWorkspace("airule");
     const opp = await readyOpp(orgId, { aiPolicy: { restricted: true, note: "NIH", citation: "NOT-OD-25-132" }, attachments: [] });

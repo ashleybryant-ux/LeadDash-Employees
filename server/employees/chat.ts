@@ -735,8 +735,12 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const after = await apply.rewriteQuestion(org, app.id, q.id, d.notes || undefined, style);
       const nq = apply.parse<apply.Question[]>(after?.questions, []).find((x) => x.id === q.id) ?? q;
       const count = nq.answer.split(/\s+/).filter(Boolean).length;
+      // What still stands between this application and Submit comes from the record, not from memory.
+      const block = after ? await apply.blockers(org, after) : [];
+      const state = block.length ? `Before I can submit: ${block.join(". ")}.` : `Nothing else blocks it. Say "approve" and I submit it.`;
       return {
-        text: d.reply || `Here's the new answer. I changed what you asked and kept the rest.`,
+        text: `${d.reply || `Here's the new answer. I changed what you asked and kept the rest.`} ${state}`,
+        facts: `${app.title}: ${block.length ? `blocked by ${block.join("; ")}` : "ready to submit"}.`,
         cards: [{ type: "answer", id: app.id, call: q.id, title: q.text, subtitle: `${count}${q.maxWords ? ` of ${q.maxWords}` : ""} words`, body: nq.answer, before: q.answer }],
         queries: [],
         choices: ["Use this", "Make it shorter", "Go back to the old one"],
