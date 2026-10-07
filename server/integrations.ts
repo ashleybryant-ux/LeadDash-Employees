@@ -1371,10 +1371,19 @@ export function zoomScopesCreate(scopes: string[]) {
   return scopes.some((s) => ZOOM_CREATE_SCOPES.includes(s));
 }
 
-/** The one sentence for a Zoom connection that can't create meetings. The fix is on LeadDash's Zoom app, then a reconnect here. */
-export const ZOOM_NO_CREATE = "Zoom is connected, but LeadDash's Zoom app was approved without permission to create meetings (the meeting:write:meeting scope). LeadDash adds that scope to the app in Zoom's App Marketplace, then Zoom is disconnected and reconnected on Integrations so the new permission takes effect.";
+/**
+ * The sentence for a Zoom token that can't create meetings. Zoom gives a token
+ * the scopes approved for the keys the server uses: a scope added on the app
+ * reaches the Development keys at once, but the Production keys only after
+ * Zoom approves the new version.
+ */
+export const ZOOM_NO_CREATE = "Zoom turned down creating the meeting: the Zoom keys this server uses don't carry the meeting:write:meeting permission yet. A permission added to LeadDash's Zoom app reaches its Development keys right away, but its Production keys only after Zoom approves the new version. Once the server uses keys that carry it, disconnect and reconnect Zoom on Integrations.";
 
-/** Whether the connected Zoom account can create meetings: true, false, or null when the connection predates this check. */
+/**
+ * Whether the connected Zoom account could create meetings on the last try:
+ * true, false, or null when it hasn't been tried. False never stops the next
+ * try; Zoom is always asked again.
+ */
 export async function zoomCanCreate(orgId: number): Promise<boolean | null> {
   const c = await db.getConnectionByProvider(orgId, "zoom");
   if (c?.status !== "connected") return false;
@@ -1382,9 +1391,20 @@ export async function zoomCanCreate(orgId: number): Promise<boolean | null> {
   return typeof s.canCreateMeetings === "boolean" ? s.canCreateMeetings : null;
 }
 
-/** A one-hour-or-less Zoom meeting on the connected Zoom account. */
+/** What the Zoom connection holds, for Simone's facts: the scopes Zoom granted and the last refusal, if any. */
+export async function zoomState(orgId: number) {
+  const c = await db.getConnectionByProvider(orgId, "zoom");
+  const s = JSON.parse(c?.settings || "{}") as { scopes?: string[]; canCreateMeetings?: boolean | null; lastRefusal?: string | null; lastRefusalAt?: string | null };
+  return { connected: c?.status === "connected", scopes: s.scopes ?? [], canCreate: typeof s.canCreateMeetings === "boolean" ? s.canCreateMeetings : null, lastRefusal: s.lastRefusal ?? null, lastRefusalAt: s.lastRefusalAt ?? null };
+}
+
+async function saveZoomResult(orgId: number, patch: Record<string, unknown>) {
+  const c = await db.getConnectionByProvider(orgId, "zoom");
+  if (c) await db.upsertExternalConnection({ ...c, settings: JSON.stringify({ ...JSON.parse(c.settings || "{}"), ...patch }) });
+}
+
+/** A one-hour-or-less Zoom meeting on the connected Zoom account. Zoom is always asked, even after an earlier refusal. */
 export async function createZoomMeeting(orgId: number, m: { topic: string; start: Date; minutes: number; tz: string; agenda: string }) {
-  if ((await zoomCanCreate(orgId)) === false) throw new Error(ZOOM_NO_CREATE);
   const { token } = await accessToken(orgId, "zoom");
   try {
     const { data } = await api("https://api.zoom.us/v2/users/me/meetings", {
@@ -1393,13 +1413,13 @@ export async function createZoomMeeting(orgId: number, m: { topic: string; start
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ topic: m.topic.slice(0, 200), type: 2, start_time: m.start.toISOString().replace(/\.\d{3}Z$/, "Z"), duration: m.minutes, timezone: m.tz, agenda: m.agenda.slice(0, 2000), settings: { join_before_host: true, waiting_room: false } }),
     });
+    if ((await zoomCanCreate(orgId)) !== true) await saveZoomResult(orgId, { canCreateMeetings: true, lastRefusal: null, lastRefusalAt: null });
     return { id: String(data.id), joinUrl: String(data.join_url) };
   } catch (err) {
     // Zoom's code 4711: the token was approved without the create-meeting scope.
     const text = err instanceof Error ? err.message : String(err);
     if (/does not contain scopes|4711/i.test(text)) {
-      const c = await db.getConnectionByProvider(orgId, "zoom");
-      if (c) await db.upsertExternalConnection({ ...c, settings: JSON.stringify({ ...JSON.parse(c.settings || "{}"), canCreateMeetings: false }) });
+      await saveZoomResult(orgId, { canCreateMeetings: false, lastRefusal: text.slice(0, 300), lastRefusalAt: new Date().toISOString() });
       throw new Error(ZOOM_NO_CREATE);
     }
     throw err;

@@ -411,7 +411,10 @@ export async function recentMeetingsFacts(orgId: number) {
 export async function upcomingMeetingsFacts(orgId: number) {
   const { ops, tz } = await opsFor(orgId);
   const v = await meetingsView(orgId);
-  const zoom = await integrations.zoomCanCreate(orgId);
+  const zoom = await integrations.zoomState(orgId);
+  const zoomLine = !zoom.connected
+    ? "; Zoom is NOT connected on Integrations, so Zoom links can't be made"
+    : `; Zoom is connected (scopes Zoom granted: ${zoom.scopes.join(" ") || "not listed"})${zoom.canCreate === false ? `. The last Zoom link failed${zoom.lastRefusalAt ? ` (${fmtDay(new Date(zoom.lastRefusalAt), tz)} at ${fmtTime(new Date(zoom.lastRefusalAt), tz)})` : ""}: ${integrations.ZOOM_NO_CREATE} When asked for Zoom again, try switch_link anyway, because the keys or permission may have been fixed since; say that sentence only if this try fails too. Never tell the person to approve permissions themselves` : zoom.canCreate === true ? ", and it made a Zoom link the last time it was asked" : ""}`;
   const kind = (m: Pick<Meeting, "linkKind">) => (m.linkKind === "zoom" ? "Zoom" : "Google Meet");
   const lines = v.upcoming.slice(0, 8).map((m) => {
     const link = m.link ? `${kind(m)} link ${m.link}` : `${kind(m)} link not made yet (it is made when the invite is sent)`;
@@ -419,7 +422,7 @@ export async function upcomingMeetingsFacts(orgId: number) {
     return `- ${m.title}: ${fmtDay(m.startsAt, tz)} at ${fmtTime(m.startsAt, tz)}, ${m.minutes} min, with ${m.attendees.map((a) => a.name).join(", ") || "nobody yet"}; ${state}; ${link}.`;
   });
   return `Meetings coming up that you set up (these are your own records, not a calendar read): ${lines.length ? `\n${lines.join("\n")}` : "none."}
-Meeting links: new meetings get a ${ops.meetingLink === "zoom" ? "Zoom" : "Google Meet"} link (the owner's setting on your Onboarding tab)${zoom === false && (await db.getConnectionByProvider(orgId, "zoom"))?.status === "connected" ? `. ${integrations.ZOOM_NO_CREATE} Say exactly that when a Zoom link fails; never tell the person to approve permissions themselves` : zoom === false ? "; Zoom is NOT connected on Integrations, so Zoom links can't be made" : "; Zoom is connected"}. switch_link changes one meeting to the other kind. When someone asks for a meeting's link, give the link above as it is and say which kind it is; never say a link needs an approval.`;
+Meeting links: new meetings get a ${ops.meetingLink === "zoom" ? "Zoom" : "Google Meet"} link (the owner's setting on your Onboarding tab)${zoomLine}. switch_link changes one meeting to the other kind. When someone asks for a meeting's link, give the link above as it is and say which kind it is; never say a link needs an approval.`;
 }
 
 /** The meeting someone means by a few words, else the next one coming up. */

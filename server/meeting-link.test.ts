@@ -109,16 +109,26 @@ describe("Zoom permissions", () => {
     const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "make it a zoom" });
     expect(r.reply.content).toBe(integrations.ZOOM_NO_CREATE);
     expect(r.reply.content).toContain("meeting:write:meeting");
-    // The connection remembers it, so Integrations can say so and the next try doesn't call Zoom at all.
-    expect(JSON.parse((await db.getConnectionByProvider(orgId, "zoom"))!.settings || "{}").canCreateMeetings).toBe(false);
+    // The connection remembers the refusal, but the next try still asks Zoom: the keys or permission may have been fixed since.
+    const saved = JSON.parse((await db.getConnectionByProvider(orgId, "zoom"))!.settings || "{}");
+    expect(saved.canCreateMeetings).toBe(false);
+    expect(saved.lastRefusal).toMatch(/does not contain scopes/);
     expect(await integrations.zoomCanCreate(orgId)).toBe(false);
     const before = calls.length;
     await expect(integrations.createZoomMeeting(orgId, { topic: "x", start: new Date(), minutes: 30, tz: "America/Chicago", agenda: "" })).rejects.toThrow(integrations.ZOOM_NO_CREATE);
-    expect(calls.length).toBe(before);
-    // From then on her facts carry the same sentence, so she answers it without trying again.
-    expect(systems[0]).toContain("Zoom is connected.");
+    expect(calls.length).toBe(before + 1);
+    // Her facts say the last try failed and tell her to try again when asked.
+    expect(systems[0]).toContain("Zoom is connected");
     await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "why no zoom link?" });
     expect(systems[1]).toContain(integrations.ZOOM_NO_CREATE);
+    expect(systems[1]).toContain("try switch_link anyway");
+
+    // Once Zoom says yes (the server's keys now carry the permission), the link is made and the refusal is cleared.
+    routes.unshift([/api\.zoom\.us\/v2\/users\/me\/meetings/, () => json({ id: 987, join_url: "https://zoom.us/j/987" })]);
+    const z = await integrations.createZoomMeeting(orgId, { topic: "x", start: new Date(), minutes: 30, tz: "America/Chicago", agenda: "" });
+    expect(z.joinUrl).toBe("https://zoom.us/j/987");
+    expect(await integrations.zoomCanCreate(orgId)).toBe(true);
+    expect(JSON.parse((await db.getConnectionByProvider(orgId, "zoom"))!.settings || "{}").lastRefusal).toBeNull();
   });
 
   it("reads the granted scopes when Zoom connects", () => {
