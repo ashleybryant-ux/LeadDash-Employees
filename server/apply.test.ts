@@ -231,6 +231,28 @@ describe("applying, end to end", () => {
     expect(systems[0]).toContain("never send them to check their inbox instead");
   });
 
+  it("\"submit it\" on an approved application sends it even when the model picks none, and her facts say exactly where it stands", async () => {
+    const { orgId, owner } = await makeWorkspace("send-it");
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    const opp = await db.createOpp({ organizationId: orgId, kind: "grant", title: "Galaxy Grant", host: "Hidden Star", sourceUrl: "https://hidden-star.org/galaxy-grant/apply", requirements: JSON.stringify(reqs({ attachments: [], channel: "form" })), packageStatus: "ready" });
+    const app = await db.createApplication({ organizationId: orgId, opportunityId: opp.id, employeeId: morgan.id, title: "Galaxy Grant", status: "approved", channel: "form", certifiedBy: owner.name, certifiedAt: new Date(), questions: JSON.stringify([{ id: "q1", text: "Describe your organization", answer: "LeadDash builds an EHR.", limit: "", maxWords: 0, outline: [], facts: [], sources: [], status: "done" }]), attachments: "[]" });
+    const blank = { reply: "", action: "none", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+    // The model wanders: it answers "none" with an excuse. The owner's words still run the send.
+    decisionFor = () => ({ ...blank, action: "none", reply: "I can't find the Galaxy Grant on Opportunities right now." });
+    prompts.length = 0;
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "submit it" });
+    expect(r.reply.content).toBe("Sending Galaxy Grant now: Submits on hidden-star.org. I'll post the confirmation here when it's in.");
+    const system = prompts.find((p) => p.schema === "chat_decision")!.system;
+    expect(system).toContain(`- Galaxy Grant: APPROVED by ${owner.name}, NOT sent yet. Sending route: Submits on hidden-star.org (ready: say "send it" and the approve action sends it).`);
+    expect(system).toContain("never say you can't find one of them");
+    expect(system).toContain("Never say an application was submitted unless your facts list it under Submitted");
+    // Nothing was submitted, so the receipt question gets the plain truth, not a claim.
+    decisionFor = () => ({ ...blank, action: "show_receipt" });
+    const r2 = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "show me the receipt" });
+    expect(r2.reply.content).toBe('Nothing has gone in yet, so there\'s no receipt. Galaxy Grant is approved and not sent. Say "send it" and I submit it.');
+    expect((await db.getApplication(app.id, orgId))!.status).toBe("approved");
+  });
+
   it("switches to outline-only when the host restricts AI-written applications", async () => {
     const { orgId, owner } = await makeWorkspace("airule");
     const opp = await readyOpp(orgId, { aiPolicy: { restricted: true, note: "NIH", citation: "NOT-OD-25-132" }, attachments: [] });

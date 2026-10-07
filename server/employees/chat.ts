@@ -325,7 +325,19 @@ async function applyFacts(emp: AIEmployee) {
   const opps = (await db.listOpps(emp.organizationId, kinds)).filter((o) => o.status === "new" || o.status === "applying").sort((a, b) => b.fitScore - a.fitScore).slice(0, 25);
   const apps = (await db.listApplications(emp.organizationId)).filter((a) => a.employeeId === emp.id && !["submitted", "awarded", "declined"].includes(a.status)).slice(0, 8);
   const lines = opps.map((o) => `- ${o.title} (${o.host ?? "host"}): fit ${o.fitScore}, ${o.fitCall}; ${o.amount ?? ""}; due ${o.deadline ?? "not posted"}. Why: ${(o.fitReason ?? o.summary ?? "").slice(0, 300)}${o.eligibility ? ` Eligibility: ${o.eligibility.slice(0, 200)}` : ""}`);
-  const appLines = apps.map((a) => `- ${a.title} (${a.status}): questions: ${apply.parse<{ text: string }[]>(a.questions, []).map((q) => q.text.slice(0, 80)).join(" | ")}`);
+  const bids = await import("./bids");
+  const appLines: string[] = [];
+  for (const a of apps) {
+    const qs = apply.parse<{ text: string }[]>(a.questions, []).map((q) => q.text.slice(0, 80)).join(" | ");
+    let state: string;
+    if (a.status === "approved") {
+      const route = (await bids.readiness(emp.organizationId, a).catch(() => null))?.route;
+      state = `APPROVED by ${a.certifiedBy ?? "the owner"}, NOT sent yet. Sending route: ${route ? `${route.label}${route.ready ? " (ready: say \"send it\" and the approve action sends it)" : ` (not ready: ${route.detail})`}` : "unknown"}`;
+    } else if (a.status === "ready") state = "READY for review; the owner's \"approve\" submits it (approve action)";
+    else if (a.status === "needs_answer") state = `waiting on an answer from the owner; blockers: ${(await apply.blockers(emp.organizationId, a).catch(() => [])).join("; ") || "none"}`;
+    else state = a.status;
+    appLines.push(`- ${a.title}: ${state}. Questions: ${qs}`);
+  }
   // What went in, with the proof: when, where, the confirmation, the email on it, and whether a receipt screenshot exists.
   const org = await db.getOrganizationById(emp.organizationId);
   const tz = org?.timezone || "America/Chicago";
@@ -335,7 +347,7 @@ async function applyFacts(emp: AIEmployee) {
     const when = new Date(a.submittedAt!).toLocaleString("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
     return `- ${a.title}: submitted ${when}${sub ? ` ${sub.how === "email" ? `by email to ${sub.where}` : `on ${sub.where} in your browser`}` : ""}; confirmation: ${a.confirmation || "none recorded"}; contact email on it: ${sub?.email ?? "not recorded"}; receipt screenshot: ${a.receiptUrl ? "yes (show_receipt shows it)" : "none"}; certified by ${a.certifiedBy ?? "the owner"}.`;
   });
-  return `${lines.length ? `\nOpen opportunities you found (explain a score from these facts only):\n${lines.join("\n")}` : ""}${appLines.length ? `\nApplications in progress:\n${appLines.join("\n")}` : ""}${sentLines.length ? `\nSubmitted (newest first). When asked how they know it went in or which email was used, answer from these lines and show the receipt; never send them to check their inbox instead:\n${sentLines.join("\n")}` : ""}`;
+  return `${lines.length ? `\nOpen opportunities you found (explain a score from these facts only):\n${lines.join("\n")}` : ""}${appLines.length ? `\nApplications in progress (these exist; never say you can't find one of them):\n${appLines.join("\n")}` : ""}${sentLines.length ? `\nSubmitted (newest first). When asked how they know it went in or which email was used, answer from these lines and show the receipt; never send them to check their inbox instead:\n${sentLines.join("\n")}` : ""}`;
 }
 
 const TOOL_NAMES: Record<string, string> = { google_workspace: "Google (Gmail and Calendar)", clickup: "ClickUp", zoom: "Zoom", recall: "Recall.ai (meeting bot)", linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", threads: "Threads", x: "X", tiktok: "TikTok", wordpress: "WordPress", google_business: "Google Business Profile", submittable: "Submittable", sessionize: "Sessionize" };
@@ -427,6 +439,8 @@ const TALK_BY_KIND: Partial<Record<string, string>> = {
 - To change an answer on an application, choose revise_answer. After you showed a rewritten answer: "Use this" keeps it (say it's saved), "Make it shorter" is revise_answer with "to" concise, "Go back to the old one" is restore_answer.
 - An attached RFP or opportunity file: choose add_file.`,
 };
+TALK_BY_KIND.grants = `${TALK_BY_KIND.grants}
+- Your applications are in your facts with their exact state. "Submit it", "send it", "send it now" or "approve" on one of them is the approve action, every time; never answer those with "none". Never say an application was submitted unless your facts list it under Submitted, and never say you can't find one that your facts list.`;
 TALK_BY_KIND.speaking = `${TALK_BY_KIND.grants}
 - You are also the publicist, running this workspace's press desk in a newsroom the owner may share across her workspaces. A media campaign or media list for a story is press_campaign; finding reporters and stories now is press_scout; "what's happening with press" is press_brief. Speaking events stay find_events.
 - Never invent a reporter, an article, an email, a quote or a statistic. Every pitch waits for her approval (unless she raised the sending level), and a reporter another desk pitched in the cooling period is left alone.`;
@@ -534,7 +548,8 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
           apply.enqueue(`submit-${app.id}`, () => import("./bids").then((b) => b.autoSubmit(org, app.id)));
           return { text: `Sending ${app.title} now: ${route.label.replace(/\.$/, "")}. I'll post the confirmation here when it's in.`, cards: [], queries: [], facts: `${app.title}: sending (${route.label}).` };
         }
-        if (!approves(ctx.said ?? "")) return { text: `${app.title} is ready for your review. Say "approve" and I submit it, or open it on my Opportunities tab.`, cards: [], queries: [] };
+        // Their own "approve", "submit it" or "send it" certifies it; a question about it only reports.
+        if (!approves(ctx.said ?? "") && !/^\s*(please\s+|ok,?\s+|yes,?\s+)?(submit|send)\b/i.test(ctx.said ?? "")) return { text: `${app.title} is ready for your review. Say "approve" and I submit it, or open it on my Opportunities tab.`, cards: [], queries: [] };
         const block = await apply.blockers(org, app);
         if (block.length) return { text: `I can't submit ${app.title} yet: ${block.join(". ")}. It's on my Opportunities tab.`, cards: [], queries: [] };
         const members = await db.listMembers(org);
@@ -745,7 +760,10 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const sent = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id && ["submitted", "awarded", "declined"].includes(a.status)).sort((a, b) => new Date(b.submittedAt ?? 0).getTime() - new Date(a.submittedAt ?? 0).getTime());
       const t = d.target.trim().toLowerCase();
       const app = (t && sent.find((a) => a.title.toLowerCase().includes(t))) || sent[0];
-      if (!app) return { text: "I haven't submitted anything yet.", cards: [], queries: [] };
+      if (!app) {
+        const waiting = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id && ["approved", "ready"].includes(a.status));
+        return { text: `Nothing has gone in yet, so there's no receipt.${waiting.length ? ` ${waiting.map((a) => `${a.title} is ${a.status === "approved" ? "approved and not sent" : "ready for your review"}`).join("; ")}. Say "send it" and I submit it.` : ""}`, cards: [], queries: [] };
+      }
       const sub = apply.parse<apply.Extras>(app.extras, {}).submission;
       const tz = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
       const when = app.submittedAt ? new Date(app.submittedAt).toLocaleString("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "unknown time";
@@ -1858,6 +1876,14 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
       if (r) learned = `\n\n${r.replaced ? "Updated the Brain" : "Saved to the Brain"} for the whole team: ${r.fact}`;
     }
 
+    // The owner's own "submit it" or "send it" to Morgan or Taylor always runs the send, whatever the model chose.
+    if ((emp.kind === "grants" || emp.kind === "speaking") && /^\s*(please\s+|ok,?\s+|yes,?\s+)?(submit|send)\b/i.test(opts.text) && (!decision.action || ["none", "apply", "check_status", "show_receipt"].includes(decision.action))) {
+      const sendable = (await db.listApplications(opts.organizationId)).some((a) => a.employeeId === emp.id && ["ready", "approved"].includes(a.status));
+      if (sendable) {
+        decision.action = "approve";
+        decision.target = decision.target || "";
+      }
+    }
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
       return { user: userMsg, reply: await reply(`${decision.reply || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
     }

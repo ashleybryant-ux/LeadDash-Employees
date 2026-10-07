@@ -127,7 +127,7 @@ describe("Morgan talks it through", () => {
     await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "Why is Love's Cup a 62?" });
     expect(systems[0]).toContain("Love's Cup (i2E): fit 62");
     expect(systems[0]).toContain("Favors university-affiliated teams.");
-    expect(systems[0]).toContain("Tulsa Pitch Night (ready): questions: What problem are you solving?");
+    expect(systems[0]).toContain('Tulsa Pitch Night: READY for review; the owner\'s "approve" submits it (approve action). Questions: What problem are you solving?');
 
     vi.spyOn(apply, "rewriteQuestion").mockImplementation(async (o: number, id: number, qid: string) => {
       const a = (await db.getApplication(id, o))!;
