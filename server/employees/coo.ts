@@ -244,7 +244,7 @@ export async function cancelMeeting(orgId: number, meetingId: number) {
 }
 
 /** A one-time meeting from chat. It gets an agenda right away and waits for Send invite unless invites are set to On its own. */
-export async function scheduleMeeting(orgId: number, input: { title: string; date: string; time: string; minutes: number; attendees: string; updatesFrom: string[] }) {
+export async function scheduleMeeting(orgId: number, input: { title: string; date: string; time: string; minutes: number; attendees: string; updatesFrom: string[]; linkKind?: "zoom" | "meet" }) {
   const { ops, tz } = await opsFor(orgId);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new TRPCError({ code: "BAD_REQUEST", message: "What day should it be? Tell me the date and time." });
   const tm = (input.time || "9:00 AM").match(/(\d{1,2})(?::(\d{2}))?\s*([ap]m)?/i);
@@ -257,7 +257,7 @@ export async function scheduleMeeting(orgId: number, input: { title: string; dat
   const members = await people(orgId);
   const asked = input.attendees.toLowerCase();
   const attendees = asked.trim() ? members.filter((p) => asked.includes(p.email.toLowerCase()) || (p.name && asked.includes(p.name.toLowerCase().split(" ")[0]))) : members;
-  const m = await db.createMeeting({ organizationId: orgId, title: input.title.slice(0, 160) || "Meeting", startsAt: start, minutes: [15, 30, 45, 60, 90].includes(input.minutes) ? input.minutes : 30, attendees: JSON.stringify(attendees.length ? attendees : members.slice(0, 1)), updatesFrom: JSON.stringify(input.updatesFrom), linkKind: ops.meetingLink });
+  const m = await db.createMeeting({ organizationId: orgId, title: input.title.slice(0, 160) || "Meeting", startsAt: start, minutes: [15, 30, 45, 60, 90].includes(input.minutes) ? input.minutes : 30, attendees: JSON.stringify(attendees.length ? attendees : members.slice(0, 1)), updatesFrom: JSON.stringify(input.updatesFrom), linkKind: input.linkKind ?? ops.meetingLink });
   return buildAgenda(orgId, m.id);
 }
 
@@ -428,6 +428,28 @@ Meeting links: new meetings get a ${ops.meetingLink === "zoom" ? "Zoom" : "Googl
 /** The meeting someone means by a few words, else the next one coming up. */
 export async function meetingNamed(orgId: number, target: string) {
   return nextMeetingFor(orgId, target, "all");
+}
+
+/**
+ * The owner's standing choice of meeting link ("our meetings should be on
+ * Zoom"): saved as the default for new meetings, and every upcoming meeting
+ * is moved to it now (invited ones are sent again with the new link).
+ */
+export async function setDefaultLink(orgId: number, to: "zoom" | "meet", who: string) {
+  if (to === "zoom" && (await db.getConnectionByProvider(orgId, "zoom"))?.status !== "connected") throw new TRPCError({ code: "BAD_REQUEST", message: "Zoom isn't connected on Integrations, so I can't make Zoom links. Connect it there and ask again." });
+  const { saveOps } = await import("./ops");
+  await saveOps(orgId, { meetingLink: to });
+  const moved: Meeting[] = [];
+  const failed: string[] = [];
+  for (const m of (await meetingsView(orgId)).upcoming) {
+    if (m.linkKind === to) continue;
+    try {
+      moved.push(await switchLink(orgId, m.id, to, who));
+    } catch (err) {
+      failed.push(`${m.title}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { moved, failed };
 }
 
 /** Change a meeting's link to Zoom or Google Meet. An invited meeting is sent again with the new link. */

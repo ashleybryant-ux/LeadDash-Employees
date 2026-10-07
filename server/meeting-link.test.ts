@@ -152,6 +152,36 @@ describe("Zoom permissions", () => {
     expect((await coo.meetingNamed(orgId, "Nov Launch Team Huddle"))!.id).toBe(draft.id);
   });
 
+  it("'those meetings should be on Zoom' makes Zoom the default and moves every upcoming meeting; a new meeting asked for on Zoom gets Zoom", async () => {
+    const { orgId, owner } = await makeWorkspace("zoom-default");
+    await connect(orgId, "google_workspace");
+    await connect(orgId, "zoom");
+    routes.push([/calendar\/v3\/calendars\/primary\/events/, () => json({ id: "ev7", htmlLink: "https://calendar.google.com/e/7" })]);
+    let n = 0;
+    routes.push([/api\.zoom\.us\/v2\/users\/me\/meetings/, () => json({ id: ++n, join_url: `https://zoom.us/j/${n}` })]);
+    const simone = (await db.getEmployeeByKind(orgId, "coo"))!;
+    await mockAi([{ action: "default_link", to: "zoom", reply: "Moving them." }]);
+    const a = await coo.scheduleMeeting(orgId, { title: "Grants Standing Meeting", date: ymd(3), time: "9:00 AM", minutes: 30, attendees: "", updatesFrom: [] });
+    const b = await coo.scheduleMeeting(orgId, { title: "Blog Standing Meeting", date: ymd(4), time: "11:15 AM", minutes: 30, attendees: "", updatesFrom: [] });
+    await db.updateMeeting(b.id, orgId, { status: "invited", link: "https://meet.google.com/old", calendarEventId: "ev1" });
+
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "those meetings should be on zoom" });
+    expect(r.reply.content).toMatch(/^Done\. New meetings now get a Zoom link, and I moved 2 upcoming meetings to Zoom and sent the updated invites/);
+    expect((await db.getMeeting(a.id, orgId))!.linkKind).toBe("zoom");
+    expect((await db.getMeeting(b.id, orgId))!).toMatchObject({ linkKind: "zoom", status: "invited" });
+    expect((await db.getMeeting(b.id, orgId))!.link).toMatch(/^https:\/\/zoom\.us\/j\//);
+    const ops = await import("./employees/ops");
+    expect((await ops.opsFor(orgId)).ops.meetingLink).toBe("zoom");
+    // Each meeting card shows once.
+    const cards = JSON.parse(r.reply.cards!);
+    expect(new Set(cards.map((c: any) => `${c.type}-${c.id}`)).size).toBe(cards.length);
+
+    // Back on Meet as the default, a meeting asked for on Zoom still gets Zoom.
+    await ops.saveOps(orgId, { meetingLink: "meet" });
+    const z = await coo.scheduleMeeting(orgId, { title: "Social Media Standing Meeting", date: ymd(5), time: "10:00 AM", minutes: 30, attendees: "", updatesFrom: [], linkKind: "zoom" });
+    expect(z.linkKind).toBe("zoom");
+  });
+
   it("reads the granted scopes when Zoom connects", () => {
     expect(integrations.zoomScopesCreate(["user:read:user", "meeting:read:meeting"])).toBe(false);
     expect(integrations.zoomScopesCreate(["user:read:user", "meeting:write:meeting"])).toBe(true);

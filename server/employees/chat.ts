@@ -77,8 +77,8 @@ const ACTIONS: Record<string, string[]> = {
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  projects: ["none", "report", "check_schedule", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "send_invite", "share_meeting", "switch_link", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  coo: ["none", "report", "check_schedule", "write_agenda", "schedule_meeting", "send_invite", "share_meeting", "switch_link", "meeting_notes", "set_deadlines", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  projects: ["none", "report", "check_schedule", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "send_invite", "share_meeting", "switch_link", "default_link", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  coo: ["none", "report", "check_schedule", "write_agenda", "schedule_meeting", "send_invite", "share_meeting", "switch_link", "default_link", "meeting_notes", "set_deadlines", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   ads: ["none", "report", "ads_campaign", "ads_note", "ads_rewrite", "ads_approve", "ads_skip", "ads_platform", "ads_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   billing: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -105,6 +105,7 @@ const ACTION_HELP: Record<string, string> = {
   task_undo: "task_undo: reopen the tasks you just closed with task_bulk (\"Reopen them\", \"undo that\").",
   goal_update: "goal_update: post an update on a goal on the Goals page (\"we're at 13 practices\", \"the webinar is behind\"). Put words from the goal's title in `target`, how it's going in `focus` (on, risk or off), the update in `notes`, and the new number for its main target in `count` (0 when there's no new number).",
   approve: "approve: the person approves, in words, something of yours that is waiting for them: an item in Approvals, or an application you wrote that is ready for review (\"approved\", \"approve it\", \"yes, send it\", \"approve, let's submit\", \"go ahead with the hold\"). Put words from its title in `target` ('' for the newest one waiting). It goes out at once, the same as pressing Approve on the Approvals page, and you report what happened (the calendar event, the meeting link, where it posted). Use this, never meeting_link or none, when they say they approve. If they ask for the link after approving, use meeting_link.",
+  default_link: "default_link: the person says which meeting link the team's meetings should use from now on (\"those meetings should be on Zoom\", \"use Zoom for everything\", \"go back to Google Meet\"). Put zoom or meet in `to`. It saves the choice for every new meeting and moves every upcoming meeting to it now, sending updated invites. Use it instead of switch_link whenever they mean more than one meeting.",
   hand_off: "hand_off: the job (or the next part of it) belongs to a teammate, like meetings and Zoom links to Simone, a page to Jordan, a post to Sienna. The teammate does it right now in their own chat and you report back what they did; never only add a task for it. Put the teammate's name in `teammate` and in `message` the whole job as one clear instruction with everything they need (names, dates, times, who attends, which of your documents go with it). Your documents from this chat go with it on their own. Use the teammates already on each role yourself; never ask the person who belongs where.",
   write_doc: "write_doc: make a document the person keeps or shares (a plan, a structure, a memo, a one-pager, a policy), saved as a Word file that opens right here in the chat. Use it whenever they ask for something written up as a document, or say \"draft that\" about something longer than a few lines. Put the document's title in `title` and what goes in it in `notes`. Never say you can't make or save a file.",
   make_chart: "make_chart: draw an org chart (who leads whom, a team structure, reporting lines) as a picture that shows right here in the chat. Put the chart's title in `title` and anything about what it should show in `notes`. You draw it yourself; never hand it to another employee and never say you can't make an image.",
@@ -719,6 +720,18 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const r = await newsroom.scout(org, { focus: d.focus || undefined, quiet: true });
       return { text: `I scouted the news: ${plural(r.added, "new reporter")} with recent articles as proof${r.moved ? `, ${plural(r.moved, "reporter")} changed outlets` : ""}, ${plural(r.stories, "story", "stories")} routed to the desk each fits best${r.coverage ? `, and ${plural(r.coverage, "new coverage mention")}` : ""}. It's all on my Newsroom tab.`, cards: [{ type: "press_brief", id: Date.now(), title: "Newsroom" }], queries: [] };
     }
+    case "default_link": {
+      const to = /zoom/i.test(`${d.to} ${d.focus} ${ctx.said ?? ""}`) ? "zoom" : "meet";
+      const kind = to === "zoom" ? "Zoom" : "Google Meet";
+      try {
+        const r = await coo.setDefaultLink(org, to, ctx.who || "the owner");
+        const list = r.moved.map((m) => `${m.title}: ${m.link ?? "link made when the invite goes out"}`);
+        const text = `Done. New meetings now get a ${kind} link${r.moved.length ? `, and I moved ${plural(r.moved.length, "upcoming meeting")} to ${kind}${r.moved.some((m) => m.status === "invited") ? " and sent the updated invites" : ""}:\n${list.map((l) => `- ${l}`).join("\n")}` : ". Every upcoming meeting was already on it."}${r.failed.length ? `\n\nThese didn't move: ${r.failed.join("; ")}` : ""}`;
+        return { text, cards: r.moved.map((m) => coo.meetingCard(m) as ChatCard), queries: [], facts: text };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+    }
     case "hand_off": {
       const mate = await findTeammate(org, d.teammate || d.target || "");
       if (!mate || mate.id === emp.id) return { text: `I couldn't tell which teammate should take this. Who should do it?`, cards: [], queries: [] };
@@ -1010,7 +1023,10 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
     case "schedule_meeting": {
       const emps = await db.listEmployeesByOrg(org);
       const ups = emps.filter((e) => d.notes.toLowerCase().includes(e.name.toLowerCase())).map((e) => e.kind);
-      const m = await coo.scheduleMeeting(org, { title: d.title || "Meeting", date: d.date, time: d.time, minutes: Number(d.count) || 30, attendees: d.attendees, updatesFrom: ups });
+      // Zoom or Meet named in the request wins over the default for this meeting.
+      const asked = `${d.to} ${d.focus} ${d.notes} ${ctx.said ?? ""}`;
+      const linkKind = /\bzoom\b/i.test(asked) ? "zoom" : /\b(google )?meet\b/i.test(d.to + " " + d.focus) ? "meet" : undefined;
+      const m = await coo.scheduleMeeting(org, { title: d.title || "Meeting", date: d.date, time: d.time, minutes: Number(d.count) || 30, attendees: d.attendees, updatesFrom: ups, linkKind });
       if (gate(emp, "invites") === "auto") {
         const sent = await coo.sendInvite(org, m.id, `${emp.name} (on her own)`).catch((err) => (err instanceof Error ? err.message : String(err)));
         if (typeof sent !== "string") return { text: `I set up ${sent.title}, wrote the agenda and sent the invite with the meeting link: ${sent.link ?? "the link is on the calendar event"}.`, cards: [coo.meetingCard(sent) as ChatCard], queries: [], facts: `${sent.title}: invite sent, link ${sent.link ?? "none"}.` };
@@ -1974,7 +1990,10 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     const shown = steps.filter((s, n) => !(s.r.quiet && (n < steps.length - 1 || final?.reply?.trim())));
     const text = final?.reply?.trim() || shown.map((s) => s.r.text || s.d.reply).filter((t) => t.trim()).join("\n\n");
     const last = steps[steps.length - 1];
-    const cards = [...shown.flatMap((s) => s.r.cards), ...quick(final?.choices ?? last.r.choices ?? last.d.choices)];
+    // The same meeting or document can come back from several steps: show each once, in its latest state.
+    const all = shown.flatMap((s) => s.r.cards);
+    const once = all.filter((c, i) => c.type === "choices" || !all.slice(i + 1).some((x) => x.type === c.type && x.id === c.id));
+    const cards = [...once, ...quick(final?.choices ?? last.r.choices ?? last.d.choices)];
     return { user: userMsg, reply: await reply(`${text || last.d.reply}${learned}`, cards, steps.flatMap((s) => s.r.queries)) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
