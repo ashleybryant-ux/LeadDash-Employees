@@ -1728,7 +1728,7 @@ Fill every field; use "" or [] for fields the action does not use.
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n")}`
   );
-  const decision = await generateJson<Decision>({ system, prompt: request, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 3000, reason: true });
+  const decision = await generateJson<Decision>({ system, prompt: request, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 3000, reason: true, clientInfo: (await db.getOrganizationById(emp.organizationId))?.orgType === "healthcare" });
   if (!decision?.action || !actions.includes(decision.action)) return { action: "none", text: decision?.reply ?? "", cards: [] as ChatCard[], refs: [] as Ref[] };
   const result = await runAction(emp, decision, { who: task.from });
   const refs: Ref[] = [...(result.refs ?? []), ...result.cards.filter((c) => c.type === "post" || c.type === "article" || c.type === "reply").map((c) => ({ kind: "outbound" as const, id: c.id }))];
