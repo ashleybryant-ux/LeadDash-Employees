@@ -208,9 +208,10 @@ function decisionSchema(kind: string): JsonSchema {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["reply", "action", "plan", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate", "choices", "remember_topic", "remember_fact", "remember_category"],
+    // "thinking" comes first and "reply" last: the employee works out what the person means and what to do before it decides, and says something only once it knows what it is doing.
+    required: ["thinking", "action", "plan", "focus", "topic", "platforms", "count", "title", "notes", "page", "goal", "from", "subject", "message", "url", "oppKind", "target", "to", "date", "time", "attendees", "teammate", "choices", "remember_topic", "remember_fact", "remember_category", "reply"],
     properties: {
-      reply: { type: "string", description: "What you say back. If you are about to do a job, one short sentence saying what you are doing." },
+      thinking: { type: "string", description: "Think before you act, the way a sharp colleague would. What is the person actually asking for, and what outcome do they want? What do you already know from this conversation, your facts and the Brain that answers it or changes it? Did they tell you something earlier in this chat that still applies (a decision, a limit, a correction)? Is there anything you were about to ask that you can work out or look up yourself? Then: what will you do, and why. A few plain sentences. The person never sees this." },
       action: { type: "string", enum: ACTIONS[kind] ?? ["none"] },
       plan: { type: "string", description: "What you still have to do after this action runs, in one line, when the request takes more than this one step (look something up, then decide or book; set up a meeting, then write the agenda). '' when this action finishes the request or you are only answering." },
       focus: str,
@@ -236,11 +237,13 @@ function decisionSchema(kind: string): JsonSchema {
       remember_topic: { type: "string", description: "2 to 5 words naming a new lasting fact to save to the Brain, or ''." },
       remember_fact: { type: "string", description: "The fact as one plain sentence, or ''." },
       remember_category: { type: "string", enum: ["", ...KNOWLEDGE_CATEGORIES] },
+      reply: { type: "string", description: "What you say back, written after you decided. Talk like a person: answer what they asked, in your own words. If you are about to do a job, one short sentence saying what you are doing." },
     },
   };
 }
 
 type Decision = {
+  thinking?: string;
   reply: string;
   action: string;
   plan?: string;
@@ -281,7 +284,7 @@ function stepFields(d: Decision) {
 
 function transcript(history: ChatMessage[]) {
   return history
-    .slice(-12)
+    .slice(-20)
     .map((m) => {
       const files = parseList<{ name: string }>(m.attachments).map((f) => f.name);
       return `${m.role === "user" ? m.authorName : m.role === "handoff" ? `Handoff from ${m.authorName}` : "You"}: ${m.content}${files.length ? ` [attached: ${files.join(", ")}]` : ""}`;
@@ -430,6 +433,8 @@ const TALK = `Talk with the person like a colleague, back and forth, not like a 
 - Questions about your work, a result or a score get a plain, specific answer from your facts.
 - When the person tells you plainly what to do, do it now. Don't ask questions first unless a wrong guess would do something that can't be undone. Closing or moving tasks can be undone, so just do it.
 - Never say you're writing, making, sending or doing something ("I'll have it in a moment", "writing it now") unless you chose the action that does it in this same reply. If none of your actions can do it, say so plainly and say what can.
+- What the person told you earlier in this chat still holds until they change it: a limit ("only the webinar and Black Friday"), a decision, a correction, a date. Carry it into the work itself. Never just repeat it back as a line of the work.
+- When one piece is missing but the work can be done without it (a link that comes later, a number they will send), do the work now and say what you will add when it comes. Don't make them wait for you.
 - A request can take several steps. Choose the first action and put what comes after it in "plan" (for example "pick the best open hour, then schedule_meeting with Nora and write the agenda"). After each step you see what it found and choose the next one, until the request is done; then choose "none" and sum up in "reply" what you did and decided, with the specifics (the time you picked and why). Never ask the person for something a step can find for you (an open time, a status, a number).`;
 
 const TALK_BY_KIND: Partial<Record<string, string>> = {
@@ -942,8 +947,11 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       await coo.ensureMeetings(org);
       const m = await coo.nextMeetingFor(org, d.target, emp.kind === "projects" ? "project" : "all");
       if (!m) return { text: emp.kind === "projects" ? "There's no project meeting coming up. Ask me to set one up." : "There's no meeting coming up. Add a repeating meeting on my Onboarding tab or ask me to schedule one.", cards: [], queries: [] };
-      let next = await coo.buildAgenda(org, m.id);
-      if (d.notes.trim()) {
+      // What the person said shapes the whole agenda: their own words from this chat, plus the instructions the employee pulled out.
+      const said = [...(ctx.history ?? []).filter((h) => h.role === "user").slice(-6).map((h) => h.content), ctx.said ?? ""].map((t) => t.trim()).filter((t, i, all) => t && all.indexOf(t) === i);
+      const instructions = [d.notes.trim(), said.length ? `Their words in this chat, oldest first: ${said.map((t) => `"${t.slice(0, 300)}"`).join(" ")}` : ""].filter(Boolean).join("\n");
+      let next = await coo.buildAgenda(org, m.id, instructions);
+      if (d.notes.trim() && m.launchId) {
         const items = JSON.parse(next.agenda || "[]") as coo.AgendaItem[];
         const extra = { item: d.notes.trim().slice(0, 160), who: "", minutes: 5 };
         next = await coo.editMeeting(org, m.id, { agenda: [...items.slice(0, -1), extra, ...items.slice(-1)], minutes: next.minutes });
@@ -1853,12 +1861,12 @@ export async function sendChatMessage(opts: {
     const files = sent.length ? sent : db.recentChatFiles(opts.organizationId, emp.id, 6).filter((f) => f.messageId != null && recentIds.has(f.messageId)).slice(0, 4);
     const scheduled = /^Scheduled task/.test(opts.authorName);
     const said = `${quoteText ? `(Replying to this message: "${quoteText}")\n` : ""}${opts.text.trim() || `(attached ${sent.map((f) => f.name).join(", ")})`}`;
-    const { system } = await tasks.systemPromptAbout(
+    const { system, brain } = await tasks.systemPromptAbout(
       emp,
       `${opts.text} ${sent.map((f) => f.name).join(" ")}`,
       `You are chatting with ${opts.authorName}. Answer questions about your work directly and briefly.
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
-When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
+Work it out before you act: in "thinking", say what they want and what you know, then choose. When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
 Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${taggedFacts}${await connectedFacts(emp)}${historyFacts(emp.organizationId)}${await webFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
 ${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${TALK_BY_KIND[emp.kind] ? `\n${TALK_BY_KIND[emp.kind]}` : ""}\n${REMEMBER}`}${opts.spoken ? `\n${ONE_ON_ONE}` : ""}${filesText(files)}
@@ -1866,7 +1874,9 @@ Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     );
     const base = `Conversation so far:\n${transcript(history.slice(0, -1))}\n\n${opts.authorName}: ${said}`;
-    const decide = (prompt: string) => generateJson<Decision>({ system, prompt, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 2000 });
+    // A healthcare workspace's chats can hold client information, so they stay on the BAA-covered route.
+    const clientInfo = brain.org?.orgType === "healthcare";
+    const decide = (prompt: string) => generateJson<Decision>({ system, prompt, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 3000, reason: true, clientInfo });
     const decision = await decide(base);
     const quick = (list?: string[]) => (!scheduled && list?.length ? [choicesCard(list)] : []);
     // Something new and lasting: saved to the Brain so nobody has to be told twice.

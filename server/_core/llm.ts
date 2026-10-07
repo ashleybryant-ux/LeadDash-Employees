@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
+import { carriesClientInfo } from "./baa";
 import { SEARCH_PRICE, recordSearch, recordTokens, tokenCost } from "../usage";
 
 /**
@@ -73,7 +74,15 @@ export async function generateText(opts: {
   return out.trim();
 }
 
-/** Output constrained to a JSON schema. */
+/**
+ * Output constrained to a JSON schema.
+ *
+ * `reason: true` is for decisions an employee makes in conversation (what the
+ * person means, what to do next). When the Anthropic key is set and nothing in
+ * the call can carry client information, it runs on the chat model with
+ * thinking on, so the employee works the request out before it answers. If
+ * that call fails, or `clientInfo` is true, it runs on the gateway as usual.
+ */
 export async function generateJson<T>(opts: {
   system: string;
   prompt: string;
@@ -82,7 +91,16 @@ export async function generateJson<T>(opts: {
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  reason?: boolean;
+  clientInfo?: boolean;
 }): Promise<T> {
+  if (opts.reason && reasoningReady(opts.clientInfo)) {
+    try {
+      return await reasonJson<T>(opts);
+    } catch (err) {
+      console.warn(`[ai] reasoning route failed, using the gateway: ${(err as Error).message.slice(0, 200)}`);
+    }
+  }
   const messages: GatewayMessage[] = [
     { role: "system", content: opts.system },
     { role: "user", content: opts.prompt },
@@ -105,6 +123,43 @@ export async function generateJson<T>(opts: {
   // Cut off before the JSON closed (the answer ran past the token limit): ask once more with room to finish.
   if (parsed === undefined) parsed = extractJson(await ask(Math.min(32_000, Math.max(first * 3, 4000))));
   if (parsed === undefined) throw new Error("AI returned something that was not valid JSON");
+  return parsed as T;
+}
+
+/**
+ * The reasoning route is used when it is switched on (CHAT_REASONING, on by
+ * default), the Anthropic key is set, and the call carries no client
+ * information unless Anthropic's BAA is signed.
+ */
+export function reasoningReady(clientInfo?: boolean) {
+  if (process.env.NODE_ENV === "test") return false;
+  if (!ENV.chatReasoning || !ENV.anthropicKey) return false;
+  return !clientInfo || carriesClientInfo("anthropic");
+}
+
+/** One decision on the chat model with adaptive thinking; the answer is held to the schema. */
+async function reasonJson<T>(opts: { system: string; prompt: string; schema: JsonSchema; maxTokens?: number; timeoutMs?: number }): Promise<T> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: anthropicHeaders(),
+    body: JSON.stringify({
+      model: ENV.chatModel,
+      max_tokens: Math.max(16_000, opts.maxTokens ?? 0),
+      system: opts.system,
+      messages: [{ role: "user", content: opts.prompt }],
+      thinking: { type: "adaptive" },
+      output_config: { effort: ENV.chatEffort, format: { type: "json_schema", schema: opts.schema } },
+    }),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 180_000),
+  });
+  const raw = await res.text();
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${raw.slice(0, 300)}`);
+  const data = JSON.parse(raw);
+  const u = data.usage ?? {};
+  await recordTokens(ENV.chatModel, Number(u.input_tokens) || 0, Number(u.output_tokens) || 0, Number(u.cache_read_input_tokens) || 0);
+  const text = (data.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
+  const parsed = extractJson(text);
+  if (parsed === undefined) throw new Error(`no JSON in the answer (stop: ${data.stop_reason})`);
   return parsed as T;
 }
 

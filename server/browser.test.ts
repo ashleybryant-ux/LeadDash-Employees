@@ -25,6 +25,9 @@ beforeAll(async () => {
       seen.code = url.searchParams.get("c") ?? undefined;
       return res.end(page(`<h1>Leads inbox</h1><a href="/bid/1">County EHR System</a><a href="/doc.pdf">RFP document</a><form action="/submit"><button>Submit response</button></form>`));
     }
+    if (url.pathname === "/form") {
+      return res.end(page(`<label for="g">Gender</label><input type="radio" id="g" name="g" checked><label for="eth">Ethnicity</label><select id="eth"><option>Select One</option><option>Asian</option><option selected>African American or Black</option></select><label for="bs">Business Status</label><select id="bs"><option>Select One</option><option>Operating</option></select>`));
+    }
     if (url.pathname === "/home") return res.end(page(`<a href="/" target="_blank">Log In</a>`));
     if (url.pathname === "/doc.pdf") {
       res.setHeader("content-type", "application/pdf");
@@ -66,6 +69,15 @@ function driver(opts: { submit: boolean }) {
 }
 
 describe.skipIf(!ready)("the server's browser", () => {
+  it("shows the option a dropdown holds and whether a radio is ticked, so a field already set is never set again", async () => {
+    let view: PageView | null = null;
+    await runBrowserTask({ orgId: 1, goal: "read the form", startUrl: `${base}/form`, decide: async (v) => ((view = v), act({ action: "done", result: "ok" })) });
+    const by = (label: string) => view!.elements.find((e) => e.label === label)!;
+    expect(by("Ethnicity").text).toMatch(/^selected: African American or Black; options: Select One \| Asian \| African American or Black$/);
+    expect(by("Business Status").text).toMatch(/^nothing selected; options:/);
+    expect(by("Gender").text).toBe("(checked)");
+  }, 60_000);
+
   it("signs in with saved values the AI never sees, and stops to ask for a code", async () => {
     const views: string[] = [];
     const d = driver({ submit: false });

@@ -614,8 +614,22 @@ export async function snapshot(page: import("playwright-core").Page): Promise<Pa
       const byFor = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent : "";
       return (el.getAttribute("aria-label") || byFor || el.closest("label")?.textContent || el.getAttribute("placeholder") || el.getAttribute("name") || el.getAttribute("title") || "").trim().replace(/\s+/g, " ");
     };
+    // What the element holds now. A dropdown shows the option that is chosen (its text would otherwise be every option at once), a checkbox or radio shows whether it is ticked, and a custom dropdown shows the value it displays.
+    const stateOf = (el: Element) => {
+      const clean = (t: string) => t.trim().replace(/\s+/g, " ");
+      if (el instanceof HTMLSelectElement) {
+        const chosen = el.selectedIndex >= 0 ? clean(el.options[el.selectedIndex]?.text || "") : "";
+        const first = clean(el.options[0]?.text || "");
+        const options = Array.from(el.options).map((o) => clean(o.text)).filter(Boolean).slice(0, 12).join(" | ");
+        return `${chosen && (el.selectedIndex > 0 || !/^(select|choose|--)/i.test(first)) ? `selected: ${chosen}` : "nothing selected"}; options: ${options}`;
+      }
+      if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) return el.checked ? "(checked)" : "(not checked)";
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return clean(el.value || "");
+      if (el.getAttribute("role") === "combobox" || el.getAttribute("aria-haspopup") === "listbox") return `shows: ${clean((el as HTMLElement).innerText || "")}`;
+      return clean((el as HTMLElement).innerText || "");
+    };
     let n = 0;
-    document.querySelectorAll("a[href], button, input, select, textarea, [role=button], [role=link], [role=tab], [onclick]").forEach((el) => {
+    document.querySelectorAll("a[href], button, input, select, textarea, [role=button], [role=link], [role=tab], [role=combobox], [onclick]").forEach((el) => {
       if (!visible(el) || n >= 250) return;
       const type = (el.getAttribute("type") || "").toLowerCase();
       if (type === "hidden") return;
@@ -625,7 +639,7 @@ export async function snapshot(page: import("playwright-core").Page): Promise<Pa
         tag: el.tagName.toLowerCase(),
         type,
         label: labelOf(el).slice(0, 120),
-        text: ((el as HTMLElement).innerText || (el as HTMLInputElement).value || "").trim().replace(/\s+/g, " ").slice(0, 120),
+        text: stateOf(el).slice(0, 160),
         href: (el as HTMLAnchorElement).href || "",
       });
       if (type === "password") out[out.length - 1].text = (el as HTMLInputElement).value ? "(filled)" : "";
@@ -645,6 +659,7 @@ async function decide(task: BrowserTask, view: PageView, history: StepLog[]): Pr
     system: `You are ${task.actor ?? "an assistant"} operating a web browser for the person you work for. Pick exactly one next action toward the goal.
 Rules:
 - Use only elements from the numbered list. Never invent an element number.
+- Each element shows what it holds now: "selected: X" for a dropdown, "(checked)" for a ticked box, the typed text for a filled box. A field that already holds the right value is done: move on to the next empty required field, never set it again.
 - To fill a saved value, use action "type" with secret "email", "password", "code" or "content" and leave value empty ("content" pastes the whole block you were given, like a page's HTML). Saved values available: ${saved}.
 - If the site asks for a one-time sign-in or verification code and no code is saved, use "need_code".
 - ${task.allowSubmit ? "You are approved to press the final button this goal needs (submit, save or publish). Press it only after every required file is uploaded and every required field is filled, then capture the confirmation number or message." : "Never press a button that submits, places or finalizes a bid, application or form. If the goal would need that, use done and say what is ready."}

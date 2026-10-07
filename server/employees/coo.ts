@@ -134,7 +134,12 @@ async function weekFacts(orgId: number, updatesFrom: string[]) {
   return lines.join("\n");
 }
 
-export async function buildAgenda(orgId: number, meetingId: number) {
+/**
+ * Writes a meeting's agenda. `instructions` is what the owner said about this
+ * meeting (what it covers, what waits): it shapes the whole agenda and
+ * overrides the usual shape, instead of being added as one more line.
+ */
+export async function buildAgenda(orgId: number, meetingId: number, instructions = "") {
   const m = await db.getMeeting(meetingId, orgId);
   if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
   const { tz } = await opsFor(orgId);
@@ -154,13 +159,16 @@ export async function buildAgenda(orgId: number, meetingId: number) {
   const out = await working(simone, async () => {
     const { system } = await systemPromptFor(
       simone,
-      `Write the agenda for "${m.title}" on ${fmtDay(m.startsAt, tz)}, ${m.minutes} minutes.
-- 3 to 7 items. Minutes add up to ${m.minutes} or less. First item: the numbers for the week (who: ${simone.name}). Last item: decisions and action items (who: ${attendees[0]?.name || "the owner"}).
-- In between, what most needs this group, in order of importance: anything behind or blocking a launch first. Name the specific thing and number from the facts in each item.
+      `Write the agenda for "${m.title}" on ${fmtDay(m.startsAt, tz)}, ${m.minutes} minutes.${instructions.trim() ? `
+- What the owner said about this meeting comes first and overrides every other rule here: ${instructions.trim().slice(0, 1200)}
+  Build the agenda around it. If it limits the topics, every item is about those topics, and only facts that bear on them are used; leave everything else out entirely, with no line saying it was left out. Never copy the instruction itself in as an item.` : ""}
+- 3 to 7 items. Minutes add up to ${m.minutes} or less. Usually the first item is the numbers for the week (who: ${simone.name}) and the last is decisions and action items (who: ${attendees[0]?.name || "the owner"}); keep only the numbers that bear on what this meeting covers.
+- In between, what most needs this group, in order of importance: anything behind or blocking a launch first. Name the specific thing and number from the facts in each item. Think about what the group has to decide or unblock, not just what the facts list.
 - who: a person attending (${attendees.map((a) => a.name).join(", ") || "the owner"}) or an employee whose update it is (${updatesFrom.map((k) => emps.find((e) => e.kind === k)?.name).filter(Boolean).join(", ") || "none"}). Two names joined with "and" is fine.
 ${answers.style ? `- Style: ${answers.style}.` : ""}${answers.always ? `\n- Always include: ${answers.always}.` : ""}`
     );
-    return generateJson<{ items: { item: string; who: string; minutes: number }[] }>({ system, prompt: facts, schemaName: "meeting_agenda", schema: obj({ items: arr(obj({ item: str, who: str, minutes: int })) }), maxTokens: 1200 });
+    const healthcare = (await db.getOrganizationById(orgId))?.orgType === "healthcare";
+    return generateJson<{ items: { item: string; who: string; minutes: number }[] }>({ system, prompt: facts, schemaName: "meeting_agenda", schema: obj({ items: arr(obj({ item: str, who: str, minutes: int })) }), maxTokens: 1200, reason: true, clientInfo: healthcare });
   });
   const items = (out.items ?? []).slice(0, 8);
   let total = 0;

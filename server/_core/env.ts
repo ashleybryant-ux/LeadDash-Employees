@@ -47,6 +47,15 @@ export const ENV = {
   /** Needed only for a personal key (sk-ant-usr-) that is not scoped to one workspace. Looks like wrkspc_... */
   anthropicWorkspaceId: process.env.ANTHROPIC_WORKSPACE_ID || "",
   anthropicModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
+  /**
+   * Chat decisions (what the person means, which step comes next) run on this
+   * model with thinking on, through the Anthropic key, whenever no client
+   * information can be in the message. CHAT_REASONING=off sends them all to
+   * the gateway instead. CHAT_EFFORT is low, medium or high.
+   */
+  chatReasoning: (process.env.CHAT_REASONING || "on").toLowerCase() !== "off",
+  chatModel: process.env.CHAT_MODEL || process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
+  chatEffort: (["low", "medium", "high"].includes((process.env.CHAT_EFFORT || "").toLowerCase()) ? process.env.CHAT_EFFORT!.toLowerCase() : "medium") as "low" | "medium" | "high",
   searchMaxUses: parseInt(process.env.SEARCH_MAX_USES || "6", 10),
   /** Serper.dev key: Google results for opportunity searches, alongside Anthropic's web search. */
   serperKey: process.env.SERPER_API_KEY || "",
