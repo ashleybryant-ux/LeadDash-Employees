@@ -67,7 +67,7 @@ const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  social: ["none", "report", "write_post", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  social: ["none", "report", "write_post", "post_graphic", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   website: ["none", "report", "site_audit", "mockup_site", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -153,6 +153,7 @@ const ACTION_HELP: Record<string, string> = {
   send_invite: "send_invite: send (or re-send) the calendar invite for a meeting you set up; this makes its Zoom or Google Meet link. Put the meeting name in `target` ('' for the next one).",
   share_meeting: "share_meeting: send a meeting's time and link to one person on the team in their direct messages, and show the link here too. Put the meeting name in `target` ('' for the next one) and the person's name in `to`.",
   switch_link: "switch_link: change the link on a meeting you set up to the other kind. Put the meeting name in `target` and `zoom` or `meet` in `to`. An invited meeting is re-sent with the new link.",
+  post_graphic: "post_graphic: make or remake the graphic for a post you wrote (\"make a graphic\", \"put the headline on a green card\", \"a different picture\", \"make it a story\"). You make it yourself. Put words from the post's title in `target` ('' for the newest one), everything they said about how it should look in `notes`, \"text\" in `focus` for a card with words on it (a headline on a brand color, one word in the accent color, a line under it, the business's name or logo on a strip) or \"picture\" for a scene with no words ('' to pick from their words; a graphic with a headline or quote is text), and \"square\", \"portrait\" or \"story\" in `to` ('' for the post's platform).",
   schedule_meeting: "schedule_meeting: set up a one-time meeting. Put its name in `title`, the date as YYYY-MM-DD in `date`, the start time like 10:00 AM in `time`, the length in minutes in `count` (15, 30, 45, 60 or 90), who attends (names or emails) in `attendees`, and employees whose updates belong on the agenda (names, comma-separated) in `notes`.",
   meeting_notes: "meeting_notes: the person pasted notes from a meeting. Put the meeting name in `target` ('' for the most recent) and the full notes in `message`.",
   sat_in_notes: "sat_in_notes: the person asks about a meeting Avery sat in on and took notes for (Avery takes them, Simone gets them; what was decided, who agreed to what). Put the meeting name, company or person in `target` ('' for the most recent) and the question in `message`.",
@@ -423,6 +424,7 @@ TALK_BY_KIND.ads = `- You write ads; you never run them. A campaign starts from 
 - One platform at a time: a set waits in the chat until the person approves it, asks for another version, edits it or skips it. Never write two platforms in one message.
 - Never invent a result, a cost per click or a platform rule. The platforms' specs come from your training; a number the person did not give you is a question, not a guess.`;
 
+TALK_BY_KIND.social = `- You make the graphics yourself: every post gets a picture when you write it, and post_graphic makes or remakes one on request (a card with the headline in the brand colors, or a scene with no words). Never say you can't build image files, never hand a graphic to Elena or a person, and never only describe a concept when they asked for the graphic.`;
 TALK_BY_KIND.inbox = `- You are the owner's executive assistant. You protect her time and attention: you sort what comes in, decide whether she needs it, and keep the one list of decisions for her and her team.
 - Lead with a recommendation, not a pile of options: "Nov 17 works and Nov 19 clashes with your board call. I suggest Nov 17 and can confirm it."
 - Some decisions only the owner makes (see your desk); anyone on the team can make the rest, and you always say who decided.
@@ -1343,6 +1345,21 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         cards: [{ type: "post", id: p.id, title: p.title, body: (p.body ?? "").slice(0, 280), imageUrl: p.imageUrl }],
         queries: [],
       };
+    }
+    case "post_graphic": {
+      const graphic = await import("./graphic");
+      const kind = d.focus === "text" || d.focus === "picture" ? d.focus : "";
+      const shape = d.to === "square" || d.to === "portrait" || d.to === "story" ? d.to : "";
+      try {
+        const r = await graphic.postGraphic(org, emp, { target: d.target, words: [d.notes, d.message].filter(Boolean).join(" ") || ctx.said || "", kind, shape });
+        const p = r.post;
+        const text = r.kind === "text"
+          ? `Here's the graphic: "${r.spec!.headline}"${r.spec!.emphasis ? ` with "${r.spec!.emphasis}" in ${r.spec!.accent}` : ""} on ${r.spec!.background}${r.spec!.subline ? `, and "${r.spec!.subline}" under it` : ""}. It's on the post now. Tell me what to change, or approve the post.`
+          : `Here's the new picture. It's on the post now. Tell me what to change, or approve the post.`;
+        return { text, cards: [{ type: "post", id: p.id, title: p.title, body: (p.body ?? "").slice(0, 280), imageUrl: p.imageUrl }], queries: [], choices: ["Use it", "Different words", "Make it a story"], facts: `${p.title}: graphic made (${r.kind}).` };
+      } catch (err) {
+        return { text: `I couldn't make the graphic: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
     }
     case "schedule_posts": {
       const channel = d.platforms?.[0] ?? "facebook";
