@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "receipt" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "receipt" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image";
   id: number;
   /** On a choices card after a bulk close in Projects: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -86,7 +86,7 @@ const ACTIONS: Record<string, string[]> = {
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 // Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
-for (const list of Object.values(ACTIONS)) list.push("approve", "browse", "precall_report", "sop_site", "sop_write", "task_due", "task_find", "task_lists", "task_add", "task_change", "task_bulk", "task_undo", "goal_update");
+for (const list of Object.values(ACTIONS)) list.push("approve", "write_doc", "make_chart", "browse", "precall_report", "sop_site", "sop_write", "task_due", "task_find", "task_lists", "task_add", "task_change", "task_bulk", "task_undo", "goal_update");
 
 const ACTION_HELP: Record<string, string> = {
   ads_campaign: "ads_campaign: start an ad campaign once you know all four: the goal, who it is for, the page or offer the ads go to, and the budget. Put a short campaign name in `title`, the goal in `goal`, who it is for in `target`, the page or offer in `url`, the platforms they named in `notes` (their words; \"all\" for every platform), the total budget in whole dollars in `count`, the start date as YYYY-MM-DD in `date` and the end date as YYYY-MM-DD in `time` ('' when they gave no dates). You then work out the budget split and post it as a card; nothing is written until they take a split.",
@@ -105,6 +105,8 @@ const ACTION_HELP: Record<string, string> = {
   task_undo: "task_undo: reopen the tasks you just closed with task_bulk (\"Reopen them\", \"undo that\").",
   goal_update: "goal_update: post an update on a goal on the Goals page (\"we're at 13 practices\", \"the webinar is behind\"). Put words from the goal's title in `target`, how it's going in `focus` (on, risk or off), the update in `notes`, and the new number for its main target in `count` (0 when there's no new number).",
   approve: "approve: the person approves, in words, something of yours that is waiting for them: an item in Approvals, or an application you wrote that is ready for review (\"approved\", \"approve it\", \"yes, send it\", \"approve, let's submit\", \"go ahead with the hold\"). Put words from its title in `target` ('' for the newest one waiting). It goes out at once, the same as pressing Approve on the Approvals page, and you report what happened (the calendar event, the meeting link, where it posted). Use this, never meeting_link or none, when they say they approve. If they ask for the link after approving, use meeting_link.",
+  write_doc: "write_doc: make a document the person keeps or shares (a plan, a structure, a memo, a one-pager, a policy), saved as a Word file that opens right here in the chat. Use it whenever they ask for something written up as a document, or say \"draft that\" about something longer than a few lines. Put the document's title in `title` and what goes in it in `notes`. Never say you can't make or save a file.",
+  make_chart: "make_chart: draw an org chart (who leads whom, a team structure, reporting lines) as a picture that shows right here in the chat. Put the chart's title in `title` and anything about what it should show in `notes`. You draw it yourself; never hand it to another employee and never say you can't make an image.",
   sop_site: "sop_site: write an SOP (a standard operating procedure, a how-to for staff) by doing the steps yourself on a website in your browser and keeping a screenshot of each one (\"write the SOP for adding a clinician's availability in LeadDash EHR\", \"document how to add a contact in the platform, with screenshots\"). Use it when the procedure happens on a site a saved Website login covers or a web address in this conversation. Put the SOP's name in `title` (as a task: 'Adding a clinician's availability'), the web address in `url` ('' when a saved login covers it), and the saved login's name in `target` ('' for none). For LeadDash EHR use the demo practice login, never a real chart. Never start it again while you are already in the browser on it: anything they say then (\"use test information\", \"skip that screen\") is passed to the run you have open. A video walkthrough is recorded by a person from the SOPs page (Record); you keep screenshots, not video, so say that instead of starting over.",
   sop_write: "sop_write: write an SOP (a standard operating procedure, a how-to for staff) from what the person told you in this conversation, for a procedure that is not on a screen or that they described in words (\"write up how we handle a crisis call\", \"turn what I just said into an SOP\"). Only once you know how it is done step by step: if they only named it, ask how it goes, one question at a time, with 3 or 4 fixed choices where they fit. Put the SOP's name in `title`, everything they said about how it is done in `notes` (their words, in order), the area in `focus` (front_desk, billing, clinical, marketing or admin) and who follows it in `target`.",
   precall_report: "precall_report: run the Pre-call report skill before a meeting with a practice or person (\"run a pre-call report on Bayou Family Therapy\", \"brief me before my call with Dr. Tran\"). Put the person's name in `target`, the practice in `title`, a website in `url` and the meeting date in `date` (YYYY-MM-DD) and `time` (HH:MM) when given. Public business information only; it posts here when ready.",
@@ -713,6 +715,16 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       if (!db.press.getSettings(org)) db.press.saveSettings(org, {});
       const r = await newsroom.scout(org, { focus: d.focus || undefined, quiet: true });
       return { text: `I scouted the news: ${plural(r.added, "new reporter")} with recent articles as proof${r.moved ? `, ${plural(r.moved, "reporter")} changed outlets` : ""}, ${plural(r.stories, "story", "stories")} routed to the desk each fits best${r.coverage ? `, and ${plural(r.coverage, "new coverage mention")}` : ""}. It's all on my Newsroom tab.`, cards: [{ type: "press_brief", id: Date.now(), title: "Newsroom" }], queries: [] };
+    }
+    case "write_doc": {
+      const visuals = await import("./visuals");
+      const r = await visuals.writeDoc(emp, { title: d.title, notes: d.notes, history: ctx.history });
+      return { text: `${r.card.title} is ready. Press Open to read it here, or tell me what to change.`, cards: [r.card as ChatCard], queries: [] };
+    }
+    case "make_chart": {
+      const visuals = await import("./visuals");
+      const r = await visuals.orgChart(emp, { title: d.title, notes: d.notes, history: ctx.history });
+      return { text: `Here's the ${r.card.title.toLowerCase().startsWith("org chart") ? "" : "chart: "}${r.card.title}. Tell me what to move or rename and I'll redraw it.`, cards: [r.card as ChatCard], queries: [] };
     }
     case "press_beats": {
       const newsroom = await import("./newsroom");
