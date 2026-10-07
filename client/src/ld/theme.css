@@ -1666,3 +1666,10 @@ button.gp-ts:hover { background: #f8fbf9; }
   .ld-chatmain .ld-pjlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
   .ld-chatmain .ld-pjlist > .ld-between, .ld-chatmain .ld-pjlist > .ld-pjform, .ld-chatmain .ld-pjlist > .ld-small { grid-column: 1 / -1; }
 }
+
+/* Tables in documents read in the chat */
+.ld-talk-table { overflow-x: auto; margin: 10px 0 14px; }
+.ld-talk-table table { border-collapse: collapse; width: 100%; font-size: 13.5px; line-height: 1.45; }
+.ld-talk-table th { text-align: left; font-weight: 700; color: #0e1c14; background: #eef4f1; border-bottom: 1px solid #cfdcd5; padding: 8px 10px; vertical-align: bottom; }
+.ld-talk-table td { border-bottom: 1px solid #e3e9e6; padding: 8px 10px; vertical-align: top; color: #2b3a33; }
+.ld-talk-table tr:last-child td { border-bottom: none; }

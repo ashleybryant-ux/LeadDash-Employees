@@ -63,3 +63,15 @@ describe("any employee makes a document or an org chart itself", () => {
     expect(meta.width).toBeGreaterThan(600);
   });
 });
+
+describe("tables in documents", () => {
+  it("a markdown table becomes a real Word table, not pipes in a paragraph", async () => {
+    const { simpleDocx } = await import("./employees/docWriter");
+    const JSZip = (await import("jszip")).default;
+    const buf = await simpleDocx("# Meetings\n\n| Meeting | Cadence |\n|---|---|\n| Growth huddle | Weekly |\n| All-hands | Monthly |");
+    const xml = await (await JSZip.loadAsync(buf)).file("word/document.xml")!.async("string");
+    expect(xml).toContain("<w:tbl>");
+    expect((xml.match(/<w:tr[ >]/g) ?? []).length).toBe(3);
+    expect(xml).not.toContain("|---|");
+  });
+});

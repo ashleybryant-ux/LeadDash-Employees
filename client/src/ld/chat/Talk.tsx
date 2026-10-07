@@ -238,6 +238,12 @@ function inline(t: string) {
   return t.split(/(\*\*[^*]+\*\*)/g).map((part, i) => (/^\*\*[^*]+\*\*$/.test(part) ? <b key={i}>{part.slice(2, -2)}</b> : <React.Fragment key={i}>{part}</React.Fragment>));
 }
 
+/** The cells of a "| a | b |" table line. */
+export function cells(line: string) {
+  return line.replace(/^\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+}
+const isRule = (line: string) => /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$/.test(line);
+
 export function DocView({ text }: { text: string }) {
   // Line by line: headings, the cue under a heading, meta lines, stage directions, bullet lists and paragraphs.
   const out: React.ReactNode[] = [];
@@ -252,6 +258,25 @@ export function DocView({ text }: { text: string }) {
       para = [];
       list = [];
     };
+    // A table: "| a | b |" lines, with the "|---|---|" line under the header.
+    if (lines.length >= 2 && lines.every((l) => l.startsWith("|")) && isRule(lines[1])) {
+      const [head, , ...rows] = lines;
+      out.push(
+        <div key={k++} className="ld-talk-table">
+          <table>
+            <thead>
+              <tr>{cells(head).map((c, i) => <th key={i}>{inline(c)}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.filter((r) => !isRule(r)).map((r, ri) => (
+                <tr key={ri}>{cells(r).map((c, i) => <td key={i}>{inline(c)}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
     lines.forEach((l, i) => {
       if (/^[-*] /.test(l)) {
         if (para.length) {
