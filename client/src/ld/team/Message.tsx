@@ -2,7 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Avatar, ErrorLine, PersonAvatar } from "../ui";
+import { Avatar, ErrorLine, PersonAvatar, useEmployees } from "../ui";
 import { Menu } from "../goals/shared";
 import { fmtTime, parseJson } from "../meta";
 import { AttachmentChip } from "../chat/Extras";
@@ -127,7 +127,9 @@ export function LinkPreview({ p, onHide, hiding }: { p: Preview; onHide: () => v
 }
 
 export function Who({ m, people, employees, size = 36 }: { m: { userId: number; employeeId: number | null; authorName: string }; people: Person[]; employees: Emp[]; size?: number }) {
-  const e = m.employeeId ? employees.find((x) => x.id === m.employeeId) : null;
+  // An employee can write in a direct message too (Simone sending a meeting link), where the channel lists no employees.
+  const everyone = useEmployees().list;
+  const e = m.employeeId ? employees.find((x) => x.id === m.employeeId) ?? everyone.find((x) => x.id === m.employeeId) : null;
   if (e) return <Avatar name={e.name} kind={e.kind} src={e.avatar} size={size} />;
   return <PersonAvatar name={m.authorName} src={people.find((p) => p.userId === m.userId)?.avatarUrl ?? null} size={size} />;
 }

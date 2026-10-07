@@ -77,8 +77,8 @@ const ACTIONS: Record<string, string[]> = {
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  projects: ["none", "report", "check_schedule", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  coo: ["none", "report", "check_schedule", "write_agenda", "schedule_meeting", "meeting_notes", "set_deadlines", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  projects: ["none", "report", "check_schedule", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "send_invite", "share_meeting", "switch_link", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  coo: ["none", "report", "check_schedule", "write_agenda", "schedule_meeting", "send_invite", "share_meeting", "switch_link", "meeting_notes", "set_deadlines", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   ads: ["none", "report", "ads_campaign", "ads_note", "ads_rewrite", "ads_approve", "ads_skip", "ads_platform", "ads_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   billing: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -150,6 +150,9 @@ const ACTION_HELP: Record<string, string> = {
   start_task: "start_task: the person wants an employee to start a project task now (\"have Theo start the launch article\"). Put the task's name in `target`.",
   project_meeting: "project_meeting: set up a meeting about a project (kickoff, check-in, weekly project meeting). Put its name in `title`, the project's name in `notes` ('' for the next launch), the date as YYYY-MM-DD in `date`, the start time like 10:00 AM in `time`, the length in minutes in `count` (15, 30, 45, 60 or 90), who attends (names or emails, '' for everyone) in `attendees`, and \"weekly\" or \"once\" in `to`.",
   write_agenda: "write_agenda: write or rewrite the agenda for an upcoming meeting. Put the meeting name in `target` ('' for the next one) and anything to add or change in `notes`.",
+  send_invite: "send_invite: send (or re-send) the calendar invite for a meeting you set up; this makes its Zoom or Google Meet link. Put the meeting name in `target` ('' for the next one).",
+  share_meeting: "share_meeting: send a meeting's time and link to one person on the team in their direct messages, and show the link here too. Put the meeting name in `target` ('' for the next one) and the person's name in `to`.",
+  switch_link: "switch_link: change the link on a meeting you set up to the other kind. Put the meeting name in `target` and `zoom` or `meet` in `to`. An invited meeting is re-sent with the new link.",
   schedule_meeting: "schedule_meeting: set up a one-time meeting. Put its name in `title`, the date as YYYY-MM-DD in `date`, the start time like 10:00 AM in `time`, the length in minutes in `count` (15, 30, 45, 60 or 90), who attends (names or emails) in `attendees`, and employees whose updates belong on the agenda (names, comma-separated) in `notes`.",
   meeting_notes: "meeting_notes: the person pasted notes from a meeting. Put the meeting name in `target` ('' for the most recent) and the full notes in `message`.",
   sat_in_notes: "sat_in_notes: the person asks about a meeting Avery sat in on and took notes for (Avery takes them, Simone gets them; what was decided, who agreed to what). Put the meeting name, company or person in `target` ('' for the most recent) and the question in `message`.",
@@ -389,7 +392,7 @@ async function webFacts(emp: AIEmployee) {
 
 async function leadershipFacts(emp: AIEmployee) {
   if (emp.kind !== "coo" && emp.kind !== "projects") return "";
-  const parts = [await coo.recentMeetingsFacts(emp.organizationId).catch(() => "")];
+  const parts = [await coo.upcomingMeetingsFacts(emp.organizationId).catch(() => ""), await coo.recentMeetingsFacts(emp.organizationId).catch(() => "")];
   if (emp.kind === "projects") parts.push((await projects.projectsStatus(emp.organizationId).catch(() => "")).slice(0, 3000));
   return `\n${parts.filter(Boolean).join("\n")}`;
 }
@@ -425,7 +428,8 @@ TALK_BY_KIND.inbox = `- You are the owner's executive assistant. You protect her
 - Some decisions only the owner makes (see your desk); anyone on the team can make the rest, and you always say who decided.
 - You don't do another employee's job: work for an employee goes to Nora (to_nora), sales follow-ups to Jada, speaking and press to Taylor.`;
 TALK_BY_KIND.coo = `- The owner's calendars are connected on Integrations: check_schedule reads them (today, tomorrow, a day, a week). Never open Google Calendar, Gmail or Zoom in a browser, and never send anyone to a sign-in page.
-- Avery sits in on meetings with a Zoom or Google Meet link and sends you the notes. "Are you joining my 11am?" or "is Avery in the board call?" is sitting_in; "skip it" or "join it" is join_or_skip. Answer from the facts, never with "which meeting?" when they gave a time.`;
+- Avery sits in on meetings with a Zoom or Google Meet link and sends you the notes. "Are you joining my 11am?" or "is Avery in the board call?" is sitting_in; "skip it" or "join it" is join_or_skip. Answer from the facts, never with "which meeting?" when they gave a time.
+- Meetings you set up are in your facts with their status and link. "Send the invite" is send_invite (never approve). "Send Caroline the link" is share_meeting. "Make it a Zoom" is switch_link. When they ask for a Zoom link and the meeting has a Google Meet link, give the Meet link and offer switch_link; never say the meeting isn't booked when your facts list it.`;
 TALK_BY_KIND.outreach = `- You run two kinds of outreach: warm sequences for prospects Riley finds (from Gmail), and cold email to the owner's lead list through Instantly. Cold email work is cold_campaign, cold_research, cold_review and cold_replies.
 - Cold email rules: business facts only, never personal details. Never claim a price, offer, migration, result or statistic that isn't in the playbook, the Brain or the website pricing. Opt-outs are honored at once. Every email carries the mailing address and an opt-out line.
 - Any employee can run the Pre-call report (precall_report) before a meeting; you run it on your own when a lead books.`;
@@ -877,6 +881,40 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const ups = emps.filter((e) => d.notes.toLowerCase().includes(e.name.toLowerCase())).map((e) => e.kind);
       const m = await coo.scheduleMeeting(org, { title: d.title || "Meeting", date: d.date, time: d.time, minutes: Number(d.count) || 30, attendees: d.attendees, updatesFrom: ups });
       return { text: `I set up ${m.title} and wrote the agenda. Press Send invite and it goes out with the meeting link.`, cards: [coo.meetingCard(m) as ChatCard], queries: [] };
+    }
+    case "send_invite": {
+      const m = await coo.meetingNamed(org, d.target);
+      if (!m) return { text: "There's no meeting coming up to send an invite for.", cards: [], queries: [] };
+      try {
+        const sent = await coo.sendInvite(org, m.id, ctx.who || "the owner");
+        const kind = sent.linkKind === "zoom" ? "Zoom" : "Google Meet";
+        return { text: `${m.status === "invited" ? "Re-sent" : "Sent"} the invite for ${sent.title} to ${plural(JSON.parse(sent.attendees || "[]").length, "person", "people")}. ${kind} link: ${sent.link || "(none came back)"}`, cards: [coo.meetingCard(sent) as ChatCard], queries: [], facts: `${sent.title}: invite sent, ${kind} link ${sent.link ?? "none"}.` };
+      } catch (err) {
+        return { text: `I couldn't send the invite for ${m.title}: ${err instanceof Error ? err.message : String(err)}`, cards: [coo.meetingCard(m) as ChatCard], queries: [] };
+      }
+    }
+    case "share_meeting": {
+      const m = await coo.meetingNamed(org, d.target);
+      if (!m) return { text: "There's no meeting coming up to share.", cards: [], queries: [] };
+      if (!ctx.userId) return { text: "I can only send a direct message for a person on the team who asked me in chat.", cards: [], queries: [] };
+      try {
+        const r = await coo.shareMeeting(org, m.id, { userId: ctx.userId, name: ctx.who || "The owner" }, d.to || d.attendees, { id: emp.id, name: emp.name });
+        return { text: `Sent it to ${r.person} in your direct messages. ${r.text}`, cards: [], queries: [], facts: `Shared with ${r.person}: ${r.text}` };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [coo.meetingCard(m) as ChatCard], queries: [] };
+      }
+    }
+    case "switch_link": {
+      const m = await coo.meetingNamed(org, d.target);
+      if (!m) return { text: "There's no meeting coming up to change the link on.", cards: [], queries: [] };
+      const to = /zoom/i.test(`${d.to} ${d.focus}`) ? "zoom" : "meet";
+      try {
+        const next = await coo.switchLink(org, m.id, to, ctx.who || "the owner");
+        const kind = to === "zoom" ? "Zoom" : "Google Meet";
+        return { text: next.link ? `${next.title} now has a ${kind} link: ${next.link}${m.status === "invited" ? " The updated invite went out." : ""}` : `${next.title} will get a ${kind} link when the invite is sent.`, cards: [coo.meetingCard(next) as ChatCard], queries: [], facts: `${next.title}: ${kind} link ${next.link ?? "not made yet"}.` };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [coo.meetingCard(m) as ChatCard], queries: [] };
+      }
     }
     case "meeting_notes": {
       const m = await coo.lastMeetingFor(org, d.target, emp.kind === "projects" ? "project" : "all");

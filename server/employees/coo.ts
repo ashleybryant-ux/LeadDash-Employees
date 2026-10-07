@@ -399,6 +399,57 @@ export async function recentMeetingsFacts(orgId: number) {
   ].join("\n");
 }
 
+/** The meetings coming up that Simone or Nora set up: when, who, the link and whether the invite went out. */
+export async function upcomingMeetingsFacts(orgId: number) {
+  const { ops, tz } = await opsFor(orgId);
+  const v = await meetingsView(orgId);
+  const zoom = (await db.getConnectionByProvider(orgId, "zoom"))?.status === "connected";
+  const kind = (m: Pick<Meeting, "linkKind">) => (m.linkKind === "zoom" ? "Zoom" : "Google Meet");
+  const lines = v.upcoming.slice(0, 8).map((m) => {
+    const link = m.link ? `${kind(m)} link ${m.link}` : `${kind(m)} link not made yet (it is made when the invite is sent)`;
+    const state = m.status === "invited" ? "invites sent, on the calendar" : "invite NOT sent yet (send_invite sends it)";
+    return `- ${m.title}: ${fmtDay(m.startsAt, tz)} at ${fmtTime(m.startsAt, tz)}, ${m.minutes} min, with ${m.attendees.map((a) => a.name).join(", ") || "nobody yet"}; ${state}; ${link}.`;
+  });
+  return `Meetings coming up that you set up (these are your own records, not a calendar read): ${lines.length ? `\n${lines.join("\n")}` : "none."}
+Meeting links: new meetings get a ${ops.meetingLink === "zoom" ? "Zoom" : "Google Meet"} link (the owner's setting on your Onboarding tab)${zoom ? "; Zoom is connected" : "; Zoom is NOT connected on Integrations, so Zoom links can't be made"}. switch_link changes one meeting to the other kind. When someone asks for a meeting's link, give the link above as it is and say which kind it is; never say a link needs an approval.`;
+}
+
+/** The meeting someone means by a few words, else the next one coming up. */
+export async function meetingNamed(orgId: number, target: string) {
+  return nextMeetingFor(orgId, target, "all");
+}
+
+/** Change a meeting's link to Zoom or Google Meet. An invited meeting is sent again with the new link. */
+export async function switchLink(orgId: number, meetingId: number, to: "zoom" | "meet", who: string) {
+  const m = await db.getMeeting(meetingId, orgId);
+  if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
+  if (m.linkKind === to) return m;
+  if (to === "zoom" && (await db.getConnectionByProvider(orgId, "zoom"))?.status !== "connected") throw new TRPCError({ code: "BAD_REQUEST", message: "Zoom isn't connected on Integrations, so I can't make a Zoom link. Connect it there and ask again." });
+  await db.updateMeeting(m.id, orgId, { linkKind: to, link: null, zoomMeetingId: null });
+  if (m.status === "invited") return sendInvite(orgId, m.id, who);
+  return (await db.getMeeting(m.id, orgId))!;
+}
+
+/**
+ * Posts a meeting's when and link to a person on the team, in the direct messages between the
+ * person asking and them, as the employee. Returns what was posted.
+ */
+export async function shareMeeting(orgId: number, meetingId: number, from: { userId: number; name: string }, toName: string, emp: { id: number; name: string }) {
+  const m = await db.getMeeting(meetingId, orgId);
+  if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
+  if (!m.link) throw new TRPCError({ code: "BAD_REQUEST", message: `${m.title} has no meeting link yet. The link is made when the invite is sent.` });
+  const { tz } = await opsFor(orgId);
+  const team = await import("../team");
+  const t = toName.trim().toLowerCase();
+  const person = (await team.people(orgId)).find((p) => p.userId !== from.userId && t && ((p.name || "").toLowerCase().split(" ")[0] === t.split(" ")[0] || (p.name || "").toLowerCase() === t || p.email.toLowerCase() === t));
+  if (!person) throw new TRPCError({ code: "BAD_REQUEST", message: `I don't see ${toName.trim() || "that person"} on the team. Who should get it?` });
+  const text = `${m.title}, ${fmtDay(m.startsAt, tz)} at ${fmtTime(m.startsAt, tz)} (${m.minutes} min). ${m.linkKind === "zoom" ? "Zoom" : "Google Meet"} link: ${m.link}`;
+  const key = team.dmKey(from.userId, person.userId);
+  db.team.send({ organizationId: orgId, channel: key, userId: 0, employeeId: emp.id, authorName: emp.name, content: `${text}\n\n(${from.name} asked me to send you this.)` });
+  await (await import("../notify")).notify(orgId, "team_message", { title: emp.name, body: text, url: `/chats/team/${key}`, tag: `team-${key}` }, { only: [person.userId] }).catch(() => null);
+  return { person: person.name || person.email, text };
+}
+
 export async function sendRecap(orgId: number, meetingId: number, who: string) {
   const m = await db.getMeeting(meetingId, orgId);
   if (!m) throw new TRPCError({ code: "NOT_FOUND", message: "That meeting is not in this workspace." });
@@ -581,7 +632,7 @@ export async function meetingsView(orgId: number) {
   };
 }
 
-export function meetingCard(m: Meeting) {
+export function meetingCard(m: Pick<Meeting, "id" | "title" | "status">) {
   return { type: "meeting_agenda" as const, id: m.id, title: m.title, status: m.status };
 }
 

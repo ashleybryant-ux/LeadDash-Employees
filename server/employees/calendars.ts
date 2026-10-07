@@ -202,16 +202,15 @@ export async function schedule(orgId: number, from: Date, to: Date, opts: { full
   const events: Event[] = [];
   const failed: string[] = [];
   let sources = 0;
-  if (!links.length) {
-    // Nothing added yet: the main Google connection's calendar.
-    const token = await integrations.mainGoogleToken(orgId);
-    if (token) {
-      sources = 1;
-      try {
-        for (const e of await googleEvents(token, "primary", from, to, tz)) events.push({ ...e, calendar: "Google Calendar", color: COLORS[0], sourceId: 0 });
-      } catch {
-        failed.push("Google Calendar");
-      }
+  // The main Google connection's calendar is always read: it is where the invites the employees send land.
+  // When that same account is also added under Calendars, its events come back once (same event ids).
+  const main: Event[] = [];
+  const token = await integrations.mainGoogleToken(orgId);
+  if (token) {
+    try {
+      for (const e of await googleEvents(token, "primary", from, to, tz)) main.push({ ...e, calendar: "Google Calendar", color: COLORS[0], sourceId: 0 });
+    } catch {
+      failed.push("Google Calendar");
     }
   }
   for (const l of links) {
@@ -235,6 +234,12 @@ export async function schedule(orgId: number, from: Date, to: Date, opts: { full
       failed.push(l.name);
       db.updateAccountLink(l.id, orgId, { status: "error", error: err instanceof Error ? err.message.slice(0, 200) : "Couldn't read it" });
     }
+  }
+  if (token) {
+    const seen = new Set(events.map((e) => e.extra?.eventId).filter(Boolean));
+    const fresh = main.filter((e) => !e.extra?.eventId || !seen.has(e.extra.eventId));
+    if (!links.length || fresh.length) sources++;
+    events.push(...fresh);
   }
   events.sort((a, b) => a.start.getTime() - b.start.getTime() || Number(b.allDay) - Number(a.allDay));
   return { events, failed, sources, tz };
