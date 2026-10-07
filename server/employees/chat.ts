@@ -512,9 +512,16 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       // An application the employee wrote (a grant, a pitch, a talk) waits in chat, not in Approvals: "approve" submits it.
       if (!waiting.length) {
         const apply = await import("./apply");
-        const mine = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id && ["ready", "needs_answer", "needs_setup", "writing"].includes(a.status));
-        const app = (w ? mine.find((a) => a.title.toLowerCase().includes(w)) : null) ?? mine.find((a) => a.status === "ready") ?? mine[0];
+        const mine = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id && ["ready", "needs_answer", "needs_setup", "writing", "approved"].includes(a.status));
+        const app = (w ? mine.find((a) => a.title.toLowerCase().includes(w)) : null) ?? mine.find((a) => a.status === "ready") ?? mine.find((a) => a.status === "approved") ?? mine[0];
         if (!app) return { text: "Nothing of mine is waiting for your approval right now.", cards: [], queries: [] };
+        // Already approved: "send it" sends it again by whatever route is ready now (a login saved since, the form).
+        if (app.status === "approved") {
+          const route = (await (await import("./bids")).readiness(org, app).catch(() => null))?.route ?? null;
+          if (!route?.ready) return { text: `${app.title} is approved but I can't send it yet: ${route?.detail ?? "no route to send it"}.`, cards: [], queries: [] };
+          apply.enqueue(`submit-${app.id}`, () => import("./bids").then((b) => b.autoSubmit(org, app.id)));
+          return { text: `Sending ${app.title} now: ${route.label.replace(/\.$/, "")}. I'll post the confirmation here when it's in.`, cards: [], queries: [], facts: `${app.title}: sending (${route.label}).` };
+        }
         if (!approves(ctx.said ?? "")) return { text: `${app.title} is ready for your review. Say "approve" and I submit it, or open it on my Opportunities tab.`, cards: [], queries: [] };
         const block = await apply.blockers(org, app);
         if (block.length) return { text: `I can't submit ${app.title} yet: ${block.join(". ")}. It's on my Opportunities tab.`, cards: [], queries: [] };

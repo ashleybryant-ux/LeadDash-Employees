@@ -155,7 +155,7 @@ describe("applying, end to end", () => {
     expect(r.reply.content).toBe('Rural Telehealth Access Program is ready for your review. Say "approve" and I submit it, or open it on my Opportunities tab.');
     expect((await db.getApplication(started.id, orgId))!.status).toBe("ready");
     r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "approve, let's submit" });
-    expect(r.reply.content).toBe("Approved Rural Telehealth Access Program. You certified it is true and complete. No saved sign-in for Heartland Rural Health Fund. Add it on Integrations under Website logins. I'll post here what still needs you.");
+    expect(r.reply.content).toBe("Approved Rural Telehealth Access Program. You certified it is true and complete. No saved sign-in or web address for Heartland Rural Health Fund. Add the sign-in on Integrations under Website logins, or add the application page's address to the opportunity. I'll post here what still needs you.");
     expect((await db.getApplication(started.id, orgId))!).toMatchObject({ status: "approved", certifiedBy: owner.name });
   });
 

@@ -314,6 +314,13 @@ export function portalFor(logins: PortalLogin[], opp: Opportunity | null, app: A
 }
 
 const emailOf = (s: string | null | undefined) => (s ?? "").match(/[^\s<>"',;]+@[^\s<>"',;]+\.[a-z]{2,}/i)?.[0] ?? null;
+/** A web address in free text ("apply at hidden-star.org/apply", a full link), as https://... */
+export function urlOf(s: string | null | undefined) {
+  const m = (s ?? "").match(/https?:\/\/[^\s<>"')\]]+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"')\]]*)?/i)?.[0];
+  if (!m || m.includes("@")) return null;
+  const url = /^https?:\/\//i.test(m) ? m : `https://${m}`;
+  return hostOf(url) ? url.replace(/[.,;:]+$/, "") : null;
+}
 
 /** What a response still needs before Morgan can send it, shown as the "Before it goes in" list. */
 export async function readiness(orgId: number, app: Application) {
@@ -326,10 +333,14 @@ export async function readiness(orgId: number, app: Application) {
   // A pitch to a reporter can go from Taylor's own sending address.
   const sender = opp?.kind === "media" ? db.listAccountLinks(orgId, "send").find((l) => parse<string[]>(l.sendsFor, []).includes("speaking") && l.status === "connected") : undefined;
   const canSend = google || Boolean(sender);
-  let route: { how: "email" | "portal" | "manual"; label: string; ready: boolean; detail: string };
+  const formUrl = urlOf(app.channelDetail) ?? urlOf(reqs.channelDetail) ?? urlOf(opp?.sourceUrl);
+  let route: { how: "email" | "portal" | "form" | "manual"; label: string; ready: boolean; detail: string; url?: string };
   if (app.channel === "email") route = { how: "email", label: to ? `Sends by email to ${to}` : "Goes in by email", ready: Boolean(to && canSend), detail: !to ? "No email address found for submissions" : sender ? `From ${sender.email ?? "Taylor's sending address"}` : google ? "From your connected Google account" : "Connect Google on Integrations to send it" };
   else if (app.channel === "grants_gov") route = { how: "manual", label: "Goes in through Grants.gov", ready: false, detail: "Grants.gov needs your authorized representative to submit" };
-  else route = { how: "portal", label: login ? `${login.name} sign-in saved` : `No saved sign-in for ${app.channelDetail || opp?.host || "this portal"}`, ready: Boolean(login), detail: login ? "Morgan signs in, uploads every file and submits" : "Add it on Integrations under Website logins" };
+  else if (login) route = { how: "portal", label: `${login.name} sign-in saved`, ready: true, detail: "Morgan signs in, uploads every file and submits" };
+  // No saved sign-in: she goes to the form in her own browser. Many hosts take applications on a public page.
+  else if (formUrl) route = { how: "form", label: `Submits on ${hostOf(formUrl)}`, ready: true, detail: "Morgan fills in the form in her browser, uploads every file and submits. If the site asks her to sign in, she asks you for a Website login", url: formUrl };
+  else route = { how: "portal", label: `No saved sign-in or web address for ${app.channelDetail || opp?.host || "this portal"}`, ready: false, detail: "Add the sign-in on Integrations under Website logins, or add the application page's address to the opportunity" };
   return { route, portalId: login?.id ?? null };
 }
 
@@ -398,13 +409,50 @@ export async function autoSubmit(orgId: number, appId: number) {
     return;
   }
 
+  const qs = parse<{ text: string; answer: string }[]>(app.questions, []);
+
+  // A public application form, no sign-in saved: she fills it in herself and asks for a login only if the site demands one.
+  if (route.how === "form" && route.url) {
+    const upload = tempFiles(files);
+    const liveId = newLiveId();
+    const site = hostOf(route.url) ?? route.url;
+    const res = await runBrowserTask({
+      orgId,
+      actor: `${emp.name}, submitting an approved application`,
+      startUrl: route.url,
+      allowSubmit: true,
+      files: upload,
+      maxSteps: 60,
+      live: { id: liveId, onStuck: stuckPoster(orgId, liveId, `submitting ${app.title} on ${site}`) },
+      goal: `Open the application form for "${opp?.title ?? app.title}"${opp?.host ? ` from ${opp.host}` : ""} on this site (follow Apply or Submit links if the form is on another page).
+Fill every required field from these answers when a field matches, and paste each answer where its question is asked:
+${qs.map((q) => `- ${q.text}: ${q.answer.slice(0, 1500)}`).join("\n").slice(0, 9000)}
+Organization: ${org?.name ?? ""}. Contact: ${org?.signerName ?? ""}${org?.signerTitle ? `, ${org.signerTitle}` : ""}.
+Upload each file from the file list to the matching upload field (the response document goes where the application or narrative is asked for; attachments to their named fields).
+When every required field and file is done, submit. Then return JSON {"confirmation":"the confirmation number or message shown"}.
+If the site requires creating an account or signing in before the form can be submitted, stop with fail and say exactly "needs a sign-in". If a field needs something not given here (a price, a signature, a notarized form, a fee), stop with fail and name it.`,
+    }).catch((err) => ({ status: "failed", note: (err as Error).message, result: "", screenshotUrl: null }) as Pick<BrowserResult, "status" | "note" | "result" | "screenshotUrl">);
+    for (const f of upload) fs.rmSync(path.dirname(f.path), { recursive: true, force: true });
+    if (res.status === "done") {
+      const conf = (extractJson(res.result) as { confirmation?: string } | undefined)?.confirmation || res.result.slice(0, 120) || "Submitted";
+      await db.updateApplication(appId, orgId, { receiptUrl: res.screenshotUrl });
+      await markSubmitted(orgId, appId, String(conf).slice(0, 120), emp.name);
+      return;
+    }
+    if (/sign[- ]?in|log[- ]?in|account/i.test(res.note ?? "")) {
+      await post(orgId, `${site} asks for a sign-in before ${app.title} can be submitted. Save a Website login for ${site} on Integrations (your account there), then say "send it" and I'll sign in and submit.`, [], who);
+      return;
+    }
+    await post(orgId, `I stopped before submitting ${app.title} on ${site}: ${res.note}. It's still approved; fix that and press Send now on the application, or say "send it".`, [], who);
+    return;
+  }
+
   // Through the agency's portal.
   const login = portalFor(await db.listPortalLogins(orgId), opp, app);
   if (!login) return;
   const secrets = decryptJson<{ password: string }>(login.secretEncrypted);
   const upload = tempFiles(files);
   const liveId = newLiveId();
-  const qs = parse<{ text: string; answer: string }[]>(app.questions, []);
   const res = await runBrowserTask({
     orgId,
     actor: `${emp.name}, submitting an approved bid response`,

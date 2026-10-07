@@ -221,6 +221,42 @@ describe("Submitting an approved response", () => {
     expect((await lastChat(orgId)).content).toMatch(/ready for you to send/);
   });
 
+  it("with no saved sign-in, submits a public application form in her own browser and asks for a login only when the site demands one", async () => {
+    const { orgId, owner } = await makeWorkspace("bid-form");
+    const { app } = await approvedBid(orgId, "form", "Apply at hidden-star.org/galaxy-grant/apply");
+    const ready = await bids.readiness(orgId, app);
+    expect(ready.route).toMatchObject({ how: "form", ready: true, label: "Submits on hidden-star.org", url: "https://hidden-star.org/galaxy-grant/apply" });
+
+    // The site turns out to need an account: she says exactly what to save and does not give up on sending it herself.
+    browserReplies.push((t) => {
+      expect(t.startUrl).toBe("https://hidden-star.org/galaxy-grant/apply");
+      expect(t.secrets).toBeUndefined();
+      expect(t.allowSubmit).toBe(true);
+      expect(t.goal).toContain("Company overview: LeadDash builds an EHR.");
+      return { status: "failed", result: "", note: "needs a sign-in" };
+    });
+    await bids.autoSubmit(orgId, app.id);
+    expect((await db.getApplication(app.id, orgId))!.status).toBe("approved");
+    expect((await lastChat(orgId)).content).toBe('hidden-star.org asks for a sign-in before Behavioral Health EHR System can be submitted. Save a Website login for hidden-star.org on Integrations (your account there), then say "send it" and I\'ll sign in and submit.');
+
+    // "Send it" in chat after the login is saved goes through the portal route.
+    await caller(owner).portals.save({ organizationId: orgId, name: "Hidden Star", url: "https://hidden-star.org", username: "ashleyb@leaddash.io", password: "portal-pw" });
+    expect((await bids.readiness(orgId, app)).route).toMatchObject({ how: "portal", ready: true });
+    browserReplies.push(() => ({ status: "done", result: '{"confirmation":"GG-2026-0412"}' }));
+    await bids.autoSubmit(orgId, app.id);
+    expect((await db.getApplication(app.id, orgId))!).toMatchObject({ status: "submitted", confirmation: "GG-2026-0412" });
+  });
+
+  it("a public form that takes the application is submitted and recorded", async () => {
+    const { orgId } = await makeWorkspace("bid-form-ok");
+    const { app } = await approvedBid(orgId, "form", "");
+    // No address in the channel detail: the opportunity's own page is the start.
+    expect((await bids.readiness(orgId, app)).route).toMatchObject({ how: "form", ready: true, url: "https://oklahomacounty.bonfirehub.com/opportunities/118" });
+    browserReplies.push(() => ({ status: "done", result: '{"confirmation":"Thank you, your application was received."}' }));
+    await bids.autoSubmit(orgId, app.id);
+    expect((await db.getApplication(app.id, orgId))!).toMatchObject({ status: "submitted", confirmation: "Thank you, your application was received." });
+  });
+
   it("drafts a question to the buyer that waits in Approvals", async () => {
     const { orgId, owner } = await makeWorkspace("bid-ask");
     const { opp } = await approvedBid(orgId, "portal", "");
