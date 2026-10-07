@@ -75,3 +75,28 @@ describe("tables in documents", () => {
     expect(xml).not.toContain("|---|");
   });
 });
+
+describe("lists and rules in documents", () => {
+  it("numbered items run together on one line become separate steps, and --- is a divider, not text", async () => {
+    const { simpleDocx } = await import("./employees/docWriter");
+    const JSZip = (await import("jszip")).default;
+    const buf = await simpleDocx("# Plan\n\n---\n\n## Open items\n1. **Days.** Drafts. 2. **Titles.** Listed. 3. **Authority.** Decide.");
+    const xml = await (await JSZip.loadAsync(buf)).file("word/document.xml")!.async("string");
+    expect((xml.match(/<w:numPr>/g) ?? []).length).toBe(3);
+    expect(xml).not.toContain("---");
+    expect(xml).not.toContain("2. ");
+  });
+});
+
+describe("routine work doesn't wait on the owner", () => {
+  it("invites, recaps, launch plans and emails she asked for go on their own by default; public posts and first cold emails still ask", async () => {
+    const { RULES } = await import("./employees/team");
+    const d = (kind: string, key: string) => (RULES as any)[kind].find((r: any) => r.key === key).default;
+    expect(d("coo", "invites")).toBe("auto");
+    expect(d("coo", "recap")).toBe("auto");
+    expect(d("projects", "create_plan")).toBe("auto");
+    expect(d("inbox", "new_email")).toBe("auto");
+    expect(d("social", "posts")).toBe("ask");
+    expect(d("outreach", "first_email")).toBe("first5");
+  });
+});

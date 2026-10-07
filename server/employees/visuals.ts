@@ -21,6 +21,15 @@ const recent = (history: ChatMessage[] = []) =>
 const safeName = (t: string) => t.replace(/[^\w\s.,()&-]/g, "").replace(/\s+/g, " ").trim().slice(0, 70) || "Document";
 
 /** A Word document written from the conversation, shown as a card that opens in the chat. */
+/** The team as it stands, so a document or chart never marks a known name or title "to confirm". */
+async function teamLines(orgId: number) {
+  const [emps, members] = await Promise.all([db.listEmployeesByOrg(orgId), db.listMembers(orgId)]);
+  return [
+    `People on the team: ${members.map((m) => m.name || m.email).filter(Boolean).join(", ") || "none listed"}.`,
+    `AI employees and their titles: ${emps.map((e) => `${e.name} (${e.roleTitle})`).join(", ")}.`,
+  ].join("\n");
+}
+
 export async function writeDoc(emp: AIEmployee, input: { title: string; notes: string; history?: ChatMessage[] }) {
   const title = input.title.trim() || "Document";
   const { system } = await systemPromptFor(
@@ -28,9 +37,11 @@ export async function writeDoc(emp: AIEmployee, input: { title: string; notes: s
     `Your job now: write "${title}" as a finished document the owner can keep and share.
 - Use what was said in this conversation and the Brain. Every name, title and number comes from there; leave a fact out rather than guess it.
 - Shape: first line "# ${title}", then "## " section headings, "- " bullet lines and short plain paragraphs. **Bold** only for a label at the start of a line.
-- Write it like the person who runs this area would, plain and specific. No em dashes or en dashes. No preamble and no closing offer.`
+- Write it like the person who runs this area would, plain and specific. No em dashes or en dashes. No preamble and no closing offer.
+- Names and titles below are settled; use them and never write a placeholder like [TITLE TO CONFIRM]. Settle anything you can from the conversation, the Brain and the team list yourself; never list it as a decision for the owner. Only things that sign for her, spend money or post in her name are hers to decide.
+- Tables are fine for schedules and comparisons ("| a | b |" with a "|---|---|" line). Numbered steps are "1. " lines, one per line.`
   );
-  const raw = await generateText({ system, prompt: `${input.notes.trim() ? `What to put in it: ${input.notes.trim()}\n\n` : ""}Conversation so far:\n${recent(input.history)}`, maxTokens: 6000 });
+  const raw = await generateText({ system, prompt: `${await teamLines(emp.organizationId)}\n\n${input.notes.trim() ? `What to put in it: ${input.notes.trim()}\n\n` : ""}Conversation so far:\n${recent(input.history)}`, maxTokens: 6000 });
   let text = raw.replace(/^```\w*\s*|```\s*$/g, "").replace(/\s*[–—]\s*/g, ", ").trim();
   if (!text.startsWith("# ")) text = `# ${title}\n\n${text}`;
   const buf = await simpleDocx(text);
@@ -78,7 +89,7 @@ export async function orgChart(emp: AIEmployee, input: { title: string; notes: s
   );
   const r = await generateJson<{ title: string; boxes: ChartBox[] }>({
     system,
-    prompt: `${input.title.trim() ? `Chart: ${input.title.trim()}\n` : ""}${input.notes.trim() ? `What to show: ${input.notes.trim()}\n\n` : ""}Conversation so far:\n${recent(input.history)}`,
+    prompt: `${await teamLines(emp.organizationId)}\n\n${input.title.trim() ? `Chart: ${input.title.trim()}\n` : ""}${input.notes.trim() ? `What to show: ${input.notes.trim()}\n\n` : ""}Conversation so far:\n${recent(input.history)}`,
     schemaName: "org_chart",
     schema: CHART_SCHEMA,
     maxTokens: 3000,

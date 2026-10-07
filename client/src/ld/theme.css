@@ -1673,3 +1673,6 @@ button.gp-ts:hover { background: #f8fbf9; }
 .ld-talk-table th { text-align: left; font-weight: 700; color: #0e1c14; background: #eef4f1; border-bottom: 1px solid #cfdcd5; padding: 8px 10px; vertical-align: bottom; }
 .ld-talk-table td { border-bottom: 1px solid #e3e9e6; padding: 8px 10px; vertical-align: top; color: #2b3a33; }
 .ld-talk-table tr:last-child td { border-bottom: none; }
+.ld-talk-doc ol { margin: 6px 0 12px; padding-left: 22px; }
+.ld-talk-doc ol li { margin: 0 0 8px; }
+.ld-talk-rule { border: none; border-top: 1px solid #e3e9e6; margin: 18px 0; }

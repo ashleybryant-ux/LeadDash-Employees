@@ -434,6 +434,7 @@ const TALK = `Talk with the person like a colleague, back and forth, not like a 
 - When the request is unclear in a way that would waste real work if you guessed, choose "none", ask one short question in "reply", and put 2 to 4 short fixed answers in "choices".
 - Otherwise do the job. After you finish or answer, put up to 4 short next steps the person is likely to want in "choices" (each under 6 words, written as what they would say). Leave "choices" empty when nothing obvious comes next.
 - Questions about your work, a result or a score get a plain, specific answer from your facts.
+- Never make the owner a step in your work. Work she asked for, and routine work that is plainly your job (drafts, plans, research, schedules, internal meetings and invites to her own team, tasks, documents), you finish and report as done. Never write that something waits for her approval, that it stays a draft until she confirms, or list "open decisions" for things you can settle yourself from the Brain, your facts or a teammate. Only these wait for her: anything that signs for her or makes an offer (grant, bid and speaking submissions, contracts, job offers), spends money, posts publicly in her name, or emails someone outside the company for the first time. For those, do all the work first, then ask once.
 - When the person tells you plainly what to do, do it now, all the way through. Their words are the go-ahead: never answer a direct instruction with a button for them to press or a step for them to take, unless the thing truly can't be undone and they haven't seen it. Don't ask questions first unless a wrong guess would do something that can't be undone. Closing or moving tasks can be undone, so just do it.
 - Never say you're writing, making, sending or doing something ("I'll have it in a moment", "writing it now") unless you chose the action that does it in this same reply. If none of your actions can do it, say so plainly and say what can.
 - What the person told you earlier in this chat still holds until they change it: a limit ("only the webinar and Black Friday"), a decision, a correction, a date. Carry it into the work itself. Never just repeat it back as a line of the work.
@@ -983,7 +984,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         const extra = { item: d.notes.trim().slice(0, 160), who: "", minutes: 5 };
         next = await coo.editMeeting(org, m.id, { agenda: [...items.slice(0, -1), extra, ...items.slice(-1)], minutes: next.minutes });
       }
-      if (emp.kind === "projects" && next.status !== "invited" && gate(emp, "meetings") === "auto") {
+      if (next.status !== "invited" && gate(emp, emp.kind === "projects" ? "meetings" : "invites") === "auto") {
         const sent = await coo.sendInvite(org, next.id, `${emp.name} (on her own)`).catch((err) => err instanceof Error ? err.message : String(err));
         if (typeof sent === "string") return { text: `Here's the agenda for ${next.title}. I couldn't send it: ${sent}`, cards: [coo.meetingCard(next) as ChatCard], queries: [] };
         return { text: `Here's the agenda for ${next.title}. I sent it to everyone attending with the meeting link.`, cards: [coo.meetingCard(sent) as ChatCard], queries: [] };
@@ -994,6 +995,11 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const emps = await db.listEmployeesByOrg(org);
       const ups = emps.filter((e) => d.notes.toLowerCase().includes(e.name.toLowerCase())).map((e) => e.kind);
       const m = await coo.scheduleMeeting(org, { title: d.title || "Meeting", date: d.date, time: d.time, minutes: Number(d.count) || 30, attendees: d.attendees, updatesFrom: ups });
+      if (gate(emp, "invites") === "auto") {
+        const sent = await coo.sendInvite(org, m.id, `${emp.name} (on her own)`).catch((err) => (err instanceof Error ? err.message : String(err)));
+        if (typeof sent !== "string") return { text: `I set up ${sent.title}, wrote the agenda and sent the invite with the meeting link: ${sent.link ?? "the link is on the calendar event"}.`, cards: [coo.meetingCard(sent) as ChatCard], queries: [], facts: `${sent.title}: invite sent, link ${sent.link ?? "none"}.` };
+        return { text: `I set up ${m.title} and wrote the agenda, but the invite didn't go out: ${sent}`, cards: [coo.meetingCard(m) as ChatCard], queries: [] };
+      }
       return { text: `I set up ${m.title} and wrote the agenda. Press Send invite and it goes out with the meeting link.`, cards: [coo.meetingCard(m) as ChatCard], queries: [] };
     }
     case "send_invite": {

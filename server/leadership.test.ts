@@ -71,6 +71,8 @@ describe("Nora (Projects)", () => {
   it("plans a launch that waits for approval, then puts the list and tasks in Projects, and reads what the team closes there", async () => {
     mockAi();
     const { orgId, owner } = await makeWorkspace("pm-plan");
+    // Launch plans go ahead on their own by default; this owner chose to approve them first.
+    await saveAutonomy((await db.getEmployeeByKind(orgId, "projects"))!, { create_plan: "ask" });
     const r = await projects.planLaunch(orgId, { date: ymd(20), brief: "20 demos by launch day" });
     expect(r.auto).toBe(false);
     expect(r.launch.status).toBe("planning");

@@ -61,7 +61,8 @@ describe("A request that takes several steps", () => {
     expect(prompts[1]).toContain("Open between 8:00 AM and 6:00 PM: 8:00 AM to 9:00 AM, 11:50 AM to 3:00 PM, 3:50 PM to 6:00 PM.");
     // The third decision saw the booking.
     expect(prompts[2]).toContain("Step 2: schedule_meeting (title: Launch huddle");
-    expect(prompts[2]).toContain("Result: I set up Launch huddle and wrote the agenda.");
+    // The invite now goes out on its own; here Google isn't connected, so the step says why it didn't.
+    expect(prompts[2]).toContain("Result: I set up Launch huddle and wrote the agenda, but the invite didn't go out: Connect Google on Integrations");
 
     // One reply: the summary, with the meeting card and without the calendar dump.
     expect(r.reply.content).toBe("Tomorrow is open from 12:00 PM to 3:00 PM, so I booked the Launch huddle for 1:00 PM, 30 minutes, with the agenda built from Nora's launch updates. Press Send invite on the card and it goes out with the meeting link.");

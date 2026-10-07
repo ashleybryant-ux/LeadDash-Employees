@@ -238,6 +238,29 @@ function inline(t: string) {
   return t.split(/(\*\*[^*]+\*\*)/g).map((part, i) => (/^\*\*[^*]+\*\*$/.test(part) ? <b key={i}>{part.slice(2, -2)}</b> : <React.Fragment key={i}>{part}</React.Fragment>));
 }
 
+/**
+ * The items of a numbered line: "1. First" gives ["First"], and a run like
+ * "1. **A.** text 2. **B.** text" gives both. Null when the line isn't numbered.
+ */
+export function splitNumbered(line: string): string[] | null {
+  if (!/^\d{1,2}[.)] \S/.test(line)) return null;
+  const parts = line.split(/(?:^|\s)(\d{1,2})[.)] (?=\S)/);
+  const items: string[] = [];
+  let want = Number(line.match(/^(\d{1,2})/)![1]);
+  let cur = "";
+  for (let i = 1; i < parts.length; i += 2) {
+    const n = Number(parts[i]);
+    const text = parts[i + 1] ?? "";
+    if (n === want) {
+      if (cur) items.push(cur.trim());
+      cur = text;
+      want = n + 1;
+    } else cur += ` ${parts[i]}. ${text}`;
+  }
+  if (cur) items.push(cur.trim());
+  return items.length ? items : null;
+}
+
 /** The cells of a "| a | b |" table line. */
 export function cells(line: string) {
   return line.replace(/^\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
@@ -252,11 +275,14 @@ export function DocView({ text }: { text: string }) {
     const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
     let para: string[] = [];
     let list: string[] = [];
+    let olist: string[] = [];
     const flush = () => {
       if (para.length) out.push(<p key={k++}>{inline(para.join(" "))}</p>);
       if (list.length) out.push(<ul key={k++}>{list.map((li, i) => <li key={i}>{inline(li)}</li>)}</ul>);
+      if (olist.length) out.push(<ol key={k++}>{olist.map((li, i) => <li key={i}>{inline(li)}</li>)}</ol>);
       para = [];
       list = [];
+      olist = [];
     };
     // A table: "| a | b |" lines, with the "|---|---|" line under the header.
     if (lines.length >= 2 && lines.every((l) => l.startsWith("|")) && isRule(lines[1])) {
@@ -278,6 +304,20 @@ export function DocView({ text }: { text: string }) {
       continue;
     }
     lines.forEach((l, i) => {
+      // A rule line ("---") is only a divider.
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(l)) {
+        flush();
+        out.push(<hr key={k++} className="ld-talk-rule" />);
+        return;
+      }
+      // Numbered steps, one per line, or several run together on one line ("1. a 2. b").
+      const nums = splitNumbered(l);
+      if (nums) {
+        if (para.length || list.length) flush();
+        olist.push(...nums);
+        return;
+      }
+      if (olist.length) flush();
       if (/^[-*] /.test(l)) {
         if (para.length) {
           out.push(<p key={k++}>{inline(para.join(" "))}</p>);
@@ -287,6 +327,11 @@ export function DocView({ text }: { text: string }) {
         return;
       }
       if (list.length) flush();
+      if (l.startsWith("### ")) {
+        flush();
+        out.push(<h4 key={k++}>{inline(l.slice(4))}</h4>);
+        return;
+      }
       if (l.startsWith("# ")) {
         flush();
         out.push(<h2 key={k++}>{l.slice(2)}</h2>);
