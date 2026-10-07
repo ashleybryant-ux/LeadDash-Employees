@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const prompts: { schema: string; system: string; prompt: string }[] = [];
 let answerFor: (prompt: string) => any = () => ({ answer: "A grounded answer.", missing: [], sources: ["Brain"] });
+let decisionFor: () => any = () => ({});
 
 vi.mock("./_core/llm", async (orig) => {
   const actual: any = await orig();
@@ -11,6 +12,7 @@ vi.mock("./_core/llm", async (orig) => {
     generateJson: vi.fn(async (opts: any) => {
       prompts.push({ schema: opts.schemaName, system: opts.system, prompt: opts.prompt });
       if (opts.schemaName === "answer") return answerFor(opts.prompt);
+      if (opts.schemaName === "chat_decision") return decisionFor();
       if (opts.schemaName === "outline") return { outline: ["The gap", "Aim 1"], facts: [{ text: "PHQ-9 is collected", source: "Funding facts" }] };
       if (opts.schemaName === "attachment") return { content: "Item | Amount | Justification\nClinician time | $38,000 | Weekly sessions" };
       if (opts.schemaName === "review") return { criteria: [{ name: "Need", points: 22, max: 25, note: "" }, { name: "Program design", points: 31, max: 35, note: "" }], fixes: [{ text: "Add starting numbers to the evaluation plan.", questionNumber: 2 }] };
@@ -131,6 +133,30 @@ describe("applying, end to end", () => {
     expect(JSON.parse(won!.award!).total).toBe(58500);
     const report = await caller(owner).applications.draftReport({ organizationId: orgId, id: app.id, index: 0 });
     expect(JSON.parse(report!.award!).reports[0]).toMatchObject({ status: "ready", draft: "Progress this quarter." });
+  });
+
+  it("submits a ready application when the owner approves it in chat, and names what blocks it otherwise", async () => {
+    const { orgId, owner } = await makeWorkspace("approve-chat");
+    const opp = await readyOpp(orgId);
+    const started = await caller(owner).applications.start({ organizationId: orgId, opportunityId: opp.id });
+    await apply.idle();
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    const blank = { reply: "", action: "approve", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+    decisionFor = () => ({ ...blank, reply: "Submitting it." });
+
+    // The signed form is still missing: she says so instead of "nothing is waiting".
+    let r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "Approve it" });
+    expect(r.reply.content).toBe("I can't submit Rural Telehealth Access Program yet: A form needs your signature. It's on my Opportunities tab.");
+    const app0 = (await db.getApplication(started.id, orgId))!;
+    await db.updateApplication(app0.id, orgId, { attachments: JSON.stringify(JSON.parse(app0.attachments).map((a: any) => (a.needsSignature ? { ...a, source: "upload", fileUrl: "/files/x.pdf" } : a))) });
+
+    // A question about it does not submit; the owner's own "approve" does, with their name on the certification.
+    r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "is the grant ready?" });
+    expect(r.reply.content).toBe('Rural Telehealth Access Program is ready for your review. Say "approve" and I submit it, or open it on my Opportunities tab.');
+    expect((await db.getApplication(started.id, orgId))!.status).toBe("ready");
+    r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "approve, let's submit" });
+    expect(r.reply.content).toBe("Approved Rural Telehealth Access Program. You certified it is true and complete. No saved sign-in for Heartland Rural Health Fund. Add it on Integrations under Website logins. I'll post here what still needs you.");
+    expect((await db.getApplication(started.id, orgId))!).toMatchObject({ status: "approved", certifiedBy: owner.name });
   });
 
   it("asks for a missing fact with fixed choices, saves the answer to Knowledge, and finishes", async () => {

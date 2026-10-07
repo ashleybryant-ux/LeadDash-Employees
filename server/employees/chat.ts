@@ -104,7 +104,7 @@ const ACTION_HELP: Record<string, string> = {
   task_bulk: "task_bulk: change MANY tasks in Projects at once, like \"close everything overdue\" or \"push everything in Goals + Tactics to next Friday\". Put which tasks in `goal`: overdue (past due), all (every open task that matches), or a date YYYY-MM-DD for tasks due before it. Words to narrow by list, folder or task name in `target` ('' for every list), a person in `to` (''), the new status in `focus` (done, open... or ''), and a new due date YYYY-MM-DD in `date` (''). Do it when they say so; never ask first. Never use task_change for more than one task.",
   task_undo: "task_undo: reopen the tasks you just closed with task_bulk (\"Reopen them\", \"undo that\").",
   goal_update: "goal_update: post an update on a goal on the Goals page (\"we're at 13 practices\", \"the webinar is behind\"). Put words from the goal's title in `target`, how it's going in `focus` (on, risk or off), the update in `notes`, and the new number for its main target in `count` (0 when there's no new number).",
-  approve: "approve: the person approves, in words, something of yours that is waiting in Approvals (\"approved\", \"approve it\", \"yes, send it\", \"go ahead with the hold\", \"approved, send me the link\"). Put words from its title in `target` ('' for the newest one waiting). It goes out at once, the same as pressing Approve on the Approvals page, and you report what happened (the calendar event, the meeting link, where it posted). Use this, never meeting_link or none, when they say they approve. If they ask for the link after approving, use meeting_link.",
+  approve: "approve: the person approves, in words, something of yours that is waiting for them: an item in Approvals, or an application you wrote that is ready for review (\"approved\", \"approve it\", \"yes, send it\", \"approve, let's submit\", \"go ahead with the hold\"). Put words from its title in `target` ('' for the newest one waiting). It goes out at once, the same as pressing Approve on the Approvals page, and you report what happened (the calendar event, the meeting link, where it posted). Use this, never meeting_link or none, when they say they approve. If they ask for the link after approving, use meeting_link.",
   sop_site: "sop_site: write an SOP (a standard operating procedure, a how-to for staff) by doing the steps yourself on a website in your browser and keeping a screenshot of each one (\"write the SOP for adding a clinician's availability in LeadDash EHR\", \"document how to add a contact in the platform, with screenshots\"). Use it when the procedure happens on a site a saved Website login covers or a web address in this conversation. Put the SOP's name in `title` (as a task: 'Adding a clinician's availability'), the web address in `url` ('' when a saved login covers it), and the saved login's name in `target` ('' for none). For LeadDash EHR use the demo practice login, never a real chart. Never start it again while you are already in the browser on it: anything they say then (\"use test information\", \"skip that screen\") is passed to the run you have open. A video walkthrough is recorded by a person from the SOPs page (Record); you keep screenshots, not video, so say that instead of starting over.",
   sop_write: "sop_write: write an SOP (a standard operating procedure, a how-to for staff) from what the person told you in this conversation, for a procedure that is not on a screen or that they described in words (\"write up how we handle a crisis call\", \"turn what I just said into an SOP\"). Only once you know how it is done step by step: if they only named it, ask how it goes, one question at a time, with 3 or 4 fixed choices where they fit. Put the SOP's name in `title`, everything they said about how it is done in `notes` (their words, in order), the area in `focus` (front_desk, billing, clinical, marketing or admin) and who follows it in `target`.",
   precall_report: "precall_report: run the Pre-call report skill before a meeting with a practice or person (\"run a pre-call report on Bayou Family Therapy\", \"brief me before my call with Dr. Tran\"). Put the person's name in `target`, the practice in `title`, a website in `url` and the meeting date in `date` (YYYY-MM-DD) and `time` (HH:MM) when given. Public business information only; it posts here when ready.",
@@ -508,8 +508,28 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
     case "approve": {
       const ap = await import("../approvals");
       const waiting = await ap.waitingFor(org, emp.id);
-      if (!waiting.length) return { text: "Nothing of mine is waiting for your approval right now.", cards: [], queries: [] };
       const w = d.target.trim().toLowerCase();
+      // An application the employee wrote (a grant, a pitch, a talk) waits in chat, not in Approvals: "approve" submits it.
+      if (!waiting.length) {
+        const apply = await import("./apply");
+        const mine = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id && ["ready", "needs_answer", "needs_setup", "writing"].includes(a.status));
+        const app = (w ? mine.find((a) => a.title.toLowerCase().includes(w)) : null) ?? mine.find((a) => a.status === "ready") ?? mine[0];
+        if (!app) return { text: "Nothing of mine is waiting for your approval right now.", cards: [], queries: [] };
+        if (!approves(ctx.said ?? "")) return { text: `${app.title} is ready for your review. Say "approve" and I submit it, or open it on my Opportunities tab.`, cards: [], queries: [] };
+        const block = await apply.blockers(org, app);
+        if (block.length) return { text: `I can't submit ${app.title} yet: ${block.join(". ")}. It's on my Opportunities tab.`, cards: [], queries: [] };
+        const members = await db.listMembers(org);
+        const me = ctx.userId ? members.find((m) => m.userId === ctx.userId) : null;
+        try {
+          await (await import("./desk")).assertDecide(org, me?.role ?? "owner", "contract");
+          await apply.submitApplication(org, app.id, who);
+          const route = (await (await import("./bids")).readiness(org, app).catch(() => null))?.route ?? null;
+          const how = route ? (route.ready ? `${route.label.replace(/\.$/, "")}; I'm sending it now and will post the confirmation here.` : `${route.label.replace(/\.$/, "")}. ${route.detail.replace(/\.$/, "")}. I'll post here what still needs you.`) : "I'm sending it now.";
+          return { text: `Approved ${app.title}. You certified it is true and complete. ${how}`, cards: [], queries: [], facts: `${app.title}: approved; ${route?.label ?? "sending"}.` };
+        } catch (err) {
+          return { text: `I couldn't submit ${app.title}: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+        }
+      }
       const item = (w ? waiting.find((i) => i.title.toLowerCase().includes(w)) : null) ?? waiting[0];
       // Only their own words approve. A question about it shows what is waiting instead.
       if (!approves(ctx.said ?? "")) {
