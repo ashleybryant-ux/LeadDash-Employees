@@ -213,6 +213,24 @@ describe("applying, end to end", () => {
     expect((await db.getApplication(app.id, orgId))!).toMatchObject({ status: "approved", certifiedBy: owner.name });
   });
 
+  it("shows the receipt when asked how it knows the application went in, with the confirmation and the email used", async () => {
+    const { orgId, owner } = await makeWorkspace("receipt");
+    await db.updateOrganization(orgId, { timezone: "America/Chicago" });
+    const opp = await readyOpp(orgId, { attachments: [] });
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    const at = new Date("2026-10-07T02:14:00Z");
+    const app = await db.createApplication({ organizationId: orgId, opportunityId: opp.id, employeeId: morgan.id, title: "Galaxy Grant", status: "submitted", channel: "form", submittedAt: at, confirmation: "Thank you, your application was received.", receiptUrl: "/files/org-1/browser/step-1.png", certifiedBy: owner.name, certifiedAt: at, questions: "[]", attachments: "[]", extras: JSON.stringify({ submission: { how: "form", where: "hidden-star.org", email: owner.email, at: at.toISOString() } }) });
+    decisionFor = () => ({ reply: "", action: "show_receipt", target: "", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] });
+    prompts.length = 0;
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "she said this was submitted, but how do I know?" });
+    const systems = prompts.filter((p) => p.schema === "chat_decision").map((p) => p.system);
+    expect(r.reply.content).toBe(`Galaxy Grant went in Oct 6, 2026, 9:14 PM on hidden-star.org, in my browser. The site's confirmation: "Thank you, your application was received.". The contact email on it is ${owner.email}, so the host's own confirmation email goes there. Here's the receipt screenshot, the last page I saw after pressing Submit.`);
+    expect(JSON.parse(r.reply.cards!)[0]).toMatchObject({ type: "receipt", id: app.id, imageUrl: "/files/org-1/browser/step-1.png" });
+    // Her facts carry the record too, so a plain question gets a plain answer.
+    expect(systems[0]).toContain(`- Galaxy Grant: submitted Oct 6, 2026, 9:14 PM on hidden-star.org in your browser; confirmation: Thank you, your application was received.; contact email on it: ${owner.email}; receipt screenshot: yes (show_receipt shows it); certified by ${owner.name}.`);
+    expect(systems[0]).toContain("never send them to check their inbox instead");
+  });
+
   it("switches to outline-only when the host restricts AI-written applications", async () => {
     const { orgId, owner } = await makeWorkspace("airule");
     const opp = await readyOpp(orgId, { aiPolicy: { restricted: true, note: "NIH", citation: "NOT-OD-25-132" }, attachments: [] });

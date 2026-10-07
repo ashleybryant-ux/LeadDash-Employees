@@ -252,9 +252,15 @@ describe("Submitting an approved response", () => {
     const { app } = await approvedBid(orgId, "form", "");
     // No address in the channel detail: the opportunity's own page is the start.
     expect((await bids.readiness(orgId, app)).route).toMatchObject({ how: "form", ready: true, url: "https://oklahomacounty.bonfirehub.com/opportunities/118" });
-    browserReplies.push(() => ({ status: "done", result: '{"confirmation":"Thank you, your application was received."}' }));
+    browserReplies.push((t) => {
+      // The owner's email goes on the form, so the host's confirmation lands with her.
+      expect(t.goal).toMatch(/email owner@bid-form-ok\.test/);
+      return { status: "done", result: '{"confirmation":"Thank you, your application was received."}' };
+    });
     await bids.autoSubmit(orgId, app.id);
-    expect((await db.getApplication(app.id, orgId))!).toMatchObject({ status: "submitted", confirmation: "Thank you, your application was received." });
+    const after = (await db.getApplication(app.id, orgId))!;
+    expect(after).toMatchObject({ status: "submitted", confirmation: "Thank you, your application was received.", receiptUrl: "/files/org-1/browser/step.png" });
+    expect(JSON.parse(after.extras || "{}").submission).toMatchObject({ how: "form", where: "oklahomacounty.bonfirehub.com", email: "owner@bid-form-ok.test" });
   });
 
   it("drafts a question to the buyer that waits in Approvals", async () => {

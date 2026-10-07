@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "receipt" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop";
   id: number;
   /** On a choices card after a bulk close in Projects: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -64,8 +64,8 @@ export const LAYOUTS = [
 ];
 
 const ACTIONS: Record<string, string[]> = {
-  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   social: ["none", "report", "write_post", "post_graphic", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -187,6 +187,7 @@ const ACTION_HELP: Record<string, string> = {
   press_brief: "press_brief: she asks for the weekly press briefing or what's going on with the press desk.",
   find_events: "find_events: search the web now for NEW opportunities, only when the person asks you to look for some. A question about a talk, proposal, event or pitch she already has (\"do you have the info on my SHRM Arkansas presentation?\") is never a search: choose none and answer from the Brain, your documents and your Opportunities. Set `oppKind` to speaking (events taking speaker proposals) or media (press: journalist source requests, podcasts booking guests, reporters covering the topic, op-ed and contributed article openings). Put any focus in `focus`.",
   add_link: "add_link: the person gave a link to an opportunity they found. Put the link in `url`.",
+  show_receipt: "show_receipt: the person asks whether or how an application was submitted, for proof, the confirmation, or which email was used (\"how do I know it went in\", \"show me the receipt\", \"what email did you use\"). Put words from the application's name in `target` ('' for the newest one submitted). You show the receipt screenshot and the submission record.",
   apply: "apply: start the application for an opportunity already found. Put its name (or 'best' for the best fit not yet started) in `target`.",
   find_and_apply: "find_and_apply: search now, then start applications for the best fits (used by scheduled tasks like a morning search). Set `oppKind` and `focus` as for a search.",
   check_status: "check_status: report what is open, what is waiting for the person, what is submitted, and what is due soon.",
@@ -325,7 +326,16 @@ async function applyFacts(emp: AIEmployee) {
   const apps = (await db.listApplications(emp.organizationId)).filter((a) => a.employeeId === emp.id && !["submitted", "awarded", "declined"].includes(a.status)).slice(0, 8);
   const lines = opps.map((o) => `- ${o.title} (${o.host ?? "host"}): fit ${o.fitScore}, ${o.fitCall}; ${o.amount ?? ""}; due ${o.deadline ?? "not posted"}. Why: ${(o.fitReason ?? o.summary ?? "").slice(0, 300)}${o.eligibility ? ` Eligibility: ${o.eligibility.slice(0, 200)}` : ""}`);
   const appLines = apps.map((a) => `- ${a.title} (${a.status}): questions: ${apply.parse<{ text: string }[]>(a.questions, []).map((q) => q.text.slice(0, 80)).join(" | ")}`);
-  return `${lines.length ? `\nOpen opportunities you found (explain a score from these facts only):\n${lines.join("\n")}` : ""}${appLines.length ? `\nApplications in progress:\n${appLines.join("\n")}` : ""}`;
+  // What went in, with the proof: when, where, the confirmation, the email on it, and whether a receipt screenshot exists.
+  const org = await db.getOrganizationById(emp.organizationId);
+  const tz = org?.timezone || "America/Chicago";
+  const sent = (await db.listApplications(emp.organizationId)).filter((a) => a.employeeId === emp.id && ["submitted", "awarded", "declined"].includes(a.status) && a.submittedAt).sort((a, b) => new Date(b.submittedAt!).getTime() - new Date(a.submittedAt!).getTime()).slice(0, 6);
+  const sentLines = sent.map((a) => {
+    const sub = apply.parse<apply.Extras>(a.extras, {}).submission;
+    const when = new Date(a.submittedAt!).toLocaleString("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+    return `- ${a.title}: submitted ${when}${sub ? ` ${sub.how === "email" ? `by email to ${sub.where}` : `on ${sub.where} in your browser`}` : ""}; confirmation: ${a.confirmation || "none recorded"}; contact email on it: ${sub?.email ?? "not recorded"}; receipt screenshot: ${a.receiptUrl ? "yes (show_receipt shows it)" : "none"}; certified by ${a.certifiedBy ?? "the owner"}.`;
+  });
+  return `${lines.length ? `\nOpen opportunities you found (explain a score from these facts only):\n${lines.join("\n")}` : ""}${appLines.length ? `\nApplications in progress:\n${appLines.join("\n")}` : ""}${sentLines.length ? `\nSubmitted (newest first). When asked how they know it went in or which email was used, answer from these lines and show the receipt; never send them to check their inbox instead:\n${sentLines.join("\n")}` : ""}`;
 }
 
 const TOOL_NAMES: Record<string, string> = { google_workspace: "Google (Gmail and Calendar)", clickup: "ClickUp", zoom: "Zoom", recall: "Recall.ai (meeting bot)", linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", threads: "Threads", x: "X", tiktok: "TikTok", wordpress: "WordPress", google_business: "Google Business Profile", submittable: "Submittable", sessionize: "Sessionize" };
@@ -730,6 +740,24 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         indexKnowledge(item);
       }
       return { text: `Saved ${list.length === 1 ? list[0].name : `${list.length} files`} to the Brain, so every employee can use ${list.length === 1 ? "it" : "them"}.`, cards: [], queries: [] };
+    }
+    case "show_receipt": {
+      const sent = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id && ["submitted", "awarded", "declined"].includes(a.status)).sort((a, b) => new Date(b.submittedAt ?? 0).getTime() - new Date(a.submittedAt ?? 0).getTime());
+      const t = d.target.trim().toLowerCase();
+      const app = (t && sent.find((a) => a.title.toLowerCase().includes(t))) || sent[0];
+      if (!app) return { text: "I haven't submitted anything yet.", cards: [], queries: [] };
+      const sub = apply.parse<apply.Extras>(app.extras, {}).submission;
+      const tz = (await db.getOrganizationById(org))?.timezone || "America/Chicago";
+      const when = app.submittedAt ? new Date(app.submittedAt).toLocaleString("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "unknown time";
+      const where = sub ? (sub.how === "email" ? `by email to ${sub.where}` : `on ${sub.where}, in my browser`) : `through ${apply.channelLabel(app.channel, app.channelDetail)}`;
+      const parts = [
+        `${app.title} went in ${when} ${where}.`,
+        app.confirmation ? `The site's confirmation: "${app.confirmation}".` : "The site showed no confirmation number; the screenshot is what it showed after Submit.",
+        sub?.email ? `The contact email on it is ${sub.email}, so the host's own confirmation email goes there.` : "",
+        app.receiptUrl ? "Here's the receipt screenshot, the last page I saw after pressing Submit." : "I don't have a screenshot of the final page for this one.",
+      ].filter(Boolean);
+      const cards: ChatCard[] = app.receiptUrl ? [{ type: "receipt", id: app.id, title: `${app.title}: receipt`, subtitle: `${when}${app.confirmation ? ` · ${app.confirmation}` : ""}`, imageUrl: app.receiptUrl }] : [{ type: "submitted", id: app.id, title: app.title, subtitle: when }];
+      return { text: parts.join(" "), cards, queries: [], facts: `${app.title}: submitted ${when} ${where}; confirmation ${app.confirmation || "none"}.` };
     }
     case "revise_answer": {
       const apps = (await db.listApplications(org)).filter((a) => a.employeeId === emp.id && !["submitted", "awarded", "declined", "writing"].includes(a.status));

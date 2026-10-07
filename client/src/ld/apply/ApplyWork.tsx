@@ -529,6 +529,11 @@ function AppExpand({ a, qs, base }: { a: AppRow; qs: Question[]; base: string })
           <>
             <KV label="Confirmation">{a.confirmation || "Not recorded"}</KV>
             <KV label="Submitted">{`${fmtDate(a.submittedAt)}, through ${CHANNEL_LABEL[a.channel] ?? a.channel}`}</KV>
+            {a.receiptUrl && (
+              <KV label="Receipt">
+                <a href={a.receiptUrl} target="_blank" rel="noreferrer noopener" style={{ color: "#155c3e", fontWeight: 700 }}>{/^https?:\/\//.test(a.receiptUrl) ? "Open the sent email" : "See the page after Submit"}</a>
+              </KV>
+            )}
           </>
         ) : a.status === "approved" ? (
           <>

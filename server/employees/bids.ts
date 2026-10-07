@@ -8,7 +8,7 @@ import * as integrations from "../integrations";
 import { uploadsRoot } from "../storage";
 import type { Application, Opportunity, PortalLogin } from "../../drizzle/schema";
 import { liveStart, runBrowserTask, tempFiles, type BrowserResult, type Download } from "./browser";
-import { addOpportunityFromText, enqueue, markSubmitted, oppCardFor, parse, type Attachment, type Requirements } from "./apply";
+import { addOpportunityFromText, enqueue, markSubmitted, oppCardFor, parse, type Attachment, type Extras, type Requirements } from "./apply";
 import { employeeFor } from "./tasks";
 import { partsIn } from "./schedule";
 import { withUsage } from "../usage";
@@ -357,6 +357,12 @@ export async function autoSubmit(orgId: number, appId: number) {
     await post(orgId, `${app.title} is approved. ${route.detail}, so it's ready for you to send: download it from the application and submit it, then press Mark sent.`, [], who);
     return;
   }
+  // The contact email on the form is the owner's (the host's confirmation lands there), else the first admin's.
+  const members = await db.listMembers(orgId);
+  const contactEmail = (members.find((m) => m.role === "owner") ?? members.find((m) => m.role === "admin") ?? members[0])?.email ?? null;
+  const extras = parse<Extras>(app.extras, {});
+  const recordSubmission = (how: "form" | "portal", where: string) =>
+    db.updateApplication(appId, orgId, { extras: JSON.stringify({ ...extras, submission: { how, where, email: contactEmail, at: new Date().toISOString() } }) });
 
   // A pitch to a reporter is the email itself: short, in the body, no attachments.
   if (opp?.kind === "media" && route.how === "email") {
@@ -371,7 +377,7 @@ export async function autoSubmit(orgId: number, appId: number) {
     ].join("\n\n");
     try {
       const link = await integrations.sendGmail(orgId, to, subject, body, "speaking");
-      await db.updateApplication(appId, orgId, { receiptUrl: link });
+      await db.updateApplication(appId, orgId, { receiptUrl: link, extras: JSON.stringify({ ...extras, submission: { how: "email", where: to, email: contactEmail, at: new Date().toISOString() } }) });
       await markSubmitted(orgId, appId, `Emailed to ${to}`, emp.name);
     } catch (err) {
       await post(orgId, `I couldn't email the pitch for ${app.title}: ${(err as Error).message}. It's still approved; try again from the pitch or send it yourself.`, [], who);
@@ -401,7 +407,7 @@ export async function autoSubmit(orgId: number, appId: number) {
         `Hello,\n\nAttached is ${org?.name ?? "our"} response to ${opp?.title ?? app.title}${opp?.host ? ` (${opp.host})` : ""}, with ${files.length} ${files.length === 1 ? "file" : "files"}.\n\nPlease confirm you received it.\n\n${org?.signerName ?? ""}${org?.signerTitle ? `, ${org.signerTitle}` : ""}\n${org?.name ?? ""}`.trim(),
         files
       );
-      await db.updateApplication(appId, orgId, { receiptUrl: link });
+      await db.updateApplication(appId, orgId, { receiptUrl: link, extras: JSON.stringify({ ...extras, submission: { how: "email", where: to, email: contactEmail, at: new Date().toISOString() } }) });
       await markSubmitted(orgId, appId, `Emailed to ${to}`, emp.name);
     } catch (err) {
       await post(orgId, `I couldn't email ${app.title}: ${(err as Error).message}. It's still approved; try again from the application or send it yourself.`, [], who);
@@ -427,7 +433,7 @@ export async function autoSubmit(orgId: number, appId: number) {
       goal: `Open the application form for "${opp?.title ?? app.title}"${opp?.host ? ` from ${opp.host}` : ""} on this site (follow Apply or Submit links if the form is on another page).
 Fill every required field from these answers when a field matches, and paste each answer where its question is asked:
 ${qs.map((q) => `- ${q.text}: ${q.answer.slice(0, 1500)}`).join("\n").slice(0, 9000)}
-Organization: ${org?.name ?? ""}. Contact: ${org?.signerName ?? ""}${org?.signerTitle ? `, ${org.signerTitle}` : ""}.
+Organization: ${org?.name ?? ""}. Contact: ${org?.signerName ?? ""}${org?.signerTitle ? `, ${org.signerTitle}` : ""}${contactEmail ? `, email ${contactEmail}` : ""}${org?.website ? `, website ${org.website}` : ""}.
 Upload each file from the file list to the matching upload field (the response document goes where the application or narrative is asked for; attachments to their named fields).
 When every required field and file is done, submit. Then return JSON {"confirmation":"the confirmation number or message shown"}.
 If the site requires creating an account or signing in before the form can be submitted, stop with fail and say exactly "needs a sign-in". If a field needs something not given here (a price, a signature, a notarized form, a fee), stop with fail and name it.`,
@@ -435,6 +441,7 @@ If the site requires creating an account or signing in before the form can be su
     for (const f of upload) fs.rmSync(path.dirname(f.path), { recursive: true, force: true });
     if (res.status === "done") {
       const conf = (extractJson(res.result) as { confirmation?: string } | undefined)?.confirmation || res.result.slice(0, 120) || "Submitted";
+      await recordSubmission("form", site);
       await db.updateApplication(appId, orgId, { receiptUrl: res.screenshotUrl });
       await markSubmitted(orgId, appId, String(conf).slice(0, 120), emp.name);
       return;
@@ -472,7 +479,7 @@ Then submit the pitch. Return JSON {"confirmation":"the confirmation message sho
 Upload each file from the file list to the matching upload field (the response document goes where the proposal or response is asked for; attachments to their named fields).
 Fill required text fields using these answers when a field matches:
 ${qs.map((q) => `- ${q.text}: ${q.answer.slice(0, 600)}`).join("\n").slice(0, 6000)}
-Company: ${org?.name ?? ""}. Contact: ${org?.signerName ?? ""}${org?.signerTitle ? `, ${org.signerTitle}` : ""}.
+Company: ${org?.name ?? ""}. Contact: ${org?.signerName ?? ""}${org?.signerTitle ? `, ${org.signerTitle}` : ""}${contactEmail ? `, email ${contactEmail}` : ""}.
 When every required file and field is done, submit. Then return JSON {"confirmation":"the confirmation number or message shown"}.
 If a field needs something not given here (a price, a signature, a notarized form, a fee), stop with fail and name it.`,
   }).catch((err) => ({ status: "failed", note: (err as Error).message, result: "", screenshotUrl: null }) as Pick<BrowserResult, "status" | "note" | "result" | "screenshotUrl">);
@@ -480,6 +487,7 @@ If a field needs something not given here (a price, a signature, a notarized for
 
   if (res.status === "done") {
     const conf = (extractJson(res.result) as { confirmation?: string } | undefined)?.confirmation || res.result.slice(0, 120) || "Submitted";
+    await recordSubmission("portal", login.name);
     await db.updateApplication(appId, orgId, { receiptUrl: res.screenshotUrl });
     await markSubmitted(orgId, appId, String(conf).slice(0, 120), emp.name);
     return;

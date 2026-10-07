@@ -96,6 +96,8 @@ export type Attachment = {
 };
 
 export type Extras = {
+  /** How it went in, kept so the employee can answer "how do I know it was submitted" from the record. */
+  submission?: { how: "form" | "portal" | "email"; where: string; email: string | null; at: string };
   deck?: { title: string; bullets: string[] }[];
   videoScript?: string;
   videoUrl?: string | null;
@@ -1554,8 +1556,10 @@ export async function markSubmitted(orgId: number, appId: number, confirmation: 
   await db.logAction({ organizationId: orgId, actorType: "human_user", actorName: personName, action: "Marked application submitted", details: `${app.title}${confirmation ? `, confirmation ${confirmation}` : ""}` });
   const emp = app.employeeId ? await db.getEmployeeForOrg(app.employeeId, orgId) : null;
   if (emp) {
-    await postToChat(emp, `${app.title} is in.${app.decisionExpected ? ` The host lists decisions ${app.decisionExpected}.` : ""}`, [
+    const fresh = (await db.getApplication(appId, orgId))!;
+    await postToChat(emp, `${app.title} is in.${confirmation ? ` The site's confirmation: "${confirmation}".` : ""}${fresh.receiptUrl ? " The receipt screenshot is the page it showed after Submit." : ""}${app.decisionExpected ? ` The host lists decisions ${app.decisionExpected}.` : ""}`, [
       { type: "submitted", id: app.id, title: app.title, subtitle: [confirmation && `Confirmation ${confirmation}`, `Submitted ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`].filter(Boolean).join(" · ") },
+      ...(fresh.receiptUrl ? [{ type: "receipt", id: app.id, title: `${app.title}: receipt`, subtitle: confirmation ? `Confirmation ${confirmation}` : "", imageUrl: fresh.receiptUrl }] : []),
     ]);
   }
   return updated;
