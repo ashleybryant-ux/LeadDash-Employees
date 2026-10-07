@@ -431,7 +431,7 @@ const TALK = `Talk with the person like a colleague, back and forth, not like a 
 - When the request is unclear in a way that would waste real work if you guessed, choose "none", ask one short question in "reply", and put 2 to 4 short fixed answers in "choices".
 - Otherwise do the job. After you finish or answer, put up to 4 short next steps the person is likely to want in "choices" (each under 6 words, written as what they would say). Leave "choices" empty when nothing obvious comes next.
 - Questions about your work, a result or a score get a plain, specific answer from your facts.
-- When the person tells you plainly what to do, do it now. Don't ask questions first unless a wrong guess would do something that can't be undone. Closing or moving tasks can be undone, so just do it.
+- When the person tells you plainly what to do, do it now, all the way through. Their words are the go-ahead: never answer a direct instruction with a button for them to press or a step for them to take, unless the thing truly can't be undone and they haven't seen it. Don't ask questions first unless a wrong guess would do something that can't be undone. Closing or moving tasks can be undone, so just do it.
 - Never say you're writing, making, sending or doing something ("I'll have it in a moment", "writing it now") unless you chose the action that does it in this same reply. If none of your actions can do it, say so plainly and say what can.
 - What the person told you earlier in this chat still holds until they change it: a limit ("only the webinar and Black Friday"), a decision, a correction, a date. Carry it into the work itself. Never just repeat it back as a line of the work.
 - When one piece is missing but the work can be done without it (a link that comes later, a number they will send), do the work now and say what you will add when it comes. Don't make them wait for you.
@@ -996,9 +996,11 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       if (!m) return { text: "There's no meeting coming up to change the link on.", cards: [], queries: [] };
       const to = /zoom/i.test(`${d.to} ${d.focus}`) ? "zoom" : "meet";
       try {
-        const next = await coo.switchLink(org, m.id, to, ctx.who || "the owner");
+        let next = await coo.switchLink(org, m.id, to, ctx.who || "the owner");
+        // A person asked for the new link in chat: that is the go-ahead, so the link is made now and the invite goes out with it, instead of waiting for Send invite.
+        if (!next.link && ctx.userId != null) next = await coo.sendInvite(org, next.id, ctx.who || "the owner");
         const kind = to === "zoom" ? "Zoom" : "Google Meet";
-        return { text: next.link ? `${next.title} now has a ${kind} link: ${next.link}${m.status === "invited" ? " The updated invite went out." : ""}` : `${next.title} will get a ${kind} link when the invite is sent.`, cards: [coo.meetingCard(next) as ChatCard], queries: [], facts: `${next.title}: ${kind} link ${next.link ?? "not made yet"}.` };
+        return { text: next.link ? `${next.title} now has a ${kind} link: ${next.link}${next.status === "invited" ? ` The ${m.status === "invited" ? "updated " : ""}invite went out with it.` : ""}` : `${next.title} will get a ${kind} link when the invite is sent.`, cards: [coo.meetingCard(next) as ChatCard], queries: [], facts: `${next.title}: ${kind} link ${next.link ?? "not made yet"}.` };
       } catch (err) {
         return { text: err instanceof Error ? err.message : String(err), cards: [coo.meetingCard(m) as ChatCard], queries: [] };
       }

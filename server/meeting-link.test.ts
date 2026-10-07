@@ -131,6 +131,27 @@ describe("Zoom permissions", () => {
     expect(JSON.parse((await db.getConnectionByProvider(orgId, "zoom"))!.settings || "{}").lastRefusal).toBeNull();
   });
 
+  it("told to put a meeting on Zoom, she makes the Zoom link and sends the invite right away, on the invited copy when two share a name", async () => {
+    const { orgId, owner } = await makeWorkspace("zoom-now");
+    await connect(orgId, "google_workspace");
+    await connect(orgId, "zoom");
+    routes.push([/calendar\/v3\/calendars\/primary\/events/, () => json({ id: "ev9", htmlLink: "https://calendar.google.com/e/9" })]);
+    routes.push([/api\.zoom\.us\/v2\/users\/me\/meetings/, () => json({ id: 555, join_url: "https://zoom.us/j/555" })]);
+    const simone = (await db.getEmployeeByKind(orgId, "coo"))!;
+    await mockAi([{ action: "switch_link", target: "Nov Launch Team Huddle", to: "zoom", reply: "Switching it." }]);
+    const draft = await coo.scheduleMeeting(orgId, { title: "Nov Launch Team Huddle", date: ymd(2), time: "10:00 AM", minutes: 60, attendees: "", updatesFrom: [] });
+    expect(draft.status).toBe("draft");
+
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "Put the Nov Launch Team Huddle on Zoom and do it now" });
+    expect(r.reply.content).toBe("Nov Launch Team Huddle now has a Zoom link: https://zoom.us/j/555 The invite went out with it.");
+    const after = (await db.getMeeting(draft.id, orgId))!;
+    expect(after).toMatchObject({ status: "invited", linkKind: "zoom", link: "https://zoom.us/j/555" });
+
+    // A second, still-draft meeting with the same name: the invited one is the one she means.
+    await coo.scheduleMeeting(orgId, { title: "Nov Launch Team Huddle", date: ymd(1), time: "9:00 AM", minutes: 30, attendees: "", updatesFrom: [] });
+    expect((await coo.meetingNamed(orgId, "Nov Launch Team Huddle"))!.id).toBe(draft.id);
+  });
+
   it("reads the granted scopes when Zoom connects", () => {
     expect(integrations.zoomScopesCreate(["user:read:user", "meeting:read:meeting"])).toBe(false);
     expect(integrations.zoomScopesCreate(["user:read:user", "meeting:write:meeting"])).toBe(true);

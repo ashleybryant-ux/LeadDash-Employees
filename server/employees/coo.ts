@@ -668,7 +668,9 @@ export async function nextMeetingFor(orgId: number, target: string, which: Which
   const v = await meetingsView(orgId);
   const list = v.upcoming.filter(keep(which));
   const t = target.trim().toLowerCase();
-  return (t && list.find((m) => m.title.toLowerCase().includes(t) || t.includes(m.title.toLowerCase()))) || list[0] || null;
+  // Two upcoming meetings can share a name (one already invited, one still a draft): the invited one is the real one.
+  const named = t ? list.filter((m) => m.title.toLowerCase().includes(t) || t.includes(m.title.toLowerCase())) : [];
+  return named.find((m) => m.status === "invited") || named[0] || list[0] || null;
 }
 
 export async function lastMeetingFor(orgId: number, target: string, which: Which = "all") {
