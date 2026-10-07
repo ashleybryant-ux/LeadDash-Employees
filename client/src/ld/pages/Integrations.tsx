@@ -167,7 +167,7 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
   const refresh = () => Promise.all([utils.publishing.listConnections.invalidate(), utils.publishing.connectInfo.invalidate()]);
   const disconnect = trpc.publishing.disconnect.useMutation({ onSuccess: refresh });
   const choose = trpc.publishing.choosePage.useMutation({ onSuccess: refresh });
-  const settings = parseJson<{ pages?: { id: string; name: string; igUsername: string | null }[]; pageId?: string; pageName?: string; igUsername?: string | null; setupNote?: string; userName?: string; spaceName?: string | null }>(conn?.settings ?? null, {});
+  const settings = parseJson<{ pages?: { id: string; name: string; igUsername: string | null }[]; pageId?: string; pageName?: string; igUsername?: string | null; setupNote?: string; userName?: string; spaceName?: string | null; canCreateMeetings?: boolean | null }>(conn?.settings ?? null, {});
   const [pick, setPick] = React.useState<string | null>(settings.pageId ?? null);
   const connect = () => {
     window.location.href = `/api/oauth/${item.app}/start?organizationId=${currentOrgId}`;
@@ -228,6 +228,9 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
         {account && <div style={{ fontSize: 13, fontWeight: 700, color: status === "error" ? "#8a4510" : "#155c3e", marginTop: 6, overflowWrap: "anywhere" }}>{account}</div>}
         {status === "connected" && item.app === "google_business" && settings.setupNote && (
           <div style={{ fontSize: 12, color: "#8a4510", marginTop: 4 }}>Google has not opened Business Profile access for LeadDash yet. Posts will wait until it does.</div>
+        )}
+        {status === "connected" && item.app === "zoom" && settings.canCreateMeetings === false && (
+          <div style={{ fontSize: 12, color: "#8a4510", marginTop: 4 }}>This connection can't create meetings: it was approved before the Zoom app had that permission. Disconnect and reconnect to approve it.</div>
         )}
         {choosing && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>

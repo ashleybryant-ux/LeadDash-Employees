@@ -551,7 +551,9 @@ export async function finishConnect(orgId: number, key: AppKey, code: string, ve
     const me = await api("https://api.zoom.us/v2/users/me", { token: tokens.accessToken }).catch(() => null);
     label = me?.data.email || [me?.data.first_name, me?.data.last_name].filter(Boolean).join(" ") || "Zoom account";
     handle = me?.data.email ?? null;
-    settings = { email: me?.data.email ?? null, userId: me?.data.id ?? null };
+    // Zoom grants whatever scopes the app had in App Marketplace at the moment of approval. The token answer lists them.
+    const scopes = String(d.scope ?? "").split(/[\s,]+/).filter(Boolean);
+    settings = { email: me?.data.email ?? null, userId: me?.data.id ?? null, scopes, canCreateMeetings: scopes.length ? zoomScopesCreate(scopes) : null };
   } else if (key === "meta") {
     const me = await api(`${GRAPH}/me?fields=id,name`, { token: tokens.accessToken });
     const pages = await api(`${GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50`, { token: tokens.accessToken });
@@ -1363,16 +1365,45 @@ export function channelLabel(ch: string) {
 // Meetings (Simone): calendar invites with Google Meet or Zoom links
 // ==========================================
 
+/** Zoom scopes that allow creating a meeting: the granular ones, or the older ones apps made before 2024 still carry. */
+export const ZOOM_CREATE_SCOPES = ["meeting:write:meeting", "meeting:write:meeting:admin", "meeting:write", "meeting:write:admin"];
+export function zoomScopesCreate(scopes: string[]) {
+  return scopes.some((s) => ZOOM_CREATE_SCOPES.includes(s));
+}
+
+/** The one sentence for a Zoom connection that can't create meetings. The fix is on LeadDash's Zoom app, then a reconnect here. */
+export const ZOOM_NO_CREATE = "Zoom is connected, but LeadDash's Zoom app was approved without permission to create meetings (the meeting:write:meeting scope). LeadDash adds that scope to the app in Zoom's App Marketplace, then Zoom is disconnected and reconnected on Integrations so the new permission takes effect.";
+
+/** Whether the connected Zoom account can create meetings: true, false, or null when the connection predates this check. */
+export async function zoomCanCreate(orgId: number): Promise<boolean | null> {
+  const c = await db.getConnectionByProvider(orgId, "zoom");
+  if (c?.status !== "connected") return false;
+  const s = JSON.parse(c.settings || "{}") as { canCreateMeetings?: boolean | null };
+  return typeof s.canCreateMeetings === "boolean" ? s.canCreateMeetings : null;
+}
+
 /** A one-hour-or-less Zoom meeting on the connected Zoom account. */
 export async function createZoomMeeting(orgId: number, m: { topic: string; start: Date; minutes: number; tz: string; agenda: string }) {
+  if ((await zoomCanCreate(orgId)) === false) throw new Error(ZOOM_NO_CREATE);
   const { token } = await accessToken(orgId, "zoom");
-  const { data } = await api("https://api.zoom.us/v2/users/me/meetings", {
-    method: "POST",
-    token,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ topic: m.topic.slice(0, 200), type: 2, start_time: m.start.toISOString().replace(/\.\d{3}Z$/, "Z"), duration: m.minutes, timezone: m.tz, agenda: m.agenda.slice(0, 2000), settings: { join_before_host: true, waiting_room: false } }),
-  });
-  return { id: String(data.id), joinUrl: String(data.join_url) };
+  try {
+    const { data } = await api("https://api.zoom.us/v2/users/me/meetings", {
+      method: "POST",
+      token,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ topic: m.topic.slice(0, 200), type: 2, start_time: m.start.toISOString().replace(/\.\d{3}Z$/, "Z"), duration: m.minutes, timezone: m.tz, agenda: m.agenda.slice(0, 2000), settings: { join_before_host: true, waiting_room: false } }),
+    });
+    return { id: String(data.id), joinUrl: String(data.join_url) };
+  } catch (err) {
+    // Zoom's code 4711: the token was approved without the create-meeting scope.
+    const text = err instanceof Error ? err.message : String(err);
+    if (/does not contain scopes|4711/i.test(text)) {
+      const c = await db.getConnectionByProvider(orgId, "zoom");
+      if (c) await db.upsertExternalConnection({ ...c, settings: JSON.stringify({ ...JSON.parse(c.settings || "{}"), canCreateMeetings: false }) });
+      throw new Error(ZOOM_NO_CREATE);
+    }
+    throw err;
+  }
 }
 
 /** The host's start link for a meeting on the connected Zoom account, or null when Zoom doesn't give one. It lasts about two hours. */

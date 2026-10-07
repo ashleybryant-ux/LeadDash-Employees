@@ -94,6 +94,40 @@ describe("Simone and the meetings she set up", () => {
   });
 });
 
+describe("Zoom permissions", () => {
+  it("names the missing create-meeting scope when Zoom was approved without it, and remembers it for Integrations", async () => {
+    const { orgId, owner } = await makeWorkspace("zoom-scope");
+    await connect(orgId, "google_workspace");
+    await connect(orgId, "zoom");
+    routes.push([/calendar\/v3\/calendars\/primary\/events\?sendUpdates=all&conferenceDataVersion=1/, () => json({ id: "ev1", htmlLink: "https://calendar.google.com/e/1", conferenceData: { entryPoints: [{ entryPointType: "video", uri: "https://meet.google.com/abc-defg-hij" }] } })]);
+    routes.push([/api\.zoom\.us\/v2\/users\/me\/meetings/, () => json({ code: 4711, message: "Invalid access token, does not contain scopes:[meeting:write:meeting, meeting:write:meeting:admin]." }, 400)]);
+    const simone = (await db.getEmployeeByKind(orgId, "coo"))!;
+    await mockAi([{ action: "switch_link", target: "huddle", to: "zoom", reply: "Switching it." }]);
+    const m = await coo.scheduleMeeting(orgId, { title: "Nov Launch Team Huddle", date: ymd(2), time: "10:00 AM", minutes: 60, attendees: "", updatesFrom: [] });
+    await db.updateMeeting(m.id, orgId, { status: "invited", link: "https://meet.google.com/abc-defg-hij", calendarEventId: "ev1" });
+
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "make it a zoom" });
+    expect(r.reply.content).toBe(integrations.ZOOM_NO_CREATE);
+    expect(r.reply.content).toContain("meeting:write:meeting");
+    // The connection remembers it, so Integrations can say so and the next try doesn't call Zoom at all.
+    expect(JSON.parse((await db.getConnectionByProvider(orgId, "zoom"))!.settings || "{}").canCreateMeetings).toBe(false);
+    expect(await integrations.zoomCanCreate(orgId)).toBe(false);
+    const before = calls.length;
+    await expect(integrations.createZoomMeeting(orgId, { topic: "x", start: new Date(), minutes: 30, tz: "America/Chicago", agenda: "" })).rejects.toThrow(integrations.ZOOM_NO_CREATE);
+    expect(calls.length).toBe(before);
+    // From then on her facts carry the same sentence, so she answers it without trying again.
+    expect(systems[0]).toContain("Zoom is connected.");
+    await caller(owner).chat.send({ organizationId: orgId, employeeId: simone.id, text: "why no zoom link?" });
+    expect(systems[1]).toContain(integrations.ZOOM_NO_CREATE);
+  });
+
+  it("reads the granted scopes when Zoom connects", () => {
+    expect(integrations.zoomScopesCreate(["user:read:user", "meeting:read:meeting"])).toBe(false);
+    expect(integrations.zoomScopesCreate(["user:read:user", "meeting:write:meeting"])).toBe(true);
+    expect(integrations.zoomScopesCreate(["meeting:write:admin"])).toBe(true);
+  });
+});
+
 describe("Reading the calendars", () => {
   it("always reads the main Google calendar, where sent invites land, and shows an event once when that account is also added under Calendars", async () => {
     const { orgId } = await makeWorkspace("cal-main");
