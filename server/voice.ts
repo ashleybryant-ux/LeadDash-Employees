@@ -86,6 +86,8 @@ html,body{margin:0;width:1280px;height:720px;overflow:hidden;background:#0f2a20;
   var a=document.getElementById("a");var cap=document.getElementById("cap");
   function light(kind){document.querySelectorAll(".t").forEach(function(t){t.classList.toggle("on",t.getAttribute("data-kind")===kind)});}
   function next(){
+    // An answer that waited more than a minute is out of date; it shows in the transcript instead.
+    while(queue.length&&queue[0].exp<Date.now())queue.shift();
     if(playing||!queue.length)return;
     var l=queue.shift();playing=true;light(l.kind);cap.textContent=l.name+": "+l.text;
     var done=function(){playing=false;light(null);setTimeout(function(){if(!playing)cap.textContent="";},2500);next();};
@@ -94,13 +96,12 @@ html,body{margin:0;width:1280px;height:720px;overflow:hidden;background:#0f2a20;
     var p=a.play();if(p&&p.catch)p.catch(done);
   }
   function hush(){
-    // A person is talking: whatever was playing stops, and what was lined up is dropped.
-    queue=[];
+    // A person is talking: whatever was playing stops. Answers still lined up wait and play once they finish.
     if(playing){try{a.pause();a.currentTime=0;}catch(e){}playing=false;light(null);cap.textContent="";}
   }
   function poll(){
     fetch("/api/voice/bot/"+token+"/next?after="+after,{cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
-      (d.lines||[]).forEach(function(l){after=Math.max(after,l.index);queue.push(l);});
+      (d.lines||[]).forEach(function(l){after=Math.max(after,l.index);l.exp=Date.now()+60000-(l.age||0);queue.push(l);});
       if(d.hush)hush();else next();
       setTimeout(poll,d.live===false?5000:d.hush?300:700);
     }).catch(function(){setTimeout(poll,2000);});

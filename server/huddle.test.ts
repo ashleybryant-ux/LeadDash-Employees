@@ -113,7 +113,7 @@ describe("team huddle", () => {
     const lines = huddle.linesOf(db.getHuddle(h.id, orgId)!);
     expect(lines.map((l) => `${l.who}: ${l.text}`)).toEqual(["BJ: Simone, what's on Thursday?", "Simone: Three items for Thursday."]);
     const next = huddle.botNext(token, -1);
-    expect(next.lines).toEqual([{ index: 1, kind: "coo", name: "Simone", text: "Three items for Thursday.", audioId: null }]);
+    expect(next.lines).toEqual([{ index: 1, kind: "coo", name: "Simone", text: "Three items for Thursday.", audioId: null, age: expect.any(Number) }]);
     expect(huddle.botNext(token, 1).lines).toEqual([]);
     // Someone starts talking (a partial line): the page is told to stop playing; the bot's own partials never hush it.
     expect(next.hush).toBe(true); // BJ just spoke
@@ -124,13 +124,22 @@ describe("team huddle", () => {
     await huddle.botHeard(token, { event: "transcript.partial_data", data: { data: { words: [{ text: "Hang" }, { text: "on" }], participant: { name: "BJ" } } } });
     expect(huddle.botNext(token, 1).hush).toBe(true);
     expect(huddle.linesOf(db.getHuddle(h.id, orgId)!)).toHaveLength(2); // a partial line is not part of the transcript
+    // The team's own voice coming back through someone's speakers is not a person talking.
+    await new Promise((r) => setTimeout(r, 2600));
+    await huddle.botHeard(token, { event: "transcript.partial_data", data: { data: { words: [{ text: "three" }, { text: "items" }, { text: "for" }], participant: { name: "Ashley" } } } });
+    expect(huddle.botNext(token, 1).hush).toBe(false);
+    await huddle.botHeard(token, { event: "transcript.data", data: { data: { words: [{ text: "Three" }, { text: "items" }, { text: "for" }, { text: "Thursday." }], participant: { name: "Ashley" } } } });
+    expect(huddle.linesOf(db.getHuddle(h.id, orgId)!)).toHaveLength(2);
+    // One sound is not enough to stop them.
+    await huddle.botHeard(token, { event: "transcript.partial_data", data: { data: { words: [{ text: "Mm" }], participant: { name: "Ashley" } } } });
+    expect(huddle.botNext(token, 1).hush).toBe(false);
     expect(huddle.botNext("f".repeat(48), -1).live).toBe(false);
 
     const remove = vi.spyOn(integrations, "removeRecallBot").mockResolvedValue(undefined as any);
     const out = await c.huddle.takeOut({ organizationId: orgId, id: h.id });
     expect(out.inMeeting).toBe(false);
     expect(remove).toHaveBeenCalledWith(orgId, "bot-1");
-  });
+  }, 15_000);
 
   it("matches ElevenLabs voices to each employee, women's voices for women and men's for men, never the same voice twice", () => {
     const v = (id: string, gender: string, accent = "american") => ({ voice_id: id, name: id, category: "premade", labels: { gender, accent } });

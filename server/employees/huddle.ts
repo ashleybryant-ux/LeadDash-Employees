@@ -593,27 +593,47 @@ export async function botHeard(token: string, payload: unknown) {
   const p = payload as { event?: string; data?: { data?: { words?: { text?: string }[]; participant?: { name?: string | null } } } };
   const d = p?.data?.data;
   const name = (d?.participant?.name ?? "").trim() || "Someone";
-  // A person has started talking (a partial line): the employees go quiet at once.
+  const text = (d?.words ?? []).map((w) => w.text ?? "").join(" ").replace(/\s+/g, " ").trim();
+  // A person has started talking (a partial line): the employees go quiet at once. A single
+  // sound ("mm") doesn't count, and neither does the team's own voice coming back through
+  // someone's speakers into their microphone.
   if (p?.event === "transcript.partial_data") {
-    if (name !== BOT_NAME && (d?.words ?? []).length) personTalking(h.id);
+    if (name !== BOT_NAME && text.split(" ").length >= 2 && !isEcho(h, text)) personTalking(h.id);
     return { ok: true };
   }
   if (p?.event && p.event !== "transcript.data") return { ok: true };
-  const text = (d?.words ?? []).map((w) => w.text ?? "").join(" ").replace(/\s+/g, " ").trim();
   if (!text || name === BOT_NAME) return { ok: true };
+  if (isEcho(h, text)) {
+    console.warn(`[huddle] ignored ${name}'s line: it was the team's own voice coming back through their speakers.`);
+    return { ok: true };
+  }
   personTalking(h.id);
   await say(h.organizationId, h.id, name, text).catch((err) => console.warn("[huddle] bot turn failed:", err instanceof Error ? err.message : err));
   return { ok: true };
 }
 
+/** The words are what an employee just said out loud, picked up again by a person's microphone. */
+export function isEcho(h: Pick<Huddle, "transcript">, text: string) {
+  const said = norm(text);
+  const words = said.split(" ").filter(Boolean);
+  if (words.length < 2) return false;
+  const recent = linesOf(h).filter((l) => l.kind && Date.now() - l.at < 90_000);
+  return recent.some((l) => {
+    const line = norm(l.text);
+    if (line.includes(said)) return true;
+    const have = new Set(line.split(" "));
+    return words.length >= 4 && words.filter((w) => have.has(w)).length / words.length >= 0.8;
+  });
+}
+
 /** What the bot's page plays next: employee lines after the given index, with their audio; hush while a person is talking. */
 export function botNext(token: string, after: number) {
   const h = db.huddleByToken(token);
-  if (!h) return { live: false, hush: false, lines: [] as { index: number; kind: string; name: string; text: string; audioId: string | null }[] };
+  if (!h) return { live: false, hush: false, lines: [] as { index: number; kind: string; name: string; text: string; audioId: string | null; age: number }[] };
   const lines = linesOf(h)
     .map((l, index) => ({ ...l, index }))
     .filter((l) => l.index > after && l.kind)
-    .map((l) => ({ index: l.index, kind: l.kind!, name: l.who, text: l.text, audioId: clipFor(h.id, l.index) }));
+    .map((l) => ({ index: l.index, kind: l.kind!, name: l.who, text: l.text, audioId: clipFor(h.id, l.index), age: Math.max(0, Date.now() - l.at) }));
   return { live: h.status === "live", hush: hushed(h.id), lines };
 }
 
