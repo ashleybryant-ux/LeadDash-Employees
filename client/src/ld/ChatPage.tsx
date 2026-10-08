@@ -555,6 +555,8 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   const go = useGo();
   const base = `/chats/${emp.kind}`;
   const [done, setDone] = React.useState<string | null>(null);
+  const [viewing, setViewing] = React.useState(false);
+  const viewer = viewing && card.imageUrl ? <ImageViewer src={card.imageUrl} title={card.title} text={card.type === "post" ? card.body : undefined} onClose={() => setViewing(false)} /> : null;
   const start = trpc.applications.start.useMutation({
     onSuccess: async (app) => {
       await Promise.all([utils.applications.invalidate(), utils.opps.invalidate()]);
@@ -601,7 +603,8 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
       <div className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
         <span className="ld-lbl">{card.title}</span>
         {card.subtitle && <span className="ld-small ld-muted">{card.subtitle}</span>}
-        <a href={card.imageUrl} target="_blank" rel="noreferrer noopener"><img src={card.imageUrl} alt="The page shown after Submit" style={{ width: "100%", maxWidth: 640, borderRadius: 8, border: "1px solid #e3e9e6" }} /></a>
+        <button type="button" className="ld-imgbtn" onClick={() => setViewing(true)} aria-label="View full size"><img src={card.imageUrl} alt="The page shown after Submit" style={{ width: "100%", maxWidth: 640, borderRadius: 8, border: "1px solid #e3e9e6" }} /></button>
+        {viewer}
       </div>
     );
   if (card.type === "limit_note")
@@ -621,7 +624,8 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
           <span className="ld-lbl">{card.title}</span>
           <a className="ld-btn" href={card.imageUrl} download>Download</a>
         </div>
-        <a href={card.imageUrl} target="_blank" rel="noreferrer noopener"><img src={card.imageUrl} alt={card.title} style={{ width: "100%", maxWidth: 760, borderRadius: 8, border: "1px solid #e3e9e6" }} /></a>
+        <button type="button" className="ld-imgbtn" onClick={() => setViewing(true)} aria-label="View full size"><img src={card.imageUrl} alt={card.title} style={{ width: "100%", maxWidth: 760, borderRadius: 8, border: "1px solid #e3e9e6" }} /></button>
+        {viewer}
       </div>
     );
   if (card.type === "bidprime_screen" && card.imageUrl)
@@ -714,14 +718,25 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
       ) : (
         <Link href={`${base}/work`} className="ld-btn">Open</Link>
       );
-  } else if (card.type === "post" || card.type === "article" || card.type === "reply") actions = <Link href="/approvals" className="ld-btn p">Review</Link>;
+  } else if (card.type === "post" || card.type === "article" || card.type === "reply")
+    actions = (
+      <>
+        {card.imageUrl && <button type="button" className="ld-btn" onClick={() => setViewing(true)}>View</button>}
+        <Link href="/approvals" className="ld-btn p">Review</Link>
+      </>
+    );
   else if (card.type === "page" && card.subtitle?.includes("version")) actions = <PageCardActions id={card.id} href={`${base}/work?page=${card.id}`} />;
   else if (card.type === "page" || card.type === "video") actions = <Link href={`${base}/work`} className="ld-btn">Open plan</Link>;
   else actions = <Link href={`${base}/work`} className="ld-btn">Open</Link>;
 
   return (
-    <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: card.imageUrl ? "96px minmax(0, 1fr) 128px" : "minmax(0, 1fr) 128px", gap: 16, alignItems: "start" }}>
-      {card.imageUrl && <img src={card.imageUrl} alt="" style={{ width: 96, height: 120, objectFit: "cover", borderRadius: 8 }} />}
+    <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: card.imageUrl ? `${card.type === "post" ? 160 : 96}px minmax(0, 1fr) 128px` : "minmax(0, 1fr) 128px", gap: 16, alignItems: "start" }}>
+      {viewer}
+      {card.imageUrl && (
+        <button type="button" className="ld-imgbtn" onClick={() => setViewing(true)} aria-label="View full size">
+          <img src={card.imageUrl} alt="" style={{ width: card.type === "post" ? 160 : 96, height: card.type === "post" ? 200 : 120, objectFit: "cover", borderRadius: 8, display: "block" }} />
+        </button>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
         <div className="ld-row" style={{ gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 800, fontSize: 15 }}>{card.title}</span>
@@ -740,6 +755,30 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
         <ErrorLine error={err} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{actions}</div>
+    </div>
+  );
+}
+
+/** A picture opened full size over the chat: Esc, the backdrop or Close shuts it, Download saves it. */
+export function ImageViewer({ src, title, text, onClose }: { src: string; title?: string; text?: string; onClose: () => void }) {
+  React.useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  return (
+    <div className="ld-viewer" role="dialog" aria-modal="true" aria-label={title || "Picture"} onClick={onClose}>
+      <div className="ld-viewer-box" onClick={(e) => e.stopPropagation()}>
+        <div className="ld-viewer-bar">
+          <span style={{ fontWeight: 800, fontSize: 15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+          <span style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <a className="ld-btn" href={src} download>Download</a>
+            <button type="button" className="ld-btn" onClick={onClose}>Close</button>
+          </span>
+        </div>
+        <img src={src} alt={title || ""} className="ld-viewer-img" />
+        {text && <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-line", color: "#2b3a33" }}>{text}</p>}
+      </div>
     </div>
   );
 }

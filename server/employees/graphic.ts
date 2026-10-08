@@ -37,6 +37,8 @@ export type ArtSpec = {
   scene: string;
   /** How it's drawn: "flat vector illustration", "playful cartoon", "3D clay render", "editorial photo" and the like. */
   style: string;
+  /** The brand's look for the words and layout (fonts, colors, feel), from the brand guide. "" when there is none. */
+  look?: string;
 };
 
 export type Shape = "square" | "portrait" | "story";
@@ -161,13 +163,13 @@ ${textBlock(spec, w, artH + Math.round(h * 0.006), panelH - Math.round(h * 0.006
 
 /** What the image model is asked to design: the picture and the exact words, laid out together. */
 export function designPrompt(spec: CardSpec, art: ArtSpec, shape: Shape) {
-  const ratio = shape === "square" ? "square (1:1)" : shape === "story" ? "tall vertical (9:16)" : "vertical (4:5)";
+  const ratio = shape === "story" ? "tall vertical" : "square";
   return [
-    `Design a finished, professional social media graphic, ${ratio}, like a top agency's work for a modern software brand.`,
-    `Visual: ${art.scene} Style: ${art.style}. Rich detail, one clear focal point, real depth and lighting, nothing generic or clip-art.`,
-    `Typography: set this headline exactly, letter for letter, large and bold in a clean modern sans serif: "${spec.headline}".${spec.emphasis ? ` Make "${spec.emphasis}" stand out in ${spec.accent}.` : ""}${spec.subline ? ` Under it, smaller: "${spec.subline}".` : ""} No other words, numbers, labels, signs, logos or watermarks anywhere.`,
-    `Layout: the picture and the words work together as one design, with the words placed where they read clearly and nothing important at the very bottom edge.`,
-    `Brand colors: ${spec.background} and ${spec.accent}, with ${spec.text} for text where it reads well.`,
+    `Design a premium, minimal social media graphic (${ratio}), the kind a top brand agency would post: calm, confident and uncluttered.`,
+    `Visual: ${art.scene} Style: ${art.style}. One hero subject, large and beautifully lit, with at most three supporting objects. Generous empty space around it. No icon grids, no checklists, no charts, no app screens, no rows of small symbols, no busy patterns, no clip art.`,
+    `Words: set this headline exactly, letter for letter, large: "${spec.headline}".${spec.emphasis ? ` Set "${spec.emphasis}" in italic in ${spec.accent}.` : ""}${spec.subline ? ` Under it, much smaller: "${spec.subline}".` : ""} ${art.look ? `${art.look} ` : "Use one elegant typeface with a clear size difference between headline and the line under it. "}No other words, letters, numbers, labels, logos or watermarks anywhere.`,
+    `Layout: the headline sits on a clean area of the background with lots of space around it, never on top of the picture's details. Keep everything well inside the edges, with a wide empty margin on all four sides.`,
+    `Colors: built around ${spec.background} and ${spec.accent}, with ${spec.text} for the words where they read well; only a few colors overall.`,
   ].join("\n");
 }
 
@@ -175,7 +177,7 @@ export function designPrompt(spec: CardSpec, art: ArtSpec, shape: Shape) {
 export async function renderDesigned(spec: CardSpec, shape: Shape, art: Buffer, logoPath: string | null, name = "") {
   const { w, h } = SIZES[shape];
   const stripH = stripOf(shape, h);
-  const picture = await sharp(art).resize({ width: w, height: h - stripH, fit: "cover", position: "top" }).png().toBuffer();
+  const picture = await sharp(art).resize({ width: w, height: h - stripH, fit: "cover", position: "centre" }).png().toBuffer();
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="${spec.strip}"/></svg>`;
   const base = await sharp(Buffer.from(svg)).composite([{ input: picture, left: 0, top: 0 }]).png().toBuffer();
   return withStrip(base, spec, shape, logoPath, name);
@@ -248,21 +250,29 @@ export async function postGraphic(orgId: number, emp: AIEmployee, input: { targe
     }
   })();
   const illustrated = !wordsOnly(input.words);
+  // The brand guide in the Brain (fonts, colors, feel), so the graphic looks like the brand's own.
+  const guide = (await db.listKnowledgeByOrg(orgId))
+    .filter((k) => k.employeeId == null && k.kind !== "image" && /\b(design|brand|style guide|visual)\b/i.test(k.title))
+    .map((k) => `${k.title}:\n${k.content}`)
+    .join("\n\n")
+    .slice(0, 3000);
   const spec = await generateJson<CardSpec & ArtSpec>({
     system: `You art-direct a social graphic for ${org.name}${illustrated ? ": a finished design where a strong picture and the headline work together, drawn by an image model" : ": a typographic card, words only"}. Short words, no hype, American English, never an em dash. The headline is the line people read first (at most ${illustrated ? 10 : 12} words); the subline is one short line under it, or "".${illustrated ? `
 The picture is what stops the scroll, so make it a real idea, not decoration:
 - scene: one concrete visual idea that shows the post's point, with a clear subject, setting and action. Favor a visual metaphor or a small story (for "one price covers everything": a shopping cart piled high with a desk phone, a fax machine, a calendar, a laptop and a chart; for "five bills for one practice": a tired owner at a desk buried under five stacks of envelopes). People are diverse and look like the business's real customers. Nothing in it may need words to be understood.
 - style: how it's drawn. Pick what suits the idea and the brand: "bright flat vector illustration", "playful editorial cartoon with bold outlines", "soft 3D clay render", "warm candid editorial photo" and the like. Follow what the person asked for (a cartoon, a photo, a mascot) when they said it.
-- The picture never contains text, letters, numbers, prices, logos or signs; the headline carries the words.` : `
-scene and style are "".`}
+- Keep it simple: one hero subject and at most three supporting objects. Never icon grids, checklists, charts, app screens or rows of little symbols; they look cheap at phone size.
+- look: one or two sentences on how the words should look, from the brand guide below (the headline typeface, how the emphasized word is set, the feel), or "" when there is no guide.
+- The picture never contains text, letters, numbers, prices, logos or signs; the headline carries the words.${guide ? `\n\nThe brand guide:\n${guide}` : ""}` : `
+scene, style and look are "".`}
 The emphasis is one word or short phrase copied exactly from the headline, or "". Colors are hex. Background, accent, text, subtext, strip and stripText come from the brand colors when they fit: ${colors.length ? colors.join(", ") : "none saved; use background #0d3b2e, accent #d6a74a, text #ffffff, subtext #efe7d6, strip #14221c, stripText #ffffff"}. Keep text readable on the background (light text on a dark background, dark on light). Never put a client's name or health information on a graphic.`,
     prompt: `Post title: ${post.title}\nPost text: ${(post.body ?? "").slice(0, 1200)}\n\nWhat the person asked for: ${input.words.trim() || "a graphic for this post"}`,
     schemaName: "graphic_spec",
     schema: {
       type: "object",
       additionalProperties: false,
-      required: ["headline", "emphasis", "subline", "background", "accent", "text", "subtext", "strip", "stripText", "scene", "style"],
-      properties: { headline: { type: "string" }, emphasis: { type: "string" }, subline: { type: "string" }, background: { type: "string" }, accent: { type: "string" }, text: { type: "string" }, subtext: { type: "string" }, strip: { type: "string" }, stripText: { type: "string" }, scene: { type: "string" }, style: { type: "string" } },
+      required: ["headline", "emphasis", "subline", "background", "accent", "text", "subtext", "strip", "stripText", "scene", "style", "look"],
+      properties: { headline: { type: "string" }, emphasis: { type: "string" }, subline: { type: "string" }, background: { type: "string" }, accent: { type: "string" }, text: { type: "string" }, subtext: { type: "string" }, strip: { type: "string" }, stripText: { type: "string" }, scene: { type: "string" }, style: { type: "string" }, look: { type: "string" } },
     },
     maxTokens: 700,
   });
@@ -279,14 +289,15 @@ The emphasis is one word or short phrase copied exactly from the headline, or ""
   };
   const logo = localPath(org.logoUrl);
   const scene = String(spec.scene ?? "").trim();
-  let art: ArtSpec | null = illustrated && scene ? { scene: scene.slice(0, 900), style: String(spec.style ?? "").trim().slice(0, 120) || "bright flat vector illustration" } : null;
+  let art: ArtSpec | null = illustrated && scene ? { scene: scene.slice(0, 900), style: String(spec.style ?? "").trim().slice(0, 120) || "bright flat vector illustration", look: String(spec.look ?? "").trim().slice(0, 400) } : null;
   let artError: string | null = null;
   let png: Buffer | null = null;
   if (art) {
     try {
       // OpenAI's image model (the one ChatGPT uses) designs the whole graphic, words included; the logo strip is added here so the brand is exact.
       const prompt = designPrompt(clean, art, shape);
-      const { url: artUrl } = await generateImage({ prompt, size: shape === "square" ? "1024x1024" : "1024x1536", quality: "high", folder: `org-${orgId}/social` });
+      // The closest shape to the space above the logo strip, so nothing important is cut off.
+      const { url: artUrl } = await generateImage({ prompt, size: shape === "story" ? "1024x1536" : "1024x1024", quality: "high", folder: `org-${orgId}/social` });
       const file = localPath(artUrl);
       if (!file) throw new Error("The picture didn't save.");
       png = await renderDesigned(clean, shape, fs.readFileSync(file), logo, org.name);

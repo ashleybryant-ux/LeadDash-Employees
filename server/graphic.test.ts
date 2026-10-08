@@ -49,6 +49,7 @@ describe("Sienna makes the graphic herself", () => {
 
   it("draws a real picture for the graphic and sets the exact headline under it", async () => {
     const { orgId, owner } = await makeWorkspace("graphic-art");
+    await db.createKnowledgeItem({ organizationId: orgId, title: "Company training: Website and page design (brand board)", category: "voice_tone", kind: "fact", content: "Headlines: Playfair Display, with one emphasized word per headline in italic, in gold or orange." });
     const sienna = (await db.getEmployeeByKind(orgId, "social"))!;
     const post = await db.createOutboundItem({ organizationId: orgId, employeeId: sienna.id, kind: "social_post", status: "pending_approval", title: "$299 covers more", body: "I built LeadDash because I was paying five separate bills to run one practice.", targetChannels: JSON.stringify(["linkedin"]), metadata: JSON.stringify({ platforms: ["linkedin"], post: { type: "post", mode: "same", variants: {} } }) });
     const prompts: string[] = [];
@@ -63,15 +64,18 @@ describe("Sienna makes the graphic herself", () => {
       if (opts.schemaName === "chat_decision") return { ...blank, action: "post_graphic", focus: "text", notes: "make it a cartoon", reply: "Making it." } as any;
       if (opts.schemaName === "graphic_spec") {
         expect(opts.system).toContain("The picture is what stops the scroll");
-        return { headline: "$299 covers more than you think", emphasis: "$299", subline: "One login. One bill. Everything included.", background: "#0d3b2e", accent: "#e88a3a", text: "#ffffff", subtext: "#efe7d6", strip: "#14221c", stripText: "#ffffff", scene: "A shopping cart piled high with a desk phone, a fax machine, a calendar and a laptop.", style: "Playful editorial cartoon" };
+        expect(opts.system).toContain("Playfair Display, with one emphasized word");
+        return { headline: "$299 covers more than you think", emphasis: "$299", subline: "One login. One bill. Everything included.", background: "#0d3b2e", accent: "#e88a3a", text: "#ffffff", subtext: "#efe7d6", strip: "#14221c", stripText: "#ffffff", scene: "A shopping cart piled high with a desk phone, a fax machine, a calendar and a laptop.", style: "Playful editorial cartoon", look: "Headlines in Playfair Display, the emphasized word in italic orange." };
       }
       return {} as any;
     });
     const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: sienna.id, text: "This is just copy on a card. Make it a cartoon." });
     expect(r.reply.content).toBe('Here\'s the graphic: playful editorial cartoon of a shopping cart piled high with a desk phone, a fax machine, a calendar and a laptop, with "$299 covers more than you think" and "One login. One bill. Everything included." designed into it. Check the words are spelled right. It\'s on the post now. Tell me what to change, or approve the post.');
     expect(prompts[0]).toContain("Style: Playful editorial cartoon");
-    expect(prompts[0]).toContain('set this headline exactly, letter for letter, large and bold in a clean modern sans serif: "$299 covers more than you think"');
-    expect(prompts[0]).toContain("square (1:1)");
+    expect(prompts[0]).toContain('set this headline exactly, letter for letter, large: "$299 covers more than you think"');
+    expect(prompts[0]).toContain("(square)");
+    expect(prompts[0]).toContain("No icon grids, no checklists");
+    expect(prompts[0]).toContain("Headlines in Playfair Display");
     const after = (await db.getOutboundItemForOrg(post.id, orgId))!;
     const file = path.join(uploadsRoot(), after.imageUrl!.slice("/files/".length));
     expect([(await sharp(file).metadata()).width, (await sharp(file).metadata()).height]).toEqual([1080, 1080]);

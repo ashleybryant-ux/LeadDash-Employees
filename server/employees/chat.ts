@@ -1500,7 +1500,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
           : r.kind === "text"
             ? `Here's the graphic: "${r.spec!.headline}"${r.spec!.emphasis ? ` with "${r.spec!.emphasis}" in ${r.spec!.accent}` : ""} on ${r.spec!.background}${r.spec!.subline ? `, and "${r.spec!.subline}" under it` : ""}.${r.artError ? ` I couldn't draw the picture for it (${r.artError}), so this one is words only for now.` : ""} It's on the post now. Tell me what to change, or approve the post.`
             : `Here's the new picture. It's on the post now. Tell me what to change, or approve the post.`;
-        return { text, cards: [{ type: "post", id: p.id, title: p.title, body: (p.body ?? "").slice(0, 280), imageUrl: p.imageUrl }], queries: [], choices: ["Use it", "Different picture", "Different words", "Make it a story"], facts: `${p.title}: graphic made (${r.kind}${r.art ? `: ${r.art.style}, ${r.art.scene.slice(0, 160)}` : ""}).` };
+        return { text, cards: [{ type: "post", id: p.id, title: p.title, body: (p.body ?? "").slice(0, 280), imageUrl: p.imageUrl }], queries: [], choices: ["Use it", "Make it simpler", "Different picture", "Different words"], facts: `${p.title}: graphic made (${r.kind}${r.art ? `: ${r.art.style}, ${r.art.scene.slice(0, 160)}` : ""}).` };
       } catch (err) {
         return { text: `I couldn't make the graphic: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
       }
