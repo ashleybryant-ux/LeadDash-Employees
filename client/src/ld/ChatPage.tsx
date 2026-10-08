@@ -294,7 +294,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                         <span>{excerptOf(quoted.content)}</span>
                       </div>
                     )}
-                    {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.role === "user" ? m.content : <Rich text={m.content} />}</div>}
+                    {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.role === "user" ? <LongText text={m.content} /> : <Rich text={m.content} />}</div>}
                     <MessageAttachments raw={m.attachments} />
                     {m.spoken && <SpokenTag role={m.role} />}
                   </div>
@@ -426,7 +426,6 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             who={who}
             busy={send.isPending || files.uploading || (!text.trim() && !files.ready.length)}
             attach={files.button}
-            longPaste={{ over: 6000, onPaste: files.addText }}
             chips={
               replyTo || files.chips ? (
                 <>
@@ -954,5 +953,29 @@ function PageCardActions({ id, href }: { id: number; href: string }) {
       <Link href={href} className="ld-btn p">Preview</Link>
       <button type="button" className="ld-btn" onClick={copy}>{copied ? "Copied" : "Copy HTML"}</button>
     </>
+  );
+}
+
+/** A person's message as they wrote it; a long one (a page's pasted HTML) shows its start with Show all, code in a scrolling box. */
+export function LongText({ text }: { text: string }) {
+  const [all, setAll] = React.useState(false);
+  if (text.length <= 1500) return <>{text}</>;
+  const code = /<(!doctype html|html|head|body|div|section|style|script)[\s>]/i.test(text);
+  const lines = text.split("\n").length;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div
+        style={
+          code
+            ? { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, lineHeight: 1.5, background: "#f3f6f5", border: "1px solid #e3e9e6", borderRadius: 8, padding: "10px 12px", maxHeight: all ? 420 : 140, overflow: all ? "auto" : "hidden", whiteSpace: "pre-wrap", wordBreak: "break-all" }
+            : { maxHeight: all ? "none" : 160, overflow: "hidden" }
+        }
+      >
+        {all ? text : text.slice(0, 1200)}
+      </div>
+      <button type="button" className="ld-btn" style={{ alignSelf: "flex-start" }} onClick={() => setAll((v) => !v)}>
+        {all ? "Show less" : `Show all (${lines.toLocaleString("en-US")} lines)`}
+      </button>
+    </div>
   );
 }

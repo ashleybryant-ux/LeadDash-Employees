@@ -3364,7 +3364,7 @@ export const appRouter = router({
       }),
 
     send: protectedProcedure
-      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().max(20_000), attachmentIds: z.array(z.number().int()).max(10).default([]), spoken: z.boolean().default(false), replyToId: z.number().int().optional() }))
+      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().max(1_500_000), attachmentIds: z.array(z.number().int()).max(10).default([]), spoken: z.boolean().default(false), replyToId: z.number().int().optional() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
         const result = await sendChatMessage({

@@ -292,9 +292,29 @@ function transcript(history: ChatMessage[]) {
     .slice(-20)
     .map((m) => {
       const files = parseList<{ name: string }>(m.attachments).map((f) => f.name);
-      return `${m.role === "user" ? m.authorName : m.role === "handoff" ? `Handoff from ${m.authorName}` : "You"}: ${m.content}${files.length ? ` [attached: ${files.join(", ")}]` : ""}`;
+      const p = m.role === "user" ? pastedHtml(m.content) : null;
+      const content = p ? `${p.words}${p.words ? " " : ""}(pasted a page's HTML)` : m.content.length > 6000 ? `${m.content.slice(0, 6000)}... (cut, ${m.content.length.toLocaleString("en-US")} characters in all)` : m.content;
+      return `${m.role === "user" ? m.authorName : m.role === "handoff" ? `Handoff from ${m.authorName}` : "You"}: ${content}${files.length ? ` [attached: ${files.join(", ")}]` : ""}`;
     })
     .join("\n\n");
+}
+
+/**
+ * A web page's HTML pasted into a message, split from the words around it.
+ * Null when the message isn't a pasted page (short, or no page markup).
+ */
+export function pastedHtml(text: string): { html: string; words: string } | null {
+  if (text.length < 1500) return null;
+  const start = text.search(/<(!doctype html|html[\s>]|head[\s>]|body[\s>])/i);
+  const at = start >= 0 ? start : text.search(/<(div|section|header|main|style|script|nav)[\s>]/i);
+  if (at < 0) return null;
+  const endTag = text.toLowerCase().lastIndexOf("</html>");
+  const lastTag = text.lastIndexOf(">");
+  const end = endTag >= 0 ? endTag + 7 : lastTag + 1;
+  const html = text.slice(at, end);
+  if (html.length < 1000 || (html.match(/</g) ?? []).length < 20) return null;
+  const words = `${text.slice(0, at)} ${text.slice(end)}`.replace(/\s+/g, " ").trim();
+  return { html, words };
 }
 
 function parseList<T>(raw: string | null | undefined): T[] {
@@ -1882,6 +1902,14 @@ export async function sendChatMessage(opts: {
 }) {
   const emp = await db.getEmployeeForOrg(opts.employeeId, opts.organizationId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+  // A page's HTML pasted right into the message: it stays in the chat as posted, and goes to the employee as the page's code (like an attached .html file), not as thousands of words in every prompt.
+  const pasted = pastedHtml(opts.text);
+  let pastedFile: ChatFile | null = null;
+  if (pasted) {
+    const sw = await import("./siteWork");
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+    pastedFile = db.createChatFile({ organizationId: opts.organizationId, employeeId: emp.id, name: `pasted-page-${stamp}.html`, mime: "text/html", size: Buffer.byteLength(pasted.html), kind: "document", fileUrl: "", text: sw.keepHtml(pasted.html), pages: null });
+  }
   const quoted = opts.replyToId ? await db.getChatMessage(opts.organizationId, opts.replyToId) : null;
   const quote = quoted && quoted.employeeId === emp.id ? quoted : null;
   const quoteText = quote ? `${quote.authorName}: ${quote.content.replace(/\s+/g, " ").slice(0, 400)}` : "";
@@ -1902,7 +1930,8 @@ export async function sendChatMessage(opts: {
     replyToId: quote?.id ?? null,
     attachments: sent.length ? JSON.stringify(sent.map((f) => ({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl }))) : null,
   });
-  db.attachChatFiles(opts.organizationId, sent.map((f) => f.id), userMsg.id);
+  db.attachChatFiles(opts.organizationId, [...sent.map((f) => f.id), ...(pastedFile ? [pastedFile.id] : [])], userMsg.id);
+  if (pastedFile) sent.push(pastedFile);
 
   const reply = async (content: string, cards: ChatCard[] = [], queries: string[] = []) =>
     db.createChatMessage({
@@ -1929,10 +1958,11 @@ export async function sendChatMessage(opts: {
     const recentIds = new Set(history.slice(-12).map((m) => m.id));
     const files = sent.length ? sent : db.recentChatFiles(opts.organizationId, emp.id, 6).filter((f) => f.messageId != null && recentIds.has(f.messageId)).slice(0, 4);
     const scheduled = /^Scheduled task/.test(opts.authorName);
-    const said = `${quoteText ? `(Replying to this message: "${quoteText}")\n` : ""}${opts.text.trim() || `(attached ${sent.map((f) => f.name).join(", ")})`}`;
+    const words = pasted ? pasted.words || "(no words, only the page's HTML)" : opts.text.trim();
+    const said = `${quoteText ? `(Replying to this message: "${quoteText}")\n` : ""}${words || `(attached ${sent.map((f) => f.name).join(", ")})`}${pasted ? `\n(pasted a page's HTML, ${pasted.html.length.toLocaleString("en-US")} characters, given to you as ${pastedFile!.name})` : ""}`;
     const { system, brain } = await tasks.systemPromptAbout(
       emp,
-      `${opts.text} ${sent.map((f) => f.name).join(" ")}`,
+      `${pasted ? pasted.words : opts.text} ${sent.map((f) => f.name).join(" ")}`,
       `You are chatting with ${opts.authorName}. Answer questions about your work directly and briefly.
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 Work it out before you act: in "thinking", say what they want and what you know, then choose. When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
@@ -1966,7 +1996,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
       return { user: userMsg, reply: await reply(`${decision.reply || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
     }
-    const ctx = { who: opts.authorName, files: sent.length ? sent : files, history, said: opts.text, userId: opts.userId ?? null };
+    const ctx = { who: opts.authorName, files: sent.length ? sent : files, history, said: pasted ? pasted.words : opts.text, userId: opts.userId ?? null };
     const result = await runAction(emp, decision, ctx);
     if (!decision.plan?.trim()) {
       const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];
