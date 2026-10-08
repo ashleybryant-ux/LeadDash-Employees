@@ -55,7 +55,7 @@ describe("Sienna makes the graphic herself", () => {
     const images = await import("./_core/imageGeneration");
     vi.spyOn(images, "generateImage").mockImplementation(async (opts: any) => {
       prompts.push(opts.prompt);
-      const art = await sharp({ create: { width: 1536, height: 1024, channels: 3, background: "#f3dcc0" } }).png().toBuffer();
+      const art = await sharp({ create: { width: 1024, height: 1024, channels: 3, background: "#f3dcc0" } }).png().toBuffer();
       return storagePut(`org-${orgId}/social/art.png`, art, "image/png");
     });
     const llm = await import("./_core/llm");
@@ -68,9 +68,10 @@ describe("Sienna makes the graphic herself", () => {
       return {} as any;
     });
     const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: sienna.id, text: "This is just copy on a card. Make it a cartoon." });
-    expect(r.reply.content).toBe('Here\'s the graphic: playful editorial cartoon of a shopping cart piled high with a desk phone, a fax machine, a calendar and a laptop, with "$299 covers more than you think" set under it and "One login. One bill. Everything included." below that. It\'s on the post now. Tell me what to change, or approve the post.');
+    expect(r.reply.content).toBe('Here\'s the graphic: playful editorial cartoon of a shopping cart piled high with a desk phone, a fax machine, a calendar and a laptop, with "$299 covers more than you think" and "One login. One bill. Everything included." designed into it. Check the words are spelled right. It\'s on the post now. Tell me what to change, or approve the post.');
     expect(prompts[0]).toContain("Style: Playful editorial cartoon");
-    expect(prompts[0]).toContain("no text, letters, numbers");
+    expect(prompts[0]).toContain('set this headline exactly, letter for letter, large and bold in a clean modern sans serif: "$299 covers more than you think"');
+    expect(prompts[0]).toContain("square (1:1)");
     const after = (await db.getOutboundItemForOrg(post.id, orgId))!;
     const file = path.join(uploadsRoot(), after.imageUrl!.slice("/files/".length));
     expect([(await sharp(file).metadata()).width, (await sharp(file).metadata()).height]).toEqual([1080, 1080]);

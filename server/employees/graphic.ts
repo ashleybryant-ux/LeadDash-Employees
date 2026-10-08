@@ -159,6 +159,28 @@ ${textBlock(spec, w, artH + Math.round(h * 0.006), panelH - Math.round(h * 0.006
   return withStrip(base, spec, shape, logoPath, name);
 }
 
+/** What the image model is asked to design: the picture and the exact words, laid out together. */
+export function designPrompt(spec: CardSpec, art: ArtSpec, shape: Shape) {
+  const ratio = shape === "square" ? "square (1:1)" : shape === "story" ? "tall vertical (9:16)" : "vertical (4:5)";
+  return [
+    `Design a finished, professional social media graphic, ${ratio}, like a top agency's work for a modern software brand.`,
+    `Visual: ${art.scene} Style: ${art.style}. Rich detail, one clear focal point, real depth and lighting, nothing generic or clip-art.`,
+    `Typography: set this headline exactly, letter for letter, large and bold in a clean modern sans serif: "${spec.headline}".${spec.emphasis ? ` Make "${spec.emphasis}" stand out in ${spec.accent}.` : ""}${spec.subline ? ` Under it, smaller: "${spec.subline}".` : ""} No other words, numbers, labels, signs, logos or watermarks anywhere.`,
+    `Layout: the picture and the words work together as one design, with the words placed where they read clearly and nothing important at the very bottom edge.`,
+    `Brand colors: ${spec.background} and ${spec.accent}, with ${spec.text} for text where it reads well.`,
+  ].join("\n");
+}
+
+/** The designed graphic from the image model, fitted to the card, with the logo or name on the strip at the bottom. */
+export async function renderDesigned(spec: CardSpec, shape: Shape, art: Buffer, logoPath: string | null, name = "") {
+  const { w, h } = SIZES[shape];
+  const stripH = stripOf(shape, h);
+  const picture = await sharp(art).resize({ width: w, height: h - stripH, fit: "cover", position: "top" }).png().toBuffer();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="${spec.strip}"/></svg>`;
+  const base = await sharp(Buffer.from(svg)).composite([{ input: picture, left: 0, top: 0 }]).png().toBuffer();
+  return withStrip(base, spec, shape, logoPath, name);
+}
+
 /** Draws the plain text card as a PNG. */
 export async function renderCard(spec: CardSpec, shape: Shape, logoPath: string | null) {
   const { w, h } = SIZES[shape];
@@ -227,7 +249,7 @@ export async function postGraphic(orgId: number, emp: AIEmployee, input: { targe
   })();
   const illustrated = !wordsOnly(input.words);
   const spec = await generateJson<CardSpec & ArtSpec>({
-    system: `You art-direct a social graphic for ${org.name}${illustrated ? ": a strong picture on top with the headline set on a brand-color panel under it" : ": a typographic card, words only"}. Short words, no hype, American English, never an em dash. The headline is the line people read first (at most ${illustrated ? 10 : 12} words); the subline is one short line under it, or "".${illustrated ? `
+    system: `You art-direct a social graphic for ${org.name}${illustrated ? ": a finished design where a strong picture and the headline work together, drawn by an image model" : ": a typographic card, words only"}. Short words, no hype, American English, never an em dash. The headline is the line people read first (at most ${illustrated ? 10 : 12} words); the subline is one short line under it, or "".${illustrated ? `
 The picture is what stops the scroll, so make it a real idea, not decoration:
 - scene: one concrete visual idea that shows the post's point, with a clear subject, setting and action. Favor a visual metaphor or a small story (for "one price covers everything": a shopping cart piled high with a desk phone, a fax machine, a calendar, a laptop and a chart; for "five bills for one practice": a tired owner at a desk buried under five stacks of envelopes). People are diverse and look like the business's real customers. Nothing in it may need words to be understood.
 - style: how it's drawn. Pick what suits the idea and the brand: "bright flat vector illustration", "playful editorial cartoon with bold outlines", "soft 3D clay render", "warm candid editorial photo" and the like. Follow what the person asked for (a cartoon, a photo, a mascot) when they said it.
@@ -262,11 +284,12 @@ The emphasis is one word or short phrase copied exactly from the headline, or ""
   let png: Buffer | null = null;
   if (art) {
     try {
-      const prompt = `${art.scene}. Style: ${art.style}. A polished, scroll-stopping social media image with one clear focal point and plenty of detail. Color palette built around ${clean.background} and ${clean.accent}, with natural colors where they fit. Absolutely no text, letters, numbers, prices, logos, signs or watermarks anywhere in the image.`;
-      const { url: artUrl } = await generateImage({ prompt, size: shape === "story" ? "1024x1024" : "1536x1024", quality: "high", folder: `org-${orgId}/social` });
+      // OpenAI's image model (the one ChatGPT uses) designs the whole graphic, words included; the logo strip is added here so the brand is exact.
+      const prompt = designPrompt(clean, art, shape);
+      const { url: artUrl } = await generateImage({ prompt, size: shape === "square" ? "1024x1024" : "1024x1536", quality: "high", folder: `org-${orgId}/social` });
       const file = localPath(artUrl);
       if (!file) throw new Error("The picture didn't save.");
-      png = await renderIllustrated(clean, shape, fs.readFileSync(file), logo, org.name);
+      png = await renderDesigned(clean, shape, fs.readFileSync(file), logo, org.name);
     } catch (err) {
       artError = (err instanceof Error ? err.message : String(err)).slice(0, 200);
       art = null;

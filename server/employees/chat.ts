@@ -1496,7 +1496,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         const r = await graphic.postGraphic(org, emp, { target: d.target, words: [d.notes, d.message].filter(Boolean).join(" ") || ctx.said || "", kind, shape });
         const p = r.post;
         const text = r.kind === "illustrated"
-          ? `Here's the graphic: ${r.art!.style.toLowerCase()} of ${r.art!.scene.replace(/\.$/, "").replace(/^./, (c) => c.toLowerCase())}, with "${r.spec!.headline}" set under it${r.spec!.subline ? ` and "${r.spec!.subline}" below that` : ""}. It's on the post now. Tell me what to change, or approve the post.`
+          ? `Here's the graphic: ${r.art!.style.toLowerCase()} of ${r.art!.scene.replace(/\.$/, "").replace(/^./, (c) => c.toLowerCase())}, with "${r.spec!.headline}"${r.spec!.subline ? ` and "${r.spec!.subline}"` : ""} designed into it. Check the words are spelled right. It's on the post now. Tell me what to change, or approve the post.`
           : r.kind === "text"
             ? `Here's the graphic: "${r.spec!.headline}"${r.spec!.emphasis ? ` with "${r.spec!.emphasis}" in ${r.spec!.accent}` : ""} on ${r.spec!.background}${r.spec!.subline ? `, and "${r.spec!.subline}" under it` : ""}.${r.artError ? ` I couldn't draw the picture for it (${r.artError}), so this one is words only for now.` : ""} It's on the post now. Tell me what to change, or approve the post.`
             : `Here's the new picture. It's on the post now. Tell me what to change, or approve the post.`;
