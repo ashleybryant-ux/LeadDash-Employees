@@ -424,7 +424,7 @@ export async function writeSocialPost(
 - Keep it under 1,300 characters so it fits LinkedIn, Instagram and Facebook.
 - If X is a target, also give an X version under 280 characters. If Threads is a target, also give a Threads version under 500 characters with at most one hashtag.
 - The headline is 3 to 8 words, lowercase unless the Brain's voice says otherwise.
-- The image prompt describes a scene only (no words or letters in the image), with the subject in the center.`
+- The image prompt is one concrete visual idea that shows the post's point (a visual metaphor or a small scene with a clear subject and action, never a generic stock shot), plus how it's drawn (bright flat vector illustration, playful editorial cartoon, soft 3D clay render or warm candid editorial photo). No words, letters, numbers or logos in the image; the subject in the center.`
     );
     const out = await generateJson<{ headline: string; caption: string; xVersion: string; threadsVersion: string; imagePrompt: string }>({
       system,
