@@ -71,7 +71,7 @@ export function useAttachments(orgId: number, employeeId: number, slot: "chat" |
   const [note, setNote] = React.useState<string | null>(null);
   const input = React.useRef<HTMLInputElement>(null);
 
-  const add = (list: FileList | null) => {
+  const add = (list: FileList | File[] | null) => {
     if (!list) return;
     setNote(null);
     const room = MAX_FILES - staged.length;
@@ -111,7 +111,13 @@ export function useAttachments(orgId: number, employeeId: number, slot: "chat" |
   ) : null;
 
   const errors = staged.filter((s) => s.error).map((s) => `${s.name}: ${s.error}`);
-  return { button, chips, ready, uploading, clear: () => setStaged([]), note: note ?? (errors.length ? errors.join(" ") : null), onDrop: add };
+  /** Long pasted text (a page's HTML, a long document) goes with the message as a file instead of into the box. */
+  const addText = (text: string) => {
+    const html = /<(!doctype html|html|head|body|div|section|style|script)[\s>]/i.test(text);
+    const stamp = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(/[: ]/g, "");
+    add([new File([text], html ? `pasted-page-${stamp}.html` : `pasted-text-${stamp}.txt`, { type: html ? "text/html" : "text/plain" })]);
+  };
+  return { button, chips, ready, uploading, clear: () => setStaged([]), note: note ?? (errors.length ? errors.join(" ") : null), onDrop: add, addText };
 }
 
 export function MessageAttachments({ raw }: { raw: string | null | undefined }) {

@@ -426,6 +426,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             who={who}
             busy={send.isPending || files.uploading || (!text.trim() && !files.ready.length)}
             attach={files.button}
+            longPaste={{ over: 6000, onPaste: files.addText }}
             chips={
               replyTo || files.chips ? (
                 <>

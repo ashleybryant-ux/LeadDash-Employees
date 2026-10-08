@@ -57,9 +57,11 @@ type Props = {
   onCancel?: () => void;
   /** What tagging an AI employee does here; the team chat default is a thread answer. */
   employeeNote?: string;
+  /** Pasted text longer than this many characters goes to onLongPaste (attached as a file) instead of the box. */
+  longPaste?: { over: number; onPaste: (text: string) => void };
 };
 
-export function Composer({ value, onChange, onSend, placeholder, who, disabled, busy, sendLabel = "Send", attach, chips, note, extra, compact, autoFocus, onCancel, employeeNote = "AI employee, answers in a thread" }: Props) {
+export function Composer({ value, onChange, onSend, placeholder, who, disabled, busy, sendLabel = "Send", attach, chips, note, extra, compact, autoFocus, onCancel, employeeNote = "AI employee, answers in a thread", longPaste }: Props) {
   const ta = React.useRef<HTMLTextAreaElement>(null);
   const [emoji, setEmoji] = React.useState(false);
   const [mention, setMention] = React.useState<{ at: number; q: string } | null>(null);
@@ -211,6 +213,13 @@ export function Composer({ value, onChange, onSend, placeholder, who, disabled, 
           disabled={disabled}
           onChange={(e) => onInput(e.target.value, e.target.selectionStart)}
           onKeyDown={keyDown}
+          onPaste={(e) => {
+            if (!longPaste) return;
+            const t = e.clipboardData.getData("text/plain");
+            if (t.length <= longPaste.over) return;
+            e.preventDefault();
+            longPaste.onPaste(t);
+          }}
           onBlur={() => setTimeout(() => setMention(null), 150)}
         />
         {mention && options.length > 0 && (
