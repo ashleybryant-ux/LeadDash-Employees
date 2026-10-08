@@ -292,7 +292,7 @@ describe("Projects, more like ClickUp", () => {
     await db.addOrganizationMember({ organizationId: orgId, userId: caroline.id, role: "member" });
     const her = caller(caroline);
     const other = await me.pj.saveList({ organizationId: orgId, name: "AI Receptionist", folderId: folder.id });
-    const t1 = await me.pj.create({ organizationId: orgId, listId: list.id, name: "Landing page", dueDate: "2026-10-07", startDate: "2026-10-01", assignees: [{ type: "user", id: caroline.id, name: "Caroline Jones" }] });
+    const t1 = await me.pj.create({ organizationId: orgId, listId: list.id, name: "Landing page", dueDate: "2099-10-07", startDate: "2099-10-01", assignees: [{ type: "user", id: caroline.id, name: "Caroline Jones" }] });
     await me.pj.update({ organizationId: orgId, id: t1.id, patch: { priority: "urgent" } });
     const t2 = await me.pj.create({ organizationId: orgId, listId: other.id, name: "Greeting script", dueDate: "2026-12-15" });
     await me.pj.update({ organizationId: orgId, id: t2.id, patch: { status: "complete" } });
@@ -328,7 +328,7 @@ describe("Projects, more like ClickUp", () => {
     const doc = await me.pj.saveDoc({ organizationId: orgId, title: "Offer FAQ", listId: list.id, blocks: [{ id: "b0", type: "p", text: "Twenty five seats at the founding price." }] });
     const ov = await me.pj.overview({ organizationId: orgId, folderId: folder.id });
     expect(ov.totals).toMatchObject({ open: 1, overdue: 0, total: 2 });
-    expect(ov.lists.map((l) => [l.name, l.done, l.total, l.start, l.end, l.lead?.name ?? null, l.priority])).toEqual([["Founding Members", 0, 1, "2026-10-01", "2026-10-07", "Caroline Jones", "urgent"], ["AI Receptionist", 1, 1, "2026-12-15", "2026-12-15", null, null]]);
+    expect(ov.lists.map((l) => [l.name, l.done, l.total, l.start, l.end, l.lead?.name ?? null, l.priority])).toEqual([["Founding Members", 0, 1, "2099-10-01", "2099-10-07", "Caroline Jones", "urgent"], ["AI Receptionist", 1, 1, "2026-12-15", "2026-12-15", null, null]]);
     expect(ov.items.map((i) => [i.kind, i.name])).toEqual([["doc", "Offer FAQ"]]);
     expect(ov.byPerson.map((p) => [p.name, p.n])).toEqual([["Caroline Jones", 1]]);
     // A doc made on a list sits under that list in the tree.
