@@ -94,7 +94,7 @@ Stop,Me,LPC,3,Active,Austin,TX,stop@me.example,`;
 /** Instantly with 3 inboxes, one of them bouncing. */
 function instantly(opts: { bounce?: boolean } = {}) {
   routes.push([/api\.instantly\.ai\/api\/v2\/accounts\?/, () => json({ items: [{ email: "ashley@tryleaddash.com", status: 1 }, { email: "ashley.b@getleaddash.com", status: 1 }, { email: "hello@leaddashhq.com", status: 1 }] })]);
-  routes.push([/api\/v2\/accounts\/analytics\/daily/, () => json([{ date: "2026-10-01", email_account: "hello@leaddashhq.com", sent: 100, bounced: opts.bounce ? 9 : 0, replies: 1 }, { date: "2026-10-01", email_account: "ashley@tryleaddash.com", sent: 100, bounced: 0, replies: 2 }])]);
+  routes.push([/api\/v2\/accounts\/analytics\/daily/, () => json([{ date: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), email_account: "hello@leaddashhq.com", sent: 100, bounced: opts.bounce ? 9 : 0, replies: 1 }, { date: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), email_account: "ashley@tryleaddash.com", sent: 100, bounced: 0, replies: 2 }])]);
   routes.push([/api\/v2\/campaigns\/analytics/, () => json([])]);
   routes.push([/api\/v2\/campaigns\/[\w-]+\/(activate|pause)/, () => json({ ok: true })]);
   routes.push([/api\/v2\/campaigns\/[\w-]+$/, () => json({ ok: true })]);
@@ -251,7 +251,7 @@ describe("Jada's cold email", () => {
   it("rests an inbox whose bounces pass the limit and takes it out of every sending campaign", async () => {
     const { orgId } = await setup("cold6");
     db.cold.campaigns.create({ organizationId: orgId, name: "Test", angle: "switcher", status: "sending", instantlyId: "camp-9", steps: "[]" });
-    routes.unshift([/api\/v2\/accounts\/analytics\/daily/, () => json([{ date: "2026-10-01", email_account: "hello@leaddashhq.com", sent: 100, bounced: 9, replies: 1 }])]);
+    routes.unshift([/api\/v2\/accounts\/analytics\/daily/, () => json([{ date: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), email_account: "hello@leaddashhq.com", sent: 100, bounced: 9, replies: 1 }])]);
     await cold.syncInboxes(orgId);
     const bad = db.cold.inboxByEmail(orgId, "hello@leaddashhq.com")!;
     expect(bad).toMatchObject({ status: "resting" });

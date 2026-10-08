@@ -30,6 +30,8 @@ async function startServer() {
   markStuckPages();
   await ensureAllRosters();
   startNotifications();
+  // Once per workspace: earlier AI costs are matched to the person whose chat message started them.
+  import("../aiLimits").then((m) => m.backfillAll()).catch((err) => console.error("[ai limits] back-count failed:", err));
   ensureIndexed().catch((err) => console.error("[knowledge] indexing failed:", err));
 
   const app = express();

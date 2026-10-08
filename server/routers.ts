@@ -463,6 +463,32 @@ export const appRouter = router({
       return db.listMembers(input.organizationId);
     }),
 
+    /** Each member's AI cost this month and their limit, for the Team page. */
+    ai: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      return (await import("./aiLimits")).teamColumn(input.organizationId);
+    }),
+
+    setAiLimit: protectedProcedure
+      .input(orgInput.extend({ userId: z.number(), mode: z.enum(["default", "custom", "none"]), dollars: z.number().min(0).max(100_000).nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "admin");
+        const target = (await db.listMembers(input.organizationId)).find((m) => m.userId === input.userId);
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "That person is not on this workspace." });
+        if (input.mode === "custom" && input.dollars == null) throw new TRPCError({ code: "BAD_REQUEST", message: "Type the monthly limit in dollars." });
+        db.setMemberAiLimit(input.organizationId, input.userId, input.mode, input.mode === "custom" ? Math.round(input.dollars! * 1_000_000) : null);
+        const lim = await import("./aiLimits");
+        await db.logAction({
+          organizationId: input.organizationId,
+          actorType: "human_user",
+          actorName: personName(ctx.user),
+          action: "AI limit changed",
+          details: `${target.name || target.email}: ${input.mode === "custom" ? `${lim.dollars(Math.round(input.dollars! * 1_000_000))} a month` : input.mode === "none" ? "no limit" : "the workspace limit"}.`,
+        });
+        return { success: true };
+      }),
+
     add: protectedProcedure
       .input(
         orgInput.extend({
@@ -4689,6 +4715,25 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId);
       return usageSummary(input.organizationId, input.back);
     }),
+    byPerson: protectedProcedure.input(orgInput.extend({ back: z.number().int().min(0).max(1).default(0) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./aiLimits")).byPerson(input.organizationId, input.back);
+    }),
+    limits: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      const s = await (await import("./aiLimits")).limitsFor(input.organizationId);
+      return { defaultDollars: s.defaultMicros == null ? null : s.defaultMicros / 1_000_000, ownersExempt: s.ownersExempt, warnPct: s.warnPct, atLimit: s.atLimit };
+    }),
+    saveLimits: protectedProcedure
+      .input(orgInput.extend({ defaultDollars: z.number().min(0).max(100_000).nullable(), ownersExempt: z.boolean(), warnPct: z.union([z.literal(0), z.literal(80), z.literal(90)]), atLimit: z.enum(["stop", "warn"]) }))
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "admin");
+        const lim = await import("./aiLimits");
+        await lim.saveLimits(input.organizationId, { defaultMicros: input.defaultDollars == null ? null : Math.round(input.defaultDollars * 1_000_000), ownersExempt: input.ownersExempt, warnPct: input.warnPct, atLimit: input.atLimit });
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "AI limits changed", details: input.defaultDollars == null ? "Workspace limit: none." : `Workspace limit: ${lim.dollars(Math.round(input.defaultDollars * 1_000_000))} a month.` });
+        return { success: true };
+      }),
   }),
 
   audit: router({

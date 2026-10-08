@@ -1039,6 +1039,20 @@ export async function getChatMessage(orgId: number, id: number) {
   return getDb().select().from(chatMessages).where(and(eq(chatMessages.organizationId, orgId), eq(chatMessages.id, id))).limit(1).all()[0] ?? null;
 }
 
+/** Replaces a chat message's cards (used to add a note under a reply that was already saved). */
+export function setChatMessageCards(organizationId: number, id: number, cards: string | null) {
+  return getDb().update(chatMessages).set({ cards }).where(and(eq(chatMessages.organizationId, organizationId), eq(chatMessages.id, id))).returning().all()[0];
+}
+
+/** A member's monthly AI limit setting. */
+export function setMemberAiLimit(organizationId: number, userId: number, mode: "default" | "custom" | "none", micros: number | null) {
+  return getDb()
+    .update(organizationMembers)
+    .set({ aiLimitMode: mode, aiLimitMicros: mode === "custom" ? micros : null })
+    .where(and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, userId)))
+    .run();
+}
+
 export async function createChatMessage(msg: InsertChatMessage) {
   const rows = getDb().insert(chatMessages).values(msg).returning().all();
   return rows[0];

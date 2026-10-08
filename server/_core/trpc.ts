@@ -37,7 +37,7 @@ const ROUTE_KIND: [RegExp, EmployeeKind][] = [
 ];
 
 /** Runs each workspace route inside a usage context, so AI costs land on the right workspace and employee. */
-const usageScope = t.middleware(async ({ path, getRawInput, next }) => {
+const usageScope = t.middleware(async ({ ctx, path, getRawInput, next }) => {
   let raw: any = null;
   try {
     raw = await getRawInput();
@@ -50,7 +50,8 @@ const usageScope = t.middleware(async ({ path, getRawInput, next }) => {
   const employeeId = Number(input?.employeeId) > 0 ? Number(input.employeeId) : null;
   const named = input?.employee === "grants" || input?.employee === "speaking" ? (input.employee as EmployeeKind) : null;
   const kind = named ?? ROUTE_KIND.find(([re]) => re.test(path))?.[1] ?? null;
-  return withUsage({ orgId, employeeId, kind }, () => next());
+  const userId = (ctx as { user?: { id?: number } | null }).user?.id ?? null;
+  return withUsage({ orgId, employeeId, kind, userId }, () => next());
 });
 
 /** Every route that touches workspace data uses this (or adminProcedure). */

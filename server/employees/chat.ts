@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "receipt" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "receipt" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note";
   id: number;
   /** On a choices card after a bulk close in Projects: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -1948,6 +1948,20 @@ export async function sendChatMessage(opts: {
   if (emp.status === "paused") {
     return { user: userMsg, reply: await reply(`I'm paused right now. Press Resume at the top and send that again.`) };
   }
+  // AI limits per person: at the limit, no new work starts for this person (unless the workspace chose to keep going).
+  const limits = await import("../aiLimits");
+  const blocked = await limits.blockFor(opts.organizationId, opts.userId, opts.text).catch(() => null);
+  if (blocked) return { user: userMsg, reply: await reply(blocked.text, blocked.choices.length ? [choicesCard(blocked.choices)] : []) };
+  const usedBefore = await limits.usedNow(opts.organizationId, opts.userId).catch(() => 0);
+  const withNote = async (r: { user: ChatMessage; reply: ChatMessage }) => {
+    const note = await limits.noteAfter(opts.organizationId, opts.userId, usedBefore).catch(() => null);
+    if (!note) return r;
+    const cards = [...parseList<ChatCard>(r.reply.cards), { type: "limit_note" as const, id: Date.now(), title: "", body: note }];
+    return { ...r, reply: db.setChatMessageCards(opts.organizationId, r.reply.id, JSON.stringify(cards)) ?? r.reply };
+  };
+  return withNote(await answer());
+
+  async function answer(): Promise<{ user: ChatMessage; reply: ChatMessage }> {
   const taggedFacts = await taggedText(opts.organizationId, emp, tagged);
 
   try {
@@ -2030,6 +2044,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[chat] ${emp.name} failed:`, message);
     return { user: userMsg, reply: await reply(`I couldn't do that. ${message}`) };
+  }
   }
 }
 

@@ -110,6 +110,8 @@ export const organizations = sqliteTable("organizations", {
   sales: text("sales"),
   /** JSON leadership settings: Simone's meetings (link, repeating meetings, agenda timing) and Nora's ClickUp choices. */
   ops: text("ops"),
+  /** AI limits per person (JSON): the default monthly limit, whether owners and admins are exempt, the heads-up point and what happens at the limit. */
+  aiLimits: text("aiLimits"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -126,6 +128,9 @@ export const organizationMembers = sqliteTable(
     /** chat = team chat only: channels and direct messages, the Team page and their account, nothing else. */
     role: text("role", { enum: ["owner", "admin", "member", "chat", "reviewer"] }).notNull().default("member"),
     title: text("title"),
+    /** Monthly AI limit: the workspace's ("default"), their own ("custom", aiLimitMicros), or "none". */
+    aiLimitMode: text("aiLimitMode", { enum: ["default", "custom", "none"] }).notNull().default("default"),
+    aiLimitMicros: integer("aiLimitMicros"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("organization_members_user_organization_unique").on(t.organizationId, t.userId)]
@@ -1318,6 +1323,10 @@ export const usageEvents = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
     employeeId: integer("employeeId"),
+    /** The person whose request started this work; null for scheduled work. */
+    userId: integer("userId"),
+    /** True when userId was matched afterward from chat times (work before per-person tracking began). */
+    estimated: integer("estimated", { mode: "boolean" }).notNull().default(false),
     type: text("type", { enum: USAGE_TYPES }).notNull(),
     /** Minutes of work saved (tasks only). */
     minutes: integer("minutes").notNull().default(0),
@@ -1327,7 +1336,7 @@ export const usageEvents = sqliteTable(
     detail: text("detail"),
     createdAt: createdAt(),
   },
-  (t) => [index("usage_org_time_idx").on(t.organizationId, t.createdAt)]
+  (t) => [index("usage_org_time_idx").on(t.organizationId, t.createdAt), index("usage_org_user_time_idx").on(t.organizationId, t.userId, t.createdAt)]
 );
 export type UsageEvent = typeof usageEvents.$inferSelect;
 

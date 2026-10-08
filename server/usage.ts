@@ -11,7 +11,8 @@ import { partsIn, zonedToUtc } from "./employees/schedule";
  * inside it is recorded against that workspace and employee.
  */
 
-type Ctx = { orgId: number; employeeId?: number | null; kind?: EmployeeKind | null };
+/** userId: the person whose request this work is for; none for scheduled work. */
+type Ctx = { orgId: number; employeeId?: number | null; kind?: EmployeeKind | null; userId?: number | null };
 const store = new AsyncLocalStorage<Ctx>();
 
 export function withUsage<T>(ctx: Ctx, fn: () => T): T {
@@ -67,7 +68,7 @@ async function insert(type: (typeof usageEvents.$inferInsert)["type"], costUsd: 
   try {
     db.getDb()
       .insert(usageEvents)
-      .values({ organizationId: ctx.orgId, employeeId: await employeeIdFor(ctx), type, minutes: Math.round(minutes), costMicros: Math.round(costUsd * 1_000_000), detail: JSON.stringify(detail) })
+      .values({ organizationId: ctx.orgId, employeeId: await employeeIdFor(ctx), userId: ctx.userId ?? null, type, minutes: Math.round(minutes), costMicros: Math.round(costUsd * 1_000_000), detail: JSON.stringify(detail) })
       .run();
   } catch (err) {
     // Usage is bookkeeping: never let it break the work itself.
