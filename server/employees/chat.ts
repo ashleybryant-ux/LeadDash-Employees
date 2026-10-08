@@ -204,7 +204,7 @@ const ACTION_HELP: Record<string, string> = {
   site_audit: "site_audit: read a page of the owner's existing website (its real HTML, words, buttons and images) and write an audit of what to change, add and cut, as a document that opens in the chat. Use it for any website audit, review, critique or read-through, never browse. Put the page's address in `url` when it's in this conversation or on a handoff ('' to use the workspace's website and find the page from `topic`), which page or offer it is in `topic` (like \"299 dollar founding member offer page\"), and the audience in `target` (like \"cold therapist audience\").",
   mockup_site: "mockup_site: mock up a new version of a page of the owner's existing website (\"mock up my website\", \"mock it up\", \"redesign this page\", \"show me what the page should look like\"): you read the page's real HTML, words and images and build the new version as a live preview in the chat with the HTML to copy, using her images, photos from the Brain, and pictures and graphics you make. Put the address in `url` ('' for the page you audited last, else the workspace's website), the page or offer in `topic`, `landing` or `website` in `target`, \"audit\" in `focus` when they want the audit's changes made (always after an audit unless they say otherwise), and anything else they asked for in `notes`.",
   build_page: "build_page: build a landing page or website page as HTML. Put the page name or offer in `page`, the goal in `goal`, `landing` or `website` in `target` (landing unless they say website or a page of their site), the layout they picked in `focus`, where the button goes in `to`, and everything else they told you about the page in `notes`.",
-  change_page: "change_page: change a page you already built. Put the page's name in `target` ('' for the most recent page) and exactly what to change in `notes`.",
+  change_page: "change_page: change a page you already built. Put the name of the page they mean in `target` (its title words, like \"webinar landing page\"; '' only when there is just one page in this conversation) and exactly what to change in `notes`. Never change one page when they asked about another; if the page they mean isn't built yet, use build_page.",
   draft_reply: "draft_reply: the person pasted a message they received. Put the sender in `from`, the subject in `subject` (make one up from the content if missing) and the full pasted message in `message`.",
 };
 
@@ -466,6 +466,7 @@ const TALK = `Talk with the person like a colleague, back and forth, not like a 
 
 const TALK_BY_KIND: Partial<Record<string, string>> = {
   website: `- Before you build a NEW page, if the person has not picked a layout earlier in this conversation, choose ask_layout. When they answer, choose build_page with their layout in "focus" and where the button goes in "to". To change a page you built, choose change_page with exactly what to change.
+- Saying you're building a page is not building it: only build_page starts one. A webinar or event page is its own new page, never a change to the website or an offer page.
 - When they say a page looks good, say what's left (button link, Approve, Copy HTML) in one sentence.`,
   grants: `- Before a search the person asks for in chat, if they did not say where (a state, a region or nationwide), choose "none" and ask, with choices like "Oklahoma first", "Nationwide", "Both".
 - To change an answer on an application, choose revise_answer. After you showed a rewritten answer: "Use this" keeps it (say it's saved), "Make it shorter" is revise_answer with "to" concise, "Go back to the old one" is restore_answer.
@@ -1549,9 +1550,15 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
     }
     case "change_page": {
       const list = db.listSitePages(org).filter((x) => x.currentVersion > 0);
-      const t = d.target.trim().toLowerCase();
-      const p = (t && list.find((x) => x.title.toLowerCase().includes(t))) || list[0];
-      if (!p) return { text: "I haven't built a page yet. Tell me the offer and the goal and I'll build one.", cards: [], queries: [] };
+      const p = pages.pageNamed(list, d.target);
+      if (!p) {
+        // They named a page that isn't built yet: build it new rather than change a different page.
+        if (!d.target.trim()) return { text: "I haven't built a page yet. Tell me the offer and the goal and I'll build one.", cards: [], queries: [] };
+        const photos = files.filter((f) => f.kind === "image").map((f) => ({ url: pages.publicLink(org, f.fileUrl), text: f.text, name: f.name }));
+        const event = pages.isEventPage(d.target, d.goal, d.notes);
+        const fresh = await pages.startPage(org, { title: d.target.trim(), pageType: /website/i.test(d.page) ? "website" : "landing", goal: d.goal || (event ? "Register for the event" : "Book a call") }, { layout: d.focus, button: d.to || (event ? "A form on the page" : ""), notes: [d.notes || d.message, docText].filter(Boolean).join("\n\n"), photos });
+        return { text: `${fresh.title} isn't built yet, so I'm building it now as its own page. Your other pages stay as they are. It takes a couple of minutes, and I'll show it to you right here.`, cards: [], queries: [], refs: [{ kind: "page", id: fresh.id }] };
+      }
       const extra = files.filter((f) => f.kind === "image").map((f) => `Use this attached photo: ${pages.publicLink(org, f.fileUrl)} (${f.text || f.name})`).join("\n");
       await pages.revisePage(org, p.id, [d.notes || d.message || d.reply, extra, docText].filter(Boolean).join("\n\n"));
       return { text: `Making those changes to ${p.title} now. The new version will show up here when it's ready.`, cards: [], queries: [], refs: [{ kind: "page", id: p.id }] };

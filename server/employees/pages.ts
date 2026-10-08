@@ -28,7 +28,57 @@ export const PAGE_DESIGN = `How to build the page (follow every point):
 - Images: every page has at least one strong image. For pages about the owner or the company, use the owner's images from the Brain with {{photo:ID}} (her photos, logo and graphics). For other photos, write {{stock:a specific description of a realistic photo}} (at most ${MAX_STOCK}); describe real-looking people and settings that match the audience, never people in distress, never clinical stereotypes. Every <img> has alt text and object-fit: cover.
 - Graphics: draw icons, diagrams, steps, timelines, comparison tables, number callouts and simple charts in the page itself with inline SVG and CSS in the brand colors, so the words stay real text. For an illustration a photo can't show (a feeling, a metaphor, a concept), write {{graphic:a specific description of a flat modern illustration}} (at most ${MAX_GRAPHICS}); it is made without any words in it.
 - The main button links to {{button_url}}. Where a form belongs, put {{form}} on its own line inside a section.
-- Never: walls of text, everything centered, generic purple gradients, emoji, clip art, lorem ipsum, invented testimonials, invented statistics, invented logos. Placeholders like [YOUR PRICE] where a fact is missing.`;
+- Never: walls of text, everything centered, generic purple gradients, emoji, clip art, lorem ipsum, invented testimonials, invented statistics, invented logos. Placeholders like [YOUR PRICE] where a fact is missing.
+- One page, one job. Every section serves the page's goal; anything else stays off, however true it is. The brand guide sets the look (colors, fonts, feel) only: it never decides what sections or facts go on the page. Use only the facts from the Brain that serve this page's goal.
+- Never put screenshots of social media posts, group posts or private community posts on a page.`;
+
+/** Rules for a page whose job is to get people to register for a webinar, workshop or other event. */
+export const EVENT_PAGE = `This is an event registration page. Its only job is the registration; the event itself does the selling.
+- Sections, in order: a slim top strip (free live training, the date and time); the hero (eyebrow, the event title, one or two lines selling the experience and the outcome, the date, time and format, the button, with the form in the hero or right under it); who it's for (two or three lines naming the problem in the audience's own words); what they'll get from it (three or four outcomes, not a feature list); the host (photo, credentials that matter to this audience, real numbers, real press); a free gift for attending, only if the owner named one; a second form for people who scrolled; a short FAQ about the event only (is it free, how long, will it be recorded, who it's for, is it a pitch); a small footer.
+- Leave off: any paid offer, discount, price, plan, pricing comparison, "buy" or "book a demo" button, product feature tour, product screenshots, and a menu that leads off the page. Mention the product only as much as the event's topic needs.
+- Lead with the visitor's problem before the host's name. One promise, one button, repeated.
+- The form asks for name and email only. Say near it that the join link and a reminder come by email.
+- A video in the hero: when there's no video link, put a clearly marked placeholder box that says "Your 60 to 90 second video goes here."
+- Urgency only if it's real (the real date). No "limited seats" unless the owner said so.`;
+
+/** The page is for an event people register for. */
+export function isEventPage(...words: (string | null | undefined)[]) {
+  return /\b(webinar|workshop|masterclass|master class|live training|free training|summit|conference|event|register|registration|rsvp)\b/i.test(words.filter(Boolean).join(" "));
+}
+
+/** Words that say which page someone means, without the generic ones. */
+function nameWords(s: string) {
+  const skip = new Set(["page", "pages", "landing", "website", "site", "the", "new", "version", "for", "and", "our", "my", "with"]);
+  return s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 2 && !skip.has(w));
+}
+
+/** The built page someone means by name; null when none of them is it (never another page in its place). */
+export function pageNamed(pages: SitePage[], target: string) {
+  const want = nameWords(target);
+  if (!want.length) return pages[0] ?? null;
+  let best: { page: SitePage; score: number } | null = null;
+  for (const p of pages) {
+    const have = new Set(nameWords(`${p.title} ${p.goal}`));
+    const score = want.filter((w) => have.has(w)).length;
+    if (score && (!best || score > best.score)) best = { page: p, score };
+  }
+  return best?.page ?? null;
+}
+
+/** The section-by-section outline already planned for this page, so the build follows it. */
+async function planFor(orgId: number, title: string) {
+  const want = nameWords(title);
+  if (!want.length) return "";
+  const plans = await db.listWorkItems(orgId, "website_plan");
+  const hit = plans
+    .map((p) => ({ p, score: want.filter((w) => new Set(nameWords(p.title)).has(w)).length }))
+    .filter((x) => x.score)
+    .sort((a, b) => b.score - a.score || b.p.id - a.p.id)[0];
+  if (!hit) return "";
+  const data = JSON.parse(hit.p.data || "{}") as { sections?: { label: string; heading: string; content: string }[]; callToAction?: string };
+  if (!data.sections?.length) return "";
+  return `The outline already planned for this page (follow its sections and copy, except where a rule above says to leave something off):\n${data.sections.map((x) => `## ${x.label}: ${x.heading}\n${x.content}`).join("\n\n")}${data.callToAction ? `\nCall to action: ${data.callToAction}` : ""}`.slice(0, 12000);
+}
 
 function wrapClass(pageId: number) {
   return `ldp-${pageId}`;
@@ -142,7 +192,8 @@ function buttonLine(button?: string) {
 export async function startPage(orgId: number, input: { title: string; pageType: "landing" | "website"; goal: string; buttonUrl?: string | null }, extra: BuildExtra = {}) {
   const emp = await employeeFor(orgId, "website");
   const page = db.createSitePage({ organizationId: orgId, employeeId: emp.id, title: input.title.slice(0, 200), pageType: input.pageType, goal: input.goal.slice(0, 500), buttonUrl: input.buttonUrl ?? null, status: "building", progress: "Writing the page" });
-  void build(emp, page, null, extra);
+  const plan = extra.source ? "" : await planFor(orgId, input.title).catch(() => "");
+  void build(emp, page, null, plan ? { ...extra, source: plan } : extra);
   return page;
 }
 
@@ -166,10 +217,10 @@ async function build(emp: AIEmployee, page: SitePage, request: string | null, ex
       const { system } = await systemPromptAbout(
         emp,
         `${page.title} ${page.goal} ${request ?? ""}`,
-        `Your job: ${request ? "change an existing" : "build a complete"} ${page.pageType === "website" ? "website page" : "landing page"} as HTML the owner pastes into their site builder.\n\n${await brief(emp, page)}`
+        `Your job: ${request ? "change an existing" : "build a complete"} ${page.pageType === "website" ? "website page" : "landing page"} as HTML the owner pastes into their site builder.\n\n${await brief(emp, page)}${isEventPage(page.title, page.goal, request, extra.notes) ? `\n\n${EVENT_PAGE}` : ""}`
       );
       const prompt = request && current
-        ? `Page: ${page.title}\nGoal: ${page.goal}\n\nThe owner asked for these changes:\n${request}\n\nMake them, keep everything else as it is, and return the whole updated fragment (same wrapper class). Current page:\n${current.html}`
+        ? `Page: ${page.title}\nGoal: ${page.goal}\n\nThe owner asked for these changes:\n${request}\n\nMake them and keep everything else as it is, except anything a rule above says to leave off, which you remove. Return the whole updated fragment (same wrapper class). Current page:\n${current.html}`
         : [
             `Page: ${page.title}`,
             `Type: ${page.pageType === "website" ? "website page" : "landing page"}`,
