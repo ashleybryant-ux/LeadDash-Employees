@@ -168,7 +168,7 @@ async function elevenSpeak(kind: string, text: string) {
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
     method: "POST",
     headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
-    body: JSON.stringify({ text: text.slice(0, 1200), model_id: ENV.elevenLabsModel }),
+    body: JSON.stringify({ text: text.slice(0, 1600), model_id: ENV.elevenLabsModel }),
     signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
@@ -180,14 +180,39 @@ async function elevenSpeak(kind: string, text: string) {
     } catch {
       /* not JSON */
     }
-    throw new Error(`ElevenLabs didn't make the voice (${res.status}): ${msg}`);
+    throw new Error(outOfCredits(body) ? ELEVEN_EMPTY : `ElevenLabs didn't make the voice (${res.status}): ${msg}`);
   }
   return Buffer.from(await res.arrayBuffer());
 }
 
+export const ELEVEN_EMPTY = "ElevenLabs is out of voice credits. Add credits or move up a plan at elevenlabs.io/app/subscription, and the voices come back on the next answer.";
+export const OPENAI_EMPTY = "OpenAI is out of credits. Add credits at platform.openai.com/settings/organization/billing.";
+/** The voice service's answer says the account has no credits left. */
+export function outOfCredits(body: string) {
+  return /quota_exceeded|insufficient_quota|exceeds your quota|credits? (remaining|left)|out of credits|exceeded your current quota/i.test(body);
+}
+
+/**
+ * The words as they should sound: web addresses are said the way people say them
+ * ("leaddash.io" is "LeadDash dot I O"), using the company's own spelling of its name.
+ */
+export function speakable(text: string, company = "") {
+  const name = company.replace(/[^A-Za-z0-9 ]/g, "").trim();
+  const spoken = name.replace(/([a-z])([A-Z])/g, "$1 $2");
+  return text
+    .replace(/\bhttps?:\/\//gi, "")
+    .replace(/\bwww\./gi, "")
+    .replace(/\b([a-z0-9-]+)\.(io|ai|com|org|net|co|app)\b(\/[^\s,]*)?/gi, (_m, label: string, tld: string) => {
+      const said = name && label.toLowerCase() === name.replace(/\s+/g, "").toLowerCase() ? spoken : label;
+      const end = { io: "I O", ai: "A I", co: "co", app: "app" }[tld.toLowerCase()] ?? tld.toLowerCase();
+      return `${said} dot ${end}`;
+    });
+}
+
 /** One answer in the employee's voice, as MP3. Returns null when speech is not set up, so the words still show. */
-export async function speak(kind: string, text: string): Promise<string | null> {
+export async function speak(kind: string, words: string, company = ""): Promise<string | null> {
   if (process.env.NODE_ENV === "test") return null;
+  const text = speakable(words, company);
   if (ENV.elevenLabsKey) {
     try {
       const id = keepAudio(await elevenSpeak(kind, text));
@@ -220,7 +245,7 @@ async function openAiSpeak(kind: string, text: string): Promise<string | null> {
       body: JSON.stringify({
         model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
         voice: VOICES[kind] ?? "alloy",
-        input: text.slice(0, 1200),
+        input: text.slice(0, 1600),
         instructions: "Speak like a warm, confident colleague in a team meeting: natural pace, conversational, never robotic.",
         response_format: "mp3",
       }),
@@ -234,7 +259,7 @@ async function openAiSpeak(kind: string, text: string): Promise<string | null> {
       } catch {
         /* not JSON */
       }
-      speechError = `OpenAI didn't make the voice (${res.status}): ${msg}`.slice(0, 300);
+      speechError = outOfCredits(body) ? OPENAI_EMPTY : `OpenAI didn't make the voice (${res.status}): ${msg}`.slice(0, 300);
       console.warn("[huddle] speech failed:", res.status, body);
       return null;
     }
@@ -349,17 +374,25 @@ async function learnFromHuddle(orgId: number, h: Huddle, lines: HuddleLine[]) {
   const said = lines.filter((l) => !l.kind);
   if (!said.length) return [];
   const brain = await loadBrain(orgId);
-  const known = brain.entries.filter((e) => e.title.startsWith("Learned: ") || e.title.startsWith("Company training: ")).map((e) => e.title).join("; ");
+  const known = brain.entries
+    .filter((e) => e.title.startsWith("Learned: "))
+    .map((e) => `- ${e.title.slice("Learned: ".length)}: ${e.content.split("\n(")[0].slice(0, 200)}`)
+    .slice(0, 80)
+    .join("\n");
   const out = await generateJson<{ facts: { topic: string; fact: string; category: string }[] }>({
-    system: `From a team huddle transcript, list only new, lasting facts about the business that people stated (an offer or price, who the customers are, a person on the team, a tool, an important date, how the whole team should work). Not tasks, not opinions, not one-off plans, not anything the employees said. Never client names or anything about a client's health, passwords or codes. topic: 2 to 5 words. fact: one plain sentence. category: one of ${KNOWLEDGE_CATEGORIES.join(", ")}. At most 5; [] when there are none. Already known topics: ${known || "none"}.`,
-    prompt: lines.map((l) => `${l.who}${l.kind ? " (employee)" : ""}: ${l.text}`).join("\n").slice(0, 30_000),
+    system: `From a team huddle transcript, list the lasting facts and decisions about the business that people stated or agreed on: an offer, price or deadline, a launch date, a title, who the customers are, a person on the team (with the exact spelling of their name), a tool the team uses or stopped using, how the whole team should work. Not small tasks, not opinions, not anything only the employees said. Never client names or anything about a client's health, passwords or codes.
+When a decision changes or ends something already known (below), reuse that exact topic so the old fact is replaced, and say what is true now (for example topic "Founding member offer", fact "The founding member offer is removed from the site as of Oct 8, 2026; it is no longer offered.").
+topic: 2 to 5 words. fact: one or two plain sentences with full dates, including the year. category: one of ${KNOWLEDGE_CATEGORIES.join(", ")}. At most 12; [] when there are none.
+Already known:
+${known || "nothing yet."}`,
+    prompt: lines.map((l) => `${l.who}${l.kind ? " (employee)" : ""}: ${l.text}`).join("\n").slice(0, 60_000),
     schemaName: "huddle_facts",
     schema: obj({ facts: { type: "array", items: obj({ topic: str, fact: str, category: str }) } }),
-    maxTokens: 800,
+    maxTokens: 2000,
   });
   const { learnFact } = await import("./learn");
   const saved = [];
-  for (const f of (out.facts ?? []).slice(0, 5)) {
+  for (const f of (out.facts ?? []).slice(0, 12)) {
     const r = await learnFact(orgId, { topic: f.topic, fact: f.fact, category: f.category, who: h.startedByName, via: "the team huddle" });
     if (r) saved.push(r);
   }
@@ -381,7 +414,7 @@ async function factsOf(emp: AIEmployee) {
   try {
     text = (await factsFor(emp)).slice(0, 1600);
     if (emp.kind === "projects") text = `${text}\n${(await (await import("./projects")).projectsStatus(emp.organizationId)).slice(0, 1600)}`;
-    if (emp.kind === "coo") text = `${text}\n${(await (await import("./coo")).cooStatus(emp.organizationId)).slice(0, 1600)}`;
+    if (emp.kind === "coo") text = `${text}\n${(await (await import("./coo")).cooStatus(emp.organizationId)).slice(0, 1600)}\n${await busyLine(emp.organizationId)}`;
   } catch {
     text = text || "No facts available right now.";
   }
@@ -389,10 +422,53 @@ async function factsOf(emp: AIEmployee) {
   return text;
 }
 
+/** The owner's calendar for the next 7 days, so Simone never offers a time that's taken. */
+export async function busyLine(orgId: number) {
+  const org = await db.getOrganizationById(orgId);
+  const tz = org?.timezone || "America/Chicago";
+  const google = await db.getConnectionByProvider(orgId, "google_workspace");
+  const linked = db.listAccountLinks(orgId, "calendar").length > 0;
+  if (google?.status !== "connected" && !linked) return "The owner's calendar: not connected, so you can't see it. Say so if a time comes up, and offer to check once Google is connected on Integrations.";
+  const from = new Date();
+  const to = new Date(from.getTime() + 7 * 86400_000);
+  const busy = linked ? await (await import("./calendars")).busyAll(orgId, from, to).catch(() => null) : await integrations.calendarBusy(orgId, from, to).catch(() => null);
+  if (!busy) return "The owner's calendar: connected, but it didn't load just now. Say you'll check it right after the huddle.";
+  const day = (d: Date) => d.toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  const time = (d: Date) => d.toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
+  const rows = busy
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+    .slice(0, 60)
+    .map((b) => (b.end.getTime() - b.start.getTime() >= 20 * 3600_000 ? `${day(b.start)}: busy all day` : `${day(b.start)}: busy ${time(b.start)} to ${time(b.end)}`));
+  return `The owner's calendar for the next 7 days (you can see it; never say you can't). Busy times:\n${rows.length ? rows.join("\n") : "nothing booked."}\nOnly suggest a meeting time that is open here, inside working hours.`;
+}
+
 export type Reply = { kind: string; name: string; text: string; audioId: string | null; index: number };
 
-/** Someone said something. The right employees (often none) answer out loud. */
-export async function say(orgId: number, id: number, who: string, text: string): Promise<{ huddle: Huddle; replies: Reply[] }> {
+const turns = new Map<number, Promise<unknown>>();
+const waiting = new Map<number, number>();
+
+/** Someone said something. The right employees (often none) answer out loud, one turn at a time so nobody talks over anyone. */
+export function say(orgId: number, id: number, who: string, text: string): Promise<{ huddle: Huddle; replies: Reply[] }> {
+  const prev = turns.get(id) ?? Promise.resolve();
+  waiting.set(id, (waiting.get(id) ?? 0) + 1);
+  const run = prev.catch(() => null).then(() => {
+    const left = (waiting.get(id) ?? 1) - 1;
+    waiting.set(id, left);
+    // More lines came in while the last answer was being made: this line goes in the transcript and the newest line gets the answer, with all of it in view.
+    return sayNow(orgId, id, who, text, left === 0);
+  });
+  const tail = run.catch(() => null);
+  turns.set(id, tail);
+  void tail.finally(() => {
+    if (turns.get(id) === tail) turns.delete(id);
+  });
+  return run;
+}
+
+/** Same words, ignoring case and punctuation. */
+const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+async function sayNow(orgId: number, id: number, who: string, text: string, answer = true): Promise<{ huddle: Huddle; replies: Reply[] }> {
   let h = db.getHuddle(id, orgId);
   if (!h || h.status !== "live") throw new TRPCError({ code: "BAD_REQUEST", message: "This huddle has ended." });
   if (Date.now() - new Date(h.createdAt).getTime() > MAX_MINUTES * 60_000) {
@@ -403,10 +479,15 @@ export async function say(orgId: number, id: number, who: string, text: string):
   if (!said) return { huddle: h, replies: [] };
   const lines = [...linesOf(h), { who: who.slice(0, 80), kind: null, text: said, at: Date.now() }].slice(-MAX_LINES);
   h = db.updateHuddle(id, orgId, { transcript: JSON.stringify(lines) })!;
+  if (!answer) return { huddle: h, replies: [] };
 
   const emps = await members(orgId, parse<string[]>(h.kinds, []));
   if (!emps.length) return { huddle: h, replies: [] };
   const brain = await loadBrain(orgId);
+  const people = (await db.listMembers(orgId)).map((m) => m.name).filter((n): n is string => !!n && !!n.trim());
+  // The opening is where the person says what the meeting is about and how it should go; it stays in view all meeting.
+  const opening = lines.length > 50 ? lines.slice(0, 10) : [];
+  const recent = lines.slice(opening.length ? -40 : -50);
   const facts = await Promise.all(emps.map(async (e) => `## ${e.name} (job key: ${e.kind}, ${e.roleTitle})\n${await factsOf(e)}`));
   const org = await db.getOrganizationById(orgId);
   const now = new Date().toLocaleString("en-US", { timeZone: org?.timezone || "America/Chicago", weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
@@ -417,21 +498,28 @@ export async function say(orgId: number, id: number, who: string, text: string):
       system: `You are the voices of ${brain.org?.name ?? "the company"}'s AI employees in a live team huddle, spoken out loud. Right now it is ${now}.
 Who speaks after the latest line:
 - An employee answers only when they are named, when a question is put to them or to the whole team, or when the person is answering something that employee just said. Otherwise nobody answers (replies is []): people talking to each other, thinking out loud, half-finished sentences, "okay", "thanks", "let me see" and the like need no answer. When in doubt, stay quiet; a person can always say a name.
-- One employee answers unless the whole team was asked; at most 2. Never two employees saying the same thing.
+- One employee answers unless the whole team was asked; at most 2, and the second only adds something new. Never two employees saying the same thing, and never repeat what you or a teammate already said in this huddle unless someone asks for it again.
+- When asked to repeat something, say it once, word for word, and stop.
+The meeting:
+- Stay on what this meeting is about. The people say it, usually at the start ("this meeting is about..."); follow it, and follow any instruction they gave about how the meeting should go for the rest of it. Never bring up other topics (approvals waiting, other meetings, other projects) unless a person asks.
+- Share in the meeting. When asked for something you can say (a title, ideas, a plan, numbers, a short draft, a decision), say it now, out loud, in full. Never answer with "I'll post it in my chat" or "I'll send it after": that defeats the point of the meeting. For a long piece (a full page, an email, a document), say the main points now; the full piece also goes in your chat.
+- Tasks and projects live in this app's Projects tab. Never mention or point anyone to an outside task tool (ClickUp, Asana, Trello, Monday) unless a person asks about it by name.
+- Before suggesting a meeting time, check the owner's calendar in Simone's facts and suggest only open times.
 How they speak:
-- 1 to 3 short spoken sentences each, like a colleague in a meeting. No lists, no headings, no markdown, no emojis, no em dashes.
-- Use only each employee's facts below. Say dates the way people say them ("Friday, November 6"). If they don't know, they say so and offer to check after the huddle.
+- Like a colleague in a meeting: 1 to 3 short spoken sentences for a quick answer; up to 8 when sharing what was asked for. No headings, no markdown, no emojis, no em dashes. Several items are said as a short spoken run ("First... Second...").
+- Use only each employee's facts below and what was said in this meeting; a decision made in this meeting replaces older facts. Say dates the way people say them ("Friday, November 6"). If they don't know, they say so and offer to check right after the huddle.
+- Spell people's names exactly as they are written here.${people.length ? ` People on the team: ${people.join(", ")}.` : ""}
 - Never say a client's name or anything about a client's health.
-- When asked to do something, the employee starts it now, during the huddle: put the request, as a complete instruction they can act on alone, in "do" (for example "Write the November 10 webinar follow-up email to all registrants"). In "say" they confirm in a few words that they are on it and will post the result in their chat. "do" is "" when nothing was asked of them.
+- When asked to make or do something, the employee starts it now, during the huddle: put the request, as a complete instruction they can act on alone, in "do" (for example "Write the November 10 webinar follow-up email to all registrants"). In "say" they share what they can right now, per the rule above. "do" is "" when nothing was asked of them.
 
 ${BASE_RULES}
 
 The employees in this huddle and what each one knows:
 ${facts.join("\n\n")}`,
-      prompt: `Transcript so far (latest last):\n${lines.slice(-30).map((l) => `${l.who}: ${l.text}`).join("\n")}`,
+      prompt: `${opening.length ? `How the meeting opened:\n${opening.map((l) => `${l.who}: ${l.text}`).join("\n")}\n...\n\n` : ""}Transcript so far (latest last):\n${recent.map((l) => `${l.who}: ${l.text}`).join("\n")}`,
       schemaName: "huddle_turn",
       schema: obj({ replies: { type: "array", items: obj({ kind: str, say: str, do: str }) } }),
-      maxTokens: 700,
+      maxTokens: 1400,
     });
   } catch (err) {
     console.warn("[huddle] turn failed:", err instanceof Error ? err.message : err);
@@ -441,12 +529,16 @@ ${facts.join("\n\n")}`,
   const picked = (out.replies ?? [])
     .map((r) => ({ emp: emps.find((e) => e.kind === r.kind || e.name.toLowerCase() === r.kind.toLowerCase()), say: (r.say ?? "").replace(/\s*[—–]\s*/g, ", ").trim(), do: (r.do ?? "").trim() }))
     .filter((r): r is { emp: AIEmployee; say: string; do: string } => !!r.emp && !!r.say)
+    // The same words twice is never an answer (unless they were asked to say it again).
+    .filter((r, i, all) => all.findIndex((x) => norm(x.say) === norm(r.say)) === i)
+    .filter((r) => /\b(repeat|again|one more time|say that)\b/i.test(said) || !lines.slice(-12).some((l) => l.kind && norm(l.text) === norm(r.say)))
+    .filter((r, i, all) => all.findIndex((x) => x.emp.id === r.emp.id) === i)
     .slice(0, 2);
   if (!picked.length) return { huddle: h, replies: [] };
   // Work asked for in the huddle starts now, in that employee's own chat, not after the huddle ends.
   for (const r of picked) if (r.do) startWork(orgId, r.emp, who, r.do);
 
-  const clips = await Promise.all(picked.map((r) => speak(r.emp.kind, r.say)));
+  const clips = await Promise.all(picked.map((r) => speak(r.emp.kind, r.say, brain.org?.name ?? "")));
   const fresh = db.getHuddle(id, orgId)!;
   const all = linesOf(fresh);
   const replies: Reply[] = picked.map((r, i) => {

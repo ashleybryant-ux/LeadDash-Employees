@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let turn: any = { replies: [] };
 let systems: string[] = [];
+let factsSystem = "";
 vi.mock("./_core/llm", async (orig) => {
   const actual: any = await orig();
   return {
@@ -13,6 +14,7 @@ vi.mock("./_core/llm", async (orig) => {
       }
       if (opts.schemaName === "action_items") return { items: [{ text: "Record the pitch video", owner: "Ashley" }] };
       if (opts.schemaName === "chat_decision") return { reply: "On it: the follow-up email is drafted and waiting in Approvals.", action: "none", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+      if (opts.schemaName === "huddle_facts") factsSystem = opts.system;
       if (opts.schemaName === "huddle_facts") return { facts: [{ topic: "Founding member deadline", fact: "Founding member pricing closes December 31, 2026.", category: "services_offers" }] };
       return {};
     }),
@@ -77,6 +79,8 @@ describe("team huddle", () => {
     // New facts from the huddle go to the Brain for everyone.
     const learned = (await db.listKnowledgeByOrg(orgId)).find((k) => k.title === "Learned: Founding member deadline")!;
     expect(learned.content).toMatch(/^Founding member pricing closes December 31, 2026\.\n\(.* told the team huddle on /);
+    // Decisions can replace what the Brain already knew.
+    expect(factsSystem).toContain("reuse that exact topic so the old fact is replaced");
     await expect(c.huddle.say({ organizationId: orgId, id: h.id, text: "Hello?" })).rejects.toThrow(/ended/);
   });
 
@@ -139,6 +143,48 @@ describe("team huddle", () => {
     expect(new Set(kinds.map((k) => map[k])).size).toBe(kinds.length);
     // American accents come first.
     expect(Object.values(map).slice(0, 8)).not.toContain("f2");
+  });
+
+  it("shares in the meeting, stays on topic, never repeats itself, and takes one turn at a time", async () => {
+    const { orgId, owner } = await makeWorkspace("huddle-rules");
+    const c = caller(owner);
+    const h = await c.huddle.start({ organizationId: orgId, kinds: ["coo", "speaking"] });
+    turn = { replies: [{ kind: "speaking", say: "How Busy Practice Owners Build a Practice That Works 24/7." }, { kind: "speaking", say: "A second line from the same person." }, { kind: "coo", say: "How busy practice owners build a practice that works 24/7!" }] };
+    const r = await c.huddle.say({ organizationId: orgId, id: h.id, text: "Taylor, what's the webinar title?" });
+    // One answer per employee, and never the same words twice.
+    expect(r.replies.map((x) => x.text)).toEqual(["How Busy Practice Owners Build a Practice That Works 24/7."]);
+    const rules = systems[0];
+    expect(rules).toContain("Share in the meeting");
+    expect(rules).toContain("Never answer with \"I'll post it in my chat\"");
+    expect(rules).toContain("Stay on what this meeting is about");
+    expect(rules).toContain("ClickUp");
+    expect(rules).toContain(`People on the team: ${owner.name}`);
+    // Simone is told whether she can see the calendar.
+    expect(rules).toContain("The owner's calendar: not connected");
+    // Saying the same thing again is dropped, unless someone asks to hear it again.
+    turn = { replies: [{ kind: "speaking", say: "How Busy Practice Owners Build a Practice That Works 24/7." }] };
+    expect((await c.huddle.say({ organizationId: orgId, id: h.id, text: "Okay, what else?" })).replies).toEqual([]);
+    expect((await c.huddle.say({ organizationId: orgId, id: h.id, text: "Taylor, repeat the title once more." })).replies).toHaveLength(1);
+    // Lines that arrive together are answered one turn at a time; only the newest gets the answer.
+    systems = [];
+    turn = { replies: [{ kind: "coo", say: "Thursday works." }] };
+    const [a, b2] = await Promise.all([
+      huddle.say(orgId, h.id, "Caroline", "Simone, when can we meet next?"),
+      huddle.say(orgId, h.id, "Caroline", "Not at 10, Ashley has a call."),
+    ]);
+    expect(a.replies).toEqual([]);
+    expect(b2.replies.map((x) => x.text)).toEqual(["Thursday works."]);
+    expect(systems).toHaveLength(1);
+    expect(systems[0]).toContain("Caroline: Simone, when can we meet next?\nCaroline: Not at 10, Ashley has a call.");
+  });
+
+  it("says web addresses the way people do and explains an empty voice account plainly", () => {
+    expect(huddle.speakable("Book a demo at leaddash.io/demo or https://www.leaddash.io.", "LeadDash")).toBe("Book a demo at Lead Dash dot I O or Lead Dash dot I O.");
+    expect(huddle.speakable("See example.com.", "LeadDash")).toBe("See example dot com.");
+    expect(huddle.outOfCredits('{"detail":{"status":"quota_exceeded","message":"This request exceeds your quota of 10000."}}')).toBe(true);
+    expect(huddle.outOfCredits('{"error":{"code":"insufficient_quota"}}')).toBe(true);
+    expect(huddle.outOfCredits('{"detail":{"status":"invalid_api_key"}}')).toBe(false);
+    expect(huddle.ELEVEN_EMPTY).toContain("elevenlabs.io/app/subscription");
   });
 
   it("each employee has their own stock voice", () => {
