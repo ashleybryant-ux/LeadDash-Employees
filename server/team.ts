@@ -297,7 +297,8 @@ export async function unreadEverywhere(me: number) {
     }
     out.push({ orgId: o.id, unread, mentions });
   }
-  return out;
+  // Oldest workspace first, by id: workspaces made in the same second otherwise come back in either order.
+  return out.sort((x, y) => x.orgId - y.orgId);
 }
 
 // ==========================================
