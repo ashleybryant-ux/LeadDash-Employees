@@ -180,7 +180,7 @@ const ACTION_HELP: Record<string, string> = {
   write_slides: "write_slides: build the slide deck (PowerPoint) for a talk (\"build the slides\", \"make the PPT\"). It uses the latest script you wrote, with what she says on each slide in the speaker notes; without a script it builds from the Brain. Put the talk's title in `title` and anything they asked for in `notes`. It arrives in this chat, where she can flip through it right there.",
   meeting_link: "meeting_link: about a meeting you already booked: the person asks for its Zoom or Meet link, or wants it on Zoom (\"put it on Zoom\", \"did you add it to Zoom?\"). Put words from its title or a guest's name or email in `target`, its date as YYYY-MM-DD in `date` when they say it (''), and \"zoom\" in `focus` when they want it on Zoom ('' when they only want the link). Use this, never calendar_hold or browse, for a meeting that's already booked.",
   calendar_hold: "calendar_hold: the person wants a NEW meeting or hold on their calendar (for one you already booked, use meeting_link). Put \"zoom\" in `focus` when they ask for it on Zoom. Put a short title in `title`, the date as YYYY-MM-DD in `date`, the start time like 3:00 PM in `time`, attendee emails comma-separated in `attendees`, the agenda in `notes`, and the calendar's name in `target` when they name one ('' for the usual one). It waits for their approval, then goes on that calendar. With guests it is a call: it gets a Zoom link (or Google Meet when Zoom isn't the meeting link) and the invites go out once approved, and Avery sits in to take notes.",
-  check_schedule: "check_schedule: read the person's calendars (today, tomorrow, a day, this week, \"am I free Friday at 2\"). Put the first day as YYYY-MM-DD in `date` and how many days in `count` (1 for a day, 7 for a week). You check every calendar connected on Integrations. It only lists what is there: when they want a time picked, a recommendation, or something booked, say so in `plan` and you get the busy and open times back to decide from.",
+  check_schedule: "check_schedule: read the person's own calendars, the ones connected on Integrations (meetings, calls: today, tomorrow, a day, this week, \"am I free Friday at 2\"). Put the first day as YYYY-MM-DD in `date` and how many days in `count` (1 for a day, 7 for a week). It only lists what is there: when they want a time picked, a recommendation, or something booked, say so in `plan` and you get the busy and open times back to decide from. In a practice, client appointments and sessions are on the LeadDash EHR calendar, not here: for those use ehr_read with `appointments`.",
   report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
   find_people: "find_people: search the web for professionals to reach out to for an open role. Put the role or any focus (city, license, specialty) in `focus`.",
   write_job_post: "write_job_post: write or rewrite the job post for a role. Put the role title in `target` ('' for the newest open role).",
@@ -195,7 +195,7 @@ const ACTION_HELP: Record<string, string> = {
   show_receipt: "show_receipt: the person asks whether or how an application was submitted, for proof, the confirmation, or which email was used (\"how do I know it went in\", \"show me the receipt\", \"what email did you use\"). Put words from the application's name in `target` ('' for the newest one submitted). You show the receipt screenshot and the submission record.",
   apply: "apply: start the application for an opportunity already found. Put its name (or 'best' for the best fit not yet started) in `target`.",
   find_and_apply: "find_and_apply: search now, then start applications for the best fits (used by scheduled tasks like a morning search). Set `oppKind` and `focus` as for a search.",
-  ehr_read: "ehr_read: read LeadDash EHR to answer a question with real numbers (how much came in today, today against last Thursday, this week against last week, what a payer paid, claims denied this month, sessions this week, no-shows by clinician). Put `payments` (money that came in: insurance and client payments, refunds), `claims` (by date of service, any status) or `appointments` (sessions on the calendar) in `target`, the first day as YYYY-MM-DD in `date`, and how many days in `count` (1 for one day; read last Thursday through today in one read to compare them). Read as many times as the question needs, one range each time, and say so in `plan`. You get every row back and answer from it yourself: add it up, compare it, name the clients. Never guess a number you have not read.",
+  ehr_read: "ehr_read: read LeadDash EHR to answer a question with real numbers (how much came in today, today against last Thursday, this week against last week, what a payer paid, claims denied this month, sessions this week, no-shows by clinician). Put `payments` (money that came in: insurance and client payments, refunds), `claims` (by date of service, any status) or `appointments` (the practice's sessions on the LeadDash EHR calendar; each comes back with the client's balance and any paperwork sent and not finished, so one read answers \"who tomorrow has a balance or forms out\") in `target`, the first day as YYYY-MM-DD in `date`, and how many days in `count` (1 for one day; read last Thursday through today in one read to compare them). Read as many times as the question needs, one range each time, and say so in `plan`. You get every row back and answer from it yourself: add it up, compare it, name the clients. Never guess a number you have not read.",
   check_status: "check_status: report what is open, what is waiting for the person, what is submitted, and what is due soon.",
   find_videos: "find_videos: search for current short-form video trends and plan videos. Put any focus in `focus`.",
   write_post: "write_post: write a social post. Put the subject in `topic` and the platforms (linkedin, instagram, facebook, x, threads) in `platforms`; default to linkedin and instagram.",
@@ -417,7 +417,10 @@ async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "inbox") {
     const cals = db.listAccountLinks(emp.organizationId, "calendar");
     const desk = await (await import("./desk")).deskFacts(emp.organizationId).catch(() => "");
-    return `${cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : ""}${desk}`;
+    const org = await db.getOrganizationById(emp.organizationId);
+    // In a practice the client appointments live in LeadDash EHR; the owner's own calendars are a separate thing.
+    const practice = org?.orgType === "healthcare" ? `${await (await import("../ehr")).ehrFacts(emp.organizationId)}\nThe practice's client appointments and sessions are on the LeadDash EHR calendar (ehr_read with appointments)${cals.length ? "; the calendars below are the owner's own meetings" : "; no personal calendar is connected, so a question about appointments or sessions always means the EHR"}.` : "";
+    return `${cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : ""}${practice}${desk}`;
   }
   return "";
 }
@@ -1608,6 +1611,14 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const days = Math.max(1, Math.min(14, d.count || 1));
       try {
         const r = await cal.scheduleReply(org, d.date, days);
+        if (r.text.startsWith("I don't have") && (await worksWithEhr(emp))) {
+          // No personal calendar, but the practice's calendar is in LeadDash EHR: that is the one they mean.
+          const ehr = await import("../ehr");
+          const toDay = new Date(`${d.date}T12:00:00Z`);
+          toDay.setUTCDate(toDay.getUTCDate() + days - 1);
+          const e = await ehr.read(org, "appointments", d.date, toDay.toISOString().slice(0, 10));
+          if (e.facts) return { text: e.text, cards: [], queries: [], facts: e.facts, quiet: true, answer: true };
+        }
         const facts = r.events.length || r.text.startsWith("I don't have") ? undefined : cal.scheduleFacts([], cal.range(d.date, days, r.tz).from, days, r.tz);
         if (!r.events.length) return { text: r.text, cards: [], queries: [], facts, quiet: true };
         const clashing = new Set((r.clash ?? []).flat());
@@ -1766,6 +1777,12 @@ export function findHold(holds: OutboundItem[], want: { date: string; time: stri
 }
 
 /** Actions that only talk about the work; a project task needs one that does it. */
+/** A practice's client-information employees (Avery among them) read LeadDash EHR, whatever their own action list says. */
+async function worksWithEhr(emp: AIEmployee) {
+  const org = await db.getOrganizationById(emp.organizationId);
+  return Boolean(org && org.orgType === "healthcare" && (await import("./roster")).worksWithClientInfo(emp.kind, org.orgType));
+}
+
 const NOT_WORK = new Set(["task_find", "task_due", "task_lists", "task_undo", "none", "report", "check_status", "ads_status", "ads_note", "ads_approve", "ads_skip", "ask_teammate", "add_guideline", "start_onboarding", "close_item", "sat_in_notes", "join_or_skip", "save_files", "add_file", "restore_answer", "ask_layout", "restore_page"]);
 
 /**
@@ -1775,6 +1792,7 @@ const NOT_WORK = new Set(["task_find", "task_due", "task_lists", "task_undo", "n
  */
 export async function doTask(emp: AIEmployee, task: { title: string; details: string; doneWhen: string; project: string; due: string; feedback: string; from: string }) {
   const actions = (ACTIONS[emp.kind] ?? []).filter((a) => !NOT_WORK.has(a));
+  if (!actions.includes("ehr_read") && (await worksWithEhr(emp))) actions.push("ehr_read");
   if (!actions.length) return { action: "none", text: "", cards: [] as ChatCard[], refs: [] as Ref[] };
   const request = `Task: ${task.title}${task.details ? `\nDetails: ${task.details}` : ""}${task.doneWhen ? `\nDone when: ${task.doneWhen}` : ""}\nProject: ${task.project}\nDue: ${task.due}${task.feedback ? `\nSent back because: ${task.feedback}. Fix exactly that.` : ""}`;
   const { system } = await tasks.systemPromptAbout(
@@ -1991,6 +2009,8 @@ export async function sendChatMessage(opts: {
     const history = await db.listChatMessages(opts.organizationId, emp.id, 30);
     // Work handed over by a teammate is done here, never handed on again (no loops between employees).
     const actions = (ACTIONS[emp.kind] ?? ["none"]).filter((a) => a !== "none" && !(opts.forwarded && a === "hand_off"));
+    // In a practice, every employee that works with client information can read LeadDash EHR.
+    if (!actions.includes("ehr_read") && (await worksWithEhr(emp))) actions.push("ehr_read");
     // The files this message can use: the ones sent with it, else the latest ones sent in this chat.
     const recentIds = new Set(history.slice(-12).map((m) => m.id));
     const files = sent.length ? sent : db.recentChatFiles(opts.organizationId, emp.id, 6).filter((f) => f.messageId != null && recentIds.has(f.messageId)).slice(0, 4);

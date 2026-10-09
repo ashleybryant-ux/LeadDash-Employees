@@ -227,4 +227,52 @@ describe("A healthcare practice workspace", () => {
     expect(r.reply!.content).toContain("$215.50 came in today, against $400.00 last Thursday.");
     expect(r.reply!.content).not.toContain("I read payments");
   });
+
+  it("Avery reads tomorrow's sessions from the LeadDash EHR calendar, with each client's balance and paperwork, when the practice has no personal calendar connected", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-ehr-sessions");
+    const me = caller(owner);
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    const asked: string[] = [];
+    vi.spyOn(ehr.tools, "fetchJson").mockImplementation(async (url: string) => {
+      asked.push(url);
+      if (url.endsWith("/api/employees/ping")) return { ok: true, practice: "Legacy Family Services", locationId: "loc_1" };
+      if (url.includes("/api/employees/appointments")) {
+        return {
+          ok: true, from: "2026-10-09", to: "2026-10-09", byStatus: { confirmed: 2 }, byClinician: { "Dr. Ashley Bryant": 2 },
+          appointments: [
+            { id: "ap1", date: "2026-10-09", start: "2026-10-09T15:00:00.000Z", status: "confirmed", clinician: "Dr. Ashley Bryant", name: "Avery Price", initials: "A.P.", url: "https://ehr.test/patients/b1" },
+            { id: "ap2", date: "2026-10-09", start: "2026-10-09T16:00:00.000Z", status: "confirmed", clinician: "Dr. Ashley Bryant", name: "Kim Lee", initials: "K.L.", url: "https://ehr.test/patients/p1" },
+          ],
+          appointmentsShown: 2, appointmentsTotal: 2,
+        };
+      }
+      // The snapshot's balance is on client b1 and the overdue intake packet on client p1.
+      return snapshot({ paperwork: [{ id: "p1", initials: "K.L.", what: "Intake packet", sent: "2026-09-28", due: "2026-10-05", status: "overdue", daysOut: 8, url: "https://ehr.test/patients/p1?tab=paperwork" }] });
+    });
+    await me.ehr.connect({ organizationId: orgId, url: "https://api.health.leaddash.io", key: "ld-emp-0123456789abcdefghij" });
+    await me.ehr.refresh({ organizationId: orgId });
+    const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
+    const blank = { reply: "", action: "none", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+    const prompts: string[] = [];
+    const systems: string[] = [];
+    const llm = await import("./_core/llm");
+    vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => {
+      if (opts.schemaName !== "chat_decision") return {} as any;
+      prompts.push(opts.prompt);
+      systems.push(opts.system);
+      // The model reaches for the personal calendar; with none connected, the EHR calendar is the one the practice means.
+      if (prompts.length === 1) return { ...blank, action: "check_schedule", date: "2026-10-09", count: 1, reply: "Checking." } as any;
+      return { ...blank, reply: "Two sessions tomorrow. Avery Price owes $360 and has a card on file; Kim Lee's intake packet is overdue." } as any;
+    });
+    const r = await me.chat.send({ organizationId: orgId, employeeId: avery.id, text: "Looking at the appointments scheduled for tomorrow, does anyone have a balance or forms that were sent and not completed?" });
+    expect(asked).toContain("https://api.health.leaddash.io/api/employees/appointments?from=2026-10-09&to=2026-10-09");
+    expect(systems[0]).toContain("ehr_read: read LeadDash EHR");
+    expect(systems[0]).toContain("no personal calendar is connected, so a question about appointments or sessions always means the EHR");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Of these clients, 1 has a balance ($360.00 in all) and 1 has paperwork sent and not finished");
+    expect(prompts[1]).toContain("Avery Price · Dr. Ashley Bryant · confirmed · balance $360.00 (card on file) · no paperwork out");
+    expect(prompts[1]).toContain("Kim Lee · Dr. Ashley Bryant · confirmed · no balance · paperwork out: Intake packet, sent Sep 28, 2026 (overdue)");
+    expect(r.reply!.content).toContain("Avery Price owes $360");
+    expect(r.reply!.content).not.toContain("I don't have a calendar");
+  });
 });

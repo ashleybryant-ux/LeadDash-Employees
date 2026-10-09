@@ -358,7 +358,9 @@ export async function read(orgId: number, what: EhrRead, from: string, to: strin
   }
   if (!raw || raw.ok === false) return { text: `LeadDash EHR said: ${String(raw?.error ?? "no answer")}`, facts: "" };
   const range = a === b ? longDate(a) : `${longDate(a)} to ${longDate(b)}`;
-  return { text: `I read ${what} for ${range} from LeadDash EHR.`, facts: formatRead(what, raw, range) };
+  // Sessions carry each client's balance and paperwork still out, from the last snapshot, so one read answers "who tomorrow owes or has forms out".
+  const snap = what === "appointments" ? (snapshotOf(orgId)?.data ?? null) : null;
+  return { text: `I read ${what} for ${range} from LeadDash EHR.`, facts: formatRead(what, raw, range, snap) };
 }
 
 type Row = Record<string, unknown>;
@@ -366,8 +368,11 @@ const rows = (v: unknown): Row[] => (Array.isArray(v) ? (v as Row[]) : []);
 const n = (v: unknown) => Number(v) || 0;
 const named = (r: Row) => String(r.name || "").trim() || String(r.initials || "a client");
 
+/** The client id an EHR link points at, so a session row can be matched to a balance or paperwork row. */
+const clientOf = (url: unknown) => (String(url ?? "").match(/\/patients\/([^/?#]+)/) ?? [])[1] ?? "";
+
 /** The read as lines: totals first, then each row, so the employee can add up, compare and name what matters. */
-export function formatRead(what: EhrRead, raw: Row, range: string): string {
+export function formatRead(what: EhrRead, raw: Row, range: string, snap: EhrSnapshot | null = null): string {
   if (what === "payments") {
     const days = rows(raw.days);
     const t = (raw.totals ?? {}) as Row;
@@ -398,11 +403,35 @@ export function formatRead(what: EhrRead, raw: Row, range: string): string {
   const list = rows(raw.appointments);
   const byStatus = Object.entries((raw.byStatus ?? {}) as Record<string, number>);
   const byClin = Object.entries((raw.byClinician ?? {}) as Record<string, number>);
+  // What each client on the calendar owes and still has out, from the last snapshot.
+  const balanceBy = new Map<string, EhrBalance>();
+  const paperBy = new Map<string, EhrPaperwork[]>();
+  for (const b of snap?.balances ?? []) balanceBy.set(String(b.id), b);
+  for (const p of snap?.paperwork ?? []) {
+    const id = clientOf(p.url);
+    if (id) paperBy.set(id, [...(paperBy.get(id) ?? []), p]);
+  }
+  const extras = (x: Row) => {
+    const id = clientOf(x.url);
+    if (!id || !snap) return "";
+    const b = balanceBy.get(id);
+    const p = paperBy.get(id) ?? [];
+    const parts = [
+      b ? `balance ${dollars(n(b.cents))}${b.cardOnFile ? " (card on file)" : ""}` : "no balance",
+      p.length ? `paperwork out: ${p.map((f) => `${f.what}, sent ${longDate(f.sent)}${f.status === "overdue" ? " (overdue)" : ""}`).join("; ")}` : "no paperwork out",
+    ];
+    return ` · ${parts.join(" · ")}`;
+  };
+  const owing = snap ? list.filter((x) => balanceBy.has(clientOf(x.url))) : [];
+  const outstanding = snap ? list.filter((x) => paperBy.has(clientOf(x.url))) : [];
   return [
     `Sessions on the calendar from LeadDash EHR, ${range}: ${n(raw.appointmentsTotal)}.`,
     `By status: ${byStatus.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.`,
     `By clinician: ${byClin.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.`,
-    ...list.slice(0, 150).map((x) => `- ${whenText(String(x.start))} · ${named(x)} · ${x.clinician || "Unassigned"} · ${x.status}`),
+    snap
+      ? `Of these clients, ${owing.length} ${owing.length === 1 ? "has" : "have"} a balance${owing.length ? ` (${dollars(owing.reduce((t, x) => t + n(balanceBy.get(clientOf(x.url))?.cents), 0))} in all)` : ""} and ${outstanding.length} ${outstanding.length === 1 ? "has" : "have"} paperwork sent and not finished, as of the last EHR read${snap.generatedAt ? ` (${longDate(snap.generatedAt.slice(0, 10))})` : ""}.`
+      : "Balances and paperwork have not been read from the EHR yet, so they are not on these lines.",
+    ...list.slice(0, 150).map((x) => `- ${whenText(String(x.start))} · ${named(x)} · ${x.clinician || "Unassigned"} · ${x.status}${extras(x)}`),
     ...(n(raw.appointmentsTotal) > 150 ? [`(and ${n(raw.appointmentsTotal) - 150} more; the counts above include all of them)`] : []),
   ].join("\n");
 }
