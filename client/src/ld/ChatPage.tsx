@@ -151,6 +151,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   const markRead = trpc.chat.markRead.useMutation({ onSuccess: () => utils.chat.summaries.invalidate() });
   const [text, setText] = React.useState("");
   const [pending, setPending] = React.useState<string | null>(null);
+  // The last message id when a send started: once the list shows the person's own newer message, the grey copy goes.
+  const [sentAfter, setSentAfter] = React.useState(0);
   const [pendingFiles, setPendingFiles] = React.useState<{ id: number; name: string; size: number; kind: "image" | "document"; url: string }[]>([]);
   // Replying to one message: the quote shows in the box, goes out with the message, and tagged people see what it was about.
   const [replyTo, setReplyTo] = React.useState<{ id: number; authorName: string; excerpt: string } | null>(null);
@@ -175,13 +177,17 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
     onError: () => { setPending(null); setPendingFiles([]); setPendingReply(null); },
   });
   const lastMsgId = messages.data?.length ? messages.data[messages.data.length - 1].id : null;
+  const beginPending = (value: string) => {
+    setSentAfter(lastMsgId ?? 0);
+    setPending(value);
+  };
   const talk = useOneOnOne({
     orgId: currentOrgId,
     emp,
     lastId: lastMsgId,
     sending: send.isPending,
     say: (value) => {
-      setPending(value);
+      beginPending(value);
       send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: value, attachmentIds: [], spoken: true });
     },
     onEnded: () => {
@@ -217,7 +223,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
     const v = value.trim();
     const attached = files.ready;
     if ((!v && !attached.length) || send.isPending || files.uploading) return;
-    setPending(v);
+    beginPending(v);
     setPendingFiles(attached);
     setPendingReply(replyTo ? { authorName: replyTo.authorName, excerpt: replyTo.excerpt } : null);
     setText("");
@@ -233,11 +239,13 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   /** A tapped quick reply goes out as the person's message, without touching files waiting in the box. */
   const pick = (value: string) => {
     if (send.isPending) return;
-    setPending(value);
+    beginPending(value);
     send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: value, attachmentIds: [], spoken: talk.active });
   };
 
   const list = messages.data ?? [];
+  // While the employee works on a longer request, the list refreshes and already holds what the person sent: show it once.
+  const echoed = pending !== null && list.some((m) => m.id > sentAfter && m.role === "user" && (m.userId == null || m.userId === user?.id));
   const lastId = list.length ? list[list.length - 1].id : null;
   const lastHasReplies = list.length > 0 && parseJson<Card[]>(list[list.length - 1].cards, []).some((c) => c.type === "choices" || c.type === "layout_choice");
   let lastDay: Date | null = null;
@@ -361,7 +369,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
         })}
         {pending !== null && (
           <>
-            <div style={{ display: "flex", gap: 12, alignItems: "flex-start", opacity: 0.8 }}>
+            {!echoed && <div style={{ display: "flex", gap: 12, alignItems: "flex-start", opacity: 0.8 }}>
               <PersonAvatar name="You" src={user?.avatarUrl} />
               <div style={{ minWidth: 0 }}>
                 {pendingReply && (
@@ -373,7 +381,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                 {pending && <div style={{ fontSize: 15, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{pending}</div>}
                 {pendingFiles.length > 0 && <MessageAttachments raw={JSON.stringify(pendingFiles)} />}
               </div>
-            </div>
+            </div>}
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={36} />
               <span className="ld-dots" aria-label={`${emp.name} is working`}>
