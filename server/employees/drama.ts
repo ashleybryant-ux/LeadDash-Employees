@@ -289,7 +289,7 @@ Make it flow like one film, not separate clips:
 - Describe a scene's setting in exactly the same words in every shot of that scene.
 - Mark flow "continue" when the camera carries straight on into the next shot (a slow push that lands on the next framing); otherwise "cut". The last shot of a scene is always "cut".
 The owner's character is the lead and she talks, in her own cloned voice: she speaks a line (lip synced to her face) in about half of the shots she is in, and when she's alone, give her a few short voice_over lines (her thoughts, in her voice). An episode is never silent, and she is never played by anyone else. Every shot she appears in lists her name in cast, spelled exactly as her character's name.
-Voices you can cast (ElevenLabs): ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(0, 60).join(", ") || "none listed; leave voice ''"}. The owner's character always uses her own voice: leave voice '' for her.`,
+Voices you can cast: ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(0, 60).join(", ") || "none listed; leave voice ''"}. The owner's character always uses her own voice: leave voice '' for her.`,
     schemaName: "drama_season",
     schema: SEASON_SCHEMA,
     maxTokens: 12000,

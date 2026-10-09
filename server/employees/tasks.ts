@@ -62,7 +62,7 @@ export async function systemPromptFor(emp: AIEmployee, job: string, about?: stri
 export function clientInfoRules(emp: Pick<AIEmployee, "kind" | "name">, orgType: string | null | undefined) {
   if (orgType !== "healthcare") return "";
   if (worksWithClientInfo(emp.kind, "healthcare")) {
-    const photos = carriesClientInfo("anthropic") ? "" : `\n- A photo attached in this chat is kept as a file, but you do not read photos in this workspace yet (the provider that reads photos is not under a BAA). Ask for what it says in words.`;
+    const photos = carriesClientInfo("anthropic") ? "" : `\n- A photo attached in this chat is kept as a file, but photos are not read in this workspace yet. Ask for what it says in words.`;
     return `\n\n# Client information (this workspace is a healthcare practice)
 - You work with client information as part of your job. It stays inside this app and LeadDash EHR. This replaces the general rule about client names: here, in chat and on your Work tab, call clients by name, because that is how the practice talks about them.
 - In anything that leaves this app (an email, a text, a push notice, a document, a form on a website), a client appears by initials only ("J.M."), never by name, and never with anything from their record.

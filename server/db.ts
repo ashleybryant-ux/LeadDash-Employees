@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { hideProviders } from "./_core/providers";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { and, desc, eq, inArray, lt, gt, isNull, like, or, sql } from "drizzle-orm";
@@ -1054,7 +1055,9 @@ export function setMemberAiLimit(organizationId: number, userId: number, mode: "
 }
 
 export async function createChatMessage(msg: InsertChatMessage) {
-  const rows = getDb().insert(chatMessages).values(msg).returning().all();
+  // What an employee says never names the providers behind the app.
+  const clean = msg.role === "employee" && typeof msg.content === "string" ? { ...msg, content: hideProviders(msg.content) } : msg;
+  const rows = getDb().insert(chatMessages).values(clean).returning().all();
   return rows[0];
 }
 

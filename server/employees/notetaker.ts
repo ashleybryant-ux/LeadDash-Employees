@@ -230,7 +230,7 @@ export async function followBots(orgId: number, now = new Date()) {
         } else if (IN_CALL.includes(st.code)) {
           if (row.status !== "in_call") await db.updateNotetaker(row.id, orgId, { status: "in_call" });
         } else if (st.code === "fatal") {
-          await db.updateNotetaker(row.id, orgId, { status: REMOVED_SUB.test(st.subCode ?? "") ? "removed" : "failed", error: st.subCode ? `Recall.ai: ${st.subCode.replace(/_/g, " ")}` : "The bot could not join." });
+          await db.updateNotetaker(row.id, orgId, { status: REMOVED_SUB.test(st.subCode ?? "") ? "removed" : "failed", error: st.subCode ? `Meeting bot: ${st.subCode.replace(/_/g, " ")}` : "The bot could not join." });
         } else if (st.code === "call_ended" || st.code === "done") {
           if (!st.recordingId) {
             if (st.code === "done") await db.updateNotetaker(row.id, orgId, { status: "removed", error: st.subCode ? st.subCode.replace(/_/g, " ") : "Left before anything was recorded." });
@@ -248,7 +248,7 @@ export async function followBots(orgId: number, now = new Date()) {
       }
       const t = await integrations.recallTranscript(orgId, row.transcriptId);
       if (t.state === "failed") {
-        await db.updateNotetaker(row.id, orgId, { status: "failed", error: "Recall.ai could not make the transcript." });
+        await db.updateNotetaker(row.id, orgId, { status: "failed", error: "The meeting bot could not make the transcript." });
       } else if (t.state === "done") {
         await db.updateNotetaker(row.id, orgId, { transcript: t.text, heldMinutes: t.minutes });
         const billed = t.minutes || Math.max(1, Math.round((new Date(row.endsAt).getTime() - new Date(row.startsAt).getTime()) / 60000));

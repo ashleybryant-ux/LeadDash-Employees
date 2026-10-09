@@ -4,9 +4,15 @@ import superjson from "superjson";
 import type { TrpcContext } from "./context";
 import type { EmployeeKind } from "../../drizzle/schema";
 import { withUsage } from "../usage";
+import { hideProviders } from "./providers";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
+  // A workspace is never told which providers sit behind the app (LeadDash staff see the real message).
+  errorFormatter({ shape, ctx }) {
+    if (ctx?.user?.role === "admin") return shape;
+    return { ...shape, message: hideProviders(shape.message) };
+  },
 });
 
 export const router = t.router;

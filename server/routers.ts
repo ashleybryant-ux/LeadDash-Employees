@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hideProviders } from "./_core/providers";
 import { TRPCError } from "@trpc/server";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -155,6 +156,12 @@ async function requireDecide(ctx: TrpcContext & { user: User }, organizationId: 
   const m = await requireMember(ctx, organizationId, minRole);
   await desk.assertDecide(organizationId, m.role, category);
   return m;
+}
+
+/** Text for the person looking: provider names are hidden from everyone but LeadDash staff. */
+function forViewer(ctx: { user: User }, text: string | null) {
+  if (!text || ctx.user.role === "admin") return text;
+  return hideProviders(text);
 }
 
 /** The employee for a member of the workspace, or NOT_FOUND. */
@@ -3413,7 +3420,7 @@ export const appRouter = router({
           const healthcare = (await db.getOrganizationById(input.organizationId))?.orgType === "healthcare";
           const id = emp ? await huddle.speak(emp.kind, spokenText(result.reply.content), "", { clientInfo: healthcare }) : null;
           audioUrl = id ? `/api/voice/audio/${id}` : null;
-          voiceError = id ? null : huddle.lastSpeechError();
+          voiceError = id ? null : forViewer(ctx, huddle.lastSpeechError());
         }
         return { ...result, audioUrl, voiceError };
       }),
@@ -3454,7 +3461,7 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId, "member");
       const r = await huddle.say(input.organizationId, input.id, personName(ctx.user), input.text);
       const silent = r.replies.some((x) => !x.audioId);
-      return { huddle: huddle.huddleView(r.huddle), replies: r.replies.map((x) => ({ ...x, audioUrl: x.audioId ? `/api/voice/audio/${x.audioId}` : null })), voiceError: silent ? huddle.lastSpeechError() : null };
+      return { huddle: huddle.huddleView(r.huddle), replies: r.replies.map((x) => ({ ...x, audioUrl: x.audioId ? `/api/voice/audio/${x.audioId}` : null })), voiceError: silent ? forViewer(ctx, huddle.lastSpeechError()) : null };
     }),
     bring: protectedProcedure.input(orgInput.extend({ id: z.number(), url: z.string().trim().min(10).max(1000) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");

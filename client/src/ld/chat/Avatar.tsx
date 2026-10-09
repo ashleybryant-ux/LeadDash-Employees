@@ -162,7 +162,7 @@ function SettingsCard() {
     setEditing(true);
   };
   const rate = (k: "standard" | "pro") => `$${(s.rates[k] / 100).toFixed(3).replace(/0$/, "")} a second`;
-  const missing = [!s.ready.fal ? "FAL_KEY" : "", !s.ready.voice ? "ELEVENLABS_API_KEY" : ""].filter(Boolean);
+  const missing = !s.ready.fal || !s.ready.voice;
 
   return (
     <div className="ld-card ld-av-set">
@@ -182,7 +182,7 @@ function SettingsCard() {
               )}
             </span>
             <span className="ld-strong">Voice</span>
-            <span>{voice ? voice.name : s.ready.voice ? "Not picked yet" : "ElevenLabs isn't connected"}</span>
+            <span>{voice ? voice.name : s.ready.voice ? "Not picked yet" : "Voice isn't set up"}</span>
             <span className="ld-strong">Quality</span>
             <span>{s.quality === "pro" ? "Pro" : "Standard"}, {rate(s.quality)}</span>
             <span className="ld-strong">This month</span>
@@ -228,7 +228,7 @@ function SettingsCard() {
             </div>
           </div>
         )}
-        {missing.length > 0 && <span className="ld-small" style={{ color: "#8a4510" }}>Making videos needs {missing.join(" and ")} on the server.</span>}
+        {missing && <span className="ld-small" style={{ color: "#8a4510" }}>Making videos isn't set up yet. LeadDash support can turn it on.</span>}
         <ErrorLine error={save.error} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
