@@ -156,8 +156,24 @@ async function callTool(ctx: Ctx, name: string, args: Record<string, unknown>) {
   return null;
 }
 
+/**
+ * Whether client information stays off this link: a healthcare workspace, unless its owner confirmed
+ * the link is used only in a BAA-covered ChatGPT workspace (Integrations would say who and when).
+ */
 async function healthcare(orgId: number) {
-  return (await db.getOrganizationById(orgId))?.orgType === "healthcare";
+  const org = await db.getOrganizationById(orgId);
+  return org?.orgType === "healthcare" && !clientInfoSetting(org.mcpClientInfo).on;
+}
+
+export type ClientInfoSetting = { on: boolean; by: string | null; at: string | null };
+
+export function clientInfoSetting(raw: string | null | undefined): ClientInfoSetting {
+  try {
+    const v = JSON.parse(raw || "{}") as Partial<ClientInfoSetting>;
+    return { on: v.on === true, by: typeof v.by === "string" ? v.by : null, at: typeof v.at === "string" ? v.at : null };
+  } catch {
+    return { on: false, by: null, at: null };
+  }
 }
 
 async function handle(ctx: Ctx, msg: any): Promise<any | null> {

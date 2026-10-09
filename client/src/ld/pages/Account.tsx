@@ -35,6 +35,7 @@ export default function Account() {
           {a.staff && <ReviewCard />}
           <PushCard pushReady={a.pushReady} vapid={a.vapidPublicKey} devices={a.devices} />
           {!chatOnly && <ConnectorCard />}
+          {!chatOnly && <ConnectorClientInfoCard />}
           <PrefsCard prefs={a.prefs as Prefs} sound={a.sound as Sound} events={chatOnly ? a.events.filter((e) => e.key === "team_message") : a.events} />
           <section className="ld-card ld-between" style={{ padding: "14px 18px" }}>
             <span className="ld-strong">Sign out of this device</span>
@@ -423,7 +424,7 @@ function ConnectorCard() {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const q = trpc.account.connector.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
-  const fresh = trpc.account.newConnector.useMutation({ onSuccess: (r) => utils.account.connector.setData({ organizationId: currentOrgId }, r) });
+  const fresh = trpc.account.newConnector.useMutation({ onSuccess: (r) => utils.account.connector.setData({ organizationId: currentOrgId }, (old) => (old ? { ...old, ...r } : old)) });
   const [copied, setCopied] = React.useState(false);
   const c = q.data;
   const shown = c ? c.url.replace(/[^/]+$/, `${"•".repeat(12)}${c.last4}`) : "";
@@ -458,6 +459,68 @@ function ConnectorCard() {
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <button type="button" className="ld-btn p" disabled={!c} onClick={copy}>{copied ? "Copied" : "Copy link"}</button>
         <button type="button" className="ld-btn" disabled={fresh.isPending} onClick={() => fresh.mutate({ organizationId: currentOrgId })}>New link</button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A healthcare workspace only: whether Harper, Malik, Camille and Avery answer through the Claude and
+ * ChatGPT link. Off until the owner confirms the link is used only in the practice's BAA-covered ChatGPT workspace.
+ */
+function ConnectorClientInfoCard() {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.account.connector.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [editing, setEditing] = React.useState(false);
+  const [on, setOn] = React.useState(false);
+  const save = trpc.account.setConnectorClientInfo.useMutation({
+    onSuccess: async () => {
+      setEditing(false);
+      await utils.account.connector.invalidate({ organizationId: currentOrgId });
+    },
+  });
+  const c = q.data;
+  if (!c?.healthcare) return null;
+  const s = c.clientInfo;
+  const startEdit = () => {
+    setOn(s.on);
+    setEditing(true);
+  };
+  return (
+    <section className="ld-card ld-av-set">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+        <span className="ld-lbl">Client information on the link</span>
+        {!editing ? (
+          <div className="ld-av-kv">
+            <span className="ld-strong">Status</span>
+            <span>{s.on ? "On" : "Off"}</span>
+            <span className="ld-strong">What it means</span>
+            <span>{s.on ? "Harper, Malik, Camille and Avery answer through the link, and Approvals show full titles." : "Harper, Malik, Camille and Avery answer only inside LeadDash Employees."}</span>
+            {s.by && s.at && (
+              <>
+                <span className="ld-strong">Last changed</span>
+                <span>{`${s.by}, ${fmtDate(s.at)} at ${fmtTime(s.at)}`}</span>
+              </>
+            )}
+          </div>
+        ) : (
+          <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 14, lineHeight: 1.5 }}>
+            <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} style={{ marginTop: 3 }} />
+            <span>This link is used only in our BAA-covered ChatGPT workspace.</span>
+          </label>
+        )}
+        <span className="ld-small ld-muted">Claude is not covered until Anthropic's BAA is signed. Never paste the link into Claude or a personal ChatGPT account while this is on.</span>
+        <ErrorLine error={save.error} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {!editing && c.canSetClientInfo && <button type="button" className="ld-btn" onClick={startEdit}>Edit</button>}
+        {editing && (
+          <>
+            <button type="button" className="ld-btn p" disabled={save.isPending} onClick={() => save.mutate({ organizationId: currentOrgId, on })}>{save.isPending ? "Saving..." : "Save"}</button>
+            <button type="button" className="ld-btn" disabled={save.isPending} onClick={() => setEditing(false)}>Cancel</button>
+          </>
+        )}
       </div>
     </section>
   );

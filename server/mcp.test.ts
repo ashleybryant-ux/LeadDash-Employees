@@ -79,5 +79,33 @@ describe("the Claude and ChatGPT connector", () => {
     const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
     const ok = await (await rpc(url, "tools/call", { name: "ask_employee", arguments: { employee: morgan.name, message: "What's due this month?" } })).json();
     expect(ok.result.isError).toBeFalsy();
+
+    // Only the owner can say the link is used only in the practice's BAA-covered ChatGPT workspace.
+    const { makeUser } = await import("./test/helpers");
+    const admin = await makeUser("admin@mcp-hc.test", "user", "Angela St. Ville");
+    await db.addOrganizationMember({ organizationId: orgId, userId: admin.id, role: "admin" });
+    await expect(caller(admin).account.setConnectorClientInfo({ organizationId: orgId, on: true })).rejects.toThrow(/cannot do that/);
+    expect((await caller(admin).account.connector({ organizationId: orgId })).canSetClientInfo).toBe(false);
+    const set = await c.account.setConnectorClientInfo({ organizationId: orgId, on: true });
+    expect(set).toMatchObject({ on: true, by: owner.name });
+    const view = await c.account.connector({ organizationId: orgId });
+    expect(view).toMatchObject({ healthcare: true, canSetClientInfo: true, clientInfo: { on: true, by: owner.name } });
+    const logged = (await db.listAuditLogsByOrg(orgId, 20)).find((l) => l.action === "Allowed client information on the Claude and ChatGPT link");
+    expect(logged?.actorName).toBe(owner.name);
+    const now = await (await rpc(url, "tools/call", { name: "ask_employee", arguments: { employee: harper.name, message: "How much came in today?" } })).json();
+    expect(now.result.isError).toBeFalsy();
+    expect(now.result.content[0].text).toMatch(new RegExp(`^${harper.name}: `));
+
+    // Turned back off, the link is closed to Harper again.
+    await c.account.setConnectorClientInfo({ organizationId: orgId, on: false });
+    const off = await (await rpc(url, "tools/call", { name: "ask_employee", arguments: { employee: harper.name, message: "And yesterday?" } })).json();
+    expect(off.result.isError).toBe(true);
+  });
+
+  it("offers the client information setting only in a healthcare workspace", async () => {
+    const { orgId, owner } = await makeWorkspace("mcp-biz");
+    const c = caller(owner);
+    expect((await c.account.connector({ organizationId: orgId })).healthcare).toBe(false);
+    await expect(c.account.setConnectorClientInfo({ organizationId: orgId, on: true })).rejects.toThrow(/healthcare workspaces/);
   });
 });
