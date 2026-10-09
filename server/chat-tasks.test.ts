@@ -109,7 +109,9 @@ describe("scheduled tasks", () => {
     const after = await db.getScheduledTaskForOrg(t.id, orgId);
     expect(after?.lastStatus).toBe("ok");
     expect(after!.nextRunAt!.getTime()).toBeGreaterThan(Date.now());
-    const chat = await caller(owner).chat.list({ organizationId: orgId, employeeId: avery.id });
+    // Reports from scheduled tasks land in the Workspace conversation, not in anyone's own.
+    expect(await caller(owner).chat.list({ organizationId: orgId, employeeId: avery.id })).toEqual([]);
+    const chat = await caller(owner).chat.list({ organizationId: orgId, employeeId: avery.id, thread: "workspace" });
     expect(chat[0].authorName).toBe("Scheduled task: Morning check");
     expect(chat[1].content).toBe("Nothing needs a reply today.");
     const listed = await caller(owner).tasks.list({ organizationId: orgId });

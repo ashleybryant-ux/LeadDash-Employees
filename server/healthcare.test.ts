@@ -287,7 +287,7 @@ describe("A healthcare practice workspace", () => {
     await me.ehr.connect({ organizationId: orgId, url: "https://api.health.leaddash.io", key: "ld-emp-0123456789abcdefghij" });
     await me.ehr.refresh({ organizationId: orgId });
     const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
-    await db.createChatMessage({ organizationId: orgId, employeeId: avery.id, role: "employee", authorName: "Avery", content: "Avery Price owes $360 and Ann Lee-Parker has not booked since Aug 20, 2026. avery price confirmed by text." });
+    await db.createChatMessage({ organizationId: orgId, employeeId: avery.id, role: "employee", authorName: "Avery", threadUserId: owner.id, content: "Avery Price owes $360 and Ann Lee-Parker has not booked since Aug 20, 2026. avery price confirmed by text." });
 
     // Full names until the person chooses otherwise.
     expect((await me.ehr.nameMode()).mode).toBe("show");
@@ -308,10 +308,10 @@ describe("A healthcare practice workspace", () => {
     const v2 = await me.ehr.view({ organizationId: orgId });
     expect(v2.snapshot!.balances[0]).toMatchObject({ name: ehr.HIDDEN, cents: 36_000, url: "https://ehr.test/patients/b1" });
 
-    // The choice is the person's own: a teammate still sees full names, and the stored message is untouched.
+    // The choice is the person's own: a teammate who may read this conversation still sees full names, and the stored message is untouched.
     const { reviewer } = await makeWorkspace("hc-ehr-names-other");
-    await db.addOrganizationMember({ organizationId: orgId, userId: reviewer.id, role: "member" });
-    expect((await caller(reviewer).chat.list({ organizationId: orgId, employeeId: avery.id })).at(-1)!.content).toContain("Avery Price owes $360");
+    await db.addOrganizationMember({ organizationId: orgId, userId: reviewer.id, role: "admin" });
+    expect((await caller(reviewer).chat.list({ organizationId: orgId, employeeId: avery.id, thread: owner.id })).at(-1)!.content).toContain("Avery Price owes $360");
     expect((await db.listChatMessages(orgId, avery.id)).at(-1)!.content).toContain("Avery Price owes $360");
 
     // A name learned from a read on request is remembered too.

@@ -546,7 +546,7 @@ type ActionResult = {
   /** The employee answers from what this step found, even when it planned no more steps (an EHR read is data, not an answer). */
   answer?: boolean;
 };
-type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[]; said?: string; userId?: number | null };
+type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[]; said?: string; userId?: number | null; threadUserId?: number | null };
 
 async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promise<ActionResult> {
   const org = emp.organizationId;
@@ -633,7 +633,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
     case "task_bulk":
     case "task_undo":
     case "goal_update": {
-      return projectsAction(emp, d, who);
+      return projectsAction(emp, d, who, ctx.threadUserId);
     }
     case "sop_site": {
       const sops = await import("./sops");
@@ -1940,9 +1940,17 @@ export async function sendChatMessage(opts: {
   forwarded?: boolean;
   /** Reply on a message in this chat: that message is quoted above this one and given to the employee as what this answers. */
   replyToId?: number | null;
+  /**
+   * Whose conversation this goes in: the sender's own when left out, another person's when an owner
+   * or admin joins theirs, or null for the Workspace conversation (scheduled tasks).
+   */
+  threadUserId?: number | null;
 }) {
   const emp = await db.getEmployeeForOrg(opts.employeeId, opts.organizationId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+  const threadUserId = opts.threadUserId === undefined ? opts.userId : opts.threadUserId;
+  // An owner or admin writing in someone else's conversation: the employee is told whose it is.
+  const joined = threadUserId != null && threadUserId !== opts.userId ? await db.getUserById(threadUserId) : null;
   // A page's HTML pasted right into the message: it stays in the chat as posted, and goes to the employee as the page's code (like an attached .html file), not as thousands of words in every prompt.
   const pasted = pastedHtml(opts.text);
   let pastedFile: ChatFile | null = null;
@@ -1966,6 +1974,7 @@ export async function sendChatMessage(opts: {
     role: "user",
     authorName: opts.authorName,
     userId: opts.userId,
+    threadUserId,
     content: opts.text,
     spoken: !!opts.spoken,
     replyToId: quote?.id ?? null,
@@ -1980,6 +1989,7 @@ export async function sendChatMessage(opts: {
       employeeId: emp.id,
       role: "employee",
       authorName: emp.name,
+      threadUserId,
       content,
       spoken: !!opts.spoken,
       cards: cards.length ? JSON.stringify(cards) : null,
@@ -2006,7 +2016,7 @@ export async function sendChatMessage(opts: {
   const taggedFacts = await taggedText(opts.organizationId, emp, tagged);
 
   try {
-    const history = await db.listChatMessages(opts.organizationId, emp.id, 30);
+    const history = await db.listChatMessages(opts.organizationId, emp.id, 30, threadUserId);
     // Work handed over by a teammate is done here, never handed on again (no loops between employees).
     const actions = (ACTIONS[emp.kind] ?? ["none"]).filter((a) => a !== "none" && !(opts.forwarded && a === "hand_off"));
     // In a practice, every employee that works with client information can read LeadDash EHR.
@@ -2020,7 +2030,7 @@ export async function sendChatMessage(opts: {
     const { system, brain } = await tasks.systemPromptAbout(
       emp,
       `${pasted ? pasted.words : opts.text} ${sent.map((f) => f.name).join(" ")}`,
-      `You are chatting with ${opts.authorName}. Answer questions about your work directly and briefly.
+      `You are chatting with ${opts.authorName}.${joined ? ` This is ${joined.name || joined.email}'s conversation with you; ${opts.authorName} joined it and can read it all.` : ""} Answer questions about your work directly and briefly.
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 Work it out before you act: in "thinking", say what they want and what you know, then choose. When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
@@ -2053,7 +2063,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
       return { user: userMsg, reply: await reply(`${decision.reply || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
     }
-    const ctx = { who: opts.authorName, files: sent.length ? sent : files, history, said: pasted ? pasted.words : opts.text, userId: opts.userId ?? null };
+    const ctx = { who: opts.authorName, files: sent.length ? sent : files, history, said: pasted ? pasted.words : opts.text, userId: opts.userId ?? null, threadUserId };
     const result = await runAction(emp, decision, ctx);
     if (!decision.plan?.trim() && !result.answer) {
       const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];
@@ -2171,7 +2181,7 @@ async function adsAction(emp: AIEmployee, d: Decision, me: { id: number; name: s
 }
 
 /** Projects and Goals from chat, for every employee. */
-async function projectsAction(emp: AIEmployee, d: Decision, who: string): Promise<ActionResult> {
+async function projectsAction(emp: AIEmployee, d: Decision, who: string, threadUserId?: number | null): Promise<ActionResult> {
   const org = emp.organizationId;
   const pj = await import("../work/projects");
   const g = await import("../work/goals");
@@ -2259,7 +2269,7 @@ async function projectsAction(emp: AIEmployee, d: Decision, who: string): Promis
       return { text: lines.join("\n\n"), cards, queries: [] };
     }
     if (d.action === "task_undo") {
-      const last = (await db.listChatMessages(org, emp.id, 40)).reverse().find((m) => m.role === "employee" && parseList<ChatCard>(m.cards).some((c) => c.undo?.length));
+      const last = (await db.listChatMessages(org, emp.id, 40, threadUserId === undefined ? "all" : threadUserId)).reverse().find((m) => m.role === "employee" && parseList<ChatCard>(m.cards).some((c) => c.undo?.length));
       const ids = last ? parseList<ChatCard>(last.cards).find((c) => c.undo?.length)!.undo!.map(Number) : [];
       if (!ids.length) return { text: "I don't have a recent batch of closed tasks to reopen.", cards: [], queries: [] };
       let n = 0;

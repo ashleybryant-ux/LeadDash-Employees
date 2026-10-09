@@ -49,6 +49,8 @@ async function runTask(task: ScheduledTask, manual: boolean) {
       text: task.instructions,
       authorName: `Scheduled task: ${task.title}`,
       userId: null,
+      // Reports from scheduled tasks go to the Workspace conversation.
+      threadUserId: null,
     });
     const failed = result.reply.content.startsWith("I couldn't do that.") || result.reply.content.startsWith("I'm paused");
     await db.updateScheduledTask(task.id, task.organizationId, {

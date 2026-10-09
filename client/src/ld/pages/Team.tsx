@@ -4,7 +4,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ErrorLine, Page, PersonAvatar } from "../ui";
 
-const COLS = "44px minmax(0,1fr) 210px 120px 128px";
+const COLS = "44px minmax(0,1fr) 190px 150px 120px 128px";
 
 type Role = "owner" | "admin" | "member" | "chat" | "reviewer";
 const ROLE_LABEL: Record<Role, string> = { owner: "Owner", admin: "Admin", member: "Member", chat: "Team chat only", reviewer: "Reviewer" };
@@ -19,7 +19,28 @@ const ROLES: Role[] = ["owner", "admin", "member", "chat", "reviewer"];
 type InviteRole = "admin" | "member" | "chat" | "reviewer";
 type LimitMode = "default" | "custom" | "none";
 
-type Member = { userId: number; email: string; name: string | null; avatarUrl?: string | null; role: Role };
+type ChatAccess = "own" | "some" | "all";
+type Member = { userId: number; email: string; name: string | null; avatarUrl?: string | null; role: Role; chatAccess?: ChatAccess; chatAccessList?: string | null };
+
+/** Which conversations with the AI employees a member may open, as stored on their membership. */
+function accessOf(m: Member): { mode: ChatAccess; users: number[]; workspace: boolean } {
+  if (m.role === "owner" || m.role === "admin") return { mode: "all", users: [], workspace: true };
+  let list: { users?: unknown; workspace?: unknown } = {};
+  try {
+    list = m.chatAccessList ? JSON.parse(m.chatAccessList) : {};
+  } catch {
+    list = {};
+  }
+  return { mode: m.chatAccess === "some" || m.chatAccess === "all" ? m.chatAccess : "own", users: Array.isArray(list.users) ? list.users.filter((u): u is number => Number.isInteger(u)) : [], workspace: list.workspace === true };
+}
+
+/** The Conversations column: Everyone's, Own only, or Own + how many more. */
+function accessLabel(m: Member) {
+  const a = accessOf(m);
+  if (a.mode === "all") return "Everyone's";
+  const n = a.mode === "some" ? a.users.length + (a.workspace ? 1 : 0) : 0;
+  return n ? `Own + ${n}` : "Own only";
+}
 type Ai = { userId: number; used: number; limit: number | null; source: "own" | "workspace" | "none" | "exempt" | "chat"; mode: LimitMode; own: number | null; month: string };
 type Limits = { defaultDollars: number | null; ownersExempt: boolean; warnPct: 0 | 80 | 90; atLimit: "stop" | "warn" };
 
@@ -153,12 +174,15 @@ export default function Team() {
   const [role, setRole] = React.useState<Role>("member");
   const [limitMode, setLimitMode] = React.useState<LimitMode>("default");
   const [own, setOwn] = React.useState("");
+  // Conversations they can see: their own, their own plus the people checked (and the Workspace one), or everyone's.
+  const [access, setAccess] = React.useState<{ mode: ChatAccess; users: number[]; workspace: boolean }>({ mode: "own", users: [], workspace: false });
   const [inviting, setInviting] = React.useState(false);
   const [inv, setInv] = React.useState<{ name: string; email: string; role: InviteRole }>({ name: "", email: "", role: "member" });
 
   const refresh = () => Promise.all([utils.members.list.invalidate(), utils.members.ai.invalidate(), utils.usage.byPerson.invalidate()]);
   const updateRole = trpc.members.updateRole.useMutation();
   const setLimit = trpc.members.setAiLimit.useMutation();
+  const setChatAccess = trpc.members.setChatAccess.useMutation();
   const remove = trpc.members.remove.useMutation({
     onSuccess: async () => {
       setEditing(null);
@@ -183,16 +207,21 @@ export default function Team() {
   // Owners, admins and LeadDash staff change the team; everyone else only sees it.
   const canManage = !user?.reviewer && !chatOnly && (user?.role === "admin" || me?.role === "owner" || me?.role === "admin");
   const ownOk = limitMode !== "custom" || /^\d+(\.\d{1,2})?$/.test(own.trim().replace(/^\$/, ""));
-  const saving = updateRole.isPending || setLimit.isPending;
+  const saving = updateRole.isPending || setLimit.isPending || setChatAccess.isPending;
 
   const saveMember = async (m: Member) => {
     updateRole.reset();
     setLimit.reset();
+    setChatAccess.reset();
     const a = aiBy.get(m.userId);
     try {
       if (role !== m.role) await updateRole.mutateAsync({ organizationId: currentOrgId, userId: m.userId, role });
       const dollars = limitMode === "custom" ? Number(own.trim().replace(/^\$/, "")) : null;
       if (limitMode !== a?.mode || (limitMode === "custom" && dollars !== a?.own)) await setLimit.mutateAsync({ organizationId: currentOrgId, userId: m.userId, mode: limitMode, dollars });
+      const was = accessOf(m);
+      const picked = { ...access, users: access.mode === "some" ? access.users : [], workspace: access.mode === "some" ? access.workspace : false };
+      const changed = picked.mode !== was.mode || picked.workspace !== was.workspace || picked.users.slice().sort().join() !== was.users.slice().sort().join();
+      if (role !== "owner" && role !== "admin" && changed) await setChatAccess.mutateAsync({ organizationId: currentOrgId, userId: m.userId, mode: picked.mode, users: picked.users, workspace: picked.workspace });
       setEditing(null);
       await refresh();
     } catch {
@@ -217,6 +246,7 @@ export default function Team() {
             <span />
             <span>Person</span>
             <span>AI this month</span>
+            <span>Conversations</span>
             <span>Role</span>
             <span />
           </div>
@@ -236,6 +266,7 @@ export default function Team() {
                   {m.name?.trim() && <div className="ld-small ld-muted" style={{ overflowWrap: "anywhere" }}>{m.email}</div>}
                 </div>
                 <AiCell a={a} warnPct={warnPct} />
+                <span>{m.role === "chat" ? <span className="ld-small ld-muted">Team chat only</span> : accessLabel(m)}</span>
                 <span className="ld-strong">{ROLE_LABEL[m.role] ?? m.role}</span>
                 {hideEdit ? (
                   <span />
@@ -250,6 +281,7 @@ export default function Team() {
                       setRole(m.role);
                       setLimitMode(a?.mode ?? "default");
                       setOwn(a?.own == null ? "" : String(a.own));
+                      setAccess(accessOf(m));
                       setEditing(isOpen ? null : m.userId);
                     }}
                   >
@@ -293,9 +325,9 @@ export default function Team() {
                     </label>
                     {a && <span className="ld-small ld-muted">Used in {a.month}: {money(a.used)}{a.limit != null ? ` of ${money(a.limit)}` : ""}</span>}
                     {!ownOk && <span style={{ color: "#b42318", fontSize: 13 }}>Type the limit in dollars, like 25 or 40.50.</span>}
-                    <ErrorLine error={updateRole.error ?? setLimit.error ?? remove.error} />
+                    <ErrorLine error={updateRole.error ?? setLimit.error ?? setChatAccess.error ?? remove.error} />
                   </fieldset>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, gridColumn: 4, gridRow: "1 / 3" }}>
                     <button type="button" className="ld-btn p" disabled={saving || !ownOk} onClick={() => saveMember(m)}>
                       Save
                     </button>
@@ -315,6 +347,39 @@ export default function Team() {
                       </button>
                     )}
                   </div>
+                  <fieldset style={{ border: 0, margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8, minWidth: 0, gridColumn: "2 / 4", marginTop: 6 }}>
+                    <legend className="ld-lbl" style={{ padding: 0, marginBottom: 6 }}>Conversations they can see</legend>
+                    {role === "owner" || role === "admin" ? (
+                      <span className="ld-muted" style={{ fontSize: 13.5 }}>Everyone's. Owners and admins see every conversation with the AI employees and can write in any of them.</span>
+                    ) : (
+                      <>
+                        <label style={{ display: "grid", gridTemplateColumns: "18px minmax(0,1fr)", gap: 10, alignItems: "start", fontSize: 13.5, lineHeight: 1.35, cursor: "pointer" }}>
+                          <input type="radio" name={`see-${m.userId}`} checked={access.mode === "own"} onChange={() => setAccess({ ...access, mode: "own" })} style={{ ...radio, marginTop: 2 }} />
+                          <span><b>Their own only</b><br /><span className="ld-muted">What they say to the AI employees and what the employees answer them.</span></span>
+                        </label>
+                        <label style={{ display: "grid", gridTemplateColumns: "18px minmax(0,1fr)", gap: 10, alignItems: "start", fontSize: 13.5, lineHeight: 1.35, cursor: "pointer" }}>
+                          <input type="radio" name={`see-${m.userId}`} checked={access.mode === "some"} onChange={() => setAccess({ ...access, mode: "some" })} style={{ ...radio, marginTop: 2 }} />
+                          <b>Their own, plus these people's</b>
+                        </label>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", margin: "0 0 2px 28px", fontSize: 13.5 }}>
+                          {members.filter((o) => o.userId !== m.userId && o.role !== "chat").map((o) => (
+                            <label key={o.userId} style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                              <input type="checkbox" style={radio} checked={access.users.includes(o.userId)} onChange={(e) => setAccess({ ...access, mode: "some", users: e.target.checked ? [...access.users, o.userId] : access.users.filter((id) => id !== o.userId) })} />
+                              {o.name?.trim() || o.email}
+                            </label>
+                          ))}
+                          <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                            <input type="checkbox" style={radio} checked={access.workspace} onChange={(e) => setAccess({ ...access, mode: "some", workspace: e.target.checked })} />
+                            Scheduled tasks
+                          </label>
+                        </div>
+                        <label style={{ display: "grid", gridTemplateColumns: "18px minmax(0,1fr)", gap: 10, alignItems: "start", fontSize: 13.5, lineHeight: 1.35, cursor: "pointer" }}>
+                          <input type="radio" name={`see-${m.userId}`} checked={access.mode === "all"} onChange={() => setAccess({ ...access, mode: "all" })} style={{ ...radio, marginTop: 2 }} />
+                          <span><b>Everyone's</b><br /><span className="ld-muted">Every conversation in this workspace, read only.</span></span>
+                        </label>
+                      </>
+                    )}
+                  </fieldset>
                 </div>
               )}
             </React.Fragment>

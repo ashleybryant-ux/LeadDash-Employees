@@ -54,6 +54,7 @@ import * as pages from "./employees/pages";
 import * as social from "./social";
 import * as sales from "./employees/sales";
 import * as team from "./employees/team";
+import * as threads from "./threads";
 import * as projects from "./employees/projects";
 import * as coo from "./employees/coo";
 import * as notetaker from "./employees/notetaker";
@@ -205,6 +206,26 @@ function personName(user: User) {
 }
 
 const orgInput = z.object({ organizationId: z.number().int().positive() });
+
+/** A conversation with an employee: a person's (their user id) or the Workspace one. Left out: the viewer's own. */
+const threadInput = z.union([z.number().int().positive(), z.literal("workspace")]).optional();
+
+/** Which conversation a chat call is about, checked against what the viewer may open. */
+async function conversationFor(ctx: TrpcContext & { user: User }, organizationId: number, input: { employeeId: number; thread?: number | "workspace" }, write = false) {
+  const m = await requireMember(ctx, organizationId, write ? "member" : "reviewer");
+  const emp = await db.getEmployeeForOrg(input.employeeId, organizationId);
+  if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+  const thread: threads.Thread = input.thread ?? ctx.user.id;
+  const viewer = { userId: ctx.user.id, role: m.role, support: m.support };
+  const access = threads.accessOf(m.support ? null : await db.getOrganizationMembership(organizationId, ctx.user.id));
+  if (!threads.canSee(viewer, m.support ? { mode: "all", users: [], workspace: true } : access, thread)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `You can open your own conversation with ${emp.name}.` });
+  }
+  if (write && !threads.canWrite(viewer, thread)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `You can read this conversation. To message ${emp.name}, switch to Mine.` });
+  }
+  return { emp, thread, viewer, access, threadUserId: threads.threadUserId(thread), readKey: threads.readKey(viewer, thread) };
+}
 const ymdZ = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const assigneeZ = z.object({ type: z.enum(["user", "employee", "name"]), id: z.number().int(), name: z.string().max(120) });
 const statusZ = z.object({ name: z.string().max(40), color: z.string().max(9), type: z.enum(["open", "active", "done", "closed"]) });
@@ -505,6 +526,29 @@ export const appRouter = router({
           actorName: personName(ctx.user),
           action: "AI limit changed",
           details: `${target.name || target.email}: ${input.mode === "custom" ? `${lim.dollars(Math.round(input.dollars! * 1_000_000))} a month` : input.mode === "none" ? "no limit" : "the workspace limit"}.`,
+        });
+        return { success: true };
+      }),
+
+    /** Which conversations with the AI employees a person may open besides their own (owners and admins always see everyone's). */
+    setChatAccess: protectedProcedure
+      .input(orgInput.extend({ userId: z.number(), mode: z.enum(["own", "some", "all"]), users: z.array(z.number().int()).max(200).default([]), workspace: z.boolean().default(false) }))
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "admin");
+        const members = await db.listMembers(input.organizationId);
+        const target = members.find((m) => m.userId === input.userId);
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "That person is not on this workspace." });
+        if (threads.MANAGER_ROLES.includes(target.role)) throw new TRPCError({ code: "BAD_REQUEST", message: "Owners and admins always see every conversation." });
+        const users = input.users.filter((id) => id !== input.userId && members.some((m) => m.userId === id));
+        db.setMemberChatAccess(input.organizationId, input.userId, input.mode, { users, workspace: input.workspace });
+        const label = threads.accessLabel({ role: target.role, chatAccess: input.mode, chatAccessList: JSON.stringify({ users, workspace: input.workspace }) });
+        await db.logAction({
+          organizationId: input.organizationId,
+          actorType: "human_user",
+          actorName: personName(ctx.user),
+          action: "Conversations changed",
+          details: `${target.name || target.email} can see: ${label === "Everyone's" ? "everyone's conversations" : label === "Own only" ? "their own conversations" : `their own and ${users.length ? users.map((id) => members.find((m) => m.userId === id)?.name || members.find((m) => m.userId === id)?.email).join(", ") : ""}${users.length && input.workspace ? " and " : ""}${input.workspace ? "the Workspace conversation" : ""}`}.`,
         });
         return { success: true };
       }),
@@ -3374,13 +3418,37 @@ export const appRouter = router({
     }),
 
     list: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), thread: threadInput }))
+      .query(async ({ ctx, input }) => {
+        const c = await conversationFor(ctx, input.organizationId, input);
+        const { screen } = await clientNamesFor(ctx, input.organizationId);
+        return (await db.listChatMessages(input.organizationId, input.employeeId, 200, c.threadUserId)).map((m) => ({ ...m, content: screen(m.content) }));
+      }),
+
+    /**
+     * The conversations with an employee the viewer may open besides their own: each person's, and the
+     * Workspace one (scheduled task reports), with when each last moved and what is unread in it.
+     */
+    threads: protectedProcedure
       .input(orgInput.extend({ employeeId: z.number() }))
       .query(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId);
+        const m = await requireMember(ctx, input.organizationId);
         const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
         if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
-        const { screen } = await clientNamesFor(ctx, input.organizationId);
-        return (await db.listChatMessages(input.organizationId, input.employeeId)).map((m) => ({ ...m, content: screen(m.content) }));
+        const members = await db.listMembers(input.organizationId);
+        const viewer = { userId: ctx.user.id, role: m.role, support: m.support };
+        const access = threads.accessOf(m.support ? null : members.find((x) => x.userId === ctx.user.id));
+        const open = threads.pickable(viewer, m.support ? { mode: "all", users: [], workspace: true } : access, members.map((x) => x.userId));
+        const rows = db.chatThreads(input.organizationId, emp.id, ctx.user.id);
+        const rowFor = (id: number | null) => rows.find((r) => r.threadUserId === id);
+        return {
+          canWriteOthers: threads.canWrite(viewer, "workspace"),
+          people: open.users
+            .map((id) => members.find((x) => x.userId === id)!)
+            .filter((x) => x.role !== "reviewer" && x.role !== "chat")
+            .map((x) => ({ userId: x.userId, name: x.name || x.email, avatarUrl: x.avatarUrl, lastAt: rowFor(x.userId)?.lastAt ?? null, unread: rowFor(x.userId)?.unread ?? 0 })),
+          workspace: open.workspace ? { lastAt: rowFor(null)?.lastAt ?? null, unread: rowFor(null)?.unread ?? 0 } : null,
+        };
       }),
 
     /** Presenter notes on one slide of a deck an employee made. */
@@ -3423,28 +3491,29 @@ export const appRouter = router({
     }),
 
     markRead: protectedProcedure
-      .input(orgInput.extend({ employeeId: z.number() }))
+      .input(orgInput.extend({ employeeId: z.number(), thread: threadInput }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId);
-        await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id);
+        const c = await conversationFor(ctx, input.organizationId, input);
+        await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id, c.readKey);
         return { success: true };
       }),
 
     send: protectedProcedure
-      .input(orgInput.extend({ employeeId: z.number(), text: z.string().trim().max(1_500_000), attachmentIds: z.array(z.number().int()).max(10).default([]), spoken: z.boolean().default(false), replyToId: z.number().int().optional() }))
+      .input(orgInput.extend({ employeeId: z.number(), thread: threadInput, text: z.string().trim().max(1_500_000), attachmentIds: z.array(z.number().int()).max(10).default([]), spoken: z.boolean().default(false), replyToId: z.number().int().optional() }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
+        const c = await conversationFor(ctx, input.organizationId, input, true);
         const result = await sendChatMessage({
           organizationId: input.organizationId,
           employeeId: input.employeeId,
           text: input.text,
           authorName: personName(ctx.user),
           userId: ctx.user.id,
+          threadUserId: c.threadUserId,
           attachmentIds: input.attachmentIds,
           spoken: input.spoken,
           replyToId: input.replyToId ?? null,
         });
-        await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id);
+        await db.markChatRead(input.organizationId, input.employeeId, ctx.user.id, c.readKey);
         // In a one-on-one the answer is also said out loud in the employee's voice.
         let audioUrl: string | null = null;
         let voiceError: string | null = null;

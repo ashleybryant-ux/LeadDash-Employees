@@ -133,6 +133,14 @@ export const organizationMembers = sqliteTable(
     /** Monthly AI limit: the workspace's ("default"), their own ("custom", aiLimitMicros), or "none". */
     aiLimitMode: text("aiLimitMode", { enum: ["default", "custom", "none"] }).notNull().default("default"),
     aiLimitMicros: integer("aiLimitMicros"),
+    /**
+     * Which conversations with the AI employees this person can open: their own ("own"), their own plus
+     * the people listed in chatAccessList ("some"), or everyone's ("all"). Owners and admins always see
+     * everyone's and can write in any of them; everyone else reads other people's conversations only.
+     */
+    chatAccess: text("chatAccess", { enum: ["own", "some", "all"] }).notNull().default("own"),
+    /** JSON {users: number[], workspace: boolean} for chatAccess "some": whose conversations, and the Workspace one. */
+    chatAccessList: text("chatAccessList"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("organization_members_user_organization_unique").on(t.organizationId, t.userId)]
@@ -505,6 +513,12 @@ export const chatMessages = sqliteTable(
     /** The person's real name, the employee's name, or "Scheduled task". */
     authorName: text("authorName").notNull(),
     userId: integer("userId"),
+    /**
+     * Whose conversation this message is in. Each person has their own conversation with each employee;
+     * the employee's answer goes to the person who asked. null is the Workspace conversation: scheduled
+     * task reports and what employees post on their own.
+     */
+    threadUserId: integer("threadUserId"),
     content: text("content").notNull(),
     /** JSON array of result cards shown under the message (grants, events, posts...). */
     cards: text("cards"),
@@ -556,9 +570,11 @@ export const chatReads = sqliteTable(
     organizationId: integer("organizationId").notNull(),
     employeeId: integer("employeeId").notNull(),
     userId: integer("userId").notNull(),
+    /** Which conversation: "me" (their own), "u:<userId>" (that person's) or "workspace". */
+    thread: text("thread").notNull().default("me"),
     lastReadAt: integer("lastReadAt", { mode: "timestamp" }).notNull(),
   },
-  (t) => [uniqueIndex("chat_reads_unique").on(t.organizationId, t.employeeId, t.userId)]
+  (t) => [uniqueIndex("chat_reads_unique").on(t.organizationId, t.employeeId, t.userId, t.thread)]
 );
 
 // ==========================================

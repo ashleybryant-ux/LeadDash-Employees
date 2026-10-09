@@ -1031,15 +1031,66 @@ export async function logAction(item: InsertAuditLog) {
 // Chat
 // ==========================================
 
-export async function listChatMessages(orgId: number, employeeId: number, limit = 200) {
+/**
+ * The messages in one conversation with an employee: a person's (their user id), the Workspace
+ * one (null), or every conversation at once ("all", for work that spans the whole chat).
+ */
+export async function listChatMessages(orgId: number, employeeId: number, limit = 200, thread: number | null | "all" = "all") {
+  const where = [eq(chatMessages.organizationId, orgId), eq(chatMessages.employeeId, employeeId)];
+  if (thread === null) where.push(isNull(chatMessages.threadUserId));
+  else if (thread !== "all") where.push(eq(chatMessages.threadUserId, thread));
   const rows = getDb()
     .select()
     .from(chatMessages)
-    .where(and(eq(chatMessages.organizationId, orgId), eq(chatMessages.employeeId, employeeId)))
+    .where(and(...where))
     .orderBy(desc(chatMessages.id))
     .limit(limit)
     .all();
   return rows.reverse();
+}
+
+/**
+ * Whose conversation an employee's own post goes to when nobody asked: the person who last talked
+ * with that employee, else the workspace's owner. Never the Workspace conversation, which holds
+ * only what scheduled tasks produce.
+ */
+export function lastThreadUserId(orgId: number, employeeId: number): number | null {
+  const row = getDb()
+    .select({ threadUserId: chatMessages.threadUserId })
+    .from(chatMessages)
+    .where(and(eq(chatMessages.organizationId, orgId), eq(chatMessages.employeeId, employeeId), sql`${chatMessages.threadUserId} IS NOT NULL`))
+    .orderBy(desc(chatMessages.id))
+    .limit(1)
+    .all()[0];
+  if (row?.threadUserId != null) return row.threadUserId;
+  const owner = getDb()
+    .select({ userId: organizationMembers.userId })
+    .from(organizationMembers)
+    .where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.role, "owner")))
+    .orderBy(organizationMembers.id)
+    .limit(1)
+    .all()[0];
+  return owner?.userId ?? null;
+}
+
+/**
+ * Each conversation with an employee that has messages: whose it is, when it last moved, and how many
+ * employee messages the viewer has not read in it.
+ */
+export function chatThreads(orgId: number, employeeId: number, viewerId: number) {
+  const sqlite = (getDb(), _sqlite!);
+  const rows = sqlite
+    .prepare(
+      `SELECT m.threadUserId AS threadUserId, MAX(m.createdAt) AS lastAt,
+              SUM(CASE WHEN m.role = 'employee' AND (r.lastReadAt IS NULL OR m.createdAt > r.lastReadAt) THEN 1 ELSE 0 END) AS unread
+       FROM chat_messages m
+       LEFT JOIN chat_reads r ON r.organizationId = m.organizationId AND r.employeeId = m.employeeId AND r.userId = ?
+         AND r.thread = CASE WHEN m.threadUserId IS NULL THEN 'workspace' WHEN m.threadUserId = ? THEN 'me' ELSE 'u:' || m.threadUserId END
+       WHERE m.organizationId = ? AND m.employeeId = ?
+       GROUP BY m.threadUserId`
+    )
+    .all(viewerId, viewerId, orgId, employeeId) as { threadUserId: number | null; lastAt: number; unread: number }[];
+  return rows.map((r) => ({ threadUserId: r.threadUserId, lastAt: new Date(r.lastAt * 1000), unread: r.unread }));
 }
 
 export async function getChatMessage(orgId: number, id: number) {
@@ -1063,6 +1114,9 @@ export function setMemberAiLimit(organizationId: number, userId: number, mode: "
 export async function createChatMessage(msg: InsertChatMessage) {
   // What an employee says never names the providers behind the app.
   const clean = msg.role === "employee" && typeof msg.content === "string" ? { ...msg, content: hideProviders(msg.content) } : msg;
+  // Every message sits in one conversation. A person's own message is in theirs; what an employee
+  // posts without being asked goes to the conversation that moved last, since work follows the request.
+  if (clean.threadUserId === undefined) clean.threadUserId = clean.role === "user" ? (clean.userId ?? null) : lastThreadUserId(clean.organizationId, clean.employeeId);
   const rows = getDb().insert(chatMessages).values(clean).returning().all();
   return rows[0];
 }
@@ -1090,25 +1144,25 @@ export function updateChatFileText(orgId: number, id: number, text: string) {
   getDb().update(chatFiles).set({ text }).where(and(eq(chatFiles.organizationId, orgId), eq(chatFiles.id, id))).run();
 }
 
-/** Last message and unread count for every employee in a workspace, for one person. */
+/** Last message and unread count for every employee in a workspace, for one person: their own conversations only. */
 export async function chatSummaries(orgId: number, userId: number) {
   const sqlite = (getDb(), _sqlite!);
   const last = sqlite
     .prepare(
       `SELECT m.employeeId, m.authorName, m.content, m.role, m.createdAt
        FROM chat_messages m
-       JOIN (SELECT employeeId, MAX(id) AS id FROM chat_messages WHERE organizationId = ? GROUP BY employeeId) x ON x.id = m.id`
+       JOIN (SELECT employeeId, MAX(id) AS id FROM chat_messages WHERE organizationId = ? AND threadUserId = ? GROUP BY employeeId) x ON x.id = m.id`
     )
-    .all(orgId) as { employeeId: number; authorName: string; content: string; role: string; createdAt: number }[];
+    .all(orgId, userId) as { employeeId: number; authorName: string; content: string; role: string; createdAt: number }[];
   const unread = sqlite
     .prepare(
       `SELECT m.employeeId, COUNT(*) AS n
        FROM chat_messages m
-       LEFT JOIN chat_reads r ON r.organizationId = m.organizationId AND r.employeeId = m.employeeId AND r.userId = ?
-       WHERE m.organizationId = ? AND m.role = 'employee' AND (r.lastReadAt IS NULL OR m.createdAt > r.lastReadAt)
+       LEFT JOIN chat_reads r ON r.organizationId = m.organizationId AND r.employeeId = m.employeeId AND r.userId = ? AND r.thread = 'me'
+       WHERE m.organizationId = ? AND m.threadUserId = ? AND m.role = 'employee' AND (r.lastReadAt IS NULL OR m.createdAt > r.lastReadAt)
        GROUP BY m.employeeId`
     )
-    .all(userId, orgId) as { employeeId: number; n: number }[];
+    .all(userId, orgId, userId) as { employeeId: number; n: number }[];
   return last.map((l) => ({
     employeeId: l.employeeId,
     authorName: l.authorName,
@@ -1119,14 +1173,24 @@ export async function chatSummaries(orgId: number, userId: number) {
   }));
 }
 
-export async function markChatRead(orgId: number, employeeId: number, userId: number) {
+/** The viewer has read a conversation up to now: their own ("me"), a person's ("u:<id>") or the Workspace one. */
+export async function markChatRead(orgId: number, employeeId: number, userId: number, thread = "me") {
   getDb()
     .insert(chatReads)
-    .values({ organizationId: orgId, employeeId, userId, lastReadAt: new Date() })
+    .values({ organizationId: orgId, employeeId, userId, thread, lastReadAt: new Date() })
     .onConflictDoUpdate({
-      target: [chatReads.organizationId, chatReads.employeeId, chatReads.userId],
+      target: [chatReads.organizationId, chatReads.employeeId, chatReads.userId, chatReads.thread],
       set: { lastReadAt: new Date() },
     })
+    .run();
+}
+
+/** Which conversations a member may open besides their own (Team page). */
+export function setMemberChatAccess(organizationId: number, userId: number, mode: "own" | "some" | "all", list: { users: number[]; workspace: boolean }) {
+  return getDb()
+    .update(organizationMembers)
+    .set({ chatAccess: mode, chatAccessList: mode === "some" ? JSON.stringify({ users: list.users, workspace: list.workspace }) : null })
+    .where(and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, userId)))
     .run();
 }
 

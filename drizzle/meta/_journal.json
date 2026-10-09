@@ -337,6 +337,13 @@
       "when": 1791549544417,
       "tag": "0047_ehr_link_and_roster_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1791557818355,
+      "tag": "0048_conversations_per_person",
+      "breakpoints": true
     }
   ]
 }

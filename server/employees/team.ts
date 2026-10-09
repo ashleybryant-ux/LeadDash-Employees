@@ -116,7 +116,8 @@ export async function handoff(orgId: number, fromKind: EmployeeKind, toKind: Emp
   const to = await db.getEmployeeByKind(orgId, toKind);
   if (!from || !to) return null;
   await db.addActivity({ organizationId: orgId, employeeId: from.id, toEmployeeId: to.id, kind: "handoff", text: text.slice(0, 500), link: link ?? workLink(to.kind) });
-  await db.createChatMessage({ organizationId: orgId, employeeId: to.id, role: "handoff", authorName: from.name, content: text.slice(0, 1000) });
+  // The handoff lands in the conversation the work came from: whoever was last talking with the sender.
+  await db.createChatMessage({ organizationId: orgId, employeeId: to.id, role: "handoff", authorName: from.name, threadUserId: db.lastThreadUserId(orgId, from.id), content: text.slice(0, 1000) });
   return { from, to };
 }
 

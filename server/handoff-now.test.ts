@@ -25,7 +25,7 @@ describe("handing work to a teammate", () => {
     const quinn = (await db.getEmployeeByKind(orgId, "hiring"))!;
     const simone = (await db.getEmployeeByKind(orgId, "coo"))!;
     const file = db.createChatFile({ organizationId: orgId, employeeId: quinn.id, name: "Grants Standing Meeting Agenda.docx", mime: "application/msword", size: 10, kind: "document", fileUrl: "/files/x.docx", text: "# Grants Standing Meeting Agenda\n\n- Open opportunities\n- Deadlines this week", pages: null });
-    await db.createChatMessage({ organizationId: orgId, employeeId: quinn.id, role: "employee", authorName: "Quinn", content: "Here's the agenda.", cards: JSON.stringify([{ type: "doc", id: file.id, title: "Grants Standing Meeting Agenda" }]) });
+    await db.createChatMessage({ organizationId: orgId, employeeId: quinn.id, role: "employee", authorName: "Quinn", threadUserId: owner.id, content: "Here's the agenda.", cards: JSON.stringify([{ type: "doc", id: file.id, title: "Grants Standing Meeting Agenda" }]) });
 
     const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: quinn.id, text: "Add these to zoom and invite the right people and attach the agenda to the meeting" });
     expect(r.reply.content).toBe("I handed it to Simone, who did it right away. Simone: Done: the Grants meeting is on Zoom for Mondays at 10:00 AM with Caroline, and the agenda is on the invite.");
