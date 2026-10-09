@@ -1,5 +1,5 @@
 import React from "react";
-import { Link, useLocation, useSearch } from "wouter";
+import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -583,75 +583,6 @@ function TeamGroup({ activeKind }: { activeKind: string | null }) {
 }
 
 // ==========================================
-// Which conversation with an employee is open
-// ==========================================
-
-/** A person's conversation (their user id), the Workspace one, or the viewer's own (undefined). Kept in the address as ?who=. */
-export type Thread = number | "workspace" | undefined;
-
-export function useThread(): { thread: Thread; set: (t: Thread) => void } {
-  const search = useSearch();
-  const [location, navigate] = useLocation();
-  const raw = new URLSearchParams(search).get("who");
-  const thread: Thread = raw === "workspace" ? "workspace" : raw && /^\d+$/.test(raw) ? Number(raw) : undefined;
-  const set = (t: Thread) => {
-    const q = new URLSearchParams(search);
-    if (t === undefined) q.delete("who");
-    else q.set("who", String(t));
-    const qs = q.toString();
-    navigate(qs ? `${location}?${qs}` : location, { replace: true });
-  };
-  return { thread, set };
-}
-
-/**
- * The Conversation picker in an employee's header: Mine, each person whose conversation the viewer may
- * open, and the Workspace one (scheduled task reports). Only shows when there is something to switch to.
- */
-export function ConversationPicker({ emp }: { emp: { id: number; name: string } }) {
-  const { currentOrgId } = useTenant();
-  const { thread, set } = useThread();
-  const q = trpc.chat.threads.useQuery({ organizationId: currentOrgId, employeeId: emp.id }, { enabled: currentOrgId > 0, refetchInterval: 20_000 });
-  const d = q.data;
-  if (!d || (!d.people.length && !d.workspace)) return null;
-  const fullName = thread === "workspace" ? "Scheduled tasks" : thread !== undefined ? (d.people.find((p) => p.userId === thread)?.name ?? "Someone") : "Mine";
-  // The button stays short so the header keeps one row; the menu carries the full names.
-  const current = thread === "workspace" ? "Scheduled" : thread !== undefined ? fullName.split(/\s+/)[0] : "Mine";
-  const others = d.people.reduce((n, p) => n + p.unread, 0) + (d.workspace?.unread ?? 0);
-  const when = (at: Date | string | null) => (at ? fmtWhen(at) : "");
-  return (
-    <span className="ld-convo" title={`Conversation: ${fullName}${others ? `. ${others} new in other conversations` : ""}`}>
-      {others > 0 && thread === undefined && <span className="ld-convo-count" aria-label={`${others} new in other conversations`}>{others}</span>}
-      <Menu label="Conversation" align="left" buttonClass="ld-btn sm ld-convo-btn" button={`${current} ▾`}>
-        {(close) => (
-          <>
-            <button type="button" role="menuitem" className={thread === undefined ? "on" : ""} onClick={() => { set(undefined); close(); }}>
-              <span>Mine</span>
-            </button>
-            {d.people.length > 0 && <span className="gp-menu-h">Team</span>}
-            {d.people.map((p) => (
-              <button key={p.userId} type="button" role="menuitem" className={thread === p.userId ? "on" : ""} onClick={() => { set(p.userId); close(); }}>
-                <span>{p.name}</span>
-                {p.unread > 0 ? <span className="ld-convo-new">{p.unread} new</span> : <span className="ld-small ld-muted">{when(p.lastAt)}</span>}
-              </button>
-            ))}
-            {d.workspace && (
-              <>
-                <span className="gp-menu-h">Workspace</span>
-                <button type="button" role="menuitem" className={thread === "workspace" ? "on" : ""} onClick={() => { set("workspace"); close(); }}>
-                  <span>Scheduled tasks</span>
-                  {d.workspace.unread > 0 ? <span className="ld-convo-new">{d.workspace.unread} new</span> : <span className="ld-small ld-muted">{when(d.workspace.lastAt)}</span>}
-                </button>
-              </>
-            )}
-          </>
-        )}
-      </Menu>
-    </span>
-  );
-}
-
-// ==========================================
 // Employee header (Chat | Work | Guidelines)
 // ==========================================
 
@@ -709,7 +640,6 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
         <Link href={`${base}/onboarding`} style={tab(active === "onboarding")}>Onboarding</Link>
         <Link href={`${base}/guidelines`} style={tab(active === "guidelines")}>Guidelines</Link>
       </nav>
-      {active === "chat" && <ConversationPicker emp={emp} />}
       {clientInfo && (
         <div className="ld-pg-toggle ld-names" role="radiogroup" aria-label="Client names" title="How client names show on your screen: in full, as first initial and last name, or hidden" style={{ marginLeft: "auto" }}>
           {(["show", "initial", "hide"] as const).map((m) => (

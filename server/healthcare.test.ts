@@ -308,10 +308,10 @@ describe("A healthcare practice workspace", () => {
     const v2 = await me.ehr.view({ organizationId: orgId });
     expect(v2.snapshot!.balances[0]).toMatchObject({ name: ehr.HIDDEN, cents: 36_000, url: "https://ehr.test/patients/b1" });
 
-    // The choice is the person's own: a teammate who may read this conversation still sees full names, and the stored message is untouched.
+    // The choice is the person's own: a teammate who may read this message still sees full names, and the stored message is untouched.
     const { reviewer } = await makeWorkspace("hc-ehr-names-other");
     await db.addOrganizationMember({ organizationId: orgId, userId: reviewer.id, role: "admin" });
-    expect((await caller(reviewer).chat.list({ organizationId: orgId, employeeId: avery.id, thread: owner.id })).at(-1)!.content).toContain("Avery Price owes $360");
+    expect((await caller(reviewer).chat.list({ organizationId: orgId, employeeId: avery.id })).at(-1)!.content).toContain("Avery Price owes $360");
     expect((await db.listChatMessages(orgId, avery.id)).at(-1)!.content).toContain("Avery Price owes $360");
 
     // A name learned from a read on request is remembered too.

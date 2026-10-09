@@ -1,23 +1,25 @@
 /**
- * Who sees which conversations with the AI employees.
+ * Who sees what in an employee's chat.
  *
- * Each person has their own conversation with each employee (chat_messages.threadUserId is the
- * person; null is the Workspace conversation: scheduled task reports and what employees post on
- * their own). Owners and admins see every conversation in the workspace and can write in any of
- * them. Everyone else sees their own, plus whatever the Team page opens for them, read only.
+ * Every workspace has one chat per AI employee, and every message in it says who said it. Each
+ * message also belongs to a person (chat_messages.threadUserId: the person who asked, with the
+ * employee's answer filed under the same person) or to nobody (null: scheduled task reports).
+ * What a viewer sees in the chat is the union of what they may read: owners and admins read
+ * everything; everyone else reads their own messages and the employee's answers to them, plus
+ * whatever the Team page opens for them (other people's, or the scheduled task reports).
  */
 import type { OrganizationMember } from "../drizzle/schema";
-
-/** A conversation: a person's (their user id) or the Workspace one. */
-export type Thread = number | "workspace";
 
 export type ChatAccess = { mode: "own" | "some" | "all"; users: number[]; workspace: boolean };
 
 export type Viewer = { userId: number; role: string; support?: boolean };
 
+/** Which messages a viewer may read: every one, or those filed under these people (null: scheduled task reports). */
+export type Visible = "all" | (number | null)[];
+
 export const MANAGER_ROLES = ["owner", "admin"];
 
-/** The conversations a member may open, as stored on their membership. */
+/** What a member may read beyond their own messages, as stored on their membership. */
 export function accessOf(m: Pick<OrganizationMember, "role" | "chatAccess" | "chatAccessList"> | null | undefined): ChatAccess {
   if (!m) return { mode: "own", users: [], workspace: false };
   if (MANAGER_ROLES.includes(m.role)) return { mode: "all", users: [], workspace: true };
@@ -31,43 +33,35 @@ export function accessOf(m: Pick<OrganizationMember, "role" | "chatAccess" | "ch
   return { mode: m.chatAccess === "some" || m.chatAccess === "all" ? m.chatAccess : "own", users, workspace: list.workspace === true };
 }
 
-/** Whether this viewer may read that conversation. */
-export function canSee(viewer: Viewer, access: ChatAccess, thread: Thread): boolean {
-  if (viewer.support || MANAGER_ROLES.includes(viewer.role)) return true;
-  if (thread === viewer.userId) return true;
-  if (access.mode === "all") return true;
-  if (access.mode === "some") return thread === "workspace" ? access.workspace : access.users.includes(thread);
-  return false;
+/** The messages this viewer reads in an employee's chat. */
+export function visibleFor(viewer: Viewer, access: ChatAccess): Visible {
+  if (viewer.support || MANAGER_ROLES.includes(viewer.role) || access.mode === "all") return "all";
+  const mine: (number | null)[] = [viewer.userId];
+  if (access.mode === "some") {
+    for (const id of access.users) if (!mine.includes(id)) mine.push(id);
+    if (access.workspace) mine.push(null);
+  }
+  return mine;
 }
 
-/** Whether this viewer may write in that conversation: their own, or any one for owners and admins. */
-export function canWrite(viewer: Viewer, thread: Thread): boolean {
-  if (viewer.support || MANAGER_ROLES.includes(viewer.role)) return true;
-  return thread === viewer.userId;
+/** Whether a message filed under this person (null: a scheduled task report) is within what the viewer reads. */
+export function canSee(visible: Visible, threadUserId: number | null): boolean {
+  return visible === "all" || visible.includes(threadUserId);
 }
 
-/** Which people and the Workspace conversation show in the picker, besides their own. */
-export function pickable(viewer: Viewer, access: ChatAccess, memberIds: number[]): { users: number[]; workspace: boolean } {
-  const others = memberIds.filter((id) => id !== viewer.userId);
-  if (viewer.support || MANAGER_ROLES.includes(viewer.role) || access.mode === "all") return { users: others, workspace: true };
-  if (access.mode === "some") return { users: others.filter((id) => access.users.includes(id)), workspace: access.workspace };
-  return { users: [], workspace: false };
+/**
+ * Whose messages a new message is filed under. A person's own message is theirs. An owner or admin
+ * replying (Reply) to someone else's message files it under that person, so they see the answer too.
+ */
+export function fileUnder(viewer: Viewer, quoted: { threadUserId: number | null } | null | undefined): number | null {
+  if (quoted && quoted.threadUserId !== viewer.userId && (viewer.support || MANAGER_ROLES.includes(viewer.role))) return quoted.threadUserId;
+  return viewer.userId;
 }
 
-/** The read marker key for a conversation, from the viewer's side. */
-export function readKey(viewer: { userId: number }, thread: Thread): string {
-  return thread === "workspace" ? "workspace" : thread === viewer.userId ? "me" : `u:${thread}`;
-}
-
-/** The thread column value for a conversation. */
-export function threadUserId(thread: Thread): number | null {
-  return thread === "workspace" ? null : thread;
-}
-
-/** What the Team page shows in the Conversations column. */
+/** What the Team page shows in the Sees column. */
 export function accessLabel(m: Pick<OrganizationMember, "role" | "chatAccess" | "chatAccessList">): string {
   const a = accessOf(m);
-  if (a.mode === "all") return "Everyone's";
+  if (a.mode === "all") return "Everything";
   if (a.mode === "some") {
     const n = a.users.length + (a.workspace ? 1 : 0);
     return n ? `Own + ${n}` : "Own only";

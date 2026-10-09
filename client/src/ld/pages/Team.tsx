@@ -22,7 +22,7 @@ type LimitMode = "default" | "custom" | "none";
 type ChatAccess = "own" | "some" | "all";
 type Member = { userId: number; email: string; name: string | null; avatarUrl?: string | null; role: Role; chatAccess?: ChatAccess; chatAccessList?: string | null };
 
-/** Which conversations with the AI employees a member may open, as stored on their membership. */
+/** What a member sees in the AI employees' chats beyond their own messages, as stored on their membership. */
 function accessOf(m: Member): { mode: ChatAccess; users: number[]; workspace: boolean } {
   if (m.role === "owner" || m.role === "admin") return { mode: "all", users: [], workspace: true };
   let list: { users?: unknown; workspace?: unknown } = {};
@@ -34,10 +34,10 @@ function accessOf(m: Member): { mode: ChatAccess; users: number[]; workspace: bo
   return { mode: m.chatAccess === "some" || m.chatAccess === "all" ? m.chatAccess : "own", users: Array.isArray(list.users) ? list.users.filter((u): u is number => Number.isInteger(u)) : [], workspace: list.workspace === true };
 }
 
-/** The Conversations column: Everyone's, Own only, or Own + how many more. */
+/** The Sees column: Everything, Own only, or Own + how many more. */
 function accessLabel(m: Member) {
   const a = accessOf(m);
-  if (a.mode === "all") return "Everyone's";
+  if (a.mode === "all") return "Everything";
   const n = a.mode === "some" ? a.users.length + (a.workspace ? 1 : 0) : 0;
   return n ? `Own + ${n}` : "Own only";
 }
@@ -174,7 +174,7 @@ export default function Team() {
   const [role, setRole] = React.useState<Role>("member");
   const [limitMode, setLimitMode] = React.useState<LimitMode>("default");
   const [own, setOwn] = React.useState("");
-  // Conversations they can see: their own, their own plus the people checked (and the Workspace one), or everyone's.
+  // What they see in the chats: their own messages, their own plus the people checked (and scheduled task reports), or everything.
   const [access, setAccess] = React.useState<{ mode: ChatAccess; users: number[]; workspace: boolean }>({ mode: "own", users: [], workspace: false });
   const [inviting, setInviting] = React.useState(false);
   const [inv, setInv] = React.useState<{ name: string; email: string; role: InviteRole }>({ name: "", email: "", role: "member" });
@@ -246,7 +246,7 @@ export default function Team() {
             <span />
             <span>Person</span>
             <span>AI this month</span>
-            <span>Conversations</span>
+            <span>Sees in chats</span>
             <span>Role</span>
             <span />
           </div>
@@ -348,14 +348,14 @@ export default function Team() {
                     )}
                   </div>
                   <fieldset style={{ border: 0, margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8, minWidth: 0, gridColumn: "2 / 4", marginTop: 6 }}>
-                    <legend className="ld-lbl" style={{ padding: 0, marginBottom: 6 }}>Conversations they can see</legend>
+                    <legend className="ld-lbl" style={{ padding: 0, marginBottom: 6 }}>What they see in the chats</legend>
                     {role === "owner" || role === "admin" ? (
-                      <span className="ld-muted" style={{ fontSize: 13.5 }}>Everyone's. Owners and admins see every conversation with the AI employees and can write in any of them.</span>
+                      <span className="ld-muted" style={{ fontSize: 13.5 }}>Everything. Owners and admins see every message in every AI employee's chat.</span>
                     ) : (
                       <>
                         <label style={{ display: "grid", gridTemplateColumns: "18px minmax(0,1fr)", gap: 10, alignItems: "start", fontSize: 13.5, lineHeight: 1.35, cursor: "pointer" }}>
                           <input type="radio" name={`see-${m.userId}`} checked={access.mode === "own"} onChange={() => setAccess({ ...access, mode: "own" })} style={{ ...radio, marginTop: 2 }} />
-                          <span><b>Their own only</b><br /><span className="ld-muted">What they say to the AI employees and what the employees answer them.</span></span>
+                          <span><b>Their own only</b><br /><span className="ld-muted">Their messages and the employees' answers to them.</span></span>
                         </label>
                         <label style={{ display: "grid", gridTemplateColumns: "18px minmax(0,1fr)", gap: 10, alignItems: "start", fontSize: 13.5, lineHeight: 1.35, cursor: "pointer" }}>
                           <input type="radio" name={`see-${m.userId}`} checked={access.mode === "some"} onChange={() => setAccess({ ...access, mode: "some" })} style={{ ...radio, marginTop: 2 }} />
@@ -370,12 +370,12 @@ export default function Team() {
                           ))}
                           <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
                             <input type="checkbox" style={radio} checked={access.workspace} onChange={(e) => setAccess({ ...access, mode: "some", workspace: e.target.checked })} />
-                            Scheduled tasks
+                            Scheduled task reports
                           </label>
                         </div>
                         <label style={{ display: "grid", gridTemplateColumns: "18px minmax(0,1fr)", gap: 10, alignItems: "start", fontSize: 13.5, lineHeight: 1.35, cursor: "pointer" }}>
                           <input type="radio" name={`see-${m.userId}`} checked={access.mode === "all"} onChange={() => setAccess({ ...access, mode: "all" })} style={{ ...radio, marginTop: 2 }} />
-                          <span><b>Everyone's</b><br /><span className="ld-muted">Every conversation in this workspace, read only.</span></span>
+                          <span><b>Everything</b><br /><span className="ld-muted">Every message in every chat.</span></span>
                         </label>
                       </>
                     )}

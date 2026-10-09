@@ -1032,13 +1032,12 @@ export async function logAction(item: InsertAuditLog) {
 // ==========================================
 
 /**
- * The messages in one conversation with an employee: a person's (their user id), the Workspace
- * one (null), or every conversation at once ("all", for work that spans the whole chat).
+ * The messages in an employee's chat that a viewer may read: every one ("all"), or those filed
+ * under these people (null: scheduled task reports). Each message says who said it.
  */
-export async function listChatMessages(orgId: number, employeeId: number, limit = 200, thread: number | null | "all" = "all") {
+export async function listChatMessages(orgId: number, employeeId: number, limit = 200, visible: "all" | (number | null)[] = "all") {
   const where = [eq(chatMessages.organizationId, orgId), eq(chatMessages.employeeId, employeeId)];
-  if (thread === null) where.push(isNull(chatMessages.threadUserId));
-  else if (thread !== "all") where.push(eq(chatMessages.threadUserId, thread));
+  if (visible !== "all") where.push(visibleClause(visible));
   const rows = getDb()
     .select()
     .from(chatMessages)
@@ -1049,10 +1048,19 @@ export async function listChatMessages(orgId: number, employeeId: number, limit 
   return rows.reverse();
 }
 
+/** The SQL for "filed under one of these people" (null: scheduled task reports). */
+function visibleClause(visible: (number | null)[]) {
+  const ids = visible.filter((v): v is number => v != null);
+  const parts = [];
+  if (ids.length) parts.push(inArray(chatMessages.threadUserId, ids));
+  if (visible.includes(null)) parts.push(isNull(chatMessages.threadUserId));
+  if (!parts.length) return sql`0 = 1`;
+  return parts.length === 1 ? parts[0] : or(...parts)!;
+}
+
 /**
- * Whose conversation an employee's own post goes to when nobody asked: the person who last talked
- * with that employee, else the workspace's owner. Never the Workspace conversation, which holds
- * only what scheduled tasks produce.
+ * Whose messages an employee's own post is filed under when nobody asked: the person who last
+ * talked with that employee, else the workspace's owner. Never the scheduled task reports.
  */
 export function lastThreadUserId(orgId: number, employeeId: number): number | null {
   const row = getDb()
@@ -1071,26 +1079,6 @@ export function lastThreadUserId(orgId: number, employeeId: number): number | nu
     .limit(1)
     .all()[0];
   return owner?.userId ?? null;
-}
-
-/**
- * Each conversation with an employee that has messages: whose it is, when it last moved, and how many
- * employee messages the viewer has not read in it.
- */
-export function chatThreads(orgId: number, employeeId: number, viewerId: number) {
-  const sqlite = (getDb(), _sqlite!);
-  const rows = sqlite
-    .prepare(
-      `SELECT m.threadUserId AS threadUserId, MAX(m.createdAt) AS lastAt,
-              SUM(CASE WHEN m.role = 'employee' AND (r.lastReadAt IS NULL OR m.createdAt > r.lastReadAt) THEN 1 ELSE 0 END) AS unread
-       FROM chat_messages m
-       LEFT JOIN chat_reads r ON r.organizationId = m.organizationId AND r.employeeId = m.employeeId AND r.userId = ?
-         AND r.thread = CASE WHEN m.threadUserId IS NULL THEN 'workspace' WHEN m.threadUserId = ? THEN 'me' ELSE 'u:' || m.threadUserId END
-       WHERE m.organizationId = ? AND m.employeeId = ?
-       GROUP BY m.threadUserId`
-    )
-    .all(viewerId, viewerId, orgId, employeeId) as { threadUserId: number | null; lastAt: number; unread: number }[];
-  return rows.map((r) => ({ threadUserId: r.threadUserId, lastAt: new Date(r.lastAt * 1000), unread: r.unread }));
 }
 
 export async function getChatMessage(orgId: number, id: number) {
@@ -1144,25 +1132,31 @@ export function updateChatFileText(orgId: number, id: number, text: string) {
   getDb().update(chatFiles).set({ text }).where(and(eq(chatFiles.organizationId, orgId), eq(chatFiles.id, id))).run();
 }
 
-/** Last message and unread count for every employee in a workspace, for one person: their own conversations only. */
-export async function chatSummaries(orgId: number, userId: number) {
+/** Last message and unread count for every employee in a workspace, for one person, within what they may read. */
+export async function chatSummaries(orgId: number, userId: number, visible: "all" | (number | null)[] = "all") {
   const sqlite = (getDb(), _sqlite!);
+  // "filed under one of these people": a SQL fragment with its parameters.
+  const ids = visible === "all" ? [] : visible.filter((v): v is number => v != null);
+  const seen =
+    visible === "all"
+      ? ""
+      : ` AND (${[ids.length ? `threadUserId IN (${ids.map(() => "?").join(",")})` : "", visible.includes(null) ? "threadUserId IS NULL" : ""].filter(Boolean).join(" OR ") || "0 = 1"})`;
   const last = sqlite
     .prepare(
       `SELECT m.employeeId, m.authorName, m.content, m.role, m.createdAt
        FROM chat_messages m
-       JOIN (SELECT employeeId, MAX(id) AS id FROM chat_messages WHERE organizationId = ? AND threadUserId = ? GROUP BY employeeId) x ON x.id = m.id`
+       JOIN (SELECT employeeId, MAX(id) AS id FROM chat_messages WHERE organizationId = ?${seen} GROUP BY employeeId) x ON x.id = m.id`
     )
-    .all(orgId, userId) as { employeeId: number; authorName: string; content: string; role: string; createdAt: number }[];
+    .all(orgId, ...ids) as { employeeId: number; authorName: string; content: string; role: string; createdAt: number }[];
   const unread = sqlite
     .prepare(
       `SELECT m.employeeId, COUNT(*) AS n
        FROM chat_messages m
        LEFT JOIN chat_reads r ON r.organizationId = m.organizationId AND r.employeeId = m.employeeId AND r.userId = ? AND r.thread = 'me'
-       WHERE m.organizationId = ? AND m.threadUserId = ? AND m.role = 'employee' AND (r.lastReadAt IS NULL OR m.createdAt > r.lastReadAt)
+       WHERE m.organizationId = ?${seen.replace(/threadUserId/g, "m.threadUserId")} AND m.role = 'employee' AND (r.lastReadAt IS NULL OR m.createdAt > r.lastReadAt)
        GROUP BY m.employeeId`
     )
-    .all(userId, orgId, userId) as { employeeId: number; n: number }[];
+    .all(userId, orgId, ...ids) as { employeeId: number; n: number }[];
   return last.map((l) => ({
     employeeId: l.employeeId,
     authorName: l.authorName,
@@ -1173,7 +1167,7 @@ export async function chatSummaries(orgId: number, userId: number) {
   }));
 }
 
-/** The viewer has read a conversation up to now: their own ("me"), a person's ("u:<id>") or the Workspace one. */
+/** The viewer has read an employee's chat up to now. */
 export async function markChatRead(orgId: number, employeeId: number, userId: number, thread = "me") {
   getDb()
     .insert(chatReads)

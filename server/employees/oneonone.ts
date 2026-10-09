@@ -28,7 +28,7 @@ function parse<T>(raw: string | null | undefined, fallback: T): T {
 export async function endOneOnOne(orgId: number, employeeId: number, who: { id: number | null; name: string }, opts: { sinceId: number; startedAt: Date }) {
   const emp = await db.getEmployeeForOrg(employeeId, orgId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
-  const msgs = (await db.listChatMessages(orgId, emp.id, 300, who.id ?? null)).filter((m) => m.id >= opts.sinceId && (m.role === "user" || m.role === "employee"));
+  const msgs = (await db.listChatMessages(orgId, emp.id, 300, [who.id ?? null])).filter((m) => m.id >= opts.sinceId && (m.role === "user" || m.role === "employee"));
   if (!msgs.some((m) => m.role === "user") || msgs.length < 2) return { meetingId: null, reply: null };
 
   const org = await db.getOrganizationById(orgId);

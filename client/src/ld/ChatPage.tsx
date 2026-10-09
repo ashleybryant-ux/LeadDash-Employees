@@ -3,7 +3,7 @@ import { Link, Redirect } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Avatar, BottomNav, ChatList, EmpHeader, ErrorLine, PersonAvatar, Rail, useEmployees, useGo, useIsMobile, useThread } from "./ui";
+import { Avatar, BottomNav, ChatList, EmpHeader, ErrorLine, PersonAvatar, Rail, useEmployees, useGo, useIsMobile } from "./ui";
 import { SUGGESTIONS, fmtDate, fmtTime, isSameDay, parseJson, type Kind } from "./meta";
 import Guidelines from "./work/Guidelines";
 import ApplyWork from "./apply/ApplyWork";
@@ -147,14 +147,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   // While the employee works in the background, the chat shows it and picks up their messages as they post.
   const working = trpc.chat.working.useQuery({ organizationId: currentOrgId, employeeId: emp.id }, { refetchInterval: 3000 });
   const busy = Boolean(working.data?.busy);
-  // Which conversation is open: the person's own, another person's (owners and admins, or what the Team page opened), or the Workspace one.
-  const { thread, set: setThread } = useThread();
-  const threadsQ = trpc.chat.threads.useQuery({ organizationId: currentOrgId, employeeId: emp.id }, { enabled: currentOrgId > 0 });
-  const mine = thread === undefined;
-  const canWrite = mine || Boolean(threadsQ.data?.canWriteOthers);
-  const whose = thread === "workspace" ? "Scheduled tasks" : thread !== undefined ? threadsQ.data?.people.find((p) => p.userId === thread)?.name ?? null : null;
-  const messages = trpc.chat.list.useQuery({ organizationId: currentOrgId, employeeId: emp.id, thread }, { refetchInterval: busy ? 4000 : 20_000, retry: false });
-  const markRead = trpc.chat.markRead.useMutation({ onSuccess: () => { utils.chat.summaries.invalidate(); utils.chat.threads.invalidate(); } });
+  const messages = trpc.chat.list.useQuery({ organizationId: currentOrgId, employeeId: emp.id }, { refetchInterval: busy ? 4000 : 20_000 });
+  const markRead = trpc.chat.markRead.useMutation({ onSuccess: () => utils.chat.summaries.invalidate() });
   const [text, setText] = React.useState("");
   const [pending, setPending] = React.useState<string | null>(null);
   // The last message id when a send started: once the list shows the person's own newer message, the grey copy goes.
@@ -194,7 +188,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
     sending: send.isPending,
     say: (value) => {
       beginPending(value);
-      send.mutate({ organizationId: currentOrgId, employeeId: emp.id, thread, text: value, attachmentIds: [], spoken: true });
+      send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: value, attachmentIds: [], spoken: true });
     },
     onEnded: () => {
       void utils.chat.list.invalidate();
@@ -205,10 +199,9 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   const composer = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    if (messages.isError) return;
-    markRead.mutate({ organizationId: currentOrgId, employeeId: emp.id, thread });
+    markRead.mutate({ organizationId: currentOrgId, employeeId: emp.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emp.id, currentOrgId, thread, messages.data?.length]);
+  }, [emp.id, currentOrgId, messages.data?.length]);
 
   React.useEffect(() => {
     // Cards (page previews, drafts) load after the message, so scroll again once they have height.
@@ -236,7 +229,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
     setText("");
     files.clear();
     setReplyTo(null);
-    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, thread, text: v, attachmentIds: attached.map((f) => f.id), spoken: talk.active, replyToId: replyTo?.id });
+    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: v, attachmentIds: attached.map((f) => f.id), spoken: talk.active, replyToId: replyTo?.id });
   };
   /** Reply picks one message; its first line shows in the box and goes along with what you send. */
   const startReply = (m: { id: number; authorName: string; content: string }) => {
@@ -247,7 +240,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   const pick = (value: string) => {
     if (send.isPending) return;
     beginPending(value);
-    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, thread, text: value, attachmentIds: [], spoken: talk.active });
+    send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: value, attachmentIds: [], spoken: talk.active });
   };
 
   const list = messages.data ?? [];
@@ -260,15 +253,9 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   return (
     <div className="ld-chatpane" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div className="ld-chatmsgs" style={{ flex: 1, padding: "24px 32px", display: "flex", flexDirection: "column", gap: 22, maxWidth: 900, boxSizing: "border-box", width: "100%" }}>
-        {messages.isError && (
-          <div className="ld-convo-bar" role="alert">
-            <span>{messages.error.message}</span>
-            <button type="button" className="ld-btn sm" onClick={() => setThread(undefined)}>Mine</button>
-          </div>
-        )}
-        {list.length === 0 && pending === null && !messages.isError && (
+        {list.length === 0 && pending === null && (
           <div className="ld-empty" style={{ textAlign: "left", padding: "8px 0" }}>
-            {mine ? emp.description : thread === "workspace" ? `Nothing from scheduled tasks yet. Reports ${emp.name} sends on a schedule land here.` : `${whose ?? "This person"} has not talked with ${emp.name} yet.`}
+            {emp.description}
           </div>
         )}
         {list.map((m) => {
@@ -425,18 +412,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
       </div>
 
       <div ref={composer} className="ld-composer" style={{ padding: "0 32px 24px 32px", display: "flex", flexDirection: "column", gap: 12, maxWidth: 900, boxSizing: "border-box", width: "100%", position: "sticky", bottom: 0, background: "#f8fafb", paddingTop: 12 }}>
-        {!mine && !messages.isError && (
-          <div className="ld-convo-bar" role="status">
-            <span>
-              <b>{thread === "workspace" ? `Scheduled task reports from ${emp.name}.` : `${whose ?? "This person"}'s conversation with ${emp.name}.`}</b>{" "}
-              {canWrite ? `What you send here goes to ${emp.name} in this conversation.` : "Read only."}
-            </span>
-            <button type="button" className="ld-btn sm" onClick={() => setThread(undefined)}>Mine</button>
-          </div>
-        )}
-        {canWrite && !messages.isError && <>
         <VoiceBar o={talk} emp={emp} thinking={send.isPending} />
-        {!lastHasReplies && !talk.active && mine && <div className="ld-sugs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {!lastHasReplies && !talk.active && <div className="ld-sugs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(SUGGESTIONS[emp.kind as Kind] ?? []).map((s) => (
             <button key={s} type="button" className="ld-sug" onClick={() => (s.startsWith("Paste") ? setText("") : submit(s))} disabled={send.isPending}>
               {s}
@@ -479,7 +456,6 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             compact
           />
         </div>
-        </>}
       </div>
     </div>
   );
