@@ -112,8 +112,6 @@ export const organizations = sqliteTable("organizations", {
   ops: text("ops"),
   /** AI limits per person (JSON): the default monthly limit, whether owners and admins are exempt, the heads-up point and what happens at the limit. */
   aiLimits: text("aiLimits"),
-  /** JSON {on, by, at}: the owner confirmed the Claude and ChatGPT link is used only in a BAA-covered ChatGPT workspace, so client information may go through it (healthcare). */
-  mcpClientInfo: text("mcpClientInfo"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

@@ -323,6 +323,13 @@
       "when": 1791506973368,
       "tag": "0045_mcp_client_info",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "6",
+      "when": 1791507928308,
+      "tag": "0046_drop_mcp_client_info",
+      "breakpoints": true
     }
   ]
 }

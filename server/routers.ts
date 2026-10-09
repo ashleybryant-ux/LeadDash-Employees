@@ -3841,28 +3841,8 @@ export const appRouter = router({
   account: router({
     /** The Claude and ChatGPT connector link for this workspace. */
     connector: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
-      const m = await requireMember(ctx, input.organizationId, "member");
-      const org = await db.getOrganizationById(input.organizationId);
-      const { clientInfoSetting } = await import("./mcp");
-      return { ...linkFor(ctx.user.id, input.organizationId), healthcare: org?.orgType === "healthcare", clientInfo: clientInfoSetting(org?.mcpClientInfo), canSetClientInfo: m.role === "owner" };
-    }),
-    /** A healthcare workspace's owner confirms the link is used only in a BAA-covered ChatGPT workspace, or takes that back. */
-    setConnectorClientInfo: protectedProcedure.input(orgInput.extend({ on: z.boolean() })).mutation(async ({ ctx, input }) => {
-      blockReviewer(ctx);
-      await requireMember(ctx, input.organizationId, "owner");
-      const org = await db.getOrganizationById(input.organizationId);
-      if (org?.orgType !== "healthcare") throw new TRPCError({ code: "BAD_REQUEST", message: "This setting is for healthcare workspaces." });
-      const who = personName(ctx.user);
-      const value = { on: input.on, by: who, at: new Date().toISOString() };
-      await db.updateOrganization(input.organizationId, { mcpClientInfo: JSON.stringify(value) });
-      await db.logAction({
-        organizationId: input.organizationId,
-        actorType: "human_user",
-        actorName: who,
-        action: input.on ? "Allowed client information on the Claude and ChatGPT link" : "Kept client information off the Claude and ChatGPT link",
-        details: input.on ? "Confirmed the link is used only in the practice's BAA-covered ChatGPT workspace." : "Harper, Malik, Camille and Avery answer only inside LeadDash Employees.",
-      });
-      return value;
+      await requireMember(ctx, input.organizationId, "member");
+      return linkFor(ctx.user.id, input.organizationId);
     }),
     newConnector: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");

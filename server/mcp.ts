@@ -120,12 +120,6 @@ async function callTool(ctx: Ctx, name: string, args: Record<string, unknown>) {
       const emps = await db.listEmployeesByOrg(ctx.orgId);
       const emp = emps.find((e) => e.name.toLowerCase() === want) ?? emps.find((e) => want.includes(e.name.toLowerCase()) || e.roleTitle.toLowerCase().includes(want) || e.kind === want);
       if (!emp) return text(`There's no employee called "${s("employee")}". The team: ${emps.map((e) => `${e.name} (${e.roleTitle})`).join(", ")}.`, true);
-      // Claude and ChatGPT are not under the practice's BAA: in a healthcare workspace the employees who
-      // work with client information answer only inside LeadDash Employees, never through this link.
-      if (await healthcare(ctx.orgId)) {
-        const { worksWithClientInfo } = await import("./employees/roster");
-        if (worksWithClientInfo(emp.kind, "healthcare")) return text(`${emp.name} works with client information, which stays inside LeadDash Employees. Ask ${emp.name} in the app.`, true);
-      }
       const { sendChatMessage } = await import("./employees/chat");
       const r = await sendChatMessage({ organizationId: ctx.orgId, employeeId: emp.id, text: `${s("message")}\n(Sent from ${ctx.client})`, authorName: ctx.who, userId: ctx.userId });
       const cards = (() => {
@@ -141,39 +135,10 @@ async function callTool(ctx: Ctx, name: string, args: Record<string, unknown>) {
       const items = (await db.listOutboundItemsByOrg(ctx.orgId)).filter((m) => m.status === "pending_approval").slice(0, 25);
       if (!items.length) return text("Nothing is waiting for approval.");
       const emps = await db.listEmployeesByOrg(ctx.orgId);
-      // A healthcare practice's approvals can name a client: counts by employee only.
-      if (await healthcare(ctx.orgId)) {
-        const by = new Map<string, number>();
-        for (const m of items) {
-          const who = emps.find((e) => e.id === m.employeeId)?.name ?? "an employee";
-          by.set(who, (by.get(who) ?? 0) + 1);
-        }
-        return text(`${items.length} waiting in Approvals: ${Array.from(by, ([who, n]) => `${n} from ${who}`).join(", ")}. Open them in LeadDash Employees, Approvals.`);
-      }
       return text(`${items.length} waiting in Approvals:\n${items.map((m) => `- ${m.title} (${emps.find((e) => e.id === m.employeeId)?.name ?? "an employee"})`).join("\n")}\nApprove them in LeadDash Employees, Approvals.`);
     }
   }
   return null;
-}
-
-/**
- * Whether client information stays off this link: a healthcare workspace, unless its owner confirmed
- * the link is used only in a BAA-covered ChatGPT workspace (Integrations would say who and when).
- */
-async function healthcare(orgId: number) {
-  const org = await db.getOrganizationById(orgId);
-  return org?.orgType === "healthcare" && !clientInfoSetting(org.mcpClientInfo).on;
-}
-
-export type ClientInfoSetting = { on: boolean; by: string | null; at: string | null };
-
-export function clientInfoSetting(raw: string | null | undefined): ClientInfoSetting {
-  try {
-    const v = JSON.parse(raw || "{}") as Partial<ClientInfoSetting>;
-    return { on: v.on === true, by: typeof v.by === "string" ? v.by : null, at: typeof v.at === "string" ? v.at : null };
-  } catch {
-    return { on: false, by: null, at: null };
-  }
 }
 
 async function handle(ctx: Ctx, msg: any): Promise<any | null> {
