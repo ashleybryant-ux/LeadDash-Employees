@@ -115,6 +115,19 @@ async function adminWorkspaces(userId: number) {
   return out;
 }
 
+/**
+ * How this person chose to see client names (Show, Initial or Hide) in a
+ * practice workspace; a business workspace has no client names to shorten.
+ */
+async function clientNamesFor(ctx: TrpcContext & { user: User }, organizationId: number) {
+  const ehr = await import("./ehr");
+  const org = await db.getOrganizationById(organizationId);
+  if (org?.orgType !== "healthcare") return { mode: "show" as const, screen: (t: string) => t };
+  const me = (await db.getUserById(ctx.user.id)) ?? ctx.user;
+  const mode = ehr.nameModeOf(me.notifyPrefs);
+  return { mode, screen: (t: string) => ehr.forScreen(organizationId, mode, t) };
+}
+
 async function requireMember(ctx: TrpcContext & { user: User }, organizationId: number, minRole: Role = "reviewer") {
   if (ctx.user.role === "admin") return { role: "owner" as Role, support: true };
   // The app reviewer only ever reaches the demo workspace.
@@ -1438,7 +1451,24 @@ export const appRouter = router({
   ehr: router({
     view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return (await import("./ehr")).view(input.organizationId);
+      const { mode } = await clientNamesFor(ctx, input.organizationId);
+      return (await import("./ehr")).viewFor(input.organizationId, mode);
+    }),
+    /** This person's Show, Initial or Hide choice for client names (the switch in the employee header). */
+    nameMode: protectedProcedure.query(async ({ ctx }) => {
+      const me = (await db.getUserById(ctx.user.id)) ?? ctx.user;
+      return { mode: (await import("./ehr")).nameModeOf(me.notifyPrefs) };
+    }),
+    setNameMode: protectedProcedure.input(z.object({ mode: z.enum(["show", "initial", "hide"]) })).mutation(async ({ ctx, input }) => {
+      const me = (await db.getUserById(ctx.user.id)) ?? ctx.user;
+      let saved: Record<string, unknown> = {};
+      try {
+        saved = me.notifyPrefs ? (JSON.parse(me.notifyPrefs) as Record<string, unknown>) : {};
+      } catch {
+        saved = {};
+      }
+      await db.updateUser(ctx.user.id, { notifyPrefs: JSON.stringify({ ...saved, _clientNames: input.mode }) });
+      return { mode: input.mode };
     }),
     connect: protectedProcedure.input(orgInput.extend({ url: z.string().min(8).max(300), key: z.string().min(1).max(500) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "admin");
@@ -3337,7 +3367,8 @@ export const appRouter = router({
 
     summaries: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return db.chatSummaries(input.organizationId, ctx.user.id);
+      const { screen } = await clientNamesFor(ctx, input.organizationId);
+      return (await db.chatSummaries(input.organizationId, ctx.user.id)).map((s) => ({ ...s, content: screen(s.content) }));
     }),
 
     list: protectedProcedure
@@ -3346,7 +3377,8 @@ export const appRouter = router({
         await requireMember(ctx, input.organizationId);
         const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
         if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
-        return db.listChatMessages(input.organizationId, input.employeeId);
+        const { screen } = await clientNamesFor(ctx, input.organizationId);
+        return (await db.listChatMessages(input.organizationId, input.employeeId)).map((m) => ({ ...m, content: screen(m.content) }));
       }),
 
     /** Presenter notes on one slide of a deck an employee made. */
@@ -3422,7 +3454,8 @@ export const appRouter = router({
           audioUrl = id ? `/api/voice/audio/${id}` : null;
           voiceError = id ? null : forViewer(ctx, huddle.lastSpeechError());
         }
-        return { ...result, audioUrl, voiceError };
+        const { screen } = await clientNamesFor(ctx, input.organizationId);
+        return { ...result, user: result.user ? { ...result.user, content: screen(result.user.content) } : result.user, reply: result.reply ? { ...result.reply, content: screen(result.reply.content) } : result.reply, audioUrl, voiceError };
       }),
 
     /** Ends a one-on-one: notes and action items from the chat since it started, posted back in the chat. */

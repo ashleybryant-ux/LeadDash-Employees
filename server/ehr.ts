@@ -48,6 +48,8 @@ export type EhrSnapshot = {
   lapsed: EhrLapsed[];
   docs: EhrClinicianDocs[];
   totals: { collectedMonthCents: number; unpaid30Cents: number; balancesCents: number; lapsed: number };
+  /** Every client name an employee has seen, from snapshots and reads on request, so it can be shortened or hidden wherever it shows. */
+  names: string[];
 };
 
 const PROVIDER = "leaddash_ehr" as const;
@@ -150,7 +152,7 @@ export async function disconnect(orgId: number) {
 // Reading, and what changed since last time
 // ==========================================
 
-const empty = (): EhrSnapshot => ({ generatedAt: "", practice: "", claims: [], unpaid: [], balances: [], eligibility: [], paperwork: [], appointments: [], lapsed: [], docs: [], totals: { collectedMonthCents: 0, unpaid30Cents: 0, balancesCents: 0, lapsed: 0 } });
+const empty = (): EhrSnapshot => ({ generatedAt: "", practice: "", claims: [], unpaid: [], balances: [], eligibility: [], paperwork: [], appointments: [], lapsed: [], docs: [], totals: { collectedMonthCents: 0, unpaid30Cents: 0, balancesCents: 0, lapsed: 0 }, names: [] });
 
 function normalize(raw: unknown): EhrSnapshot {
   const r = (raw ?? {}) as Partial<EhrSnapshot>;
@@ -168,7 +170,115 @@ function normalize(raw: unknown): EhrSnapshot {
     lapsed: arr<EhrLapsed>(r.lapsed),
     docs: arr<EhrClinicianDocs>(r.docs),
     totals: { ...base.totals, ...(r.totals ?? {}), lapsed: arr<EhrLapsed>(r.lapsed).length },
+    names: arr<string>(r.names).filter((n) => typeof n === "string" && n.trim()).slice(0, 5000),
   };
+}
+
+// ==========================================
+// How client names show: Show, Initial or Hide (2026-10-08)
+// ------------------------------------------
+// A switch in the employee header, per person. The employees always reason
+// over the real names (on providers under the BAA); this changes only what
+// reaches the screen: chat, the Work tabs and the chat list. Emails, texts
+// and push notices carry initials whatever the switch says.
+// ==========================================
+
+export const NAME_MODES = ["show", "initial", "hide"] as const;
+export type NameMode = (typeof NAME_MODES)[number];
+/** What a hidden name looks like: a small black box, in any font. */
+export const HIDDEN = "\u2588\u2588\u2588\u2588";
+
+/** The person's choice, kept with their notice settings. */
+export function nameModeOf(raw: string | null | undefined): NameMode {
+  try {
+    const v = (raw ? JSON.parse(raw) : {})._clientNames;
+    return (NAME_MODES as readonly string[]).includes(v) ? (v as NameMode) : "show";
+  } catch {
+    return "show";
+  }
+}
+
+/** "Avery Price" as "A. Price". One word stays as it is. */
+export function initialForm(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return name.trim();
+  return `${parts[0][0].toUpperCase()}. ${parts[parts.length - 1]}`;
+}
+
+export function displayName(mode: NameMode, name: string | null | undefined, initials: string) {
+  const full = (name ?? "").trim();
+  if (mode === "hide") return HIDDEN;
+  if (!full) return initials;
+  return mode === "initial" ? initialForm(full) : full;
+}
+
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Every client name in a text, shortened or hidden. Names are matched whole
+ * (word boundaries, any case), longest first so "Ann Lee-Parker" is not cut at
+ * "Ann Lee"; the "A. Price" form of each name is matched too, so a reply
+ * already shortened hides cleanly.
+ */
+export function redactText(mode: NameMode, text: string, names: Iterable<string>) {
+  if (mode === "show" || !text) return text;
+  const list = Array.from(new Set(Array.from(names).map((n) => n.trim()).filter((n) => n.split(/\s+/).length >= 2))).sort((a, b) => b.length - a.length);
+  let out = text;
+  for (const name of list) {
+    const forms = [name, initialForm(name)];
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])(?:${forms.map(esc).join("|")})(?![\\p{L}\\p{N}])`, "giu");
+    out = out.replace(re, mode === "hide" ? HIDDEN : initialForm(name));
+  }
+  return out;
+}
+
+const rowNames = (s: EhrSnapshot | null): string[] =>
+  s ? [...s.claims, ...s.balances, ...s.eligibility, ...s.paperwork, ...s.appointments, ...s.lapsed].map((r) => (r.name ?? "").trim()).filter(Boolean) : [];
+
+/** Every client name this workspace's employees have seen. */
+export function knownNames(orgId: number): string[] {
+  const row = db.ehr.snapshot(orgId);
+  if (!row) return [];
+  let parsed: Partial<EhrSnapshot> | null = null;
+  try {
+    parsed = JSON.parse(row.data) as Partial<EhrSnapshot>;
+  } catch {
+    parsed = null;
+  }
+  if (!parsed) return [];
+  const s = normalize(parsed);
+  return Array.from(new Set([...s.names, ...rowNames(s)]));
+}
+
+/** Names seen in a read are kept, so a name in an old chat message can still be shortened or hidden later. */
+export function rememberNames(orgId: number, names: Iterable<string>) {
+  const fresh = Array.from(new Set(Array.from(names).map((n) => (n ?? "").trim()).filter((n) => n.split(/\s+/).length >= 2)));
+  if (!fresh.length) return;
+  const row = db.ehr.snapshot(orgId);
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = row ? (JSON.parse(row.data) as Record<string, unknown>) : {};
+  } catch {
+    parsed = {};
+  }
+  const had = Array.isArray(parsed.names) ? (parsed.names as string[]) : [];
+  const merged = Array.from(new Set([...had, ...fresh])).slice(-5000);
+  if (merged.length === had.length && fresh.every((n) => had.includes(n))) return;
+  db.ehr.saveData(orgId, JSON.stringify({ ...parsed, names: merged }));
+}
+
+/** A text for one person's screen: the workspace's client names shown the way they chose. */
+export function forScreen(orgId: number, mode: NameMode, text: string) {
+  return mode === "show" ? text : redactText(mode, text, knownNames(orgId));
+}
+
+/** The Work tabs for one person: every client row named the way they chose. */
+export async function viewFor(orgId: number, mode: NameMode) {
+  const v = await view(orgId);
+  if (!v.snapshot || mode === "show") return v;
+  const s = v.snapshot;
+  const name = <T extends { name?: string; initials: string }>(r: T): T => ({ ...r, name: displayName(mode, r.name, r.initials) });
+  return { ...v, snapshot: { ...s, claims: s.claims.map(name), balances: s.balances.map(name), eligibility: s.eligibility.map(name), paperwork: s.paperwork.map(name), appointments: s.appointments.map(name), lapsed: s.lapsed.map(name), names: [] } };
 }
 
 export type Changes = {
@@ -282,6 +392,8 @@ export async function refresh(orgId: number) {
     throw new TRPCError({ code: "BAD_GATEWAY", message: `LeadDash EHR could not be read: ${why}` });
   }
   const changes = diff(before, after);
+  // Names carry over: a client off this snapshot's lists is still named in older chat messages.
+  after.names = Array.from(new Set([...(before?.names ?? []), ...rowNames(before), ...rowNames(after)])).slice(-5000);
   db.ehr.save(orgId, JSON.stringify(after));
   const org = await db.getOrganizationById(orgId);
   const posted = await announce(orgId, changes, org?.timezone || "America/Chicago");
@@ -357,6 +469,7 @@ export async function read(orgId: number, what: EhrRead, from: string, to: strin
     return { text: /404/.test(why) ? "LeadDash EHR doesn't have that read yet. It needs its latest update deployed." : `I couldn't read LeadDash EHR: ${why}`, facts: "" };
   }
   if (!raw || raw.ok === false) return { text: `LeadDash EHR said: ${String(raw?.error ?? "no answer")}`, facts: "" };
+  rememberNames(orgId, [...rows(raw.payments), ...rows(raw.refunds), ...rows(raw.claims), ...rows(raw.appointments)].map((r) => String(r.name ?? "")));
   const range = a === b ? longDate(a) : `${longDate(a)} to ${longDate(b)}`;
   // Sessions carry each client's balance and paperwork still out, from the last snapshot, so one read answers "who tomorrow owes or has forms out".
   const snap = what === "appointments" ? (snapshotOf(orgId)?.data ?? null) : null;

@@ -594,6 +594,17 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
   const toggle = trpc.employees.toggleStatus.useMutation({ onSuccess: () => utils.employees.list.invalidate() });
   const work = KIND_META[(emp.kind as Kind) ?? "custom"].work;
   const clientInfo = worksWithClientInfo(emp.kind, currentOrg?.orgType);
+  // Client names on this person's screen: Show, Initial (A. Price) or Hide (a black box). Chat and the Work tabs follow it at once.
+  const nameMode = trpc.ehr.nameMode.useQuery(undefined, { enabled: clientInfo });
+  const setNameMode = trpc.ehr.setNameMode.useMutation({
+    onSuccess: () => {
+      utils.ehr.nameMode.invalidate();
+      utils.ehr.view.invalidate();
+      utils.chat.list.invalidate();
+      utils.chat.summaries.invalidate();
+    },
+  });
+  const mode = setNameMode.variables?.mode ?? nameMode.data?.mode ?? "show";
   const paused = emp.status === "paused";
   const tab = (on: boolean): React.CSSProperties => ({
     display: "inline-flex",
@@ -610,7 +621,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
     boxShadow: on ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
   });
   return (
-    <header className="ld-emphead" style={{ boxSizing: "border-box", height: 72, padding: "0 24px", background: "#fff", borderBottom: "1px solid #e3e9e6", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, position: "sticky", top: 0, zIndex: 10 }}>
+    <header className="ld-emphead" style={{ boxSizing: "border-box", minHeight: 72, padding: "8px 24px", background: "#fff", borderBottom: "1px solid #e3e9e6", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 16px", position: "sticky", top: 0, zIndex: 10 }}>
       <div className="ld-row ld-emphead-who" style={{ gap: 12 }}>
         <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "#14221c", display: "flex" }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
@@ -620,7 +631,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
           <span style={{ fontWeight: 800, fontSize: 16 }}>{emp.name}</span>
           <span style={{ fontSize: 13, color: "#5b6b64", whiteSpace: "nowrap" }}>{emp.roleTitle}</span>
         </span>
-        {clientInfo && <span className="ld-pill blue ld-emphead-ci" title="Works with client information, on providers under a signed BAA. Clients are named in the app and in chat, initials in every notice.">Client info</span>}
+        {clientInfo && <span className="ld-pill blue ld-emphead-ci" title="Works with client information, on providers under a signed BAA. The Show, Initial and Hide switch sets how client names show on your screen; notices carry initials.">Client info</span>}
       </div>
       <nav aria-label="Employee views" className="ld-emptabs" style={{ display: "flex", gap: 6, background: "#f1f5f3", padding: 4, borderRadius: 12 }}>
         <Link href={base} style={tab(active === "chat")} className="ld-tablink">Chat</Link>
@@ -629,7 +640,16 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
         <Link href={`${base}/onboarding`} style={tab(active === "onboarding")}>Onboarding</Link>
         <Link href={`${base}/guidelines`} style={tab(active === "guidelines")}>Guidelines</Link>
       </nav>
-      <div className="ld-row ld-emphead-status">
+      {clientInfo && (
+        <div className="ld-pg-toggle ld-names" role="radiogroup" aria-label="Client names" title="How client names show on your screen: in full, as first initial and last name, or hidden" style={{ marginLeft: "auto" }}>
+          {(["show", "initial", "hide"] as const).map((m) => (
+            <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} disabled={setNameMode.isPending} onClick={() => mode !== m && setNameMode.mutate({ mode: m })}>
+              {m === "show" ? "Show" : m === "initial" ? "Initial" : "Hide"}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="ld-row ld-emphead-status" style={{ marginLeft: clientInfo ? 0 : "auto" }}>
         <span className={`ld-pill ${paused ? "gray" : "green"}`}>{paused ? "Paused" : emp.status === "working" ? "Working" : "Ready"}</span>
         <button
           type="button"

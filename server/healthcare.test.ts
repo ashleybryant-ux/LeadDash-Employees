@@ -275,4 +275,48 @@ describe("A healthcare practice workspace", () => {
     expect(r.reply!.content).toContain("Avery Price owes $360");
     expect(r.reply!.content).not.toContain("I don't have a calendar");
   });
+
+  it("the Show, Initial or Hide switch changes how client names reach the screen, in chat and on the Work tabs, for that person only", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-ehr-names");
+    const me = caller(owner);
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    vi.spyOn(ehr.tools, "fetchJson").mockImplementation(async (url: string) => {
+      if (url.endsWith("/api/employees/ping")) return { ok: true, practice: "Legacy Family Services", locationId: "loc_1" };
+      return snapshot({ balances: [{ id: "b1", name: "Avery Price", initials: "A.P.", cents: 36_000, lastPayment: "2026-08-04", cardOnFile: true, url: "https://ehr.test/patients/b1" }], lapsed: [{ id: "l1", name: "Ann Lee-Parker", initials: "A.L.", lastSeen: "2026-08-20", days: 49, clinician: "Dr. Ashley Bryant", url: "https://ehr.test/patients/l1" }] });
+    });
+    await me.ehr.connect({ organizationId: orgId, url: "https://api.health.leaddash.io", key: "ld-emp-0123456789abcdefghij" });
+    await me.ehr.refresh({ organizationId: orgId });
+    const avery = (await db.getEmployeeByKind(orgId, "inbox"))!;
+    await db.createChatMessage({ organizationId: orgId, employeeId: avery.id, role: "employee", authorName: "Avery", content: "Avery Price owes $360 and Ann Lee-Parker has not booked since Aug 20, 2026. avery price confirmed by text." });
+
+    // Full names until the person chooses otherwise.
+    expect((await me.ehr.nameMode()).mode).toBe("show");
+    expect((await me.chat.list({ organizationId: orgId, employeeId: avery.id })).at(-1)!.content).toContain("Avery Price owes $360 and Ann Lee-Parker");
+
+    await me.ehr.setNameMode({ mode: "initial" });
+    const initial = await me.chat.list({ organizationId: orgId, employeeId: avery.id });
+    expect(initial.at(-1)!.content).toBe("A. Price owes $360 and A. Lee-Parker has not booked since Aug 20, 2026. A. Price confirmed by text.");
+    const v1 = await me.ehr.view({ organizationId: orgId });
+    expect(v1.snapshot!.balances[0].name).toBe("A. Price");
+    expect(v1.snapshot!.lapsed[0].name).toBe("A. Lee-Parker");
+    expect((await me.chat.summaries({ organizationId: orgId })).find((x) => x.employeeId === avery.id)?.content).toContain("A. Price owes");
+
+    await me.ehr.setNameMode({ mode: "hide" });
+    const hidden = (await me.chat.list({ organizationId: orgId, employeeId: avery.id })).at(-1)!.content;
+    expect(hidden).toBe(`${ehr.HIDDEN} owes $360 and ${ehr.HIDDEN} has not booked since Aug 20, 2026. ${ehr.HIDDEN} confirmed by text.`);
+    expect(hidden).not.toContain("Price");
+    const v2 = await me.ehr.view({ organizationId: orgId });
+    expect(v2.snapshot!.balances[0]).toMatchObject({ name: ehr.HIDDEN, cents: 36_000, url: "https://ehr.test/patients/b1" });
+
+    // The choice is the person's own: a teammate still sees full names, and the stored message is untouched.
+    const { reviewer } = await makeWorkspace("hc-ehr-names-other");
+    await db.addOrganizationMember({ organizationId: orgId, userId: reviewer.id, role: "member" });
+    expect((await caller(reviewer).chat.list({ organizationId: orgId, employeeId: avery.id })).at(-1)!.content).toContain("Avery Price owes $360");
+    expect((await db.listChatMessages(orgId, avery.id)).at(-1)!.content).toContain("Avery Price owes $360");
+
+    // A name learned from a read on request is remembered too.
+    ehr.rememberNames(orgId, ["Kim Lee"]);
+    expect(ehr.forScreen(orgId, "hide", "Kim Lee at 11:00 AM; Kimberly Lee-Smith is not a known client.")).toBe(`${ehr.HIDDEN} at 11:00 AM; Kimberly Lee-Smith is not a known client.`);
+    expect(ehr.initialForm("Cher")).toBe("Cher");
+  });
 });

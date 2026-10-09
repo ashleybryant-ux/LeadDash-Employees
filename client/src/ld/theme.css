@@ -152,6 +152,8 @@ html.ld-review .ld-emphead { top: 34px !important; }
   .ld-emptabs { gap: 2px !important; }
   .ld-emptabs a { flex-shrink: 0; padding: 0 8px !important; font-size: 12.5px !important; height: 32px !important; }
   .ld-emphead-status .ld-pill { display: none; }
+  .ld-emphead .ld-names { order: 4; margin-left: 0 !important; }
+  .ld-emphead .ld-names button { height: 28px; font-size: 12.5px; }
 
   .ld-chatmsgs { padding: 16px 14px !important; gap: 18px !important; }
   .ld-composer { padding: 10px 12px calc(12px + env(safe-area-inset-bottom)) !important; }
@@ -241,6 +243,24 @@ html.ld-review .ld-emphead { top: 34px !important; }
 .ld-pg-toggle { display: flex; gap: 4px; background: #f1f5f3; padding: 4px; border-radius: 10px; }
 .ld-pg-toggle button { height: 30px; padding: 0 14px; border-radius: 8px; border: 0; background: transparent; font: inherit; font-size: 13px; font-weight: 700; color: #5b6b64; cursor: pointer; }
 .ld-pg-toggle button.on { background: #fff; color: #14221c; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+/* Client names switch in the employee header: Show, Initial, Hide. */
+.ld-names { flex-shrink: 0; }
+.ld-names button { padding: 0 10px; }
+/* A desktop short on room (1401px to 1600px): a header with the switch keeps one row the way the laptop layout does.
+ * The job title, the Client info pill (the switch says the same thing) and the status pill drop; the tabs tighten. */
+@media (min-width: 1401px) and (max-width: 1600px) {
+  .ld-emphead:has(.ld-names) { flex-wrap: nowrap !important; min-height: 0 !important; height: 60px !important; padding: 0 14px !important; gap: 10px !important; }
+  .ld-emphead:has(.ld-names) .ld-emphead-who { gap: 8px !important; }
+  .ld-emphead:has(.ld-names) .ld-emphead-who > span:first-of-type { width: 36px !important; height: 36px !important; }
+  .ld-emphead:has(.ld-names) .ld-emphead-who > span > span:last-child { display: none; }
+  .ld-emphead:has(.ld-names) .ld-emphead-ci { display: none; }
+  .ld-emphead:has(.ld-names) .ld-emptabs { min-width: 0; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .ld-emphead:has(.ld-names) .ld-emptabs::-webkit-scrollbar { display: none; }
+  .ld-emphead:has(.ld-names) .ld-emptabs a { flex-shrink: 0; padding: 0 12px !important; }
+  .ld-emphead:has(.ld-names) .ld-emphead-status .ld-pill { display: none; }
+  .ld-emphead:has(.ld-names) .ld-names button { padding: 0 8px; font-size: 12.5px; }
+}
+.ld-names button[aria-checked="true"] { background: #14221c; color: #fff; }
 .ld-pg-frame { border: 1px solid #dbe4df; border-radius: 12px; overflow: hidden; background: #fff; }
 .ld-pg-phone { width: 375px; max-width: 100%; border: 10px solid #14221c; border-radius: 34px; overflow: hidden; background: #fff; margin: 0 auto; }
 .ld-pg-ver { display: grid; grid-template-columns: 50px minmax(0, 1fr) 130px 128px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid #eef2f0; font-size: 14px; }
@@ -1650,6 +1670,8 @@ button.gp-ts:hover { background: #f8fbf9; }
   .ld-emptabs::-webkit-scrollbar { display: none; }
   .ld-emptabs a { flex-shrink: 0; padding: 0 12px !important; }
   .ld-emphead-status .ld-pill { display: none; }
+  .ld-emphead { flex-wrap: nowrap !important; min-height: 0 !important; }
+  .ld-emphead .ld-names button { padding: 0 8px; font-size: 12.5px; }
   .ld-chatmain .ld-hd { display: none !important; }
   .ld-chatmain .ld-main .ld-rw[style] { display: flex !important; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 14px; }
   .ld-chatmain .ld-main .ld-rw[style] > :first-child { flex-basis: 100%; min-width: 0; }

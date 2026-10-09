@@ -2230,6 +2230,13 @@ export const ehr = {
     if (row) getDb().update(t).set({ error, updatedAt: new Date() }).where(eq(t.id, row.id)).run();
     else getDb().insert(t).values({ organizationId: orgId, data: "{}", fetchedAt: new Date(0), error }).run();
   },
+  /** The data alone, with the read time left as it was (the names seen in reads on request are kept here). */
+  saveData(orgId: number, data: string) {
+    const t = schema.ehrSnapshots;
+    const row = this.snapshot(orgId);
+    if (row) getDb().update(t).set({ data, updatedAt: new Date() }).where(eq(t.id, row.id)).run();
+    else getDb().insert(t).values({ organizationId: orgId, data, fetchedAt: new Date(0), error: null }).run();
+  },
   clear(orgId: number) {
     getDb().delete(schema.ehrSnapshots).where(eq(schema.ehrSnapshots.organizationId, orgId)).run();
   },
