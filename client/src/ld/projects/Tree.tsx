@@ -21,7 +21,7 @@ const NOUN: Record<Kind, string> = { folder: "Folder", list: "List", doc: "Doc",
 /** The page can ask the tree to open a form: a new folder, a new list (in a folder), or editing a folder. */
 export type Ask = { kind: "folder" | "list"; n: number; folderId?: number | null; id?: number } | null;
 
-export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, drawer, onCloseDrawer }: { orgId: number; tree: Tree | undefined; where: Where; onPick: (w: Where) => void; refresh: () => Promise<unknown>; onNewTask: () => void; ask: Ask; drawer: boolean; onCloseDrawer: () => void }) {
+export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, ask, drawer, onCloseDrawer }: { orgId: number; tree: Tree | undefined; where: Where; onPick: (w: Where) => void; refresh: () => Promise<unknown>; onNewTask: () => void; onHome?: () => void; ask: Ask; drawer: boolean; onCloseDrawer: () => void }) {
   const [form, setForm] = React.useState<{ kind: Kind; id?: number; folderId?: number | null; name: string; color: string } | null>(null);
   // The page can ask for a new folder or list (from the empty state).
   React.useEffect(() => {
@@ -134,12 +134,17 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, ask, draw
                 </>
               )}
             </Menu>
+            {onHome && (
+              <button type="button" className={`gp-tl top ${where.scope === "home" ? "on" : ""}`} onClick={() => { onHome(); onCloseDrawer(); }}>
+                <span>⌂ Home</span>
+              </button>
+            )}
             <button type="button" className={`gp-tl top ${where.scope === "mine" ? "on" : ""}`} onClick={() => pickAnd({ scope: "mine" })}>
               <span>☆ My tasks</span>
               {(tree?.mine ?? 0) > 0 && <span className="n">{tree?.mine}</span>}
             </button>
             <button type="button" className={`gp-tl top ${where.scope === "everything" ? "on" : ""}`} onClick={() => pickAnd({ scope: "everything" })}>
-              <span>⌂ Everything</span>
+              <span>▤ Everything</span>
             </button>
             <button type="button" className={`gp-tl top ${where.scope === "docs" ? "on" : ""}`} onClick={() => pickAnd({ scope: "docs" })}>
               <span>📄 Docs</span>

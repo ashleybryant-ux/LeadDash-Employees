@@ -851,6 +851,9 @@ export async function morningCheck(orgId: number, opts: { force?: boolean } = {}
   if (p.wd === ops.reportDay) await saveOps(orgId, { lastReport: today });
   // Employees whose next task is ready start on it.
   await startReadyTasks(orgId).catch((err) => console.warn("[projects] start failed:", err instanceof Error ? err.message : err));
+  // Tasks with no date, no owner, or a date that has passed: Home shows them with suggested fixes.
+  const groom = await (await import("../work/pjHome")).attentionLine(orgId).catch(() => "");
+  if (groom) lines.push(groom);
   if (lines.length) await db.createChatMessage({ organizationId: orgId, employeeId: nora.id, role: "employee", authorName: nora.name, content: `Morning check: ${lines.join(" ")} The Tasks tab shows each one.` });
   return lines;
 }

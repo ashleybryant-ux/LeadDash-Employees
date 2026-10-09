@@ -1,6 +1,6 @@
 import React from "react";
 import { trpc } from "@/lib/trpc";
-import { fmtYmd, OwnerAvatar, type Owner } from "../goals/shared";
+import { addDays, OwnerAvatar, type Owner } from "../goals/shared";
 import type { PjCtx, TaskRow } from "../pages/Projects";
 
 /** Small pieces every Projects view uses. */
@@ -30,8 +30,13 @@ export function statusColor(c: PjCtx, t: { listId: number; status: string }) {
   return l?.statuses.find((s) => s.name === t.status)?.color ?? c.data.statuses.find((s) => s.name === t.status)?.color ?? "#87909e";
 }
 
+/** An empty dashed circle stands for nobody yet. */
+export function NobodyAvatar({ size = 24, title = "Unassigned" }: { size?: number; title?: string }) {
+  return <span className="gp-noone" style={{ width: size, height: size }} title={title} aria-label={title} />;
+}
+
 export function People({ c, list, max = 3 }: { c: { data: { people: Owner[] } }; list: TaskRow["assignees"]; max?: number }) {
-  if (!list.length) return <span className="ld-small ld-muted">Unassigned</span>;
+  if (!list.length) return <NobodyAvatar />;
   return (
     <span className="gp-avs" aria-label={list.map((a) => a.name).join(", ")}>
       {list.slice(0, max).map((a) => (
@@ -42,10 +47,19 @@ export function People({ c, list, max = 3 }: { c: { data: { people: Owner[] } };
   );
 }
 
+/** A due date the way people say it: Today, Tomorrow, Yesterday, or "Mon, Oct 12, 2026". */
+export function dueText(ymd: string, today: string) {
+  if (ymd === today) return "Today";
+  if (ymd === addDays(today, 1)) return "Tomorrow";
+  if (ymd === addDays(today, -1)) return "Yesterday";
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
 export function Due({ t, today }: { t: TaskRow; today: string }) {
   if (!t.dueDate) return <span className="ld-small ld-muted">No date</span>;
   const late = !t.closed && t.dueDate < today;
-  return <span style={late ? { color: "#c2253c", fontWeight: 700 } : undefined}>{fmtYmd(t.dueDate)}</span>;
+  return <span style={late ? { color: "#c2253c", fontWeight: 700 } : t.dueDate === today ? { color: "#b45309", fontWeight: 700 } : undefined}>{dueText(t.dueDate, today)}</span>;
 }
 
 export function Counts({ t }: { t: TaskRow }) {
@@ -81,6 +95,26 @@ export function Check({ c, t }: { c: PjCtx; t: TaskRow }) {
   );
 }
 
+/** The square check that picks a row for a bulk change. Shows on hover, and stays while anything is picked. */
+export function SelectBox({ c, id }: { c: PjCtx; id: number }) {
+  const on = c.selected.has(id);
+  return (
+    <button
+      type="button"
+      className={`gp-selbox ${on ? "on" : ""} ${c.selected.size ? "stay" : ""}`}
+      aria-label={on ? "Unselect" : "Select"}
+      aria-pressed={on}
+      onClick={(e) => {
+        e.stopPropagation();
+        c.toggle(id, e.shiftKey);
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      {on ? "✓" : ""}
+    </button>
+  );
+}
+
 /** "+ Add task" at the end of a group: a name, then Enter. */
 export function AddInline({ c, listId, status, label = "+ Add task" }: { c: PjCtx; listId: number | null; status?: string; label?: string }) {
   const [open, setOpen] = React.useState(false);
@@ -88,6 +122,8 @@ export function AddInline({ c, listId, status, label = "+ Add task" }: { c: PjCt
   const create = trpc.pj.create.useMutation({ onSuccess: async () => { setName(""); await c.refresh(); } });
   const lid = listId ?? c.data.lists[0]?.id;
   if (!lid) return null;
+  const level = c.data.levels[lid] ?? "view";
+  if (level !== "edit" && level !== "full") return null;
   if (!open)
     return (
       <button type="button" className="gp-addrow" onClick={() => setOpen(true)}>

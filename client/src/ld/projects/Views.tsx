@@ -35,16 +35,32 @@ const ITEMS: { key: ItemKey; label: string; blurb: string; color: string }[] = [
   { key: "dash", label: "Dashboard", blurb: "Cards and charts", color: "#1b6b4a" },
 ];
 
-export function ViewTabsPlus({ kinds, current, saved, onPick, onAdd, onRename, onRemove, extra, canAdd }: { kinds: ViewKind[]; current: Current | null; saved: SavedView[]; onPick: (c: Current) => void; onAdd: () => void; onRename: (v: SavedView) => void; onRemove: (v: SavedView) => void; extra?: React.ReactNode; canAdd: boolean }) {
+/** The tabs every list starts with; the rest are added with + View. */
+export const DEFAULT_TABS: ViewKind[] = ["list", "board", "calendar"];
+
+export function ViewTabsPlus({ kinds, current, saved, onPick, onAdd, onRename, onRemove, onRemoveTab, extra, canAdd }: { kinds: ViewKind[]; current: Current | null; saved: SavedView[]; onPick: (c: Current) => void; onAdd: () => void; onRename: (v: SavedView) => void; onRemove: (v: SavedView) => void; onRemoveTab?: (k: ViewKind) => void; extra?: React.ReactNode; canAdd: boolean }) {
   return (
     <div className="gp-views" role="tablist" aria-label="Views">
       {extra}
-      {kinds.map((k) => (
-        <button key={k} type="button" role="tab" aria-selected={!!current && current.kind === k && !current.savedId} className={`gp-vw ${current && current.kind === k && !current.savedId ? "on" : ""}`} onClick={() => onPick({ kind: k, savedId: null })}>
-          {VIEW_ICONS[k]}
-          {KINDS.find((x) => x.key === k)?.label}
-        </button>
-      ))}
+      {kinds.map((k) =>
+        onRemoveTab && !DEFAULT_TABS.includes(k) ? (
+          <span key={k} className={`gp-vw gp-vsaved ${current && current.kind === k && !current.savedId ? "on" : ""}`} role="tab" aria-selected={!!current && current.kind === k && !current.savedId}>
+            <button type="button" className="gp-vwbtn" onClick={() => onPick({ kind: k, savedId: null })}>
+              {VIEW_ICONS[k]} {KINDS.find((x) => x.key === k)?.label}
+            </button>
+            <Menu label={`Options for the ${KINDS.find((x) => x.key === k)?.label} tab`}>
+              {(close) => (
+                <button type="button" role="menuitem" className="danger" onClick={() => { onRemoveTab(k); close(); }}>Remove tab</button>
+              )}
+            </Menu>
+          </span>
+        ) : (
+          <button key={k} type="button" role="tab" aria-selected={!!current && current.kind === k && !current.savedId} className={`gp-vw ${current && current.kind === k && !current.savedId ? "on" : ""}`} onClick={() => onPick({ kind: k, savedId: null })}>
+            {VIEW_ICONS[k]}
+            {KINDS.find((x) => x.key === k)?.label}
+          </button>
+        )
+      )}
       {saved.map((v) => (
         <span key={v.id} className={`gp-vw gp-vsaved ${current?.savedId === v.id ? "on" : ""}`} role="tab" aria-selected={current?.savedId === v.id}>
           <button type="button" className="gp-vwbtn" onClick={() => onPick({ kind: v.kind, savedId: v.id })}>
@@ -70,8 +86,12 @@ export function ViewTabsPlus({ kinds, current, saved, onPick, onAdd, onRename, o
   );
 }
 
-/** "Add a view": pick a kind, name it, private or pinned. Also makes a doc, whiteboard, form or dashboard here. */
-export function AddView({ orgId, listId, folderId, listName, settings, editing, canShare, onClose, onMade, onItem }: { orgId: number; listId: number | null; folderId: number | null; listName: string; settings: ViewSettings; editing: SavedView | null; canShare: boolean; onClose: () => void; onMade: (v: Current) => void; onItem: (kind: "doc" | "board" | "form" | "dash", title: string) => void }) {
+/**
+ * "+ View": a kind not on this list yet becomes a tab with one click; the
+ * current filters and columns can be saved as a named view (private or pinned);
+ * a doc, whiteboard, form or dashboard can be made here too.
+ */
+export function AddView({ orgId, listId, folderId, listName, settings, editing, canShare, tabs = [], onAddTab, onClose, onMade, onItem }: { orgId: number; listId: number | null; folderId: number | null; listName: string; settings: ViewSettings; editing: SavedView | null; canShare: boolean; tabs?: ViewKind[]; onAddTab?: (k: ViewKind) => void; onClose: () => void; onMade: (v: Current) => void; onItem: (kind: "doc" | "board" | "form" | "dash", title: string) => void }) {
   const [kind, setKind] = React.useState<ViewKind | ItemKey>(editing?.kind ?? "list");
   const [name, setName] = React.useState(editing?.name ?? "");
   const [priv, setPriv] = React.useState(editing ? editing.private : !canShare);
@@ -83,26 +103,34 @@ export function AddView({ orgId, listId, folderId, listName, settings, editing, 
     if (isItem) return onItem(kind === "whiteboard" ? "board" : (kind as "doc" | "form" | "dash"), name.trim());
     save.mutate({ organizationId: orgId, id: editing?.id, listId, folderId, name, kind: kind as ViewKind, settings: editing ? editing.settings : settings, private: priv, pinned: pin });
   };
-  const tile = (key: string, label: string, blurb: string, color: string) => (
+  const tile = (key: string, label: string, blurb: string, color: string, note?: string) => (
     <button key={key} type="button" className={`gp-vtile ${kind === key ? "on" : ""}`} onClick={() => setKind(key as ViewKind)}>
       <span className="gp-vic" style={{ background: color }}>{VIEW_ICONS[key === "whiteboard" ? "" : key] ?? label[0]}</span>
       <span>
         <b>{label}</b>
+        {note && <span className="gp-chip" style={{ marginLeft: 6 }}>{note}</span>}
         <span className="ld-small ld-muted" style={{ display: "block" }}>{blurb}</span>
       </span>
     </button>
   );
+  const canTab = !editing && !!onAddTab && !isItem && !tabs.includes(kind as ViewKind);
   return (
     <Pop onClose={onClose} width={620}>
       <div className="ld-between" style={{ padding: "4px 6px" }}>
         <b style={{ fontSize: 15 }}>{editing ? "Change the view" : "Add a view"}</b>
         <span className="ld-small ld-muted">to {listName}</span>
       </div>
-      <input className="ld-in xs" autoFocus aria-label="View name" placeholder={isItem ? `${ITEMS.find((i) => i.key === kind)?.label} name` : 'View name, like "Angela\'s week"'} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
       <div className="gp-vgrid">
-        {KINDS.map((k) => tile(k.key, k.label, k.blurb, k.color))}
+        {KINDS.map((k) => tile(k.key, k.label, k.blurb, k.color, !editing && onAddTab && tabs.includes(k.key) ? "On" : undefined))}
         {!editing && ITEMS.map((i) => tile(i.key, i.label, i.blurb, i.color))}
       </div>
+      {canTab && (
+        <div className="ld-between" style={{ padding: "6px 6px 0", borderTop: "1px solid #eef2f0", gap: 10 }}>
+          <span className="ld-small ld-muted">Add {KINDS.find((k) => k.key === kind)?.label} as a tab on {listName}, or save it below with its own name and filters.</span>
+          <button type="button" className="ld-btn p sm" onClick={() => onAddTab!(kind as ViewKind)}>Add tab</button>
+        </div>
+      )}
+      <input className="ld-in xs" autoFocus aria-label="View name" placeholder={isItem ? `${ITEMS.find((i) => i.key === kind)?.label} name` : 'View name, like "Angela\'s week"'} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
       {!isItem && (
         <div className="ld-row" style={{ gap: 14, padding: "6px 6px 0", borderTop: "1px solid #eef2f0" }}>
           <label className="ld-row ld-small" style={{ gap: 6 }}><input type="checkbox" checked={priv} disabled={!canShare} onChange={(e) => setPriv(e.target.checked)} /> Only I see it</label>

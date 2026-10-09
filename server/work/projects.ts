@@ -308,7 +308,10 @@ export async function view(orgId: number, v: Viewer, input: { listId: number | n
     links: db.work.links.all(orgId).filter((l) => l.kind === "waits" && pickIds.has(l.taskId) && pickIds.has(l.otherId)).map((l) => ({ from: l.otherId, to: l.taskId })),
     people,
     goals: Array.from(goals.entries()).map(([id, title]) => ({ id, title })),
-    lists: lists.map((l) => ({ id: l.id, name: l.name, statuses: statusesOf(l), level: vis.find((x) => x.list.id === l.id)!.level })),
+    lists: lists.map((l) => {
+      const f = l.folderId ? folderRow && folderRow.id === l.folderId ? folderRow : db.work.folders.get(orgId, l.folderId) : null;
+      return { id: l.id, name: l.name, statuses: statusesOf(l), level: vis.find((x) => x.list.id === l.id)!.level, folderId: f?.id ?? null, folderName: f?.name ?? null, folderColor: f?.color ?? null, sort: l.sort };
+    }),
     levels: Object.fromEntries(vis.map((x) => [x.list.id, x.level])) as Record<number, Level>,
     today: todayYmd(await zoneOf(orgId)),
   };

@@ -2,7 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { fmtYmd, OwnerAvatar, type Owner } from "../goals/shared";
 import { FieldInput, FieldValue, type FieldDef } from "./fields";
-import { PRIORITY_COLOR, PRIORITY_TEXT, StatusTag } from "./bits";
+import { dueText, NobodyAvatar, PRIORITY_COLOR, PRIORITY_TEXT, StatusTag } from "./bits";
 import type { TaskRow } from "../pages/Projects";
 
 /**
@@ -242,17 +242,20 @@ export function AssigneeCell({ q, t, max = 3, label }: { q: QuickCtx; t: QuickTa
       {t.assignees.length > max && <span className="more">+{t.assignees.length - max}</span>}
       {label && <span style={{ marginLeft: 6 }}>{t.assignees.map((a) => a.name).join(", ")}</span>}
     </span>
-  ) : (
+  ) : label ? (
     <span className="ld-small ld-muted">Unassigned</span>
+  ) : (
+    <NobodyAvatar />
   );
-  return <Cell canEdit={q.canEdit} show={show} ghost={!t.assignees.length ? "⊕ Assign" : undefined} pick={(close) => <PeoplePick q={q} value={t.assignees} onChange={(v) => save(t.id, { assignees: v })} close={close} />} />;
+  return <Cell canEdit={q.canEdit} show={show} ghost={!t.assignees.length && label ? "⊕ Assign" : undefined} pick={(close) => <PeoplePick q={q} value={t.assignees} onChange={(v) => save(t.id, { assignees: v })} close={close} />} />;
 }
 
 export function DateCell({ q, t, which }: { q: QuickCtx; t: QuickTask; which: "dueDate" | "startDate" }) {
   const save = useSave(q);
   const v = t[which];
   const late = which === "dueDate" && v && !t.closed && v < q.today;
-  const show = v ? <span style={late ? { color: "#c2253c", fontWeight: 700 } : undefined}>{fmtYmd(v)}</span> : <span className="ld-small ld-muted">No date</span>;
+  const now = which === "dueDate" && v === q.today && !t.closed;
+  const show = v ? <span style={late ? { color: "#c2253c", fontWeight: 700 } : now ? { color: "#b45309", fontWeight: 700 } : undefined}>{which === "dueDate" ? dueText(v, q.today) : fmtYmd(v)}</span> : <span className="ld-small ld-muted">No date</span>;
   return <Cell canEdit={q.canEdit} show={show} ghost={!v ? "📅 Date" : undefined} pick={(close) => <DatePick value={v} onChange={(d) => save(t.id, { [which]: d })} close={close} today={q.today} />} />;
 }
 

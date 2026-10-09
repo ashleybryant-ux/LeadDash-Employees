@@ -23,18 +23,24 @@ import { FormPage } from "../projects/Forms";
 import { DashboardsPage } from "../projects/Dashboards";
 import { RunningTimer } from "../projects/Running";
 import { MyWorkPhone } from "../projects/Phone";
-import { AddView, KINDS, ViewTabsPlus, type Current, type SavedView, type ViewKind, type ViewSettings } from "../projects/Views";
+import { AddView, DEFAULT_TABS, KINDS, ViewTabsPlus, type Current, type SavedView, type ViewKind, type ViewSettings } from "../projects/Views";
 import { DEFAULT_COLUMNS, type ColKey } from "../projects/Columns";
 import { FolderOverview } from "../projects/Overview";
 import { DocsHub } from "../projects/DocsHub";
+import { HomePage } from "../projects/Home";
+import { BulkBar } from "../projects/Bulk";
 
 /**
- * Projects, in place of ClickUp: this workspace's folders with their lists,
- * docs, whiteboards and forms on the left, plus Docs, Dashboards, Timesheets
- * and Templates; a list's (or a folder's) tasks as a List, Board, Calendar,
- * Gantt, Table, Workload, Timeline or Mind map, with saved views of any kind.
- * A task opens over the page; its values change with one click. People and
- * employees are both assignees. A guest sees only the lists shared with them.
+ * Projects, in place of ClickUp: Home (what needs a person, the work by when,
+ * the AI team, each project's health), then this workspace's folders with
+ * their lists, docs, whiteboards and forms on the left, plus Docs, Dashboards,
+ * Timesheets and Templates; a list's (or a folder's, or everything's) tasks as
+ * a List, Board or Calendar, with Gantt, Table, Workload, Timeline and Mind map
+ * added as tabs, and saved views of any kind. A task opens beside the list (or
+ * over the page); its values change with one click. Tick rows to change many
+ * at once. Keys: N new task, / search, X pick a row, arrows and Enter.
+ * People and employees are both assignees. A guest sees only the lists
+ * shared with them.
  */
 
 export type ViewOut = Outputs["pj"]["view"];
@@ -43,6 +49,7 @@ type View = ViewKind;
 const VIEW_KEYS = KINDS.map((k) => k.key);
 
 export type Where =
+  | { scope: "home" }
   | { scope: "list"; listId: number }
   | { scope: "folder"; folderId: number; tab?: "overview" }
   | { scope: "everything" }
@@ -61,13 +68,23 @@ export type PjCtx = {
   tasks: TaskRow[];
   open: (id: number) => void;
   refresh: () => Promise<unknown>;
-  group: "status" | "priority" | "assignee" | "none";
+  group: "status" | "priority" | "assignee" | "project" | "none";
+  sort: "manual" | "due" | "priority" | "name";
   listId: number | null;
   /** What I can do here: view, comment, edit or full. */
   level: "view" | "comment" | "edit" | "full";
   /** Columns shown on the List and Table views, and how to change them. */
   columns: ColKey[];
   setColumns: (cols: ColKey[]) => void;
+  /** True while the columns are the defaults nobody picked: empty ones stay hidden. */
+  autoColumns: boolean;
+  /** Rows ticked for a change to all of them at once. */
+  selected: Set<number>;
+  toggle: (id: number, range?: boolean) => void;
+  clearSelected: () => void;
+  /** A task is open beside the list: rows show only the name, who and when. */
+  compact: boolean;
+  openId: number | null;
 };
 
 const PAGES = ["doc", "board", "form", "dash", "time", "templates", "docs"] as const;
@@ -92,7 +109,9 @@ function readUrl(): { where: Where; view: View; savedId: number | null; task: nu
               ? { scope: "folder", folderId: folder, tab: p.get("tab") === "overview" || !p.get("view") ? "overview" : undefined }
               : p.get("scope") === "mine"
                 ? { scope: "mine" }
-                : { scope: "everything" };
+                : p.get("scope") === "everything" || p.get("view") || p.get("saved") || p.get("task")
+                  ? { scope: "everything" }
+                  : { scope: "home" };
   return { where, view, savedId: Number(p.get("saved")) || null, task: Number(p.get("task")) || null };
 }
 
@@ -105,9 +124,14 @@ export default function Projects() {
   const [cur, setCur] = React.useState<Current>({ kind: first.view, savedId: first.savedId });
   const [taskId, setTaskId] = React.useState<number | null>(first.task);
   const [group, setGroup] = React.useState<PjCtx["group"]>("status");
+  const [sort, setSort] = React.useState<PjCtx["sort"]>("manual");
+  const [selected, setSelected] = React.useState<Set<number>>(new Set());
+  const [lastPick, setLastPick] = React.useState<number | null>(null);
+  const [taskFull, setTaskFull] = React.useState(false);
+  const [wide, setWide] = React.useState(() => typeof window === "undefined" || window.innerWidth > 1100);
+  const searchRef = React.useRef<HTMLInputElement>(null);
   const [who, setWho] = React.useState("");
   const [priority, setPriority] = React.useState("");
-  const [me, setMe] = React.useState(false);
   const [closed, setClosed] = React.useState(false);
   const [q, setQ] = React.useState("");
   const [columnsLocal, setColumnsLocal] = React.useState<ColKey[] | null>(null);
@@ -119,6 +143,8 @@ export default function Projects() {
   const [drawer, setDrawer] = React.useState(false);
   const guest = !!(currentOrg as { guest?: boolean } | null)?.guest;
   const tree = trpc.pj.tree.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const meQ = trpc.pj.me.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const home = where.scope === "home";
   const isFolder = where.scope === "folder";
   const folderId = isFolder ? where.folderId : null;
   const overview = isFolder && where.tab === "overview";
@@ -146,7 +172,7 @@ export default function Projects() {
       p.set("folder", String(where.folderId));
       if (where.tab === "overview") p.set("tab", "overview");
     }
-    if (where.scope === "mine") p.set("scope", "mine");
+    if (where.scope === "mine" || where.scope === "everything") p.set("scope", where.scope);
     if (where.scope === "import") p.set("import", "1");
     if ((PAGES as readonly string[]).includes(where.scope)) {
       p.set("page", where.scope);
@@ -168,13 +194,23 @@ export default function Projects() {
   const saved = cur.savedId ? views.data?.saved.find((s) => s.id === cur.savedId) ?? null : null;
   React.useEffect(() => {
     const s: ViewSettings | undefined = saved ? saved.settings : views.data?.builtin[view];
-    setGroup(s?.group ?? "status");
+    setGroup(s?.group ?? (where.scope === "list" ? "status" : "project"));
+    setSort((s?.sort as PjCtx["sort"]) ?? "manual");
     setWho(s?.who ?? "");
     setPriority(s?.priority ?? "");
     setClosed(!!s?.closed);
     setQ(s?.q ?? "");
     setColumnsLocal(null);
+    setSelected(new Set());
   }, [cur.savedId, cur.kind, where.scope, target.listId, target.folderId, views.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Wide screens open a task beside the list; narrow ones over it.
+  React.useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1101px)");
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
   const refresh = () => Promise.all([utils.pj.view.invalidate(), utils.pj.tree.invalidate(), utils.pj.task.invalidate(), utils.pj.me.invalidate(), utils.pj.views.invalidate(), utils.pj.overview.invalidate()]);
   const data = v.data;
   const tasks = React.useMemo(() => {
@@ -183,33 +219,88 @@ export default function Projects() {
     return data.tasks.filter(
       (t) =>
         (!words || t.name.toLowerCase().includes(words)) &&
-        (!who || t.assignees.some((a) => `${a.type}:${a.id}:${a.name}` === who)) &&
-        (!priority || (t.priority ?? "none") === priority) &&
-        (!me || t.assignees.some((a) => a.type === "user" && data.people.some((p) => p.type === "user" && p.id === a.id && p.name === a.name)))
+        (!who || (who === "me" ? t.assignees.some((a) => a.type === "user" && a.id === meQ.data?.userId) : t.assignees.some((a) => `${a.type}:${a.id}:${a.name}` === who))) &&
+        (!priority || (t.priority ?? "none") === priority)
     );
-  }, [data, q, who, priority, me]);
+  }, [data, q, who, priority, meQ.data?.userId]);
   const level = data?.list?.level ?? data?.folder?.level ?? (guest ? "view" : "edit");
-  const columns: ColKey[] = columnsLocal ?? (saved ? saved.settings.columns : views.data?.builtin[view]?.columns) ?? DEFAULT_COLUMNS[view === "table" ? "table" : "list"];
-  const settingsNow: ViewSettings = { group, who: who || undefined, priority: priority || undefined, closed: closed || undefined, q: q || undefined, columns };
+  const pickedColumns = columnsLocal ?? (saved ? saved.settings.columns : views.data?.builtin[view]?.columns);
+  const columns: ColKey[] = pickedColumns ?? DEFAULT_COLUMNS[view === "table" ? "table" : "list"];
+  const settingsNow: ViewSettings = { group, sort: sort === "manual" ? undefined : sort, who: who || undefined, priority: priority || undefined, closed: closed || undefined, q: q || undefined, columns };
   const setColumns = (cols: ColKey[]) => {
     setColumnsLocal(cols);
     if (guest) return;
     if (saved) saveViewMut.mutate({ organizationId: currentOrgId, id: saved.id, ...target, name: saved.name, kind: saved.kind, settings: { ...saved.settings, columns: cols }, private: saved.private, pinned: saved.pinned });
     else if (level === "edit" || level === "full") setBuiltin.mutate({ organizationId: currentOrgId, ...target, kind: view, settings: { ...(views.data?.builtin[view] ?? {}), columns: cols } });
   };
-  const ctx: PjCtx | null = data ? { orgId: currentOrgId, data, tasks, open: setTaskId, refresh, group, listId: where.scope === "list" ? where.listId : null, level, columns, setColumns } : null;
+  const toggle = (id: number, range = false) => {
+    setSelected((s) => {
+      const n = new Set(s);
+      if (range && lastPick !== null) {
+        const order = Array.from(document.querySelectorAll<HTMLElement>("[data-task]")).map((el) => Number(el.dataset.task));
+        const a = order.indexOf(lastPick);
+        const b = order.indexOf(id);
+        if (a >= 0 && b >= 0) for (const x of order.slice(Math.min(a, b), Math.max(a, b) + 1)) n.add(x);
+        return n;
+      }
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+    setLastPick(id);
+  };
+  const clearSelected = () => setSelected(new Set());
+  const openTask = (id: number) => { setTaskId(id); setTaskFull(false); };
+  const beside = !!taskId && wide && !taskFull && isList;
+  const ctx: PjCtx | null = data ? { orgId: currentOrgId, data, tasks, open: openTask, refresh, group, sort, listId: where.scope === "list" ? where.listId : null, level, columns, setColumns, autoColumns: !pickedColumns, selected, toggle, clearSelected, compact: beside, openId: taskId } : null;
   const folderRow = folderId ? tree.data?.folders.find((f) => f.id === folderId) : null;
-  const title = where.scope === "list" ? data?.list?.name ?? "" : where.scope === "mine" ? "My tasks" : where.scope === "import" ? "Import from ClickUp" : isFolder ? folderRow?.name ?? data?.folder?.name ?? "" : "Everything";
+  const title = where.scope === "list" ? data?.list?.name ?? "" : where.scope === "mine" ? "My tasks" : where.scope === "home" ? "Home" : where.scope === "import" ? "Import from ClickUp" : isFolder ? folderRow?.name ?? data?.folder?.name ?? "" : "Everything";
   const crumb = where.scope === "list" && data?.list?.folderName ? `${data.list.folderName} /` : isFolder ? `${currentOrg?.name ?? ""} /` : "";
   const assignees = Array.from(new Map((data?.tasks ?? []).flatMap((t) => t.assignees).map((a) => [`${a.type}:${a.id}:${a.name}`, a])).values());
   const pick = (w: Where) => {
     setWhere(w);
     setTaskId(null);
-    if (w.scope !== "list" && w.scope !== "folder") setCur({ kind: "list", savedId: null });
-    else if (cur.savedId) setCur({ kind: cur.kind, savedId: null });
+    setSelected(new Set());
+    if (w.scope !== "list" && w.scope !== "folder" && w.scope !== "everything") setCur({ kind: "list", savedId: null });
+    else if (cur.savedId || !(views.data?.tabs ?? DEFAULT_TABS).includes(cur.kind)) setCur({ kind: "list", savedId: null });
   };
   const full = level === "full";
-  const kinds = (guest ? VIEW_KEYS.filter((x) => x !== "workload") : VIEW_KEYS) as ViewKind[];
+  const tabs = (views.data?.tabs ?? DEFAULT_TABS) as ViewKind[];
+  const kinds = (guest ? tabs.filter((x) => x !== "workload") : tabs).filter((k) => VIEW_KEYS.includes(k));
+  const removeTab = trpc.pj.removeBuiltinView.useMutation({ onSuccess: () => { void utils.pj.views.invalidate(); setCur({ kind: "list", savedId: null }); } });
+  // Keys: N new task, / search, Escape clears the picked rows, arrows move between rows (X on a row picks it, Enter opens it).
+  React.useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if (el?.closest(".gp-modal, .gp-qpop, [role=dialog]")) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-task]"));
+        if (!rows.length) return;
+        const i = rows.findIndex((r) => r === document.activeElement);
+        const next = rows[Math.max(0, Math.min(rows.length - 1, i < 0 ? 0 : i + (e.key === "ArrowDown" ? 1 : -1)))];
+        next.focus();
+        e.preventDefault();
+        return;
+      }
+      if (e.key === "Escape") {
+        if (selected.size) setSelected(new Set());
+        return;
+      }
+      if (e.key === "/") {
+        searchRef.current?.focus();
+        e.preventDefault();
+        return;
+      }
+      if (e.key.toLowerCase() === "n" && !guest) {
+        if (!isList) pick({ scope: "everything" });
+        setAdding(true);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [selected.size, isList, guest]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveDoc = trpc.pj.saveDoc.useMutation({ onSuccess: async (d) => { await refresh(); pick({ scope: "doc", id: d.id }); } });
   const saveBoard = trpc.pj.saveBoard.useMutation({ onSuccess: async (b) => { await refresh(); pick({ scope: "board", id: b.id }); } });
   const saveForm = trpc.pj.saveForm.useMutation({ onSuccess: async (f) => { await refresh(); pick({ scope: "form", id: f.id }); } });
@@ -254,10 +345,28 @@ export default function Projects() {
           if (!isList) pick({ scope: "everything" });
           setAdding(true);
         }}
+        onHome={() => pick({ scope: "home" })}
       />
       <main className="gp-main">
         {guest && <GuestBar name={currentOrg?.name ?? ""} />}
-        {isList || where.scope === "import" || overview ? (
+        {home ? (
+          <>
+            <div className="gp-head" style={{ paddingBottom: 14 }}>
+              <div className="gp-hrow">
+                <span className="gp-ttl" style={{ fontSize: 18 }}>
+                  <button type="button" className="ld-btn sm gp-auto gp-show-sm" onClick={() => setDrawer(true)} aria-label="Folders and lists">☰</button>
+                  Home
+                </span>
+                <span className="ld-row">
+                  <button type="button" className="ld-btn p" onClick={() => { pick({ scope: "everything" }); setAdding(true); }}>+ Task</button>
+                </span>
+              </div>
+            </div>
+            <div className="gp-canvas">
+              <HomePage orgId={currentOrgId} onOpenTask={(id) => { setTaskId(id); setTaskFull(true); }} onPick={pick} onNewTask={() => { pick({ scope: "everything" }); setAdding(true); }} />
+            </div>
+          </>
+        ) : isList || where.scope === "import" || overview ? (
           <>
             <div className="gp-head">
               <div className="gp-hrow">
@@ -287,6 +396,7 @@ export default function Projects() {
                     onAdd={() => { setEditView(null); setPanel("addView"); }}
                     onRename={(sv) => { setEditView(sv); setPanel("addView"); }}
                     onRemove={(sv) => { if (window.confirm(`Delete the "${sv.name}" view? The tasks stay.`)) removeView.mutate({ organizationId: currentOrgId, id: sv.id }); }}
+                    onRemoveTab={!guest && (level === "edit" || level === "full") ? (k) => removeTab.mutate({ organizationId: currentOrgId, ...target, kind: k }) : undefined}
                   />
                   {panel === "addView" && (
                     <AddView
@@ -297,6 +407,8 @@ export default function Projects() {
                       settings={settingsNow}
                       editing={editView}
                       canShare={level === "edit" || level === "full"}
+                      tabs={tabs}
+                      onAddTab={level === "edit" || level === "full" ? (k) => { setPanel(""); setBuiltin.mutate({ organizationId: currentOrgId, ...target, kind: k, settings: {} }, { onSuccess: () => { if (folderId && overview) setWhere({ scope: "folder", folderId }); setCur({ kind: k, savedId: null }); } }); } : undefined}
                       onClose={() => setPanel("")}
                       onMade={(c) => { setPanel(""); void utils.pj.views.invalidate(); if (folderId && overview) setWhere({ scope: "folder", folderId }); setCur(c); }}
                       onItem={makeItem}
@@ -310,30 +422,39 @@ export default function Projects() {
                 <span className="gp-tool-l">
                   {view === "list" && (
                     <select className="gp-fb sel" aria-label="Group" value={group} onChange={(e) => setGroup(e.target.value as PjCtx["group"])}>
+                      {where.scope !== "list" && <option value="project">Group: Project</option>}
                       <option value="status">Group: Status</option>
                       <option value="priority">Group: Priority</option>
                       <option value="assignee">Group: Assignee</option>
                       <option value="none">Group: None</option>
                     </select>
                   )}
+                  {(view === "list" || view === "table") && (
+                    <select className="gp-fb" aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as PjCtx["sort"])}>
+                      <option value="manual">Sort: Manual</option>
+                      <option value="due">Sort: Due date</option>
+                      <option value="priority">Sort: Priority</option>
+                      <option value="name">Sort: Name</option>
+                    </select>
+                  )}
                   {view !== "workload" && (
                     <>
                       <select className="gp-fb" aria-label="Assignee" value={who} onChange={(e) => setWho(e.target.value)}>
-                        <option value="">Assignee: anyone</option>
+                        <option value="">Anyone</option>
+                        {!guest && <option value="me">Me</option>}
                         {assignees.map((a) => (
                           <option key={`${a.type}:${a.id}:${a.name}`} value={`${a.type}:${a.id}:${a.name}`}>{a.name}</option>
                         ))}
                       </select>
                       <select className="gp-fb" aria-label="Priority" value={priority} onChange={(e) => setPriority(e.target.value)}>
-                        <option value="">Priority: any</option>
+                        <option value="">Any priority</option>
                         <option value="urgent">Urgent</option>
                         <option value="high">High</option>
                         <option value="normal">Normal</option>
                         <option value="low">Low</option>
                         <option value="none">No priority</option>
                       </select>
-                      <button type="button" className={`gp-fb ${closed ? "sel" : ""}`} aria-pressed={closed} onClick={() => setClosed(!closed)}>{closed ? "Showing all done" : "Show all done"}</button>
-                      {!guest && <button type="button" className={`gp-fb ${me ? "sel" : ""}`} aria-pressed={me} onClick={() => setMe(!me)}>Me mode</button>}
+                      <button type="button" className={`gp-fb ${closed ? "sel" : ""}`} aria-pressed={closed} onClick={() => setClosed(!closed)}>{closed ? "Hide done" : "Show done"}</button>
                       {saved && saved.mine && (
                         <button type="button" className="gp-fb" onClick={() => saveViewMut.mutate({ organizationId: currentOrgId, id: saved.id, ...target, name: saved.name, kind: saved.kind, settings: settingsNow, private: saved.private, pinned: saved.pinned })} disabled={saveViewMut.isPending}>
                           Save to this view
@@ -344,12 +465,12 @@ export default function Projects() {
                 </span>
                 <span className="gp-tool-r">
                   <RunningTimer orgId={currentOrgId} onOpen={setTaskId} />
-                  {view !== "workload" && <input className="gp-srch" placeholder="Search tasks" aria-label="Search tasks" value={q} onChange={(e) => setQ(e.target.value)} />}
+                  {view !== "workload" && <input ref={searchRef} className="gp-srch" placeholder="Search tasks  /" aria-label="Search tasks" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Escape" && (e.target as HTMLInputElement).blur()} />}
                   {ctx && (level === "edit" || level === "full" || where.scope !== "list") && <NewTask c={ctx} guest={guest} open={adding} setOpen={setAdding} onTemplate={() => setPanel("fromTemplate")} />}
                 </span>
               </div>
             )}
-            <div className="gp-canvas">
+            <div className={`gp-canvas ${beside ? "with-task" : ""}`}>
               <ErrorLine error={v.error || tree.error || views.error} />
               {where.scope === "import" ? (
                 <ImportPage orgId={currentOrgId} onDone={() => { void refresh(); setWhere({ scope: "everything" }); }} />
@@ -387,6 +508,7 @@ export default function Projects() {
                   )}
                 </div>
               )}
+              {beside && taskId && <TaskModal mode="panel" orgId={currentOrgId} id={taskId} onClose={() => { setTaskId(null); void refresh(); }} onOpen={openTask} onFull={() => setTaskFull(true)} onEditFields={ctx?.data.list ? () => { setTaskId(null); setPanel("settings"); } : undefined} onSaveTemplate={guest ? undefined : (id) => setSaveTask(id)} />}
             </div>
           </>
         ) : where.scope === "docs" ? (
@@ -405,7 +527,8 @@ export default function Projects() {
           <TemplatesPage orgId={currentOrgId} onPick={pick} onOpenTask={setTaskId} refresh={refresh} />
         )}
       </main>
-      {taskId && <TaskModal orgId={currentOrgId} id={taskId} onClose={() => { setTaskId(null); void refresh(); }} onOpen={setTaskId} onEditFields={ctx?.data.list ? () => { setTaskId(null); setPanel("settings"); } : undefined} onSaveTemplate={guest ? undefined : (id) => setSaveTask(id)} />}
+      {taskId && !beside && <TaskModal orgId={currentOrgId} id={taskId} onClose={() => { setTaskId(null); setTaskFull(false); void refresh(); }} onOpen={setTaskId} onEditFields={ctx?.data.list ? () => { setTaskId(null); setPanel("settings"); } : undefined} onSaveTemplate={guest ? undefined : (id) => setSaveTask(id)} />}
+      {ctx && selected.size > 0 && <BulkBar c={ctx} />}
       {panel === "automations" && ctx && <Automations c={ctx} onClose={() => setPanel("")} />}
       {panel === "settings" && ctx?.data.list && <ListSettings c={ctx} onClose={() => setPanel("")} onRemoved={() => { setPanel(""); setWhere({ scope: "everything" }); void refresh(); }} />}
       {panel === "share" && ctx?.data.list && <ShareList orgId={currentOrgId} listId={ctx.data.list.id} name={ctx.data.list.name} canChange={full} onClose={() => { setPanel(""); void refresh(); }} />}

@@ -257,7 +257,7 @@ const actionZ = z.object({
   to: z.string().max(200).optional(),
 });
 const viewKindZ = z.enum(["list", "board", "calendar", "gantt", "table", "workload", "timeline", "mindmap"]);
-const viewSettingsZ = z.object({ group: z.enum(["status", "priority", "assignee", "none"]).optional(), who: z.string().max(160).optional(), priority: z.string().max(20).optional(), closed: z.boolean().optional(), q: z.string().max(120).optional(), columns: z.array(z.string().max(60)).max(40).optional(), sort: z.string().max(40).optional() });
+const viewSettingsZ = z.object({ group: z.enum(["status", "priority", "assignee", "project", "none"]).optional(), who: z.string().max(160).optional(), priority: z.string().max(20).optional(), closed: z.boolean().optional(), q: z.string().max(120).optional(), columns: z.array(z.string().max(60)).max(40).optional(), sort: z.string().max(40).optional() });
 const blockZ = z.object({ id: z.string().max(40), type: z.string().max(20), text: z.string().max(8000), done: z.boolean().optional(), rows: z.array(z.array(z.string().max(500)).max(10)).max(30).optional(), url: z.string().max(600).optional(), taskId: z.number().int().optional() });
 const itemZ = z.object({ id: z.string().max(40), kind: z.string().max(10), x: z.number(), y: z.number(), w: z.number(), h: z.number(), color: z.string().max(9).optional(), text: z.string().max(2000).optional(), from: z.string().max(40).optional(), to: z.string().max(40).optional(), taskId: z.number().int().optional(), path: z.string().max(20000).optional(), z: z.number().optional() });
 const questionZ = z.object({ id: z.string().max(40), label: z.string().max(200), type: z.enum(["text", "longtext", "email", "phone", "number", "dropdown", "labels", "date", "files"]), required: z.boolean(), options: z.array(z.string().max(80)).max(40).optional(), mapTo: z.string().max(80) });
@@ -2020,6 +2020,50 @@ export const appRouter = router({
       const v = await pjViewer(ctx, input.organizationId);
       (await import("./work/pjViews")).removeView(input.organizationId, v, input.id);
       return { ok: true };
+    }),
+    removeBuiltinView: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable().optional(), folderId: z.number().int().nullable().optional(), kind: viewKindZ })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjViews")).removeBuiltin(input.organizationId, v, input, input.kind);
+      return { ok: true };
+    }),
+    // Home, what needs attention, and changes to many tasks at once
+    home: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjHome")).home(input.organizationId, v);
+    }),
+    fixAttention: protectedProcedure.input(orgInput.extend({ ids: z.array(z.number().int()).max(200).nullable().default(null) })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjHome")).fixAttention(input.organizationId, v, input.ids, pjActor(ctx));
+    }),
+    bulk: protectedProcedure
+      .input(
+        orgInput.extend({
+          ids: z.array(z.number().int()).min(1).max(200),
+          change: z.discriminatedUnion("action", [
+            z.object({ action: z.literal("remove") }),
+            z.object({
+              action: z.literal("update"),
+              patch: z.object({
+                status: z.string().max(40).optional(),
+                priority: z.enum(["urgent", "high", "normal", "low"]).nullable().optional(),
+                dueDate: ymdZ.nullable().optional(),
+                startDate: ymdZ.nullable().optional(),
+                assign: z.array(assigneeZ).max(20).optional(),
+                unassign: z.array(assigneeZ).max(20).optional(),
+                listId: z.number().int().optional(),
+                tags: z.array(z.string().max(40)).max(20).optional(),
+              }),
+            }),
+          ]),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const v = await pjViewer(ctx, input.organizationId);
+        return (await import("./work/pjHome")).bulk(input.organizationId, v, input.ids, input.change, pjActor(ctx));
+      }),
+    reorder: protectedProcedure.input(orgInput.extend({ ids: z.array(z.number().int()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjHome")).reorder(input.organizationId, v, input.ids);
     }),
     overview: protectedProcedure.input(orgInput.extend({ folderId: z.number().int() })).query(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);

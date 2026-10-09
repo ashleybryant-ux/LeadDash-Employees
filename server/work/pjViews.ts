@@ -17,7 +17,7 @@ import { levelFor, mustMember, visibleLists, type Viewer } from "./pjAccess";
 export const VIEW_KINDS = ["list", "board", "calendar", "gantt", "table", "workload", "timeline", "mindmap"] as const;
 export type ViewKind = (typeof VIEW_KINDS)[number];
 export type ViewSettings = {
-  group?: "status" | "priority" | "assignee" | "none";
+  group?: "status" | "priority" | "assignee" | "project" | "none";
   who?: string;
   priority?: string;
   closed?: boolean;
@@ -28,6 +28,9 @@ export type ViewSettings = {
 };
 export type Target = { listId?: number | null; folderId?: number | null };
 
+/** The tabs every list starts with; the other kinds are added with + View (a built-in row with no name marks an added tab). */
+export const DEFAULT_TABS: ViewKind[] = ["list", "board", "calendar"];
+
 const COLUMN_KEYS = ["assignee", "due", "start", "priority", "status", "estimate", "tracked", "tags", "goal", "list"];
 export const DEFAULT_COLUMNS: Record<string, string[]> = {
   list: ["assignee", "due", "priority", "status", "goal"],
@@ -36,7 +39,7 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
 
 export function cleanSettings(s: ViewSettings, fields: FieldDef[]): ViewSettings {
   const out: ViewSettings = {};
-  if (s.group && ["status", "priority", "assignee", "none"].includes(s.group)) out.group = s.group;
+  if (s.group && ["status", "priority", "assignee", "project", "none"].includes(s.group)) out.group = s.group;
   if (s.who) out.who = String(s.who).slice(0, 160);
   if (s.priority) out.priority = String(s.priority).slice(0, 20);
   if (s.closed) out.closed = true;
@@ -78,7 +81,7 @@ export function views(orgId: number, v: Viewer, t: Target) {
     .filter((r) => r.name && (!r.userId || r.userId === uid))
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.sort - b.sort || a.id - b.id)
     .map((r) => ({ id: r.id, name: r.name, kind: r.kind as ViewKind, settings: parse<ViewSettings>(r.settings, {}), pinned: r.pinned, private: !!r.userId, mine: r.userId === uid || !r.userId, createdBy: r.createdBy }));
-  return { builtin, saved, level: w.level };
+  return { builtin, saved, level: w.level, tabs: VIEW_KINDS.filter((k) => DEFAULT_TABS.includes(k) || k in builtin) };
 }
 
 /** Saves the built-in tab's settings (columns, grouping) for everyone who opens it. */
@@ -89,6 +92,14 @@ export function setBuiltin(orgId: number, v: Viewer, t: Target, kind: ViewKind, 
   const have = db.work.views.all(orgId).find((r) => !r.name && r.kind === kind && (r.listId ?? null) === w.listId && (r.folderId ?? null) === w.folderId);
   if (have) return db.work.views.update(orgId, have.id, { settings: JSON.stringify(clean) });
   return db.work.views.insert({ organizationId: orgId, listId: w.listId, folderId: w.folderId, name: "", kind, settings: JSON.stringify(clean), userId: null, pinned: false, sort: 0, createdBy: "" });
+}
+
+/** Takes a built-in tab off a list or folder (its columns and grouping go with it). The List, Board and Calendar tabs stay. */
+export function removeBuiltin(orgId: number, v: Viewer, t: Target, kind: ViewKind) {
+  const w = where(orgId, v, t);
+  if (w.level === "view" || w.level === "comment") throw new TRPCError({ code: "FORBIDDEN", message: "You can look at this list but not change its views." });
+  if (DEFAULT_TABS.includes(kind)) throw new TRPCError({ code: "BAD_REQUEST", message: "The List, Board and Calendar tabs stay." });
+  for (const r of db.work.views.all(orgId).filter((r) => !r.name && r.kind === kind && (r.listId ?? null) === w.listId && (r.folderId ?? null) === w.folderId)) db.work.views.remove(orgId, r.id);
 }
 
 export function saveView(orgId: number, v: Viewer, input: { id?: number; listId?: number | null; folderId?: number | null; name: string; kind: ViewKind; settings: ViewSettings; private: boolean; pinned: boolean }, by: string) {

@@ -21,7 +21,7 @@ type Assignee = Detail["task"]["assignees"][number];
 type Repeat = NonNullable<Detail["task"]["repeat"]>;
 const RANK = { view: 1, comment: 2, edit: 3, full: 4 } as const;
 
-export function TaskModal({ orgId, id, onClose, onOpen, onEditFields, onSaveTemplate }: { orgId: number; id: number; onClose: () => void; onOpen: (id: number) => void; onEditFields?: () => void; onSaveTemplate?: (id: number) => void }) {
+export function TaskModal({ orgId, id, onClose, onOpen, onEditFields, onSaveTemplate, mode = "modal", onFull }: { orgId: number; id: number; onClose: () => void; onOpen: (id: number) => void; onEditFields?: () => void; onSaveTemplate?: (id: number) => void; mode?: "modal" | "panel"; onFull?: () => void }) {
   const q = trpc.pj.task.useQuery({ organizationId: orgId, id }, { refetchInterval: 30_000 });
   const [editing, setEditing] = React.useState(false);
   React.useEffect(() => {
@@ -33,6 +33,30 @@ export function TaskModal({ orgId, id, onClose, onOpen, onEditFields, onSaveTemp
     return () => window.removeEventListener("keydown", h);
   }, [editing, onClose]);
   const d = q.data;
+  // Beside the list: the same task, stacked, with the list still in view.
+  if (mode === "panel")
+    return (
+      <aside className="gp-tpane" aria-label={d?.task.name ?? "Task"}>
+        <div className="gp-tpane-h">
+          <span className="ld-small ld-muted gp-ell">{d ? [d.list.folderName, d.list.name].filter(Boolean).join(" › ") : ""}</span>
+          <span className="ld-row">
+            {onFull && <button type="button" className="ld-btn sm" onClick={onFull}>Open full</button>}
+            <button type="button" className="ld-btn sm" onClick={onClose}>Close</button>
+          </span>
+        </div>
+        {!d ? (
+          <div style={{ padding: 20 }}>
+            <ErrorLine error={q.error} />
+            {q.isLoading && <span className="ld-muted">Opening the task</span>}
+          </div>
+        ) : (
+          <>
+            <div className="tml">{editing ? <EditTask orgId={orgId} d={d} onDone={() => setEditing(false)} onClose={onClose} /> : <ReadTask orgId={orgId} d={d} onEdit={() => setEditing(true)} onOpen={onOpen} onEditFields={onEditFields} onSaveTemplate={onSaveTemplate} />}</div>
+            <Activity orgId={orgId} d={d} onClose={onClose} panel />
+          </>
+        )}
+      </aside>
+    );
   return (
     <div className="gp-modal" role="dialog" aria-modal="true" aria-label={d?.task.name ?? "Task"} onMouseDown={(e) => e.target === e.currentTarget && !editing && onClose()}>
       <div className="gp-tm">
@@ -115,7 +139,7 @@ function ReadTask({ orgId, d, onEdit, onOpen, onEditFields, onSaveTemplate }: { 
   return (
     <>
       <div className="ld-between" style={{ gap: 12 }}>
-      <div className="ld-small ld-muted">
+      <div className="ld-small ld-muted gp-crumb">
         {[d.list.folderName, d.list.name].filter(Boolean).join(" / ")}
         {d.parent && (
           <>
@@ -779,7 +803,7 @@ function EditTask({ orgId, d, onDone, onClose }: { orgId: number; d: Detail; onD
   );
 }
 
-function Activity({ orgId, d, onClose }: { orgId: number; d: Detail; onClose: () => void }) {
+function Activity({ orgId, d, onClose, panel }: { orgId: number; d: Detail; onClose: () => void; panel?: boolean }) {
   const utils = trpc.useUtils();
   const [preview, setPreview] = React.useState<PreviewFile | null>(null);
   const [text, setText] = React.useState("");
@@ -792,10 +816,10 @@ function Activity({ orgId, d, onClose }: { orgId: number; d: Detail; onClose: ()
       await utils.pj.task.invalidate();
     },
   });
-  const end = React.useRef<HTMLDivElement>(null);
-  // Wrapped in braces: an effect must return nothing or a cleanup function, and a browser extension can make scrollIntoView return a value.
+  const acts = React.useRef<HTMLDivElement>(null);
+  // The newest comment shows: only the activity box scrolls, never the page or the panel around it.
   React.useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
+    if (acts.current) acts.current.scrollTop = acts.current.scrollHeight;
   }, [d.comments.length]);
   // An employee answers in a moment: look again shortly after a comment that names one.
   React.useEffect(() => {
@@ -808,9 +832,9 @@ function Activity({ orgId, d, onClose }: { orgId: number; d: Detail; onClose: ()
       {preview && <FilePreview orgId={orgId} file={preview} onClose={() => setPreview(null)} />}
       <div className="ld-between" style={{ padding: "14px 16px", borderBottom: "1px solid #e3e9e6" }}>
         <b>Activity</b>
-        <button type="button" className="gp-x big" aria-label="Close" onClick={onClose}>×</button>
+        {!panel && <button type="button" className="gp-x big" aria-label="Close" onClick={onClose}>×</button>}
       </div>
-      <div className="gp-acts">
+      <div className="gp-acts" ref={acts}>
         {d.comments.map((c) =>
           c.kind === "activity" ? (
             <div key={c.id} className="gp-act">
@@ -827,7 +851,6 @@ function Activity({ orgId, d, onClose }: { orgId: number; d: Detail; onClose: ()
             </div>
           )
         )}
-        <div ref={end} />
       </div>
       {canComment ? (
         <div className="gp-cbox">
