@@ -165,7 +165,7 @@ describe("Elena's mini drama studio", () => {
     expect(posts(drama.MODELS.video)).toHaveLength(clipsBefore);
 
     // Renee got a portrait once; her shot and the owner's are matched to their faces.
-    expect(posts(drama.MODELS.portrait).filter((b) => /Cinematic portrait photograph of Renee Cole/.test(b.prompt))).toHaveLength(1);
+    expect(posts(drama.MODELS.portrait).filter((b) => /Candid portrait photograph of Renee Cole/.test(b.prompt))).toHaveLength(1);
     // Every shot after the first in a scene also sees the shot before it, so the room and light carry over.
     const stills = posts(drama.MODELS.still);
     expect(stills).toHaveLength(3);

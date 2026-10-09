@@ -108,11 +108,16 @@ Shots (the shot list comes first, every time):
 - 10 to 16 shots for a 60 to 90 second episode, each 3 to 7 seconds. Mix them like a film: an establishing wide of the place (2 to 3 seconds), medium two-shots, over-the-shoulder shots for conversations, close-ups for emotion, extreme close-up inserts (hands, a phone screen, a file, a door handle) and reaction shots.
 - Build depth in every frame: something in the foreground, the subject in the middle, the room behind. Compose for a vertical phone screen, not a cropped wide film.
 - Never more than one line in a shot, and never two talking close-ups of the same person in a row.
+- A spoken line of more than six words is covered by a reaction shot or an insert for part of it, so the viewer is not watching one mouth for the whole line.
 Camera:
 - Every shot moves with purpose, and you name the move and how far: a slow dolly-in of a few inches over the shot, handheld micro-movement for tension, a tracking shot when someone walks, a rack focus to land a look, a static frame only for a held beat.
-- 24fps film look, shallow depth of field, a 35mm lens feel for rooms and a 50mm feel for faces.
+- Shot like a 2026 streaming drama, not a commercial: a 35mm feel for rooms and 50mm for faces, natural depth of field (the background soft, not smeared), framing that is slightly off-center and imperfect, as if a real operator were holding the camera.
 Light and color:
-- Motivated, directional light from real sources: a window, a desk lamp, a monitor, a phone screen. Rim or backlight to separate people from the background. Warm practicals, rich shadows, realistic skin tones, controlled contrast, one consistent color grade for the series, light film grain. Night is moody, never murky.
+- Motivated, directional light from real sources: a window, a desk lamp, a monitor, a phone screen. Rim or backlight to separate people from the background. Daylight is cool and soft, practicals are warm, and the two mix in the same frame. Realistic skin with pores and natural shine, no beauty-filter smoothing, no orange tan. One consistent, muted color grade for the series with gentle contrast and a touch of grain; never the glossy, over-lit, over-saturated look of stock footage or a car ad. Night is moody, never murky.
+The world (what keeps it from looking like AI):
+- Real places with real clutter: a therapy office with a worn couch, a water bottle and a stack of folders; a kitchen with mail on the counter; a car with a charging cable. Nothing staged, nothing symmetrical, nothing brand new.
+- Current life: 2026 phones, laptops, badges, coffee cups, clothes people wear to work now (knit, linen, sneakers, a blazer over a tee), current hair. No period-film wardrobe, no uniforms unless the story needs them.
+- People look like people: slightly tired eyes, a stray hair, an untucked shirt, hands doing something. Expressions are small and read from the eyes.
 Sound (planned per shot):
 - Room tone always, plus the sounds the action makes: footsteps, a door latch, keyboard taps, a phone vibrating, paper sliding, HVAC hum, rain on a window. A silent beat before a reveal.
 - The score: one music cue per episode with a mood, a tempo and the moment it builds or drops out.
@@ -179,7 +184,7 @@ const SEASON_SCHEMA: JsonSchema = {
   properties: {
     title: { type: "string" },
     premise: { type: "string", description: "Two sentences: the world and the season's question" },
-    look: { type: "string", description: "The series' visual look in one sentence: setting, light, color grade, lens" },
+    look: { type: "string", description: "The series' visual look in one sentence, set in 2026: the real places, the light, a muted color grade, the lens; current clothes and objects, nothing staged" },
     cast: {
       type: "array",
       items: {
@@ -190,7 +195,7 @@ const SEASON_SCHEMA: JsonSchema = {
           name: { type: "string" },
           role: { type: "string", description: "Their part in the story, a few words" },
           owner: { type: "boolean", description: "True only for the character the owner plays herself" },
-          look: { type: "string", description: "Age, build, hair, skin tone, wardrobe; for the owner, wardrobe only" },
+          look: { type: "string", description: "Age, build, hair, skin tone, and what they wear to work in 2026 (specific pieces, not 'professional attire'); for the owner, wardrobe only" },
           voice: { type: "string", description: "The name of the voice from the voice list that fits, or ''" },
         },
       },
@@ -545,7 +550,7 @@ async function speak(voiceId: string, text: string) {
 /** A made-up character needs a portrait before their first shot, so they look the same in every shot. */
 async function portraitFor(orgId: number, c: DramaCastMember, look: string) {
   if (c.photoUrl) return c.photoUrl;
-  const r = await falRun(MODELS.portrait, { prompt: `Cinematic portrait photograph of ${c.name}, ${c.look}. Head and shoulders, facing the camera, neutral expression, soft natural light, plain background, 35mm film look. ${look}`, aspect_ratio: "3:4", num_images: 1, output_format: "png" }, 5);
+  const r = await falRun(MODELS.portrait, { prompt: `Candid portrait photograph of ${c.name}, ${c.look}, as they look in 2026: current clothes and hair, no heavy makeup. Head and shoulders, facing the camera, neutral expression, soft window light, plain background, real skin with pores and natural shine, no beauty-filter smoothing, no orange tan, muted colors, 50mm lens. ${look}`, aspect_ratio: "3:4", num_images: 1, output_format: "png" }, 5);
   const url = r?.images?.[0]?.url;
   if (!url) throw new Error(`No portrait came back for ${c.name}`);
   const saved = await storagePut(`org-${orgId}/drama/cast-${c.id}.png`, await download(url), "image/png");
@@ -568,7 +573,7 @@ function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], pr
   });
   const shown = props.map((p) => `reference image ${at++} is ${p.title}: show it exactly as it is`);
   const before = prev ? ` Reference image ${at} is the shot just before this one in the same scene: keep the same room, light, color grade, wardrobe, hair and props, and continue from that moment from this new camera angle.` : "";
-  return `A single cinematic film still, vertical 9:16, from a professionally produced commercial or drama. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look} Shallow depth of field, motivated light, realistic skin texture, film grain. No added text, captions or watermarks.${before}`;
+  return `A single frame from a 2026 streaming drama series, vertical 9:16, photographed on a cinema camera with a 35mm or 50mm lens. ${s.framing} shot. ${s.action} Setting: ${s.setting}, a real lived-in place with everyday clutter and current-day objects (2026 phones, laptops, coffee cups), nothing staged or symmetrical. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features. Clothes people wear to work today, natural hair, no heavy makeup.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look} Natural depth of field with a soft, not smeared, background. Motivated light from a window, a lamp or a screen, cool daylight mixed with warm practicals. Real skin with pores and natural shine, no beauty-filter smoothing, no orange tan. Muted color grade, gentle contrast, a touch of grain, slightly off-center framing like a real operator. Not a commercial, not stock footage, not glossy, not over-saturated, not CGI. No added text, captions or watermarks.${before}`;
 }
 
 /** The video model moves the camera and the people; it never redesigns them. */
@@ -577,7 +582,7 @@ function motionPrompt(s: Shot, refs: Refs[]) {
   let action = s.action;
   for (const r of tags) action = action.replace(new RegExp(`\\b${r.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), r.tag);
   const talk = s.line ? ` ${tags.find((r) => r.n.toLowerCase() === s.line!.who.toLowerCase())?.tag ?? s.line.who} speaks a short line, mouth moving naturally.` : "";
-  return `${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in the first frame; only the camera and natural movement change. Restrained, realistic motion: subtle breathing, natural blinks, no surreal body motion, no slow motion, no transformations, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
+  return `${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in the first frame; only the camera and natural movement change. Restrained, realistic motion at normal speed: subtle breathing, natural blinks, small shifts of weight and hands, the kind of micro-movement a real person makes; no surreal body motion, no slow motion, no transformations, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
 
 /** Seedance takes the still and the faces as numbered images; the still is the first frame. */
@@ -591,7 +596,7 @@ function seedancePrompt(s: Shot, refs: Refs[]) {
   for (const r of who) action = action.replace(new RegExp(`\\b${r.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), `the person in ${r.tag}`);
   const faces = who.map((r) => `${r.n} is the person in ${r.all.join(" and ")}`).join("; ");
   const talk = s.line ? ` ${s.line.who} speaks a short line, mouth moving naturally.` : "";
-  return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. Keep every face exactly like its images. ` : ""}${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in @Image1; only the camera and natural movement change. Restrained, realistic motion: subtle breathing, natural blinks, no surreal body motion, no slow motion, no transformations, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
+  return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. Keep every face exactly like its images. ` : ""}${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in @Image1; only the camera and natural movement change. Restrained, realistic motion at normal speed: subtle breathing, natural blinks, small shifts of weight and hands, the kind of micro-movement a real person makes; no surreal body motion, no slow motion, no transformations, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
 
 /** The owner's take carries the performance and the voice; the still carries how everything looks. */
@@ -1309,7 +1314,7 @@ export async function makePlates(orgId: number) {
   const refs = await Promise.all(photos.map(asInput));
   const plates: Plate[] = [];
   for (const p of PLATES) {
-    const r = await falRun(MODELS.still, { prompt: `A clean character reference photo of the person in the reference images (the same person, same face, same skin tone, same hair): ${p}. Plain light gray studio background, soft even light, neutral expression, realistic skin texture, vertical photo. Keep the face exactly like the references.`, image_urls: refs, aspect_ratio: "3:4", num_images: 1, output_format: "png" }, 5);
+    const r = await falRun(MODELS.still, { prompt: `A clean character reference photo of the person in the reference images (the same person, same face, same skin tone, same hair): ${p}. Plain light gray studio background, soft even window light, neutral expression, real skin with pores and natural shine, no beauty-filter smoothing, no orange tan, current clothes and hair, vertical photo. Keep the face exactly like the references.`, image_urls: refs, aspect_ratio: "3:4", num_images: 1, output_format: "png" }, 5);
     const url = r?.images?.[0]?.url;
     if (!url) continue;
     plates.push({ label: p, url: (await storagePut(`org-${orgId}/drama/plate-${plates.length + 1}-${Date.now()}.png`, await download(url), "image/png")).url });
