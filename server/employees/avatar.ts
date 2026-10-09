@@ -95,12 +95,49 @@ export async function draft(orgId: number, input: { title: string; script: strin
   const tenths = estimateTenths(script);
   const title = input.title.trim().slice(0, 120) || "Video";
   if (!isOwner(input.who)) {
-    const cast = await (await import("./drama")).castFromDescription(orgId, input.who!);
+    const drama = await import("./drama");
+    const cast = await drama.castFromDescription(orgId, input.who!);
+    // Their portrait is made now, so the card shows who is on camera before anything is animated.
+    if (!cast.photoUrl && ENV.falKey) await drama.portraitFor(orgId, cast, "").catch((err) => console.warn(`[avatar] portrait for ${cast.name}:`, err instanceof Error ? err.message : err));
     return db.createAvatarVideo({ organizationId: orgId, employeeId: emp.id, title, script, imageId: null, castId: cast.id, voiceId: cast.voiceId, voiceName: cast.voiceName, quality: s.quality, costCents: costFor(tenths, s.quality), tenths: null });
   }
   const pics = await photos(orgId);
   const imageId = s.imageId && pics.some((p) => p.id === s.imageId) ? s.imageId : pics[0]?.id ?? null;
   return db.createAvatarVideo({ organizationId: orgId, employeeId: emp.id, title, script, imageId, voiceId: s.voiceId, voiceName: s.voiceName, quality: s.quality, costCents: costFor(tenths, s.quality), tenths: null });
+}
+
+/** A different portrait for the made-up person on camera (their description stays). */
+export async function newLook(orgId: number, id: number) {
+  const v = db.getAvatarVideo(id, orgId);
+  if (!v) throw new TRPCError({ code: "NOT_FOUND", message: "That video is not in this workspace." });
+  const cast = castOf(v);
+  if (!cast) throw new TRPCError({ code: "BAD_REQUEST", message: "This video is of you; change your photo under Your avatar." });
+  if (v.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
+  db.updateDramaCast(cast.id, orgId, { photoUrl: null });
+  await (await import("./drama")).portraitFor(orgId, { ...cast, photoUrl: null }, "");
+  return v;
+}
+
+/** The stock voices a made-up person can use, with a sample to play (never the owner's own cloned voices). */
+export async function castVoices() {
+  try {
+    return (await (await import("./huddle")).listVoices()).filter((v) => !v.own).map((v) => ({ id: v.id, name: v.name, gender: v.gender, accent: v.accent, description: v.description, previewUrl: v.previewUrl }));
+  } catch {
+    return [];
+  }
+}
+
+/** A different voice for the made-up person on camera: the cast member keeps it for every video they are in. */
+export async function setCastVoice(orgId: number, id: number, voiceId: string) {
+  const v = db.getAvatarVideo(id, orgId);
+  if (!v) throw new TRPCError({ code: "NOT_FOUND", message: "That video is not in this workspace." });
+  const cast = castOf(v);
+  if (!cast) throw new TRPCError({ code: "BAD_REQUEST", message: "This video is in your own voice; change it under Your avatar." });
+  if (v.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
+  const voice = (await castVoices()).find((x) => x.id === voiceId);
+  if (!voice) throw new TRPCError({ code: "NOT_FOUND", message: "That voice is not on the account." });
+  db.updateDramaCast(cast.id, orgId, { voiceId: voice.id, voiceName: voice.name });
+  return db.updateAvatarVideo(id, orgId, { voiceId: voice.id, voiceName: voice.name })!;
 }
 
 /** Who is on camera in a video: the owner, or the made-up person it was cast with. */

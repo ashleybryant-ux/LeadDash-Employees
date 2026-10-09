@@ -367,6 +367,7 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: #e3e9
 .ld-av-kv { display: grid; grid-template-columns: 140px minmax(0,1fr); gap: 10px 16px; font-size: 14px; align-items: center; }
 .ld-av-thumb { width: 64px; height: 84px; border-radius: 8px; object-fit: cover; object-position: top; display: block; }
 .ld-av-thumb.sm { width: 40px; height: 52px; }
+.ld-av-thumb.cast { width: 96px; height: 128px; border-radius: 10px; }
 .ld-av-pick { padding: 0; border: 0; background: none; border-radius: 9px; cursor: pointer; outline: 3px solid transparent; outline-offset: 1px; }
 .ld-av-pick.on { outline-color: #1b6b4a; }
 .ld-av-exp { display: grid; gap: 20px; padding: 16px 18px 20px; background: #f4f8f6; border-bottom: 1px solid #e3e9e6; align-items: start; }

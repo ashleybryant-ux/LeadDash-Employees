@@ -20,6 +20,8 @@ type View = {
   quality: string;
   voiceName: string | null;
   photoTitle: string | null;
+  /** Who is on camera: a made-up person from the cast (null: the owner). */
+  who?: { id: number; name: string; look: string; photoUrl: string | null } | null;
   videoUrl: string | null;
   error: string | null;
   madeAt: Date | string | null;
@@ -53,6 +55,8 @@ function useAvatarActions(id: number) {
   const refresh = () => Promise.all([utils.avatar.get.invalidate({ organizationId: currentOrgId, id }), utils.avatar.list.invalidate(), utils.avatar.settings.invalidate()]);
   return {
     make: trpc.avatar.make.useMutation({ onSuccess: refresh }),
+    newLook: trpc.avatar.newLook.useMutation({ onSuccess: refresh }),
+    setVoice: trpc.avatar.setCastVoice.useMutation({ onSuccess: refresh }),
     again: trpc.avatar.again.useMutation({ onSuccess: () => { void refresh(); void utils.chat.list.invalidate(); } }),
     save: trpc.avatar.updateScript.useMutation({ onSuccess: refresh }),
     remove: trpc.avatar.remove.useMutation({ onSuccess: refresh }),
@@ -85,6 +89,47 @@ function ScriptEditor({ v, onDone }: { v: View; onDone: () => void }) {
 }
 
 /** The card under Elena's message. */
+/**
+ * The voice of a made-up person on camera: pick from the stock voices and play a sample before
+ * making the video. The cast member keeps the voice for every video they are in.
+ */
+function CastVoice({ v, a }: { v: View; a: ReturnType<typeof useAvatarActions> }) {
+  const { currentOrgId } = useTenant();
+  const voices = trpc.avatar.castVoices.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, staleTime: 300_000 });
+  const audio = React.useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = React.useState<string | null>(null);
+  const [picked, setPicked] = React.useState<string>("");
+  const current = voices.data?.find((x) => x.name === v.voiceName) ?? null;
+  const chosen = picked || current?.id || "";
+  const play = () => {
+    const voice = voices.data?.find((x) => x.id === chosen);
+    if (!voice?.previewUrl) return;
+    if (audio.current) { audio.current.pause(); audio.current = null; }
+    if (playing === voice.id) { setPlaying(null); return; }
+    const el = new Audio(voice.previewUrl);
+    audio.current = el;
+    setPlaying(voice.id);
+    el.onended = () => setPlaying(null);
+    void el.play().catch(() => setPlaying(null));
+  };
+  const label = (x: { name: string; gender: string; accent: string; description: string }) => [x.name, [x.gender, x.accent, x.description].filter(Boolean).join(", ")].filter(Boolean).join(": ");
+  return (
+    <div className="ld-row" style={{ gap: 8, flexWrap: "wrap" }}>
+      <label className="ld-small ld-muted" htmlFor={`cv-${v.id}`}>Voice</label>
+      <select id={`cv-${v.id}`} className="ld-in" style={{ height: 32, flex: "1 1 140px", minWidth: 0, maxWidth: 260 }} value={chosen} disabled={v.status === "making" || a.setVoice.isPending} onChange={(e) => { setPicked(e.target.value); setPlaying(null); }}>
+        {!current && v.voiceName && <option value="">{v.voiceName}</option>}
+        {(voices.data ?? []).map((x) => <option key={x.id} value={x.id}>{label(x)}</option>)}
+      </select>
+      <button type="button" className="ld-btn sm" disabled={!chosen || !voices.data?.find((x) => x.id === chosen)?.previewUrl} onClick={play}>{playing && playing === chosen ? "Stop" : "Play"}</button>
+      {chosen && chosen !== current?.id && v.status !== "making" && (
+        <button type="button" className="ld-btn sm p" disabled={a.setVoice.isPending} onClick={() => a.setVoice.mutate({ organizationId: a.orgId, id: v.id, voiceId: chosen }, { onSuccess: () => setPicked("") })}>
+          {a.setVoice.isPending ? "Saving..." : "Use it"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function AvatarVideoCard({ id }: { id: number }) {
   const { currentOrgId } = useTenant();
   const q = trpc.avatar.get.useQuery({ organizationId: currentOrgId, id }, { refetchInterval: (r) => (r.state.data?.status === "making" ? 10_000 : false) });
@@ -94,8 +139,9 @@ export function AvatarVideoCard({ id }: { id: number }) {
   if (!v) return q.isLoading ? null : <div className="ld-card ld-empty">This video was deleted.</div>;
   const meta = [v.length, v.quality === "pro" ? "Pro" : "Standard", v.cost, v.status === "ready" && v.madeAt ? fmtDate(v.madeAt) : ""].filter(Boolean).join(" · ");
   return (
-    <div className="ld-card ld-av-card" style={{ gridTemplateColumns: v.status === "ready" && v.videoUrl ? "200px minmax(0,1fr) 128px" : "minmax(0,1fr) 128px" }}>
+    <div className="ld-card ld-av-card" style={{ gridTemplateColumns: v.status === "ready" && v.videoUrl ? "200px minmax(0,1fr) 128px" : v.who?.photoUrl ? "96px minmax(0,1fr) 128px" : "minmax(0,1fr) 128px" }}>
       {v.status === "ready" && v.videoUrl && <Player url={v.videoUrl} />}
+      {v.status !== "ready" && v.who?.photoUrl && <img src={v.who.photoUrl} alt={v.who.name} className="ld-av-thumb cast" />}
       {editing ? (
         <ScriptEditor v={v} onDone={() => setEditing(false)} />
       ) : (
@@ -105,6 +151,8 @@ export function AvatarVideoCard({ id }: { id: number }) {
             <StatusPill status={v.status} />
           </div>
           <span className="ld-small" style={{ color: "#3d4c45" }}>{meta}</span>
+          {v.who && <span className="ld-small ld-muted">On camera: <b>{v.who.name}</b>, {v.who.look}</span>}
+          {v.who && !editing && <CastVoice v={v} a={a} />}
           {v.status === "ready" ? (
             <span className="ld-small ld-muted">TikTok asks you to turn on its AI-generated label when you post.</span>
           ) : (
@@ -112,7 +160,7 @@ export function AvatarVideoCard({ id }: { id: number }) {
           )}
           {v.status === "making" && <span className="ld-small ld-muted">This usually takes 3 to 8 minutes. Elena posts it here when it's done.</span>}
           {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "#b42318" }}>{v.error}</span>}
-          <ErrorLine error={a.make.error ?? a.again.error} />
+          <ErrorLine error={a.make.error ?? a.again.error ?? a.newLook.error} />
         </div>
       )}
       {!editing && (
@@ -123,6 +171,11 @@ export function AvatarVideoCard({ id }: { id: number }) {
                 {a.make.isPending ? "Starting..." : v.status === "failed" ? "Try again" : "Make it"}
               </button>
               <button type="button" className="ld-btn" onClick={() => setEditing(true)}>Edit script</button>
+              {v.who && (
+                <button type="button" className="ld-btn" disabled={a.newLook.isPending} onClick={() => a.newLook.mutate({ organizationId: a.orgId, id })}>
+                  {a.newLook.isPending ? "Making..." : "New look"}
+                </button>
+              )}
             </>
           )}
           {v.status === "ready" && v.videoUrl && (

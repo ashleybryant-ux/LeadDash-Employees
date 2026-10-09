@@ -3043,6 +3043,24 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId, "member");
       return avatar.view(await avatar.make(input.organizationId, input.id));
     }),
+    /** Stock voices for a made-up person on camera, each with a sample to play. */
+    castVoices: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return avatar.castVoices();
+    }),
+    /** A different voice for the made-up person on camera. */
+    setCastVoice: protectedProcedure.input(orgInput.extend({ id: z.number().int(), voiceId: z.string().min(1).max(80) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      return avatar.view(await avatar.setCastVoice(input.organizationId, input.id, input.voiceId));
+    }),
+    /** A different portrait for the made-up person on camera. */
+    newLook: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const v = await avatar.newLook(input.organizationId, input.id);
+      return avatar.view(v);
+    }),
     again: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       return avatar.view(await avatar.again(input.organizationId, input.id));
