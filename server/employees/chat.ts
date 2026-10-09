@@ -1967,7 +1967,9 @@ export async function sendChatMessage(opts: {
   }
   const quoted = opts.replyToId ? await db.getChatMessage(opts.organizationId, opts.replyToId) : null;
   const quote = quoted && quoted.employeeId === emp.id ? quoted : null;
-  const quoteText = quote ? `${quote.authorName}: ${quote.content.replace(/\s+/g, " ").slice(0, 400)}` : "";
+  // A card-only message (a video, a draft, a report) is quoted by its card's title.
+  const quotedCardTitle = quote && !quote.content.trim() ? (apply.parse<{ type?: string; title?: string }[]>(quote.cards ?? "[]", []).find((c) => c.type !== "choices")?.title ?? "") : "";
+  const quoteText = quote ? `${quote.authorName}: ${(quote.content.trim() || quotedCardTitle).replace(/\s+/g, " ").slice(0, 400)}` : "";
   // @mentions: a tagged AI employee gets the message in their own chat and answers there; a tagged person gets a notice.
   const tagged = opts.forwarded ? { users: [] as number[], employees: [] as number[] } : await passOnMentions(emp, { ...opts, quoteText });
   // Only this chat's own unsent files can go with the message.

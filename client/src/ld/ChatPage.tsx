@@ -231,9 +231,10 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
     setReplyTo(null);
     send.mutate({ organizationId: currentOrgId, employeeId: emp.id, text: v, attachmentIds: attached.map((f) => f.id), spoken: talk.active, replyToId: replyTo?.id });
   };
-  /** Reply picks one message; its first line shows in the box and goes along with what you send. */
-  const startReply = (m: { id: number; authorName: string; content: string }) => {
-    setReplyTo({ id: m.id, authorName: m.authorName, excerpt: excerptOf(m.content) });
+  /** Reply picks one message; its first line (or its card's title) shows in the box and goes along with what you send. */
+  const startReply = (m: { id: number; authorName: string; content: string; cards: string | null }) => {
+    const cards = parseJson<Card[]>(m.cards, []).filter((c) => c.type !== "choices");
+    setReplyTo({ id: m.id, authorName: m.authorName, excerpt: excerptOf(m.content) || (cards[0]?.title ? cards[0].title : cards.length ? "the card above" : "") });
     composer.current?.querySelector("textarea")?.focus();
   };
   /** A tapped quick reply goes out as the person's message, without touching files waiting in the box. */
@@ -290,16 +291,16 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                     <div>
                       <span style={{ fontWeight: 800, fontSize: 14 }}>{m.authorName}</span>
                       <span style={{ fontSize: 12, color: "#5b6b64", fontWeight: 500, marginLeft: 6 }}>{fmtTime(m.createdAt)}</span>
-                      {m.content && (
+                      {(m.content || cards.length > 0) && (
                         <button type="button" className="ld-msgreply" onClick={() => startReply(m)} aria-label={`Reply to ${m.authorName}`}>
                           Reply
                         </button>
                       )}
                     </div>
-                    {quoted && (
+                    {quoted && (excerptOf(quoted.content) || parseJson<Card[]>(quoted.cards, []).some((c) => c.type !== "choices")) && (
                       <div className="ld-quote sent">
                         <b>{quoted.authorName}:</b>
-                        <span>{excerptOf(quoted.content)}</span>
+                        <span>{excerptOf(quoted.content) || parseJson<Card[]>(quoted.cards, []).find((c) => c.type !== "choices")?.title || "the card above"}</span>
                       </div>
                     )}
                     {m.content && <div style={{ fontSize: 15, lineHeight: 1.55, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.role === "user" ? <LongText text={m.content} /> : <Rich text={m.content} />}</div>}
