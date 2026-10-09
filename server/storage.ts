@@ -9,6 +9,23 @@ import { ENV } from "./_core/env";
  * URL cannot be guessed from another one.
  */
 
+/**
+ * Who a stored file under /files belongs to: a workspace (org-<id>/...) or one
+ * person's own photo (user-<id>/...). Anything else is no one's, and is never
+ * served: every file the app writes lives under one of the two.
+ */
+export function fileOwner(urlPath: string): { kind: "org" | "user"; id: number } | null {
+  let p = urlPath;
+  try {
+    p = decodeURIComponent(urlPath);
+  } catch {
+    return null;
+  }
+  if (p.includes("..") || p.includes("\\")) return null;
+  const m = p.match(/^\/(org|user)-(\d+)\//);
+  return m ? { kind: m[1] as "org" | "user", id: Number(m[2]) } : null;
+}
+
 export function uploadsRoot() {
   const dir = path.resolve(ENV.uploadsDir);
   fs.mkdirSync(dir, { recursive: true });

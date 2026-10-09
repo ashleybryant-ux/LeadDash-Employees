@@ -63,4 +63,21 @@ describe("the Claude and ChatGPT connector", () => {
     await c.account.newConnector({ organizationId: orgId });
     expect((await rpc(url, "tools/list")).status).toBe(404);
   });
+
+  it("in a healthcare practice, keeps the employees who work with client information off the link and shows approvals as counts", async () => {
+    const { orgId, owner } = await makeWorkspace("mcp-hc");
+    const c = caller(owner);
+    await c.organizations.update({ id: orgId, orgType: "healthcare" });
+    const link = await c.account.connector({ organizationId: orgId });
+    const url = `${base}${new URL(link.url.replace(/^[^/]*\/\/[^/]*/, "http://x")).pathname}`;
+    await rpc(url, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "claude-ai", version: "1" } });
+    const harper = (await db.getEmployeeByKind(orgId, "billing"))!;
+    const asked = await (await rpc(url, "tools/call", { name: "ask_employee", arguments: { employee: harper.name, message: "How much came in today?" } })).json();
+    expect(asked.result.isError).toBe(true);
+    expect(asked.result.content[0].text).toBe(`${harper.name} works with client information, which stays inside LeadDash Employees. Ask ${harper.name} in the app.`);
+    expect(await db.listChatMessages(orgId, harper.id)).toHaveLength(0);
+    const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+    const ok = await (await rpc(url, "tools/call", { name: "ask_employee", arguments: { employee: morgan.name, message: "What's due this month?" } })).json();
+    expect(ok.result.isError).toBeFalsy();
+  });
 });

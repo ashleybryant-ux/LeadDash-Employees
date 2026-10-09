@@ -8,7 +8,7 @@ import { serveStatic, setupVite } from "./vite";
 import { ENV } from "./env";
 import { getDb, getOrganizationMembership, guestSharesForUser, publicFileByToken, purgeExpiredAuthRecords } from "../db";
 import path from "node:path";
-import { uploadsRoot } from "../storage";
+import { fileOwner, uploadsRoot } from "../storage";
 import { aiStatus, searchModel } from "./llm";
 import { hasSecretsKey } from "./crypto";
 import { startScheduler } from "../employees/runner";
@@ -116,7 +116,10 @@ async function startServer() {
     try {
       const { user } = await authenticateRequest(req);
       if (!user) return res.status(401).send("Sign in to open this file.");
-      const org = decodeURIComponent(req.path).match(/^\/org-(\d+)\//)?.[1];
+      // Every file belongs to a workspace (org-<id>/) or is one person's photo (user-<id>/). Anything else is never served.
+      const owner = fileOwner(req.path);
+      if (!owner) return res.status(404).send("Not found");
+      const org = owner.kind === "org" ? String(owner.id) : null;
       if (org && user.role !== "admin" && !(await getOrganizationMembership(Number(org), user.id))) {
         // A guest on a shared Projects list can open the files on its tasks (their names carry a random key).
         const guest = /^\/org-\d+\/work\//.test(decodeURIComponent(req.path)) && guestSharesForUser(user.id).some((g) => g.organizationId === Number(org));
