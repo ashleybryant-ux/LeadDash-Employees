@@ -31,7 +31,9 @@ export type EhrClaim = { id: string; name?: string; initials: string; dos: strin
 export type EhrUnpaid = { payer: string; count: number; oldest: string; amountCents: number; status: string; url: string };
 export type EhrBalance = { id: string; name?: string; initials: string; cents: number; lastPayment: string | null; cardOnFile: boolean; url: string };
 export type EhrEligibility = { id: string; name?: string; initials: string; session: string; clinician: string; result: string; ok: boolean; url: string };
-export type EhrPaperwork = { id: string; name?: string; initials: string; what: string; sent: string; due: string | null; status: string; daysOut: number; url: string };
+export type EhrPaperwork = { id: string; name?: string; initials: string; what: string; packet?: string | null; sent: string; due: string | null; status: string; daysOut: number; url: string };
+/** The form by its own name, with the packet it went out in: "Intake Questionnaire (in Your paperwork)". */
+export const formName = (p: Pick<EhrPaperwork, "what" | "packet">) => (p.packet && p.packet !== p.what ? `${p.what} (in ${p.packet})` : p.what);
 export type EhrAppointment = { id: string; kind: "booked" | "confirmed" | "cancelled" | "reschedule_requested" | "no_show"; name?: string; initials: string; clinician: string; start: string; reason: string; at: string; url: string };
 /** An active client with no kept appointment in 30 days and nothing booked ahead. */
 export type EhrLapsed = { id: string; name?: string; initials: string; lastSeen: string; days: number; clinician: string; url: string };
@@ -351,7 +353,7 @@ export async function announce(orgId: number, changes: Changes, tz = "America/Ch
   const malik = await emp(orgId, "leads");
   if (malik && (changes.paperwork.length || changes.appointments.length || changes.lapsed.length)) {
     const lines: string[] = [];
-    for (const p of changes.paperwork) lines.push(`- ${who(p)} · ${p.what} sent ${longDate(p.sent)}, ${p.daysOut} day${p.daysOut === 1 ? "" : "s"} out, not finished`);
+    for (const p of changes.paperwork) lines.push(`- ${who(p)} · ${formName(p)} sent ${longDate(p.sent)}, ${p.daysOut} day${p.daysOut === 1 ? "" : "s"} out, not finished`);
     for (const a of changes.appointments) {
       const what = a.kind === "booked" ? "booked" : a.kind === "confirmed" ? "confirmed" : a.kind === "cancelled" ? `cancelled${a.reason ? ` (${a.reason})` : ""}` : a.kind === "no_show" ? "did not show" : `asked to reschedule${a.reason ? ` (${a.reason})` : ""}`;
       lines.push(`- ${who(a)} · ${whenText(a.start, tz)} with ${a.clinician} · ${what}`);
@@ -531,7 +533,7 @@ export function formatRead(what: EhrRead, raw: Row, range: string, snap: EhrSnap
     const p = paperBy.get(id) ?? [];
     const parts = [
       b ? `balance ${dollars(n(b.cents))}${b.cardOnFile ? " (card on file)" : ""}` : "no balance",
-      p.length ? `paperwork out: ${p.map((f) => `${f.what}, sent ${longDate(f.sent)}${f.status === "overdue" ? " (overdue)" : ""}`).join("; ")}` : "no paperwork out",
+      p.length ? `paperwork out: ${p.map((f) => `${formName(f)}, sent ${longDate(f.sent)}${f.status === "overdue" ? " (overdue)" : ""}`).join("; ")}` : "no paperwork out",
     ];
     return ` · ${parts.join(" · ")}`;
   };

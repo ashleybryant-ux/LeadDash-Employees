@@ -247,7 +247,7 @@ describe("A healthcare practice workspace", () => {
         };
       }
       // The snapshot's balance is on client b1 and the overdue intake packet on client p1.
-      return snapshot({ paperwork: [{ id: "p1", initials: "K.L.", what: "Intake packet", sent: "2026-09-28", due: "2026-10-05", status: "overdue", daysOut: 8, url: "https://ehr.test/patients/p1?tab=paperwork" }] });
+      return snapshot({ paperwork: [{ id: "p1", initials: "K.L.", what: "Intake Questionnaire", packet: "Your paperwork", sent: "2026-09-28", due: "2026-10-05", status: "overdue", daysOut: 8, url: "https://ehr.test/patients/p1?tab=paperwork" }, { id: "p2", initials: "K.L.", what: "Consent for Treatment", packet: "Your paperwork", sent: "2026-09-28", due: null, status: "not_started", daysOut: 8, url: "https://ehr.test/patients/p1?tab=paperwork" }] });
     });
     await me.ehr.connect({ organizationId: orgId, url: "https://api.health.leaddash.io", key: "ld-emp-0123456789abcdefghij" });
     await me.ehr.refresh({ organizationId: orgId });
@@ -271,7 +271,7 @@ describe("A healthcare practice workspace", () => {
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain("Of these clients, 1 has a balance ($360.00 in all) and 1 has paperwork sent and not finished");
     expect(prompts[1]).toContain("Avery Price · Dr. Ashley Bryant · confirmed · balance $360.00 (card on file) · no paperwork out");
-    expect(prompts[1]).toContain("Kim Lee · Dr. Ashley Bryant · confirmed · no balance · paperwork out: Intake packet, sent Sep 28, 2026 (overdue)");
+    expect(prompts[1]).toContain("Kim Lee · Dr. Ashley Bryant · confirmed · no balance · paperwork out: Intake Questionnaire (in Your paperwork), sent Sep 28, 2026 (overdue); Consent for Treatment (in Your paperwork), sent Sep 28, 2026");
     expect(r.reply!.content).toContain("Avery Price owes $360");
     expect(r.reply!.content).not.toContain("I don't have a calendar");
   });
