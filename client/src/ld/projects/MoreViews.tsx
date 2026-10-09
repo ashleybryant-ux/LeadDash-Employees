@@ -135,7 +135,7 @@ export function WorkloadView({ c }: { c: PjCtx }) {
   const [open, setOpen] = React.useState<string | null>(null);
   const [hoursEdit, setHoursEdit] = React.useState<Record<string, string> | null>(null);
   const [dragTask, setDragTask] = React.useState<{ id: number; from: string; week: number } | null>(null);
-  const q = trpc.pj.workload.useQuery({ organizationId: c.orgId, start, weeks: 6, listId: c.listId });
+  const q = trpc.pj.workload.useQuery({ organizationId: c.orgId, start, weeks: 6, listId: c.listId, portfolioId: c.portfolioId ?? null });
   const up = trpc.pj.update.useMutation();
   const shift = trpc.pj.shiftDates.useMutation();
   const setHours = trpc.pj.setHours.useMutation();

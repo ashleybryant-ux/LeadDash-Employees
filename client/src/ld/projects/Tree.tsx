@@ -9,8 +9,10 @@ import type { Where } from "../pages/Projects";
  * The sidebar, laid out like ClickUp's: a "+ New" button (task, folder, list,
  * doc, whiteboard, form), My tasks, Everything, Dashboards, Timesheets and
  * Templates, then each folder with its lists, docs, whiteboards and forms.
- * Each folder has a + for a new list and a ··· menu; each list has a ··· menu.
- * On a phone it opens as a drawer. A guest sees only the lists shared with them.
+ * Each folder has a + for a new list and a ··· menu (Archive among them); each
+ * list has a ··· menu. Archived folders and lists sit in an Archived section
+ * at the bottom and open read only. On a phone it opens as a drawer. A guest
+ * sees only the lists and docs shared with them.
  */
 const COLORS = ["#1b6b4a", "#b45309", "#7c3aed", "#2563eb", "#0f766e", "#9a4f2c", "#c2253c", "#4b5563"];
 type Tree = Outputs["pj"]["tree"];
@@ -34,7 +36,11 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
     setForm(ask.kind === "folder" ? { kind: "folder", name: "", color: COLORS[(tree?.folders.length ?? 0) % COLORS.length] } : { kind: "list", folderId: ask.folderId ?? null, name: "", color: "" });
   }, [ask]); // eslint-disable-line react-hooks/exhaustive-deps
   const [shut, setShut] = React.useState<Set<number>>(new Set());
+  const [showArchived, setShowArchived] = React.useState(false);
   const guest = !!tree?.guest;
+  const archivedQ = trpc.pj.archived.useQuery({ organizationId: orgId }, { enabled: showArchived && !guest });
+  const archiveList = trpc.pj.archiveList.useMutation({ onSuccess: async () => { await refresh(); void archivedQ.refetch(); } });
+  const archiveFolder = trpc.pj.archiveFolder.useMutation({ onSuccess: async () => { await refresh(); void archivedQ.refetch(); } });
   const done = async () => {
     setForm(null);
     await refresh();
@@ -88,6 +94,7 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
             {(close) => (
               <>
                 <button type="button" role="menuitem" onClick={() => { setForm({ kind: "list", id: l.id, folderId, name: l.name, color: "" }); close(); }}>Rename</button>
+                <button type="button" role="menuitem" onClick={() => { archiveList.mutate({ organizationId: orgId, id: l.id, on: true }); if (where.scope === "list" && where.listId === l.id) onPick({ scope: "everything" }); close(); }}>Archive</button>
                 <button type="button" role="menuitem" className="danger" onClick={() => { if (window.confirm(`Delete the ${l.name} list and its tasks?`)) removeList.mutate({ organizationId: orgId, id: l.id }); close(); }}>Delete list</button>
               </>
             )}
@@ -149,6 +156,9 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
             <button type="button" className={`gp-tl top ${where.scope === "docs" ? "on" : ""}`} onClick={() => pickAnd({ scope: "docs" })}>
               <span>📄 Docs</span>
             </button>
+            <button type="button" className={`gp-tl top ${where.scope === "portfolios" || where.scope === "portfolio" ? "on" : ""}`} onClick={() => pickAnd({ scope: "portfolios" })}>
+              <span>▦ Portfolios</span>
+            </button>
             <button type="button" className={`gp-tl top ${where.scope === "dash" ? "on" : ""}`} onClick={() => pickAnd({ scope: "dash" })}>
               <span>▥ Dashboards</span>
             </button>
@@ -184,6 +194,7 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
                         <>
                           {adds(f.id, close)}
                           <button type="button" role="menuitem" onClick={() => { setForm({ kind: "folder", id: f.id, name: f.name, color: f.color }); close(); }}>Rename or recolor</button>
+                          <button type="button" role="menuitem" onClick={() => { if (window.confirm(`Archive the ${f.name} folder and every list in it?`)) { archiveFolder.mutate({ organizationId: orgId, id: f.id, on: true }); if (where.scope === "folder" && where.folderId === f.id) onPick({ scope: "everything" }); } close(); }}>Archive folder</button>
                           <button type="button" role="menuitem" className="danger" onClick={() => { if (window.confirm(`Remove the ${f.name} folder? What's in it stays, out of the folder.`)) removeFolder.mutate({ organizationId: orgId, id: f.id }); close(); }}>Remove folder</button>
                         </>
                       )}
@@ -208,10 +219,52 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
         {tree?.loose.map((l) => listRow(l, null))}
         {tree?.looseItems.map((i) => itemRow(i))}
         {form && form.kind !== "folder" && form.folderId === null && !form.id && Form}
+        {guest && (tree?.sharedDocs.length ?? 0) > 0 && (
+          <>
+            <div className="ph2" style={{ marginTop: 8 }}><span>Docs</span></div>
+            {tree!.sharedDocs.map((d) => itemRow({ kind: "doc", id: d.id, name: d.name }))}
+          </>
+        )}
+        {!guest && (tree?.archived ?? 0) > 0 && (
+          <>
+            <div className="ph2" style={{ marginTop: 10 }}>
+              <button type="button" className="gp-tf-name" style={{ padding: 0, font: "inherit", color: "inherit", textTransform: "inherit", letterSpacing: "inherit" }} aria-expanded={showArchived} onClick={() => setShowArchived((v) => !v)}>
+                Archived <span style={{ fontWeight: 600 }}>{tree?.archived}</span> {showArchived ? "▾" : "▸"}
+              </button>
+            </div>
+            {showArchived &&
+              archivedQ.data?.folders.map((f) => (
+                <div key={`af${f.id}`}>
+                  <div className="gp-tf">
+                    <span className="gp-car" />
+                    <span className="gp-tf-name ld-muted"><span className="gp-fi" style={{ background: f.color, opacity: 0.5 }} /><span className="gp-ell">{f.name}</span></span>
+                    <span className="gp-tf-acts">
+                      <Menu label={`Options for the archived ${f.name} folder`}>
+                        {(close) => (
+                          <>
+                            <button type="button" role="menuitem" onClick={() => { archiveFolder.mutate({ organizationId: orgId, id: f.id, on: false }); close(); }}>Restore folder</button>
+                            <button type="button" role="menuitem" className="danger" onClick={() => { if (window.confirm(`Remove the ${f.name} folder for good? What's in it stays, out of the folder.`)) removeFolder.mutate({ organizationId: orgId, id: f.id }); close(); }}>Delete for good</button>
+                          </>
+                        )}
+                      </Menu>
+                    </span>
+                  </div>
+                  {f.lists.map((l) => (
+                    <button key={`al${l.id}`} type="button" className={`gp-tl ld-muted ${on({ scope: "list", listId: l.id }) ? "on" : ""}`} onClick={() => pickAnd({ scope: "list", listId: l.id })}><span className="gp-ell">{l.name}</span></button>
+                  ))}
+                </div>
+              ))}
+            {showArchived &&
+              archivedQ.data?.lists.map((l) => (
+                <button key={`al${l.id}`} type="button" className={`gp-tl top ld-muted ${on({ scope: "list", listId: l.id }) ? "on" : ""}`} style={{ paddingLeft: 30 }} onClick={() => pickAnd({ scope: "list", listId: l.id })}><span className="gp-ell">{l.name}</span></button>
+              ))}
+            {showArchived && archivedQ.data && !archivedQ.data.folders.length && !archivedQ.data.lists.length && <span className="ld-small ld-muted" style={{ padding: "4px 10px" }}>Nothing archived.</span>}
+          </>
+        )}
         {!guest && (
           <button type="button" className={`gp-tl add ${where.scope === "import" ? "on" : ""}`} style={{ marginTop: 10 }} onClick={() => pickAnd({ scope: "import" })}>⇩ Import from ClickUp</button>
         )}
-        <ErrorLine error={removeFolder.error || removeList.error} />
+        <ErrorLine error={removeFolder.error || removeList.error || archiveList.error || archiveFolder.error} />
       </aside>
     </>
   );

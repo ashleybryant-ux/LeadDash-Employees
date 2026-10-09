@@ -93,11 +93,15 @@ function mustTask(orgId: number, id: number) {
 // The folder tree
 // ==========================================
 
+function archivedCount(orgId: number, v: Viewer) {
+  return visibleLists(orgId, v, { archived: true }).filter((x) => x.list.archivedAt).length + db.work.folders.all(orgId).filter((f) => f.archivedAt).length;
+}
+
 export function tree(orgId: number, v: Viewer, me?: Assignee) {
   const vis = visibleLists(orgId, v);
   const visIds = new Set(vis.map((x) => x.list.id));
   const member = v.kind !== "guest";
-  const folders = db.work.folders.all(orgId).sort((a, b) => a.sort - b.sort || a.id - b.id);
+  const folders = db.work.folders.all(orgId).filter((f) => !f.archivedAt).sort((a, b) => a.sort - b.sort || a.id - b.id);
   const lists = vis.map((x) => x.list).sort((a, b) => a.sort - b.sort || a.id - b.id);
   const tasks = db.work.tasks.all(orgId).filter((t) => visIds.has(t.listId));
   const openIn = (l: PjList) => tasks.filter((t) => t.listId === l.id && !t.parentId && !t.closedAt).length;
@@ -126,6 +130,9 @@ export function tree(orgId: number, v: Viewer, me?: Assignee) {
     looseItems: extras(null),
     mine,
     guest: !member,
+    archived: member ? archivedCount(orgId, v) : 0,
+    /** For a guest: the docs shared with them on their own. */
+    sharedDocs: member ? [] : db.work.docShares.all(orgId).filter((s) => s.kind === "guest" && v.kind === "guest" && s.userId === v.userId).map((s) => db.work.docs.get(orgId, s.docId)).filter((d): d is NonNullable<typeof d> => !!d && !d.archivedAt).map((d) => ({ id: d.id, name: d.title })),
   };
 }
 
@@ -268,8 +275,14 @@ function counts(orgId: number) {
 }
 
 /** A list's tasks (or Everything, or My work) with what every view needs. */
-export async function view(orgId: number, v: Viewer, input: { listId: number | null; folderId?: number | null; scope: "list" | "everything" | "mine" | "folder"; me: Assignee; closed: boolean }) {
-  let vis = visibleLists(orgId, v);
+export async function view(orgId: number, v: Viewer, input: { listId: number | null; folderId?: number | null; portfolioId?: number | null; scope: "list" | "everything" | "mine" | "folder" | "portfolio"; me: Assignee; closed: boolean }) {
+  // One list opens even when archived (read only); the wider views leave archived lists out.
+  let vis = visibleLists(orgId, v, { archived: input.scope === "list" });
+  // A portfolio shows the tasks of every project in it.
+  if (input.scope === "portfolio") {
+    const ids = new Set((await import("./pjPortfolios")).listsIn(orgId, input.portfolioId ?? 0));
+    vis = vis.filter((x) => ids.has(x.list.id));
+  }
   // A folder shows every list in it together.
   const folderRow = input.scope === "folder" ? db.work.folders.get(orgId, input.folderId ?? 0) : null;
   if (input.scope === "folder") {
@@ -290,14 +303,15 @@ export async function view(orgId: number, v: Viewer, input: { listId: number | n
     pick = all.filter((t) => t.listId === list!.id && !t.parentId);
   } else if (input.scope === "mine") pick = all.filter((t) => parse<Assignee[]>(t.assignees, []).some((a) => a.type === input.me.type && a.id === input.me.id));
   else pick = all.filter((t) => !t.parentId);
-  if (!input.closed) pick = pick.filter((t) => !t.closedAt || Date.now() - new Date(t.closedAt).getTime() < 14 * 86_400_000);
+  // Done tasks older than two weeks stay out unless asked for; an archived list shows everything it had.
+  if (!input.closed && !list?.archivedAt) pick = pick.filter((t) => !t.closedAt || Date.now() - new Date(t.closedAt).getTime() < 14 * 86_400_000);
   const folder = list?.folderId ? db.work.folders.get(orgId, list.folderId) : null;
   const statuses = list ? statusesOf(list) : mergedStatuses(lists);
   const pickIds = new Set(pick.map((t) => t.id));
   // Fields shown as columns: the list's own (with the folder's), or across a folder its shared ones, or across everything the fields every list shares.
   const fields = list ? fieldsOf(orgId, list) : folderRow ? parse<FieldDef[]>(folderRow.fields, []).map((f) => ({ ...f, scope: "folder" as const })) : [];
   return {
-    list: list ? { id: list.id, name: list.name, description: list.description, folderId: list.folderId, folderName: folder?.name ?? null, statuses, fields, private: list.private, level: vis.find((x) => x.list.id === list!.id)!.level } : null,
+    list: list ? { id: list.id, name: list.name, description: list.description, folderId: list.folderId, folderName: folder?.name ?? null, statuses, fields, private: list.private, adminsOnly: list.adminsOnly, archivedAt: list.archivedAt, archivedBy: list.archivedBy, status: (await import("./pjPortfolios")).latestStatus(orgId, "list", list.id), level: vis.find((x) => x.list.id === list!.id)!.level } : null,
     folder: folderRow ? { id: folderRow.id, name: folderRow.name, color: folderRow.color, fields, level: (vis.some((x) => x.level === "full") || (v.kind === "member" && v.role !== "reviewer") ? "full" : vis.some((x) => x.level === "edit") ? "edit" : "view") as Level } : null,
     fields,
     statuses,

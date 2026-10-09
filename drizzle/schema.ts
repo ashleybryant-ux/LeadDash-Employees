@@ -2814,6 +2814,9 @@ export const pjFolders = sqliteTable(
     fields: text("fields").notNull().default("[]"),
     sort: integer("sort").notNull().default(0),
     clickupId: text("clickupId"),
+    /** Archived: out of the tree, Everything, Home and reports until restored. */
+    archivedAt: integer("archivedAt", { mode: "timestamp" }),
+    archivedBy: text("archivedBy").notNull().default(""),
     createdAt: createdAt(),
   },
   (t) => [index("pj_folders_org_idx").on(t.organizationId)]
@@ -2837,10 +2840,15 @@ export const pjLists = sqliteTable(
     fields: text("fields").notNull().default("[]"),
     /** Private: only the people it's shared with (and owners and admins) see it. */
     private: integer("private", { mode: "boolean" }).notNull().default(false),
+    /** With private: owners and admins only, whoever else it is shared with. */
+    adminsOnly: integer("adminsOnly", { mode: "boolean" }).notNull().default(false),
     /** A view-only link anyone can open; null when off. */
     shareToken: text("shareToken"),
     sort: integer("sort").notNull().default(0),
     clickupId: text("clickupId"),
+    /** Archived: read only and out of the tree, Everything, Home, portfolios and reports until restored. */
+    archivedAt: integer("archivedAt", { mode: "timestamp" }),
+    archivedBy: text("archivedBy").notNull().default(""),
     createdAt: createdAt(),
   },
   (t) => [index("pj_lists_org_idx").on(t.organizationId, t.folderId)]
@@ -3015,12 +3023,118 @@ export const pjDocs = sqliteTable(
     taskIds: text("taskIds").notNull().default("[]"),
     editedBy: text("editedBy").notNull().default(""),
     sort: integer("sort").notNull().default(0),
+    /** Who made it; a private doc shows only to them and the people in pj_doc_shares. */
+    ownerUserId: integer("ownerUserId"),
+    private: integer("private", { mode: "boolean" }).notNull().default(false),
+    /** Everyone in the workspace (never guests) can open it, wherever it lives. */
+    workspaceWide: integer("workspaceWide", { mode: "boolean" }).notNull().default(false),
+    /** A view-only public link anyone can open; null when off. */
+    shareToken: text("shareToken"),
+    archivedAt: integer("archivedAt", { mode: "timestamp" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [index("pj_docs_org_idx").on(t.organizationId, t.folderId)]
 );
 export type PjDoc = typeof pjDocs.$inferSelect;
+
+/** Who a doc is shared with: a person, an AI employee, or an outside email (this doc only). */
+export const pjDocShares = sqliteTable(
+  "pj_doc_shares",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    docId: integer("docId").notNull(),
+    kind: text("kind", { enum: ["user", "employee", "guest"] }).notNull(),
+    userId: integer("userId"),
+    employeeId: integer("employeeId"),
+    email: text("email").notNull().default(""),
+    level: text("level", { enum: ["view", "comment", "edit"] }).notNull().default("view"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_doc_shares_org_idx").on(t.organizationId, t.docId)]
+);
+export type PjDocShare = typeof pjDocShares.$inferSelect;
+
+/** A person's starred docs, whiteboards and forms. */
+export const pjStars = sqliteTable(
+  "pj_stars",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    userId: integer("userId").notNull(),
+    kind: text("kind", { enum: ["doc", "board", "form"] }).notNull(),
+    itemId: integer("itemId").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_stars_org_idx").on(t.organizationId, t.userId)]
+);
+
+/**
+ * A portfolio: a set of projects (lists) from any folders, or other portfolios,
+ * watched together with a status, progress, owner and dates per row.
+ */
+export const pjPortfolios = sqliteTable(
+  "pj_portfolios",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    color: text("color").notNull().default("#1b6b4a"),
+    ownerType: text("ownerType").notNull().default("user"),
+    ownerId: integer("ownerId"),
+    ownerName: text("ownerName").notNull().default(""),
+    startDate: text("startDate"),
+    dueDate: text("dueDate"),
+    archivedAt: integer("archivedAt", { mode: "timestamp" }),
+    createdBy: text("createdBy").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_portfolios_org_idx").on(t.organizationId)]
+);
+export type PjPortfolio = typeof pjPortfolios.$inferSelect;
+
+export const pjPortfolioItems = sqliteTable(
+  "pj_portfolio_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    portfolioId: integer("portfolioId").notNull(),
+    kind: text("kind", { enum: ["list", "portfolio"] }).notNull(),
+    itemId: integer("itemId").notNull(),
+    sort: integer("sort").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_portfolio_items_org_idx").on(t.organizationId, t.portfolioId)]
+);
+
+/**
+ * A status update on a project (a list) or a portfolio: on track, at risk, off
+ * track or on hold, with a summary, accomplishments, blockers and next steps.
+ * highlights: JSON [{itemId, name, status}] of the projects called out.
+ */
+export const pjStatusUpdates = sqliteTable(
+  "pj_status_updates",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    kind: text("kind", { enum: ["list", "portfolio"] }).notNull(),
+    itemId: integer("itemId").notNull(),
+    status: text("status", { enum: ["on", "risk", "off", "hold"] }).notNull(),
+    summary: text("summary").notNull().default(""),
+    accomplishments: text("accomplishments").notNull().default(""),
+    blockers: text("blockers").notNull().default(""),
+    next: text("next").notNull().default(""),
+    highlights: text("highlights").notNull().default("[]"),
+    authorType: text("authorType").notNull().default("user"),
+    authorId: integer("authorId"),
+    authorName: text("authorName").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_status_updates_org_idx").on(t.organizationId, t.kind, t.itemId)]
+);
+export type PjStatusUpdate = typeof pjStatusUpdates.$inferSelect;
 
 /** Comments on a doc; quote is the text they were about. */
 export const pjDocComments = sqliteTable(

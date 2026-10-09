@@ -27,25 +27,31 @@ export type Viewer =
   | { kind: "system" };
 
 export function levelFor(orgId: number, v: Viewer, list: PjList, shares = db.work.shares.where(orgId, "listId", list.id)): Level | null {
-  if (v.kind === "system") return "full";
+  // An archived list is read only for everyone until it is restored.
+  const cap = (lv: Level | null): Level | null => (lv && list.archivedAt ? "view" : lv);
+  if (v.kind === "system") return cap("full");
   if (v.kind === "member") {
-    if (v.role === "owner" || v.role === "admin") return "full";
+    if (v.role === "owner" || v.role === "admin") return cap("full");
+    // Private and admins only: nobody else, however it was shared before.
+    if (list.private && list.adminsOnly) return null;
     const s = shares.find((x) => x.kind === "user" && x.userId === v.userId);
-    if (s) return s.level;
+    if (s) return cap(s.level);
     if (list.private) return null;
-    return v.role === "reviewer" ? "view" : "edit";
+    return cap(v.role === "reviewer" ? "view" : "edit");
   }
-  if (v.kind === "guest") return shares.find((x) => x.kind === "guest" && x.userId === v.userId)?.level ?? null;
+  if (list.private && list.adminsOnly) return null;
+  if (v.kind === "guest") return cap(shares.find((x) => x.kind === "guest" && x.userId === v.userId)?.level ?? null);
   const s = shares.find((x) => x.kind === "employee" && x.employeeId === v.employeeId);
-  if (s) return s.level;
-  return list.private ? null : "edit";
+  if (s) return cap(s.level);
+  return list.private ? null : cap("edit");
 }
 
-/** Every list this viewer can open, with their level on it. */
-export function visibleLists(orgId: number, v: Viewer) {
+/** Every list this viewer can open, with their level on it. Archived lists stay out unless asked for. */
+export function visibleLists(orgId: number, v: Viewer, opts: { archived?: boolean } = {}) {
   const shares = db.work.shares.all(orgId);
   return db.work.lists
     .all(orgId)
+    .filter((l) => opts.archived || !l.archivedAt)
     .map((l) => ({ list: l, level: levelFor(orgId, v, l, shares.filter((s) => s.listId === l.id)) }))
     .filter((x): x is { list: PjList; level: Level } => x.level !== null);
 }
@@ -117,7 +123,7 @@ export async function sharesOf(orgId: number, listId: number) {
     ...members.filter((m) => m.role !== "owner" && m.role !== "admin" && !rows.some((r) => r.kind === "user" && r.userId === m.userId)).map((m) => ({ kind: "user" as const, id: m.userId, name: m.name || m.email })),
     ...emps.filter((e) => !rows.some((r) => r.kind === "employee" && r.employeeId === e.id)).map((e) => ({ kind: "employee" as const, id: e.id, name: e.name })),
   ];
-  return { private: l.private, link: l.shareToken ? `${ENV.appUrl}/share/${l.shareToken}` : null, people, can };
+  return { private: l.private, adminsOnly: l.adminsOnly, link: l.shareToken ? `${ENV.appUrl}/share/${l.shareToken}` : null, teamLink: `${ENV.appUrl}/projects?list=${l.id}`, people, can };
 }
 
 const fmtDate = (d: Date) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -166,8 +172,8 @@ export function setShareLevel(orgId: number, shareId: number, level: Level) {
 export function unshare(orgId: number, shareId: number) {
   db.work.shares.remove(orgId, shareId);
 }
-export function setPrivate(orgId: number, listId: number, on: boolean) {
-  db.work.lists.update(orgId, listId, { private: on });
+export function setPrivate(orgId: number, listId: number, on: boolean, adminsOnly = false) {
+  db.work.lists.update(orgId, listId, { private: on, adminsOnly: on && adminsOnly });
 }
 /** Turns the view-only link on (a new key) or off. */
 export function setLink(orgId: number, listId: number, on: boolean) {

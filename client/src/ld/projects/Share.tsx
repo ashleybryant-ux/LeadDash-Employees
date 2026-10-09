@@ -5,8 +5,8 @@ import { OwnerAvatar } from "../goals/shared";
 
 /**
  * Sharing a list: teammates and employees with an access level, outside
- * guests by email (they see only this list), a Private switch, and a
- * view-only link anyone can open.
+ * guests by email (they see only this list), Private (these people, or
+ * admins only), a team link, and a view-only link anyone can open.
  */
 
 const LEVELS = [
@@ -28,6 +28,7 @@ export function ShareList({ orgId, listId, name, canChange, onClose }: { orgId: 
   const [who, setWho] = React.useState("");
   const [level, setLevelPick] = React.useState<Level>("edit");
   const [copied, setCopied] = React.useState(false);
+  const [copiedTeam, setCopiedTeam] = React.useState(false);
   const d = q.data;
   const [pick, setPick] = React.useState<{ kind: "user" | "employee"; id: number; name: string } | null>(null);
   const matches = (d?.can ?? []).filter((x) => x.name.toLowerCase().includes(who.trim().toLowerCase())).slice(0, 6);
@@ -119,13 +120,24 @@ export function ShareList({ orgId, listId, name, canChange, onClose }: { orgId: 
                 <span style={{ minWidth: 0 }}>
                   <b>Private</b>
                   <br />
-                  <span className="ld-small ld-muted">{d.private ? "Only the people above see this list. Others in the workspace don't." : "Everyone in the workspace can see this list."}</span>
+                  <span className="ld-small ld-muted">{d.private ? (d.adminsOnly ? "Owners and admins only. It stays out of Everything, Home and reports for everyone else." : "Only the people above see this list. It stays out of Everything, Home and reports for everyone else.") : "Everyone in the workspace can see this list."}</span>
                 </span>
-                <select className="ld-in xs" aria-label="Private" disabled={!canChange} value={d.private ? "on" : "off"} onChange={(e) => setPrivate.mutate({ organizationId: orgId, listId, on: e.target.value === "on" })}>
+                <select className="ld-in xs" aria-label="Private" disabled={!canChange} value={d.private ? (d.adminsOnly ? "admins" : "on") : "off"} onChange={(e) => setPrivate.mutate({ organizationId: orgId, listId, on: e.target.value !== "off", adminsOnly: e.target.value === "admins" })}>
                   <option value="off">Off</option>
-                  <option value="on">On</option>
+                  <option value="on">Admins and these people</option>
+                  <option value="admins">Admins only</option>
                 </select>
                 <span />
+              </div>
+              <div className="gp-share">
+                <span className="gp-share-ic" aria-hidden="true">↗</span>
+                <span style={{ minWidth: 0 }}>
+                  <b>Team link</b>
+                  <br />
+                  <span className="ld-small ld-muted gp-ell" style={{ display: "block" }}>{d.teamLink.replace(/^https?:\/\//, "")}</span>
+                </span>
+                <span />
+                <button type="button" className="ld-btn sm" onClick={() => { void navigator.clipboard?.writeText(d.teamLink); setCopiedTeam(true); setTimeout(() => setCopiedTeam(false), 1500); }}>{copiedTeam ? "Copied" : "Copy link"}</button>
               </div>
             </>
           )}

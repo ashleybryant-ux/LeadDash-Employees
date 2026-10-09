@@ -4,15 +4,19 @@ import { ErrorLine } from "../ui";
 import { Menu } from "../goals/shared";
 import type { Outputs } from "../types";
 import type { Where } from "../pages/Projects";
+import { DocShare } from "./DocShare";
 
 /**
- * Docs, all in one place: every doc, whiteboard and form in the workspace,
- * wherever it lives, with tags, who changed it last, folder-style tabs and a
- * search that looks inside the text.
+ * Docs, all in one place, the way ClickUp's Docs hub works: every doc,
+ * whiteboard and form the person can see, in tabs (all, mine, shared with
+ * me, private, whiteboards, forms, archived), with stars, folder and tag
+ * filters, a search that looks inside the text, and Copy link and Share on
+ * each row. A lock marks a private doc.
  */
 
-type Tab = "all" | "mine" | "boards" | "forms";
-const ICON = { doc: "📄", board: "▢", form: "☰" } as const;
+type Tab = "all" | "mine" | "shared" | "private" | "boards" | "forms" | "archived";
+const TABS: [Tab, string][] = [["all", "All"], ["mine", "Mine"], ["shared", "Shared with me"], ["private", "Private"], ["boards", "Whiteboards"], ["forms", "Forms"], ["archived", "Archived"]];
+const ICON = { doc: "D", board: "W", form: "F" } as const;
 const fmtAt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
 
 export function DocsHub({ orgId, onPick, refresh }: { orgId: number; onPick: (w: Where) => void; refresh: () => Promise<unknown> }) {
@@ -23,6 +27,8 @@ export function DocsHub({ orgId, onPick, refresh }: { orgId: number; onPick: (w:
   const [sort, setSort] = React.useState<"updated" | "name">("updated");
   const [moving, setMoving] = React.useState<{ kind: "doc" | "board"; id: number; name: string; tags: string[] } | null>(null);
   const [making, setMaking] = React.useState<null | "doc" | "board">(null);
+  const [sharing, setSharing] = React.useState<{ id: number; name: string } | null>(null);
+  const [copied, setCopied] = React.useState<string>("");
   const utils = trpc.useUtils();
   const data = trpc.pj.allDocs.useQuery({ organizationId: orgId, q: q.trim() });
   const tree = trpc.pj.tree.useQuery({ organizationId: orgId });
@@ -32,79 +38,113 @@ export function DocsHub({ orgId, onPick, refresh }: { orgId: number; onPick: (w:
   const removeDoc = trpc.pj.removeDoc.useMutation({ onSuccess: done });
   const removeBoard = trpc.pj.removeBoard.useMutation({ onSuccess: done });
   const removeForm = trpc.pj.removeForm.useMutation({ onSuccess: done });
+  const archive = trpc.pj.archiveDoc.useMutation({ onSuccess: done });
+  const star = trpc.pj.star.useMutation({ onSuccess: () => utils.pj.allDocs.invalidate() });
   const d = data.data;
   const rows = (d?.docs ?? [])
-    .filter((x) => (tab === "all" ? true : tab === "boards" ? x.kind === "board" : tab === "forms" ? x.kind === "form" : x.mine))
+    .filter((x) => (tab === "archived" ? x.archived : !x.archived))
+    .filter((x) => (tab === "all" || tab === "archived" ? true : tab === "boards" ? x.kind === "board" : tab === "forms" ? x.kind === "form" : tab === "shared" ? x.shared : tab === "private" ? x.private : x.mine))
     .filter((x) => !folder || (x.where?.kind === "folder" && x.where.id === folder) || (x.where?.kind === "list" && listFolder(tree.data, x.where.id) === folder))
     .filter((x) => !tag || x.tags.includes(tag))
     .sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name) : (b.at ?? "").localeCompare(a.at ?? "")));
+  const starred = (d?.docs ?? []).filter((x) => x.starred && !x.archived);
   const open = (x: (typeof rows)[number]) => onPick({ scope: x.kind, id: x.id });
+  const linkOf = (x: (typeof rows)[number]) => `${window.location.origin}/projects?page=${x.kind}&id=${x.id}`;
+  const copy = (x: (typeof rows)[number]) => {
+    void navigator.clipboard?.writeText(linkOf(x));
+    setCopied(`${x.kind}${x.id}`);
+    setTimeout(() => setCopied(""), 1500);
+  };
+  const counts = d?.counts;
+  const count = (k: Tab) => (k === "all" ? counts?.all : k === "mine" ? counts?.mine : k === "shared" ? counts?.shared : k === "private" ? counts?.private : k === "boards" ? counts?.boards : k === "forms" ? counts?.forms : counts?.archived) ?? 0;
   return (
     <>
-      <div className="gp-head" style={{ paddingBottom: 14 }}>
+      <div className="gp-head" style={{ paddingBottom: 0 }}>
         <div className="gp-hrow">
           <span className="gp-ttl" style={{ fontSize: 18 }}>Docs</span>
+          <span className="ld-row">
+            <Menu label="New" button="+ New doc ▾" buttonClass="ld-btn p gp-auto">
+              {(close) => (
+                <>
+                  <button type="button" role="menuitem" onClick={() => { setMaking("doc"); close(); }}>Doc</button>
+                  <button type="button" role="menuitem" onClick={() => { setMaking("board"); close(); }}>Whiteboard</button>
+                </>
+              )}
+            </Menu>
+          </span>
+        </div>
+        <div className="gp-views" role="tablist" aria-label="Docs">
+          {TABS.map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} className={`gp-vw ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>
+              {k === "private" ? "🔒 " : ""}{label} <span className="ld-small ld-muted" style={{ fontWeight: 600 }}>{count(k)}</span>
+            </button>
+          ))}
         </div>
       </div>
       <div className="gp-tool">
         <span className="gp-tool-l">
-          <input className="gp-srch" style={{ width: 340 }} placeholder="Search docs and what's in them" aria-label="Search docs" value={q} onChange={(e) => setQ(e.target.value)} />
+          <select className="gp-fb" aria-label="Folder" value={folder} onChange={(e) => setFolder(e.target.value ? Number(e.target.value) : "")}>
+            <option value="">Folder: any</option>
+            {(d?.folders ?? []).map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+          <select className="gp-fb" aria-label="Tag" value={tag} onChange={(e) => setTag(e.target.value)}>
+            <option value="">Tag: any</option>
+            {(d?.tags ?? []).map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          <select className="gp-fb" aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as "updated" | "name")}>
+            <option value="updated">Sort: Updated</option>
+            <option value="name">Sort: Name</option>
+          </select>
         </span>
         <span className="gp-tool-r">
-          <Menu label="New" button="+ New doc ▾" buttonClass="ld-btn p gp-auto">
-            {(close) => (
-              <>
-                <button type="button" role="menuitem" onClick={() => { setMaking("doc"); close(); }}>Doc</button>
-                <button type="button" role="menuitem" onClick={() => { setMaking("board"); close(); }}>Whiteboard</button>
-              </>
-            )}
-          </Menu>
+          <input className="gp-srch" style={{ width: 280 }} placeholder="Search docs and what is in them" aria-label="Search docs" value={q} onChange={(e) => setQ(e.target.value)} />
         </span>
       </div>
-      <div className="gp-canvas">
+      <div className="gp-canvas" style={{ flexDirection: "column" }}>
         <ErrorLine error={data.error} />
-        <div className="gp-gl" style={{ width: "100%" }}>
-          <div className="gp-dochead">
-            <div className="gp-ftabs" role="tablist">
-              {([["all", `All (${d?.counts.all ?? 0})`], ["mine", `Mine (${d?.counts.mine ?? 0})`], ["boards", `Whiteboards (${d?.counts.boards ?? 0})`], ["forms", `Forms (${d?.counts.forms ?? 0})`]] as [Tab, string][]).map(([k, label]) => (
-                <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{label}</button>
-              ))}
-            </div>
-            <span className="ld-row">
-              <select className="gp-fb" aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as "updated" | "name")}>
-                <option value="updated">Sort: Updated</option>
-                <option value="name">Sort: Name</option>
-              </select>
-              <select className="gp-fb" aria-label="Folder" value={folder} onChange={(e) => setFolder(e.target.value ? Number(e.target.value) : "")}>
-                <option value="">Folder: any</option>
-                {(d?.folders ?? []).map((f) => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
-              </select>
-              {(d?.tags.length ?? 0) > 0 && (
-                <select className="gp-fb" aria-label="Tag" value={tag} onChange={(e) => setTag(e.target.value)}>
-                  <option value="">Tag: any</option>
-                  {d!.tags.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              )}
-            </span>
+        {starred.length > 0 && tab !== "archived" && (
+          <div className="gp-starred" aria-label="Starred">
+            {starred.slice(0, 6).map((x) => (
+              <button key={`${x.kind}${x.id}`} type="button" className="gp-starcard" onClick={() => open(x)}>
+                <span className="gp-star on">★</span>
+                <span style={{ minWidth: 0 }}>
+                  <b className="gp-ell" style={{ display: "block" }}>{x.name}</b>
+                  <span className="ld-small ld-muted gp-ell" style={{ display: "block" }}>{x.where?.name ?? "Not in a folder"}</span>
+                </span>
+              </button>
+            ))}
           </div>
-          <div className="gp-drow h"><span>Name</span><span>Where</span><span>Tags</span><span>Updated</span><span>By</span><span /></div>
+        )}
+        <div className="gp-gl" style={{ width: "100%" }}>
+          <div className="gp-drow h"><span>Name</span><span>Location</span><span>Tags</span><span>Updated</span><span>Owner</span><span /></div>
           {rows.map((x) => (
             <div key={`${x.kind}${x.id}`} className="gp-drow" role="button" tabIndex={0} onClick={() => open(x)} onKeyDown={(e) => e.key === "Enter" && open(x)}>
-              <span className="gp-dnm"><span aria-hidden="true">{ICON[x.kind]}</span><b className="gp-ell">{x.name}</b>{x.pages > 0 && <span className="ld-small ld-muted">{x.pages} page{x.pages === 1 ? "" : "s"}</span>}</span>
-              <span className="gp-ell">{x.where ? `${x.where.kind === "folder" ? "📁" : "☰"} ${x.where.name}` : <span className="ld-muted">Not in a folder</span>}</span>
-              <span className="gp-ell">{x.tags.map((t) => <span key={t} className="gp-chip" style={{ marginRight: 4 }}>{t}</span>)}</span>
-              <span>{fmtAt(x.at)}</span>
-              <span className="gp-ell">{x.by}</span>
+              <span className="gp-dnm">
+                <span className={`gp-dicon ${x.kind}`} aria-hidden="true">{ICON[x.kind]}</span>
+                <button type="button" className={`gp-star ${x.starred ? "on" : ""}`} aria-label={x.starred ? "Remove the star" : "Star"} aria-pressed={x.starred} onClick={(e) => { e.stopPropagation(); star.mutate({ organizationId: orgId, kind: x.kind, id: x.id, on: !x.starred }); }}>★</button>
+                <b className="gp-ell">{x.name}</b>
+                {x.private && <span className="ld-small ld-muted" title="Private">🔒</span>}
+                {x.pages > 0 && <span className="ld-small ld-muted">{x.pages} page{x.pages === 1 ? "" : "s"}</span>}
+                <span className="gp-dacts" onClick={(e) => e.stopPropagation()}>
+                  <button type="button" className="ld-btn sm gp-auto" onClick={() => copy(x)}>{copied === `${x.kind}${x.id}` ? "Copied" : "Copy link"}</button>
+                  {x.kind === "doc" && <button type="button" className="ld-btn sm gp-auto" onClick={() => setSharing({ id: x.id, name: x.name })}>Share</button>}
+                </span>
+              </span>
+              <span className="gp-ell ld-muted">{x.where ? `${x.where.kind === "folder" ? "📁" : "☰"} ${x.where.name}` : "–"}</span>
+              <span className="gp-ell">{x.tags.length ? x.tags.map((t) => <span key={t} className="gp-chip" style={{ marginRight: 4 }}>{t}</span>) : <span className="ld-muted">–</span>}</span>
+              <span className="ld-muted">{fmtAt(x.at)}</span>
+              <span className="gp-ell ld-muted">{x.by || "–"}</span>
               <span onClick={(e) => e.stopPropagation()}>
                 <Menu label={`Options for ${x.name}`}>
                   {(close) => (
                     <>
                       <button type="button" role="menuitem" onClick={() => { open(x); close(); }}>Open</button>
                       {x.kind !== "form" && <button type="button" role="menuitem" onClick={() => { setMoving({ kind: x.kind, id: x.id, name: x.name, tags: x.tags }); close(); }}>Move or tag</button>}
+                      {x.kind === "doc" && <button type="button" role="menuitem" onClick={() => { archive.mutate({ organizationId: orgId, id: x.id, on: !x.archived }); close(); }}>{x.archived ? "Restore" : "Archive"}</button>}
                       <button type="button" role="menuitem" className="danger" onClick={() => { if (window.confirm(`Delete "${x.name}"?`)) { if (x.kind === "doc") removeDoc.mutate({ organizationId: orgId, id: x.id }); else if (x.kind === "board") removeBoard.mutate({ organizationId: orgId, id: x.id }); else removeForm.mutate({ organizationId: orgId, id: x.id }); } close(); }}>Delete</button>
                     </>
                   )}
@@ -112,11 +152,12 @@ export function DocsHub({ orgId, onPick, refresh }: { orgId: number; onPick: (w:
               </span>
             </div>
           ))}
-          {!rows.length && <div className="gp-empty">{q ? "Nothing matches." : "No docs yet. Make one with + New doc, or from a folder or list."}</div>}
+          {!rows.length && <div className="gp-empty">{q ? "Nothing matches." : tab === "archived" ? "Nothing archived." : tab === "shared" ? "Nothing shared with you yet." : "No docs yet. Make one with + New doc, or from a folder or list."}</div>}
         </div>
       </div>
       {moving && <MoveDoc orgId={orgId} item={moving} tree={tree.data} onClose={() => setMoving(null)} onDone={async () => { setMoving(null); await done(); }} />}
       {making && <NewDoc orgId={orgId} kind={making} tree={tree.data} onClose={() => setMaking(null)} onMade={async (w) => { setMaking(null); await done(); onPick(w); }} />}
+      {sharing && <DocShare orgId={orgId} docId={sharing.id} name={sharing.name} canChange onClose={() => { setSharing(null); void done(); }} />}
     </>
   );
 }

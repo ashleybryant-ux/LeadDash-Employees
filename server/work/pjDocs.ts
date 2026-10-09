@@ -49,7 +49,7 @@ export function doc(orgId: number, id: number) {
   const lists = db.work.lists.all(orgId);
   const tasks = ids.map((tid) => db.work.tasks.get(orgId, tid)).filter((t): t is NonNullable<typeof t> => !!t);
   return {
-    doc: { id: d.id, title: d.title, folderId: d.folderId, folderName: folder?.name ?? null, parentId: d.parentId, blocks, editedBy: d.editedBy, updatedAt: d.updatedAt },
+    doc: { id: d.id, title: d.title, folderId: d.folderId, folderName: folder?.name ?? null, listId: d.listId, parentId: d.parentId, blocks, editedBy: d.editedBy, updatedAt: d.updatedAt, private: d.private, workspaceWide: d.workspaceWide, link: !!d.shareToken, archived: !!d.archivedAt },
     parent: parent ? { id: parent.id, title: parent.title } : null,
     pages: db.work.docs.where(orgId, "parentId", d.id).sort((a, b) => a.sort - b.sort || a.id - b.id).map((p) => ({ id: p.id, title: p.title })),
     linked: tasks.map((t) => ({ id: t.id, name: t.name, status: t.status, closed: !!t.closedAt, listName: lists.find((l) => l.id === t.listId)?.name ?? "" })),
@@ -58,7 +58,7 @@ export function doc(orgId: number, id: number) {
   };
 }
 
-export function saveDoc(orgId: number, input: { id?: number; folderId?: number | null; listId?: number | null; parentId?: number | null; title: string; blocks?: Block[] }, by: string) {
+export function saveDoc(orgId: number, input: { id?: number; folderId?: number | null; listId?: number | null; parentId?: number | null; title: string; blocks?: Block[] }, by: string, ownerUserId: number | null = null) {
   const title = input.title.trim().slice(0, 200);
   if (!title) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the doc." });
   if (input.parentId) mustDoc(orgId, input.parentId);
@@ -69,7 +69,7 @@ export function saveDoc(orgId: number, input: { id?: number; folderId?: number |
   const parent = input.parentId ? db.work.docs.get(orgId, input.parentId) : null;
   // A doc made on a list lives in that list's folder too.
   const onList = input.listId ? db.work.lists.get(orgId, input.listId) : null;
-  return db.work.docs.insert({ organizationId: orgId, folderId: parent ? parent.folderId : onList ? onList.folderId : input.folderId ?? null, listId: parent ? parent.listId : input.listId ?? null, parentId: input.parentId ?? null, title, blocks: JSON.stringify(cleanBlocks(input.blocks ?? [{ id: "b0", type: "p", text: "" }])), editedBy: by, sort: db.work.docs.all(orgId).length });
+  return db.work.docs.insert({ organizationId: orgId, folderId: parent ? parent.folderId : onList ? onList.folderId : input.folderId ?? null, listId: parent ? parent.listId : input.listId ?? null, parentId: input.parentId ?? null, title, blocks: JSON.stringify(cleanBlocks(input.blocks ?? [{ id: "b0", type: "p", text: "" }])), editedBy: by, sort: db.work.docs.all(orgId).length, ownerUserId: parent ? parent.ownerUserId : ownerUserId, private: parent ? parent.private : false, workspaceWide: parent ? parent.workspaceWide : false });
 }
 
 /** Ticking a checklist line works from the read view. */

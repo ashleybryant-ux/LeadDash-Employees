@@ -6,7 +6,7 @@ import { appRouter } from "../routers";
 import { authenticateRequest, createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { ENV } from "./env";
-import { getDb, getOrganizationMembership, guestSharesForUser, publicFileByToken, purgeExpiredAuthRecords } from "../db";
+import { getDb, getOrganizationMembership, guestDocSharesForUser, guestSharesForUser, publicFileByToken, purgeExpiredAuthRecords } from "../db";
 import path from "node:path";
 import { fileOwner, uploadsRoot } from "../storage";
 import { aiStatus, searchModel } from "./llm";
@@ -130,7 +130,7 @@ async function startServer() {
       const org = owner.kind === "org" ? String(owner.id) : null;
       if (org && user.role !== "admin" && !(await getOrganizationMembership(Number(org), user.id))) {
         // A guest on a shared Projects list can open the files on its tasks (their names carry a random key).
-        const guest = /^\/org-\d+\/work\//.test(decodeURIComponent(req.path)) && guestSharesForUser(user.id).some((g) => g.organizationId === Number(org));
+        const guest = /^\/org-\d+\/work\//.test(decodeURIComponent(req.path)) && (guestSharesForUser(user.id).some((g) => g.organizationId === Number(org)) || guestDocSharesForUser(user.id).some((g) => g.organizationId === Number(org)));
         if (!guest) return res.status(403).send("This file belongs to another workspace.");
       }
       res.setHeader("Cache-Control", "private, max-age=3600");

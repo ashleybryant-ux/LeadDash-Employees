@@ -162,7 +162,7 @@ async function pjViewer(ctx: TrpcContext & { user: User }, organizationId: numbe
     const m = await requireMember(ctx, organizationId);
     return { kind: "member", userId: ctx.user.id, role: m.role, name: personName(ctx.user) };
   } catch (err) {
-    if (!review.isReviewUser(ctx.user) && db.guestSharesForUser(ctx.user.id).some((g) => g.organizationId === organizationId)) return { kind: "guest", userId: ctx.user.id, name: personName(ctx.user) };
+    if (!review.isReviewUser(ctx.user) && (db.guestSharesForUser(ctx.user.id).some((g) => g.organizationId === organizationId) || db.guestDocSharesForUser(ctx.user.id).some((g) => g.organizationId === organizationId))) return { kind: "guest", userId: ctx.user.id, name: personName(ctx.user) };
     throw err;
   }
 }
@@ -239,6 +239,7 @@ const repeatZ = z.object({
   spawned: z.boolean().optional(),
 });
 const levelZ = z.enum(["full", "edit", "comment", "view"]);
+const docLevelZ = z.enum(["edit", "comment", "view"]);
 const triggerZ = z.object({
   on: z.enum(["created", "status", "due", "overdue", "field", "assigned", "comment", "subtasks", "unblocked", "form", "schedule"]),
   to: z.string().max(80).optional(),
@@ -1983,9 +1984,9 @@ export const appRouter = router({
       const v = await pjViewer(ctx, input.organizationId);
       return (await import("./work/projects")).tree(input.organizationId, v, { type: "user", id: ctx.user.id, name: personName(ctx.user) });
     }),
-    view: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable(), folderId: z.number().int().nullable().optional(), scope: z.enum(["list", "everything", "mine", "folder"]), closed: z.boolean().default(false) })).query(async ({ ctx, input }) => {
+    view: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable(), folderId: z.number().int().nullable().optional(), portfolioId: z.number().int().nullable().optional(), scope: z.enum(["list", "everything", "mine", "folder", "portfolio"]), closed: z.boolean().default(false) })).query(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);
-      return (await import("./work/projects")).view(input.organizationId, v, { listId: input.listId, folderId: input.folderId ?? null, scope: input.scope, me: { type: "user", id: ctx.user.id, name: personName(ctx.user) }, closed: input.closed });
+      return (await import("./work/projects")).view(input.organizationId, v, { listId: input.listId, folderId: input.folderId ?? null, portfolioId: input.portfolioId ?? null, scope: input.scope, me: { type: "user", id: ctx.user.id, name: personName(ctx.user) }, closed: input.closed });
     }),
     // Quick: one custom field, onto a list or its whole folder
     addField: protectedProcedure.input(orgInput.extend({ listId: z.number().int().nullable().optional(), folderId: z.number().int().nullable().optional(), scope: z.enum(["list", "folder"]), name: z.string().max(80), type: fieldZ.shape.type, options: z.array(z.string().max(60)).max(30).optional(), setup: z.string().max(200).optional() })).mutation(async ({ ctx, input }) => {
@@ -2025,6 +2026,71 @@ export const appRouter = router({
       const v = await pjViewer(ctx, input.organizationId);
       (await import("./work/pjViews")).removeBuiltin(input.organizationId, v, input, input.kind);
       return { ok: true };
+    }),
+    // Portfolios and status updates
+    portfolios: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjPortfolios")).list(input.organizationId, v);
+    }),
+    portfolio: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjPortfolios")).get(input.organizationId, v, input.id);
+    }),
+    savePortfolio: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), name: z.string().max(120), description: z.string().max(2000).optional(), color: z.string().max(9).optional(), owner: assigneeZ.nullable().optional(), startDate: ymdZ.nullable().optional(), dueDate: ymdZ.nullable().optional() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      const { organizationId, ...rest } = input;
+      return (await import("./work/pjPortfolios")).save(organizationId, v, rest, personName(ctx.user));
+    }),
+    archivePortfolio: protectedProcedure.input(orgInput.extend({ id: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjPortfolios")).archive(input.organizationId, v, input.id, input.on);
+      return { ok: true };
+    }),
+    removePortfolio: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjPortfolios")).remove(input.organizationId, v, input.id);
+      return { ok: true };
+    }),
+    addWork: protectedProcedure.input(orgInput.extend({ portfolioId: z.number().int(), kind: z.enum(["list", "portfolio"]), itemId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjPortfolios")).addWork(input.organizationId, v, input.portfolioId, input.kind, input.itemId);
+    }),
+    removeWork: protectedProcedure.input(orgInput.extend({ portfolioId: z.number().int(), rowId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjPortfolios")).removeWork(input.organizationId, v, input.portfolioId, input.rowId);
+    }),
+    statusUpdates: protectedProcedure.input(orgInput.extend({ kind: z.enum(["list", "portfolio"]), itemId: z.number().int() })).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      const pf = await import("./work/pjPortfolios");
+      if (input.kind === "list") (await import("./work/pjAccess")).mustLevel(input.organizationId, v, input.itemId, "view");
+      else (await import("./work/pjAccess")).mustMember(v);
+      return { updates: pf.updates(input.organizationId, input.kind, input.itemId), latest: pf.latestStatus(input.organizationId, input.kind, input.itemId) };
+    }),
+    postStatus: protectedProcedure
+      .input(orgInput.extend({ kind: z.enum(["list", "portfolio"]), itemId: z.number().int(), status: z.enum(["on", "risk", "off", "hold"]), summary: z.string().max(4000), accomplishments: z.string().max(4000).optional(), blockers: z.string().max(4000).optional(), next: z.string().max(4000).optional(), highlights: z.array(z.object({ itemId: z.number().int(), name: z.string().max(200), status: z.enum(["on", "risk", "off", "hold"]) })).max(30).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const v = await pjViewer(ctx, input.organizationId);
+        const { organizationId, kind, itemId, ...rest } = input;
+        return (await import("./work/pjPortfolios")).postStatus(organizationId, v, kind, itemId, rest, pjActor(ctx));
+      }),
+    draftStatus: protectedProcedure.input(orgInput.extend({ kind: z.enum(["list", "portfolio"]), itemId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjPortfolios")).draftStatus(input.organizationId, v, input.kind, input.itemId);
+    }),
+    // Archive
+    archived: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjArchive")).archived(input.organizationId, v);
+    }),
+    archiveList: protectedProcedure.input(orgInput.extend({ id: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      const a = await import("./work/pjArchive");
+      return input.on ? a.archiveList(input.organizationId, v, input.id, personName(ctx.user)) : a.restoreList(input.organizationId, v, input.id);
+    }),
+    archiveFolder: protectedProcedure.input(orgInput.extend({ id: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      const a = await import("./work/pjArchive");
+      return input.on ? a.archiveFolder(input.organizationId, v, input.id, personName(ctx.user)) : a.restoreFolder(input.organizationId, v, input.id);
     }),
     // Home, what needs attention, and changes to many tasks at once
     home: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
@@ -2237,7 +2303,7 @@ export const appRouter = router({
       const { organizationId, ...rest } = input;
       return (await import("./work/pjTime")).timesheet(organizationId, v, rest);
     }),
-    workload: protectedProcedure.input(orgInput.extend({ start: ymdZ.optional(), weeks: z.number().int().min(1).max(12).default(6), listId: z.number().int().nullable().default(null) })).query(async ({ ctx, input }) => {
+    workload: protectedProcedure.input(orgInput.extend({ start: ymdZ.optional(), weeks: z.number().int().min(1).max(12).default(6), listId: z.number().int().nullable().default(null), portfolioId: z.number().int().nullable().optional() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       const v = await pjViewer(ctx, input.organizationId);
       return (await import("./work/pjTime")).workload(input.organizationId, v, input);
@@ -2301,26 +2367,77 @@ export const appRouter = router({
       }),
     // Docs
     doc: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
-      return (await import("./work/pjDocs")).doc(input.organizationId, input.id);
+      const v = await pjViewer(ctx, input.organizationId);
+      const { level } = (await import("./work/pjDocShare")).mustDocLevel(input.organizationId, v, input.id, "view");
+      return { ...(await import("./work/pjDocs")).doc(input.organizationId, input.id), level };
     }),
     saveDoc: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), folderId: z.number().int().nullable().optional(), listId: z.number().int().nullable().optional(), parentId: z.number().int().nullable().optional(), title: z.string().max(200), blocks: z.array(blockZ).max(600).optional() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      const v = await pjViewer(ctx, input.organizationId);
+      const ds = await import("./work/pjDocShare");
+      if (input.id) ds.mustDocLevel(input.organizationId, v, input.id, "edit");
+      else if (input.parentId) ds.mustDocLevel(input.organizationId, v, input.parentId, "edit");
+      else await requireMember(ctx, input.organizationId, "member");
       const { organizationId, ...rest } = input;
-      return (await import("./work/pjDocs")).saveDoc(organizationId, rest as Parameters<typeof import("./work/pjDocs").saveDoc>[1], personName(ctx.user));
+      return (await import("./work/pjDocs")).saveDoc(organizationId, rest as Parameters<typeof import("./work/pjDocs").saveDoc>[1], personName(ctx.user), ctx.user.id);
     }),
     removeDoc: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).mustOwnDoc(input.organizationId, v, input.id);
       (await import("./work/pjDocs")).removeDoc(input.organizationId, input.id);
       return { ok: true };
     }),
     toggleDocCheck: protectedProcedure.input(orgInput.extend({ id: z.number().int(), blockId: z.string().max(40), done: z.boolean() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).mustDocLevel(input.organizationId, v, input.id, "comment");
       (await import("./work/pjDocs")).toggleCheck(input.organizationId, input.id, input.blockId, input.done, personName(ctx.user));
       return { ok: true };
     }),
+    // Sharing a doc: who sees it, private or workspace wide, a public link, archive, stars
+    docShares: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjDocShare")).docShares(input.organizationId, v, input.id);
+    }),
+    shareDoc: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), level: docLevelZ, kind: z.enum(["user", "employee"]).optional(), personId: z.number().int().optional(), email: z.string().max(320).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const v = await pjViewer(ctx, input.organizationId);
+        const ds = await import("./work/pjDocShare");
+        if (input.kind && input.personId) return ds.shareDoc(input.organizationId, v, input.id, { kind: input.kind, id: input.personId, level: input.level }, personName(ctx.user));
+        if (input.email) return ds.shareDoc(input.organizationId, v, input.id, { email: input.email, level: input.level }, personName(ctx.user));
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Pick a person or type an email." });
+      }),
+    setDocShareLevel: protectedProcedure.input(orgInput.extend({ id: z.number().int(), shareId: z.number().int(), level: docLevelZ })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).setDocShareLevel(input.organizationId, v, input.id, input.shareId, input.level);
+      return { ok: true };
+    }),
+    unshareDoc: protectedProcedure.input(orgInput.extend({ id: z.number().int(), shareId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).unshareDoc(input.organizationId, v, input.id, input.shareId);
+      return { ok: true };
+    }),
+    setDocVisibility: protectedProcedure.input(orgInput.extend({ id: z.number().int(), private: z.boolean().optional(), workspaceWide: z.boolean().optional() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).setDocVisibility(input.organizationId, v, input.id, { private: input.private, workspaceWide: input.workspaceWide });
+      return { ok: true };
+    }),
+    setDocLink: protectedProcedure.input(orgInput.extend({ id: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return { link: (await import("./work/pjDocShare")).setDocLink(input.organizationId, v, input.id, input.on) };
+    }),
+    archiveDoc: protectedProcedure.input(orgInput.extend({ id: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).archiveDoc(input.organizationId, v, input.id, input.on);
+      return { ok: true };
+    }),
+    star: protectedProcedure.input(orgInput.extend({ kind: z.enum(["doc", "board", "form"]), id: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).star(input.organizationId, ctx.user.id, input.kind, input.id, input.on);
+      return { ok: true };
+    }),
     linkDocTask: protectedProcedure.input(orgInput.extend({ id: z.number().int(), taskId: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).mustDocLevel(input.organizationId, v, input.id, "edit");
       (await import("./work/pjDocs")).linkTask(input.organizationId, input.id, input.taskId, input.on);
       return { ok: true };
     }),
@@ -2332,7 +2449,8 @@ export const appRouter = router({
       return { id: t.id };
     }),
     docComment: protectedProcedure.input(orgInput.extend({ id: z.number().int(), quote: z.string().max(500).default(""), body: z.string().max(4000) })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).mustDocLevel(input.organizationId, v, input.id, "comment");
       return (await import("./work/pjDocs")).docComment(input.organizationId, input.id, input, { id: ctx.user.id, name: personName(ctx.user) });
     }),
     removeDocComment: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
@@ -2469,11 +2587,11 @@ export const appRouter = router({
       if (s?.listId === input.listId) acc.unshare(input.organizationId, input.shareId);
       return { ok: true };
     }),
-    setPrivate: protectedProcedure.input(orgInput.extend({ listId: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+    setPrivate: protectedProcedure.input(orgInput.extend({ listId: z.number().int(), on: z.boolean(), adminsOnly: z.boolean().optional() })).mutation(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);
       const acc = await import("./work/pjAccess");
       acc.mustLevel(input.organizationId, v, input.listId, "full");
-      acc.setPrivate(input.organizationId, input.listId, input.on);
+      acc.setPrivate(input.organizationId, input.listId, input.on, input.adminsOnly);
       return { ok: true };
     }),
     setLink: protectedProcedure.input(orgInput.extend({ listId: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {

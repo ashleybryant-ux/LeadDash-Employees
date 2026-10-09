@@ -3,6 +3,7 @@ import * as db from "../db";
 import type { PjList } from "../../drizzle/schema";
 import { fieldsOf, parse, type Assignee, type FieldDef } from "./projects";
 import { levelFor, mustMember, visibleLists, type Viewer } from "./pjAccess";
+import { docLevel, starsOf } from "./pjDocShare";
 
 /**
  * Saved views, the folder Overview and the Docs page.
@@ -207,18 +208,26 @@ export function allDocs(orgId: number, v: Viewer, q = "") {
   const folders = new Map(db.work.folders.all(orgId).map((f) => [f.id, f.name]));
   const lists = new Map(db.work.lists.all(orgId).map((l) => [l.id, l.name]));
   const place = (folderId: number | null, listId: number | null) => (listId && lists.has(listId) ? { kind: "list" as const, id: listId, name: lists.get(listId)! } : folderId && folders.has(folderId) ? { kind: "folder" as const, id: folderId, name: folders.get(folderId)! } : null);
+  const uid = v.kind === "member" ? v.userId : 0;
+  const stars = new Set(starsOf(orgId, uid));
+  const shares = db.work.docShares.all(orgId);
+  const sharedWithMe = new Set(shares.filter((s) => s.kind === "user" && s.userId === uid).map((s) => s.docId));
   const out = [
-    ...db.work.docs.all(orgId).filter((d) => !d.parentId).map((d) => ({ kind: "doc" as const, id: d.id, name: d.title, where: place(d.folderId, d.listId), tags: parse<string[]>(d.tags, []), at: fmtWhen(d.updatedAt), by: d.editedBy, text: words ? blockText(parse<Block[]>(d.blocks, [])) : "", pages: db.work.docs.all(orgId).filter((x) => x.parentId === d.id).length })),
-    ...db.work.boards.all(orgId).map((b) => ({ kind: "board" as const, id: b.id, name: b.title, where: place(b.folderId, b.listId), tags: parse<string[]>(b.tags, []), at: fmtWhen(b.updatedAt), by: b.editedBy, text: "", pages: 0 })),
-    ...db.work.forms.all(orgId).map((f) => ({ kind: "form" as const, id: f.id, name: f.title, where: place(f.folderId, f.listId), tags: [] as string[], at: fmtWhen(f.createdAt), by: "", text: "", pages: 0 })),
+    ...db.work.docs
+      .all(orgId)
+      .filter((d) => !d.parentId && docLevel(orgId, v, d))
+      .map((d) => ({ kind: "doc" as const, id: d.id, name: d.title, where: place(d.folderId, d.listId), tags: parse<string[]>(d.tags, []), at: fmtWhen(d.updatedAt), by: d.editedBy, text: words ? blockText(parse<Block[]>(d.blocks, [])) : "", pages: db.work.docs.all(orgId).filter((x) => x.parentId === d.id).length, private: d.private, archived: !!d.archivedAt, ownerId: d.ownerUserId, shared: sharedWithMe.has(d.id), link: !!d.shareToken })),
+    ...db.work.boards.all(orgId).map((b) => ({ kind: "board" as const, id: b.id, name: b.title, where: place(b.folderId, b.listId), tags: parse<string[]>(b.tags, []), at: fmtWhen(b.updatedAt), by: b.editedBy, text: "", pages: 0, private: false, archived: false, ownerId: null as number | null, shared: false, link: false })),
+    ...db.work.forms.all(orgId).map((f) => ({ kind: "form" as const, id: f.id, name: f.title, where: place(f.folderId, f.listId), tags: [] as string[], at: fmtWhen(f.createdAt), by: "", text: "", pages: 0, private: false, archived: false, ownerId: null as number | null, shared: false, link: true })),
   ]
     .filter((d) => !words || d.name.toLowerCase().includes(words) || d.tags.some((t) => t.toLowerCase().includes(words)) || d.text.includes(words))
     .sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
   const myName = v.kind === "member" || v.kind === "guest" ? v.name : "";
-  const docs = out.map(({ text, ...d }) => ({ ...d, mine: !!d.by && d.by === myName }));
+  const docs = out.map(({ text, ...d }) => ({ ...d, mine: (d.ownerId !== null && d.ownerId === uid) || (!!d.by && d.by === myName), starred: stars.has(`${d.kind}:${d.id}`) }));
+  const live = docs.filter((d) => !d.archived);
   return {
     docs,
-    counts: { all: docs.length, mine: docs.filter((d) => d.mine).length, boards: docs.filter((d) => d.kind === "board").length, forms: docs.filter((d) => d.kind === "form").length },
+    counts: { all: live.length, mine: live.filter((d) => d.mine).length, shared: live.filter((d) => d.shared).length, private: live.filter((d) => d.private).length, boards: live.filter((d) => d.kind === "board").length, forms: live.filter((d) => d.kind === "form").length, archived: docs.filter((d) => d.archived).length },
     tags: Array.from(new Set(docs.flatMap((d) => d.tags))).sort(),
     folders: Array.from(folders.entries()).map(([id, name]) => ({ id, name })),
     lists: Array.from(lists.entries()).map(([id, name]) => ({ id, name })),

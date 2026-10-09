@@ -29,6 +29,8 @@ import { FolderOverview } from "../projects/Overview";
 import { DocsHub } from "../projects/DocsHub";
 import { HomePage } from "../projects/Home";
 import { BulkBar } from "../projects/Bulk";
+import { PortfolioPage, PortfoliosPage } from "../projects/Portfolios";
+import { StatusPill, StatusUpdate } from "../projects/StatusUpdate";
 
 /**
  * Projects, in place of ClickUp: Home (what needs a person, the work by when,
@@ -61,7 +63,9 @@ export type Where =
   | { scope: "form"; id: number }
   | { scope: "dash"; id?: number }
   | { scope: "time" }
-  | { scope: "templates" };
+  | { scope: "templates" }
+  | { scope: "portfolios" }
+  | { scope: "portfolio"; id: number };
 export type PjCtx = {
   orgId: number;
   data: ViewOut;
@@ -85,9 +89,11 @@ export type PjCtx = {
   /** A task is open beside the list: rows show only the name, who and when. */
   compact: boolean;
   openId: number | null;
+  /** Set when the tasks shown are a portfolio's. */
+  portfolioId?: number | null;
 };
 
-const PAGES = ["doc", "board", "form", "dash", "time", "templates", "docs"] as const;
+const PAGES = ["doc", "board", "form", "dash", "time", "templates", "docs", "portfolios", "portfolio"] as const;
 function readUrl(): { where: Where; view: View; savedId: number | null; task: number | null } {
   const p = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const list = Number(p.get("list"));
@@ -97,11 +103,11 @@ function readUrl(): { where: Where; view: View; savedId: number | null; task: nu
   const id = Number(p.get("id")) || undefined;
   const where: Where = p.get("import")
     ? { scope: "import" }
-    : page === "doc" || page === "board" || page === "form"
+    : page === "doc" || page === "board" || page === "form" || page === "portfolio"
       ? { scope: page, id: id ?? 0 }
       : page === "dash"
         ? { scope: "dash", id }
-        : page === "time" || page === "templates" || page === "docs"
+        : page === "time" || page === "templates" || page === "docs" || page === "portfolios"
           ? { scope: page }
           : list
             ? { scope: "list", listId: list }
@@ -138,6 +144,8 @@ export default function Projects() {
   const [panel, setPanel] = React.useState<"" | "automations" | "settings" | "share" | "saveList" | "fromTemplate" | "addView">("");
   const [editView, setEditView] = React.useState<SavedView | null>(null);
   const [saveTask, setSaveTask] = React.useState<number | null>(null);
+  const [statusFor, setStatusFor] = React.useState<number | null>(null);
+  const archiveList = trpc.pj.archiveList.useMutation({ onSuccess: () => refresh() });
   const [adding, setAdding] = React.useState(false);
   const [ask, setAsk] = React.useState<Ask>(null);
   const [drawer, setDrawer] = React.useState(false);
@@ -184,11 +192,12 @@ export default function Projects() {
     const s = p.toString();
     go(`/projects${s ? `?${s}` : ""}`, { replace: true });
   }, [where, cur, taskId]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A guest starts on the first list shared with them.
+  // A guest starts on the first list shared with them, or the first doc when no list is.
   React.useEffect(() => {
-    if (!guest || !tree.data || where.scope === "list") return;
+    if (!guest || !tree.data || where.scope === "list" || where.scope === "doc") return;
     const firstList = tree.data.folders.flatMap((f) => f.lists)[0] ?? tree.data.loose[0];
     if (firstList) setWhere({ scope: "list", listId: firstList.id });
+    else if (tree.data.sharedDocs[0]) setWhere({ scope: "doc", id: tree.data.sharedDocs[0].id });
   }, [guest, tree.data]); // eslint-disable-line react-hooks/exhaustive-deps
   // Opening a view loads its filters, grouping and columns.
   const saved = cur.savedId ? views.data?.saved.find((s) => s.id === cur.savedId) ?? null : null;
@@ -314,8 +323,11 @@ export default function Projects() {
     else if (kind === "form") saveForm.mutate({ organizationId: currentOrgId, title: name, listId, folderId: inFolder });
     else saveDash.mutate({ organizationId: currentOrgId, name });
   };
+  const archivedList = where.scope === "list" && !!data?.list?.archivedAt;
   const headerButtons = (
     <span className="ld-row">
+      {archivedList && (meQ.data?.role === "owner" || meQ.data?.role === "admin") && <button type="button" className="ld-btn p" disabled={archiveList.isPending} onClick={() => archiveList.mutate({ organizationId: currentOrgId, id: (where as { listId: number }).listId, on: false })}>Restore</button>}
+      {where.scope === "list" && !guest && !archivedList && (level === "edit" || full) && <button type="button" className="ld-btn" onClick={() => setStatusFor(where.listId)}>{data?.list?.status ? "Update status" : "Set status"}</button>}
       {where.scope === "list" && !guest && <button type="button" className="ld-btn" onClick={() => setPanel("share")}>Share</button>}
       {where.scope === "list" && full && <button type="button" className="ld-btn" onClick={() => setPanel("settings")}>Edit list</button>}
       {folderId && !guest && <button type="button" className="ld-btn" onClick={() => setAsk({ kind: "folder", n: Date.now(), id: folderId })}>Edit folder</button>}
@@ -375,7 +387,8 @@ export default function Projects() {
                   {crumb && <span className="crumb" style={{ fontSize: 14, marginLeft: 0 }}>{crumb}</span>}
                   {folderRow && <span style={{ background: folderRow.color, width: 12, height: 12, borderRadius: 3, display: "inline-block", flexShrink: 0 }} />}
                   {title}
-                  {data?.list?.private && <span className="gp-chip" title="Only the people it's shared with see it">🔒 Private</span>}
+                  {data?.list?.private && <span className="gp-chip" title={data.list.adminsOnly ? "Owners and admins only" : "Only the people it's shared with see it"}>🔒 {data.list.adminsOnly ? "Admins only" : "Private"}</span>}
+                  {data?.list?.status && <StatusPill status={data.list.status.status} at={data.list.status.at} />}
                 </span>
                 {(isList || overview) && headerButtons}
               </div>
@@ -417,6 +430,11 @@ export default function Projects() {
                 </div>
               )}
             </div>
+            {archivedList && data?.list && (
+              <div className="gp-archbar" style={{ margin: "14px 28px 0" }}>
+                <span><b>Archived {fmtArchived(data.list.archivedAt)}{data.list.archivedBy ? ` by ${data.list.archivedBy}` : ""}.</b> Read only. Its tasks, docs and time stay. Restore brings it back.</span>
+              </div>
+            )}
             {isList && (
               <div className="gp-tool">
                 <span className="gp-tool-l">
@@ -523,6 +541,10 @@ export default function Projects() {
           <DashboardsPage orgId={currentOrgId} id={where.id} onPick={pick} onOpenTask={setTaskId} />
         ) : where.scope === "time" ? (
           <TimesheetPage orgId={currentOrgId} onOpenTask={setTaskId} />
+        ) : where.scope === "portfolios" ? (
+          <PortfoliosPage orgId={currentOrgId} onPick={pick} />
+        ) : where.scope === "portfolio" ? (
+          <PortfolioPage orgId={currentOrgId} id={where.id} onPick={pick} onOpenTask={(id) => { setTaskId(id); setTaskFull(true); }} />
         ) : (
           <TemplatesPage orgId={currentOrgId} onPick={pick} onOpenTask={setTaskId} refresh={refresh} />
         )}
@@ -535,10 +557,13 @@ export default function Projects() {
       {panel === "saveList" && ctx?.data.list && <SaveTemplate orgId={currentOrgId} kind="list" sourceId={ctx.data.list.id} name={ctx.data.list.name} onClose={() => setPanel("")} />}
       {panel === "fromTemplate" && ctx && <UseTaskTemplate orgId={currentOrgId} listId={ctx.listId ?? ctx.data.lists[0]?.id ?? null} lists={ctx.data.lists} onClose={() => setPanel("")} onMade={(id) => { setPanel(""); void refresh(); setTaskId(id); }} />}
       {saveTask && <SaveTemplate orgId={currentOrgId} kind="task" sourceId={saveTask} name="" onClose={() => setSaveTask(null)} />}
+      {statusFor && <StatusUpdate orgId={currentOrgId} kind="list" itemId={statusFor} name={data?.list?.name ?? ""} onClose={() => { setStatusFor(null); void refresh(); }} />}
       {!guest && <BottomNav active="projects" />}
     </div>
   );
 }
+
+const fmtArchived = (d: Date | string | null | undefined) => (d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
 
 /** A guest sees one workspace's shared lists and nothing else. */
 function GuestBar({ name }: { name: string }) {

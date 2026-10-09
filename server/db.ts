@@ -2554,7 +2554,7 @@ export const team = {
 // ==========================================
 
 /** Insert, read, change and remove rows of one workspace-owned table, always filtered by workspace. */
-function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports | typeof schema.pjLinks | typeof schema.pjTime | typeof schema.pjTemplates | typeof schema.pjDocs | typeof schema.pjDocComments | typeof schema.pjBoards | typeof schema.pjForms | typeof schema.pjFormAnswers | typeof schema.pjDashboards | typeof schema.pjShares | typeof schema.pjSettings | typeof schema.pjViews>(t: T) {
+function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports | typeof schema.pjLinks | typeof schema.pjTime | typeof schema.pjTemplates | typeof schema.pjDocs | typeof schema.pjDocComments | typeof schema.pjBoards | typeof schema.pjForms | typeof schema.pjFormAnswers | typeof schema.pjDashboards | typeof schema.pjShares | typeof schema.pjSettings | typeof schema.pjViews | typeof schema.pjDocShares | typeof schema.pjStars | typeof schema.pjPortfolios | typeof schema.pjPortfolioItems | typeof schema.pjStatusUpdates>(t: T) {
   type Row = T["$inferSelect"];
   type Ins = T["$inferInsert"];
   const tt = t as any;
@@ -2586,6 +2586,11 @@ export function guestSharesForUser(userId: number) {
   const t = schema.pjShares;
   return getDb().select().from(t).where(and(eq(t.userId, userId), eq(t.kind, "guest"))).all();
 }
+/** Docs shared with a person as an outside guest, across workspaces. */
+export function guestDocSharesForUser(userId: number) {
+  const t = schema.pjDocShares;
+  return getDb().select().from(t).where(and(eq(t.userId, userId), eq(t.kind, "guest"))).all();
+}
 /** A form by its public link key, in any workspace. */
 export function formByToken(token: string) {
   return getDb().select().from(schema.pjForms).where(eq(schema.pjForms.token, token)).limit(1).all()[0] ?? null;
@@ -2593,6 +2598,10 @@ export function formByToken(token: string) {
 /** A list by its view-only link key, in any workspace. */
 export function listByShareToken(token: string) {
   return getDb().select().from(schema.pjLists).where(eq(schema.pjLists.shareToken, token)).limit(1).all()[0] ?? null;
+}
+/** A doc by its public link key, in any workspace. */
+export function docByShareToken(token: string) {
+  return getDb().select().from(schema.pjDocs).where(eq(schema.pjDocs.shareToken, token)).limit(1).all()[0] ?? null;
 }
 /** Workspaces with Projects rows, for the scheduled Projects checks. */
 export function orgsWithProjects() {
@@ -2630,6 +2639,11 @@ export const work = {
   dashboards: crud(schema.pjDashboards),
   shares: crud(schema.pjShares),
   views: crud(schema.pjViews),
+  docShares: crud(schema.pjDocShares),
+  stars: crud(schema.pjStars),
+  portfolios: crud(schema.pjPortfolios),
+  portfolioItems: crud(schema.pjPortfolioItems),
+  statusUpdates: crud(schema.pjStatusUpdates),
   /** A small Projects setting (weekly hours, markers); null when unset. */
   setting(orgId: number, key: string): string | null {
     const t = schema.pjSettings;

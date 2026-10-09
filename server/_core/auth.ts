@@ -28,7 +28,7 @@ async function canSignIn(email: string) {
   const user = await db.getUserByEmail(email);
   if (!user) return false;
   // Guests on a shared Projects list sign in too, and see only those lists.
-  return (await db.countMembershipsForUser(user.id)) > 0 || db.guestSharesForUser(user.id).length > 0;
+  return (await db.countMembershipsForUser(user.id)) > 0 || db.guestSharesForUser(user.id).length > 0 || db.guestDocSharesForUser(user.id).length > 0;
 }
 
 /**

@@ -143,12 +143,13 @@ function spread(t: PjTask) {
   return days.map((day) => ({ day, minutes: t.timeEstimate! / days.length }));
 }
 
-export async function workload(orgId: number, v: Viewer, input: { start?: string; weeks: number; listId?: number | null }) {
+export async function workload(orgId: number, v: Viewer, input: { start?: string; weeks: number; listId?: number | null; portfolioId?: number | null }) {
   const tz = await zoneOf(orgId);
   const start = sundayOf(input.start ?? todayYmd(tz));
   const weeks = Array.from({ length: Math.max(1, Math.min(12, input.weeks)) }, (_, i) => addDays(start, i * 7));
   const end = addDays(weeks[weeks.length - 1], 6);
-  const visIds = new Set(visibleLists(orgId, v).map((x) => x.list.id));
+  const inPortfolio = input.portfolioId ? new Set((await import("./pjPortfolios")).listsIn(orgId, input.portfolioId)) : null;
+  const visIds = new Set(visibleLists(orgId, v).filter((x) => !inPortfolio || inPortfolio.has(x.list.id)).map((x) => x.list.id));
   const tasks = db.work.tasks.all(orgId).filter((t) => visIds.has(t.listId) && !t.closedAt && (!input.listId || t.listId === input.listId));
   const people = await owners(orgId);
   const lists = db.work.lists.all(orgId);

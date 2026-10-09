@@ -2,6 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { ErrorLine } from "../ui";
 import { fmtAt, Menu } from "../goals/shared";
+import { DocShare } from "./DocShare";
 import type { Outputs } from "../types";
 import type { Where } from "../pages/Projects";
 import { SaveTemplate } from "./Templates";
@@ -50,8 +51,10 @@ export function DocPage({ orgId, id, onPick, onOpenTask, refresh }: { orgId: num
     setEditing(false);
   }, [id]);
   const d = q.data;
-  const [copied, setCopied] = React.useState(false);
+  const [sharing, setSharing] = React.useState(false);
+  const archive = trpc.pj.archiveDoc.useMutation({ onSuccess: async () => { await refresh(); void q.refetch(); } });
   if (!d) return <div className="gp-canvas"><ErrorLine error={q.error} />{q.isLoading && <span className="ld-muted">Opening the doc</span>}</div>;
+  const canEdit = d.level === "edit";
   return (
     <>
       <div className="gp-head" style={{ paddingBottom: 14 }}>
@@ -71,24 +74,18 @@ export function DocPage({ orgId, id, onPick, onOpenTask, refresh }: { orgId: num
           </span>
           {!editing && (
             <span className="ld-row">
-              <button
-                type="button"
-                className="ld-btn"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(`${window.location.origin}/projects?page=doc&id=${d.doc.id}`);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                }}
-              >
-                {copied ? "Link copied" : "Share"}
-              </button>
-              <button type="button" className="ld-btn" onClick={() => setEditing(true)}>Edit</button>
+              {d.doc.private && <span className="gp-chip" title="Only the people it is shared with see it">🔒 Private</span>}
+              <button type="button" className="ld-btn" onClick={() => setSharing(true)}>Share</button>
+              {canEdit && !d.doc.archived && <button type="button" className="ld-btn" onClick={() => setEditing(true)}>Edit</button>}
               <Menu label="Doc options">
                 {(close) => (
                   <>
-                    <button type="button" role="menuitem" onClick={() => { addPage.mutate({ organizationId: orgId, parentId: d.doc.id, title: "New page" }); close(); }}>Add a page</button>
-                    <button type="button" role="menuitem" onClick={() => { setSaveTpl(true); close(); }}>Save as a template</button>
-                    <button type="button" role="menuitem" className="danger" onClick={() => { if (window.confirm(`Delete "${d.doc.title}"${d.pages.length ? " and its pages" : ""}?`)) removeDoc.mutate({ organizationId: orgId, id: d.doc.id }); close(); }}>Delete doc</button>
+                    <button type="button" role="menuitem" onClick={() => { void navigator.clipboard?.writeText(`${window.location.origin}/projects?page=doc&id=${d.doc.id}`); close(); }}>Copy link</button>
+                    <button type="button" role="menuitem" onClick={() => { window.print(); close(); }}>Print or save as PDF</button>
+                    {canEdit && <button type="button" role="menuitem" onClick={() => { addPage.mutate({ organizationId: orgId, parentId: d.doc.id, title: "New page" }); close(); }}>Add a page</button>}
+                    {canEdit && <button type="button" role="menuitem" onClick={() => { setSaveTpl(true); close(); }}>Save as a template</button>}
+                    {canEdit && <button type="button" role="menuitem" onClick={() => { archive.mutate({ organizationId: orgId, id: d.doc.id, on: !d.doc.archived }); close(); }}>{d.doc.archived ? "Restore" : "Archive"}</button>}
+                    {canEdit && <button type="button" role="menuitem" className="danger" onClick={() => { if (window.confirm(`Delete "${d.doc.title}"${d.pages.length ? " and its pages" : ""}?`)) removeDoc.mutate({ organizationId: orgId, id: d.doc.id }); close(); }}>Delete doc</button>}
                   </>
                 )}
               </Menu>
@@ -96,6 +93,12 @@ export function DocPage({ orgId, id, onPick, onOpenTask, refresh }: { orgId: num
           )}
         </div>
       </div>
+      {d.doc.archived && (
+        <div className="gp-archbar">
+          <span>This doc is archived. It stays out of the Docs list until it is restored.</span>
+          {canEdit && <button type="button" className="ld-btn sm gp-auto" onClick={() => archive.mutate({ organizationId: orgId, id: d.doc.id, on: false })}>Restore</button>}
+        </div>
+      )}
       <div className="gp-canvas">
         <div className="gp-docwrap">
           {editing ? <DocEdit orgId={orgId} d={d} onDone={() => setEditing(false)} refresh={refresh} /> : <DocRead orgId={orgId} d={d} onOpenTask={onOpenTask} />}
@@ -104,6 +107,7 @@ export function DocPage({ orgId, id, onPick, onOpenTask, refresh }: { orgId: num
         <ErrorLine error={removeDoc.error || addPage.error} />
       </div>
       {saveTpl && <SaveTemplate orgId={orgId} kind="doc" sourceId={d.doc.id} name={d.doc.title} onClose={() => setSaveTpl(false)} />}
+      {sharing && <DocShare orgId={orgId} docId={d.doc.id} name={d.doc.title} canChange={canEdit} onClose={() => { setSharing(false); void q.refetch(); }} />}
     </>
   );
 }
