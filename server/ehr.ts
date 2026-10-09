@@ -67,8 +67,8 @@ function keyOf(c: { secretsEncrypted: string | null }) {
 
 /** Hooks tests use in place of the network. */
 export const tools = {
-  fetchJson: async (url: string, key: string): Promise<unknown> => {
-    const res = await fetch(url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
+  fetchJson: async (url: string, key: string, timeoutMs = 30_000): Promise<unknown> => {
+    const res = await fetch(url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" }, signal: AbortSignal.timeout(timeoutMs) });
     const text = await res.text();
     if (!res.ok) throw new Error(`LeadDash EHR answered ${res.status}: ${text.slice(0, 200)}`);
     return JSON.parse(text);
@@ -77,7 +77,7 @@ export const tools = {
 
 export function baseUrl(raw: string) {
   const u = raw.trim().replace(/\/+$/, "");
-  if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(u) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(u)) throw new TRPCError({ code: "BAD_REQUEST", message: "The EHR address looks like https://ehr.leaddash.io" });
+  if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(u) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(u)) throw new TRPCError({ code: "BAD_REQUEST", message: "The EHR address looks like https://api.health.leaddash.io" });
   return u;
 }
 
@@ -113,14 +113,23 @@ export async function connection(orgId: number) {
   return c && c.status === "connected" ? c : null;
 }
 
-export function snapshotOf(orgId: number): { data: EhrSnapshot; fetchedAt: Date; error: string | null } | null {
+/**
+ * The last read. A connection whose reads have only failed has a row with an
+ * error and no data (saved as "{}" at the epoch): that is no snapshot and no
+ * read time, never an empty snapshot dated Dec 31, 1969.
+ */
+export function snapshotOf(orgId: number): { data: EhrSnapshot | null; fetchedAt: Date | null; error: string | null } | null {
   const row = db.ehr.snapshot(orgId);
   if (!row) return null;
+  const read = row.fetchedAt && new Date(row.fetchedAt).getTime() > 0 ? row.fetchedAt : null;
+  let data: EhrSnapshot | null = null;
   try {
-    return { data: JSON.parse(row.data) as EhrSnapshot, fetchedAt: row.fetchedAt, error: row.error };
+    const parsed = JSON.parse(row.data) as Partial<EhrSnapshot> | null;
+    data = read && parsed && parsed.generatedAt ? normalize(parsed) : null;
   } catch {
-    return null;
+    data = null;
   }
+  return { data, fetchedAt: data ? read : null, error: row.error };
 }
 
 /** What the Desk tabs and the chat see: connected or not, the practice, when it was last read, and the snapshot. */
@@ -265,7 +274,8 @@ export async function refresh(orgId: number) {
   const before = snapshotOf(orgId)?.data ?? null;
   let after: EhrSnapshot;
   try {
-    after = normalize(await tools.fetchJson(`${s.url}/api/employees/snapshot`, keyOf(c)));
+    // A large practice's first read pulls a year of calendar events, which can take more than a minute.
+    after = normalize(await tools.fetchJson(`${s.url}/api/employees/snapshot`, keyOf(c), 120_000));
   } catch (err) {
     const why = (err instanceof Error ? err.message : String(err)).slice(0, 300);
     db.ehr.setError(orgId, why);
@@ -313,4 +323,86 @@ export async function ehrFacts(orgId: number, kind: EmployeeKind | "" = "") {
   if (kind === "billing" && s.balances.length) detail.push(`Client balances, largest first: ${s.balances.slice(0, 20).map((b) => `${who(b)} ${money(b.cents)}${b.cardOnFile ? " (card on file)" : ""}${b.lastPayment ? `, last paid ${longDate(b.lastPayment)}` : ""}`).join("; ")}${s.balances.length > 20 ? `; and ${s.balances.length - 20} more on the Balances tab` : ""}.`);
   if (kind === "leads" && s.lapsed.length) detail.push(`Not booked in 30 days, longest first: ${s.lapsed.slice(0, 20).map((l) => `${who(l)} last seen ${longDate(l.lastSeen)}${l.clinician ? ` with ${l.clinician}` : ""} (${l.days} days)`).join("; ")}${s.lapsed.length > 20 ? `; and ${s.lapsed.length - 20} more on the Not booked tab` : ""}. The practice decides who is reached out to; the chart opens in the EHR.`);
   return `${head}${detail.length ? `\n${detail.join("\n")}` : ""}`;
+}
+
+// ==========================================
+// Reads on request: an employee asked a question reads exactly the days it needs
+// ==========================================
+
+export const READS = ["payments", "claims", "appointments"] as const;
+export type EhrRead = (typeof READS)[number];
+/** The most days one read covers, as the EHR allows. */
+export const READ_MAX_DAYS: Record<EhrRead, number> = { payments: 400, claims: 400, appointments: 120 };
+
+const dollars = (cents: number) => `$${(Math.round(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Reads one range from LeadDash EHR (payments, claims or appointments) and
+ * returns it as plain lines for the employee to answer from. Read-only, on the
+ * practice's own days. Clients are named: the lines go only to the employee's
+ * chat, which runs on providers under a BAA.
+ */
+export async function read(orgId: number, what: EhrRead, from: string, to: string): Promise<{ text: string; facts: string }> {
+  const c = await connection(orgId);
+  if (!c) return { text: "LeadDash EHR isn't connected yet. Connect it on Integrations with the key from LeadDash EHR, and I can read it.", facts: "" };
+  if (!DAY.test(from) || !DAY.test(to)) return { text: "Which days should I read?", facts: "" };
+  const [a, b] = from <= to ? [from, to] : [to, from];
+  const s = settingsOf(c);
+  let raw: Record<string, unknown>;
+  try {
+    raw = (await tools.fetchJson(`${s.url}/api/employees/${what}?from=${a}&to=${b}`, keyOf(c), 90_000)) as Record<string, unknown>;
+  } catch (err) {
+    const why = (err instanceof Error ? err.message : String(err)).slice(0, 200);
+    return { text: /404/.test(why) ? "LeadDash EHR doesn't have that read yet. It needs its latest update deployed." : `I couldn't read LeadDash EHR: ${why}`, facts: "" };
+  }
+  if (!raw || raw.ok === false) return { text: `LeadDash EHR said: ${String(raw?.error ?? "no answer")}`, facts: "" };
+  const range = a === b ? longDate(a) : `${longDate(a)} to ${longDate(b)}`;
+  return { text: `I read ${what} for ${range} from LeadDash EHR.`, facts: formatRead(what, raw, range) };
+}
+
+type Row = Record<string, unknown>;
+const rows = (v: unknown): Row[] => (Array.isArray(v) ? (v as Row[]) : []);
+const n = (v: unknown) => Number(v) || 0;
+const named = (r: Row) => String(r.name || "").trim() || String(r.initials || "a client");
+
+/** The read as lines: totals first, then each row, so the employee can add up, compare and name what matters. */
+export function formatRead(what: EhrRead, raw: Row, range: string): string {
+  if (what === "payments") {
+    const days = rows(raw.days);
+    const t = (raw.totals ?? {}) as Row;
+    const list = rows(raw.payments);
+    const lines = [
+      `Money in from LeadDash EHR, ${range} (the practice's days; today is ${longDate(String(raw.today || ""))}). Every receipt counts the day it arrived, applied to a session or not. Net is insurance plus client payments minus refunds and payer takebacks.`,
+      `Total: ${dollars(n(t.netCents))} net from ${n(t.payments)} payments (insurance ${dollars(n(t.insuranceCents))}, clients ${dollars(n(t.clientCents))}, refunds ${dollars(n(t.refundsCents))}).`,
+      "By day:",
+      ...days.map((d) => `- ${d.weekday} ${longDate(String(d.date))}: ${dollars(n(d.netCents))} net (insurance ${dollars(n(d.insuranceCents))}, clients ${dollars(n(d.clientCents))}${n(d.refundsCents) ? `, refunds ${dollars(n(d.refundsCents))}` : ""}), ${n(d.payments)} payments`),
+      list.length ? "Each payment, newest first:" : "No payments in this range.",
+      ...list.slice(0, 150).map((p) => `- ${longDate(String(p.date))} · ${p.kind === "insurance" ? `Insurance (${p.payer})` : "Client"} · ${named(p)} · ${dollars(n(p.amountCents))}${p.method ? ` · ${p.method}` : ""}${n(p.unappliedCents) > 0 ? ` · ${dollars(n(p.unappliedCents))} not applied yet` : ""}${p.recurring ? " · recurring" : ""}`),
+      ...(n(raw.paymentsTotal) > 150 ? [`(and ${n(raw.paymentsTotal) - 150} more; the totals above count all of them)`] : []),
+      ...rows(raw.refunds).slice(0, 40).map((r) => `- Refund ${longDate(String(r.date))} · ${r.label} · ${named(r)} · ${dollars(n(r.amountCents))}`),
+    ];
+    return lines.join("\n");
+  }
+  if (what === "claims") {
+    const list = rows(raw.claims);
+    return [
+      `Claims from LeadDash EHR by date of service, ${range}: ${n(raw.claimsTotal)} claims.`,
+      "By status:",
+      ...rows(raw.byStatus).map((s) => `- ${s.status}: ${n(s.count)} claims, billed ${dollars(n(s.billedCents))}, paid ${dollars(n(s.paidCents))}`),
+      list.length ? "Each claim, newest date of service first:" : "No claims in this range.",
+      ...list.slice(0, 150).map((c) => `- ${longDate(String(c.dos))} · ${named(c)} · ${c.payer} · ${c.status} · billed ${dollars(n(c.billedCents))}${n(c.paidCents) ? `, paid ${dollars(n(c.paidCents))}` : ""}${c.paid ? ` on ${longDate(String(c.paid))}` : ""}${c.reason ? ` · ${c.reason}` : ""}`),
+      ...(n(raw.claimsTotal) > 150 ? [`(and ${n(raw.claimsTotal) - 150} more; the counts above include all of them)`] : []),
+    ].join("\n");
+  }
+  const list = rows(raw.appointments);
+  const byStatus = Object.entries((raw.byStatus ?? {}) as Record<string, number>);
+  const byClin = Object.entries((raw.byClinician ?? {}) as Record<string, number>);
+  return [
+    `Sessions on the calendar from LeadDash EHR, ${range}: ${n(raw.appointmentsTotal)}.`,
+    `By status: ${byStatus.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.`,
+    `By clinician: ${byClin.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.`,
+    ...list.slice(0, 150).map((x) => `- ${whenText(String(x.start))} · ${named(x)} · ${x.clinician || "Unassigned"} · ${x.status}`),
+    ...(n(raw.appointmentsTotal) > 150 ? [`(and ${n(raw.appointmentsTotal) - 150} more; the counts above include all of them)`] : []),
+  ].join("\n");
 }

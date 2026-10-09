@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import { ENV } from "../_core/env";
+import { carriesClientInfo } from "../_core/baa";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import * as integrations from "../integrations";
 import { KNOWLEDGE_CATEGORIES, type AIEmployee, type Huddle, type HuddleLine } from "../../drizzle/schema";
@@ -209,10 +210,19 @@ export function speakable(text: string, company = "") {
     });
 }
 
-/** One answer in the employee's voice, as MP3. Returns null when speech is not set up, so the words still show. */
-export async function speak(kind: string, words: string, company = ""): Promise<string | null> {
+/**
+ * One answer in the employee's voice, as MP3. Returns null when speech is not set up, so the words still show.
+ * `clientInfo`: the words can carry client information (a healthcare practice's workspace), so they are spoken
+ * only by a provider under a BAA. ElevenLabs is not, so those answers use OpenAI's voices or stay text.
+ */
+export async function speak(kind: string, words: string, company = "", opts: { clientInfo?: boolean } = {}): Promise<string | null> {
   if (process.env.NODE_ENV === "test") return null;
   const text = speakable(words, company);
+  if (opts.clientInfo && !carriesClientInfo("elevenlabs")) {
+    if (carriesClientInfo("openai")) return openAiSpeak(kind, text);
+    speechError = "Voices are off in this workspace: no voice provider is under a BAA for client information.";
+    return null;
+  }
   if (ENV.elevenLabsKey) {
     try {
       const id = keepAudio(await elevenSpeak(kind, text));
@@ -538,7 +548,9 @@ ${facts.join("\n\n")}`,
   // Work asked for in the huddle starts now, in that employee's own chat, not after the huddle ends.
   for (const r of picked) if (r.do) startWork(orgId, r.emp, who, r.do);
 
-  const clips = await Promise.all(picked.map((r) => speak(r.emp.kind, r.say, brain.org?.name ?? "")));
+  // A healthcare practice's huddle can carry client information: spoken only by a provider under a BAA.
+  const healthcare = brain.org?.orgType === "healthcare";
+  const clips = await Promise.all(picked.map((r) => speak(r.emp.kind, r.say, brain.org?.name ?? "", { clientInfo: healthcare })));
   const fresh = db.getHuddle(id, orgId)!;
   const all = linesOf(fresh);
   const replies: Reply[] = picked.map((r, i) => {

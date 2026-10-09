@@ -76,13 +76,13 @@ const ACTIONS: Record<string, string[]> = {
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  leads: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  leads: ["none", "report", "ehr_read", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   projects: ["none", "report", "check_schedule", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "send_invite", "share_meeting", "switch_link", "default_link", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   coo: ["none", "report", "check_schedule", "write_agenda", "schedule_meeting", "send_invite", "share_meeting", "switch_link", "default_link", "meeting_notes", "set_deadlines", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   ads: ["none", "report", "ads_campaign", "ads_note", "ads_rewrite", "ads_approve", "ads_skip", "ads_platform", "ads_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  billing: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  compliance: ["none", "report", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  billing: ["none", "report", "ehr_read", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  compliance: ["none", "report", "ehr_read", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 // Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
@@ -195,6 +195,7 @@ const ACTION_HELP: Record<string, string> = {
   show_receipt: "show_receipt: the person asks whether or how an application was submitted, for proof, the confirmation, or which email was used (\"how do I know it went in\", \"show me the receipt\", \"what email did you use\"). Put words from the application's name in `target` ('' for the newest one submitted). You show the receipt screenshot and the submission record.",
   apply: "apply: start the application for an opportunity already found. Put its name (or 'best' for the best fit not yet started) in `target`.",
   find_and_apply: "find_and_apply: search now, then start applications for the best fits (used by scheduled tasks like a morning search). Set `oppKind` and `focus` as for a search.",
+  ehr_read: "ehr_read: read LeadDash EHR to answer a question with real numbers (how much came in today, today against last Thursday, this week against last week, what a payer paid, claims denied this month, sessions this week, no-shows by clinician). Put `payments` (money that came in: insurance and client payments, refunds), `claims` (by date of service, any status) or `appointments` (sessions on the calendar) in `target`, the first day as YYYY-MM-DD in `date`, and how many days in `count` (1 for one day; read last Thursday through today in one read to compare them). Read as many times as the question needs, one range each time, and say so in `plan`. You get every row back and answer from it yourself: add it up, compare it, name the clients. Never guess a number you have not read.",
   check_status: "check_status: report what is open, what is waiting for the person, what is submitted, and what is due soon.",
   find_videos: "find_videos: search for current short-form video trends and plan videos. Put any focus in `focus`.",
   write_post: "write_post: write a social post. Put the subject in `topic` and the platforms (linkedin, instagram, facebook, x, threads) in `platforms`; default to linkedin and instagram.",
@@ -539,6 +540,8 @@ type ActionResult = {
   facts?: string;
   /** A lookup step: when more steps follow, its text and cards stay out of the reply (the facts carry what it found). */
   quiet?: boolean;
+  /** The employee answers from what this step found, even when it planned no more steps (an EHR read is data, not an answer). */
+  answer?: boolean;
 };
 type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[]; said?: string; userId?: number | null };
 
@@ -1588,6 +1591,17 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         queries: [],
       };
     }
+    case "ehr_read": {
+      const ehr = await import("../ehr");
+      const what = (ehr.READS as readonly string[]).includes(d.target.trim().toLowerCase()) ? (d.target.trim().toLowerCase() as import("../ehr").EhrRead) : "payments";
+      const days = Math.max(1, Math.min(ehr.READ_MAX_DAYS[what], d.count || 1));
+      const today = (await nowIn(org)).match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? new Date().toISOString().slice(0, 10);
+      const from = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : today;
+      const toDay = new Date(`${from}T12:00:00Z`);
+      toDay.setUTCDate(toDay.getUTCDate() + days - 1);
+      const r = await ehr.read(org, what, from, toDay.toISOString().slice(0, 10));
+      return { text: r.text, cards: [], queries: [], facts: r.facts || undefined, quiet: Boolean(r.facts), answer: Boolean(r.facts) };
+    }
     case "check_schedule": {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { text: "Which day should I check?", cards: [], queries: [] };
       const cal = await import("./calendars");
@@ -2021,7 +2035,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     }
     const ctx = { who: opts.authorName, files: sent.length ? sent : files, history, said: pasted ? pasted.words : opts.text, userId: opts.userId ?? null };
     const result = await runAction(emp, decision, ctx);
-    if (!decision.plan?.trim()) {
+    if (!decision.plan?.trim() && !result.answer) {
       const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];
       return { user: userMsg, reply: await reply(`${result.text || decision.reply}${learned}`, cards, result.queries) };
     }

@@ -1078,7 +1078,7 @@ function EhrConnection() {
   const q = trpc.ehr.view.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const emps = trpc.employees.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const [editing, setEditing] = React.useState(false);
-  const [url, setUrl] = React.useState("https://ehr.leaddash.io");
+  const [url, setUrl] = React.useState("https://api.health.leaddash.io");
   const [key, setKey] = React.useState("");
   const refresh = () => Promise.all([utils.ehr.view.invalidate(), utils.publishing.listConnections.invalidate()]);
   const connect = trpc.ehr.connect.useMutation({ onSuccess: async () => { setKey(""); setEditing(false); await refresh(); } });

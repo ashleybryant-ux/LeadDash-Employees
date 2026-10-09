@@ -166,4 +166,65 @@ describe("A healthcare practice workspace", () => {
     expect((await me.compliance.desk({ organizationId: orgId })).counts.overdue).toBe(0);
     expect((await me.compliance.remove({ organizationId: orgId, id: late.id })).ok).toBe(true);
   });
+
+  it("a connection whose first read failed shows no read time and still lets the employees talk", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-ehr-fail");
+    const me = caller(owner);
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    vi.spyOn(ehr.tools, "fetchJson").mockImplementation(async (url: string) => {
+      if (url.endsWith("/api/employees/ping")) return { ok: true, practice: "Legacy Family Services", locationId: "loc_1" };
+      throw new Error("The operation was aborted due to timeout");
+    });
+    await me.ehr.connect({ organizationId: orgId, url: "https://api.health.leaddash.io", key: "ld-emp-0123456789abcdefghij" });
+    const v = await me.ehr.view({ organizationId: orgId });
+    expect(v).toMatchObject({ connected: true, fetchedAt: null, snapshot: null, error: "The operation was aborted due to timeout" });
+    expect(await ehr.ehrFacts(orgId, "billing")).toContain("but the last read failed (The operation was aborted due to timeout)");
+  });
+
+  it("Harper reads what came in today and last Thursday from LeadDash EHR and answers from it, on the BAA route", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-ehr-money");
+    const me = caller(owner);
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    const asked: string[] = [];
+    vi.spyOn(ehr.tools, "fetchJson").mockImplementation(async (url: string) => {
+      asked.push(url);
+      if (url.endsWith("/api/employees/ping")) return { ok: true, practice: "Legacy Family Services", locationId: "loc_1" };
+      if (url.includes("/api/employees/payments")) {
+        return {
+          ok: true, from: "2026-10-01", to: "2026-10-08", today: "2026-10-08",
+          days: [
+            { date: "2026-10-01", weekday: "Thursday", insuranceCents: 0, clientCents: 40_000, refundsCents: 0, netCents: 40_000, payments: 3 },
+            { date: "2026-10-08", weekday: "Thursday", insuranceCents: 12_050, clientCents: 9_500, refundsCents: 0, netCents: 21_550, payments: 2 },
+          ],
+          totals: { insuranceCents: 12_050, clientCents: 49_500, refundsCents: 0, netCents: 61_550, payments: 5 },
+          payments: [{ date: "2026-10-08", kind: "insurance", payer: "BCBS of Oklahoma", method: "era", name: "Jane Moore", initials: "J.M.", amountCents: 12_050, unappliedCents: 0 }],
+          paymentsTotal: 5, refunds: [],
+        };
+      }
+      return snapshot();
+    });
+    await me.ehr.connect({ organizationId: orgId, url: "https://api.health.leaddash.io", key: "ld-emp-0123456789abcdefghij" });
+    const harper = (await db.getEmployeeByKind(orgId, "billing"))!;
+    const blank = { reply: "", action: "none", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+    const prompts: string[] = [];
+    const routes: unknown[] = [];
+    const llm = await import("./_core/llm");
+    vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => {
+      if (opts.schemaName !== "chat_decision") return {} as any;
+      prompts.push(opts.prompt);
+      routes.push(opts.clientInfo);
+      // No plan on the read: the answer still comes from what it found.
+      if (prompts.length === 1) return { ...blank, action: "ehr_read", target: "payments", date: "2026-10-01", count: 8, reply: "Checking." } as any;
+      return { ...blank, reply: "$215.50 came in today, against $400.00 last Thursday." } as any;
+    });
+    const r = await me.chat.send({ organizationId: orgId, employeeId: harper.id, text: "Harper, how much money came in today compared to last Thursday?" });
+    expect(asked).toContain("https://api.health.leaddash.io/api/employees/payments?from=2026-10-01&to=2026-10-08");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Thursday Oct 8, 2026: $215.50 net (insurance $120.50, clients $95.00), 2 payments");
+    expect(prompts[1]).toContain("Thursday Oct 1, 2026: $400.00 net");
+    expect(prompts[1]).toContain("Insurance (BCBS of Oklahoma) · Jane Moore · $120.50");
+    expect(routes).toEqual([true, true]);
+    expect(r.reply!.content).toContain("$215.50 came in today, against $400.00 last Thursday.");
+    expect(r.reply!.content).not.toContain("I read payments");
+  });
 });

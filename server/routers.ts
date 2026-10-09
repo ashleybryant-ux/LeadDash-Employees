@@ -3409,7 +3409,9 @@ export const appRouter = router({
         let voiceError: string | null = null;
         if (input.spoken && result.reply?.content) {
           const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
-          const id = emp ? await huddle.speak(emp.kind, spokenText(result.reply.content)) : null;
+          // A healthcare practice's answers can carry client information: spoken only by a provider under a BAA.
+          const healthcare = (await db.getOrganizationById(input.organizationId))?.orgType === "healthcare";
+          const id = emp ? await huddle.speak(emp.kind, spokenText(result.reply.content), "", { clientInfo: healthcare }) : null;
           audioUrl = id ? `/api/voice/audio/${id}` : null;
           voiceError = id ? null : huddle.lastSpeechError();
         }
