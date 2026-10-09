@@ -1860,6 +1860,9 @@ export function saveDramaSeries(orgId: number, data: Partial<typeof dramaSeries.
 export function listDramaCast(orgId: number) {
   return getDb().select().from(dramaCast).where(eq(dramaCast.organizationId, orgId)).orderBy(dramaCast.id).all();
 }
+export function getDramaCast(id: number, orgId: number) {
+  return getDb().select().from(dramaCast).where(and(eq(dramaCast.id, id), eq(dramaCast.organizationId, orgId))).limit(1).all()[0] ?? null;
+}
 export function createDramaCast(row: typeof dramaCast.$inferInsert) {
   return getDb().insert(dramaCast).values(row).returning().all()[0];
 }

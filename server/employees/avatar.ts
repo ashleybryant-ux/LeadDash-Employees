@@ -25,6 +25,7 @@ export const MODEL: Record<Quality, string> = {
 };
 const WORDS_PER_SECOND = 2.5;
 const PROMPT = "A natural talking-head video. She speaks straight to the camera like she's talking to a colleague, with warm expressions, small natural head movements and the occasional hand gesture. Steady camera.";
+const PROMPT_CAST = "A natural talking-to-camera video, the kind a real person films on their phone. They speak straight to the camera like they're talking to a friend, with real expressions, small natural head movements and the occasional hand gesture. Steady handheld camera.";
 
 export function settingsOf(emp: Pick<AIEmployee, "studio">): AvatarSettings {
   let s: Partial<AvatarSettings> = {};
@@ -80,14 +81,31 @@ export async function spentThisMonth(orgId: number) {
 }
 
 /** Elena's script becomes a draft with the current photo and voice. */
-export async function draft(orgId: number, input: { title: string; script: string }) {
+/** Whether "who" means the owner herself. */
+export const isOwner = (who?: string | null) => !who || /^(me|myself|the owner|owner|you|her|ashley)$/i.test(who.trim());
+
+/**
+ * A script to make. On camera: the owner (her photo and her cloned voice), or a made-up person
+ * named or described in `who`, cast through Elena's own casting tools (a portrait and a stock voice).
+ */
+export async function draft(orgId: number, input: { title: string; script: string; who?: string | null }) {
   const emp = await elena(orgId);
   const s = settingsOf(emp);
-  const pics = await photos(orgId);
-  const imageId = s.imageId && pics.some((p) => p.id === s.imageId) ? s.imageId : pics[0]?.id ?? null;
   const script = input.script.trim().slice(0, 2400);
   const tenths = estimateTenths(script);
-  return db.createAvatarVideo({ organizationId: orgId, employeeId: emp.id, title: input.title.trim().slice(0, 120) || "Video", script, imageId, voiceId: s.voiceId, voiceName: s.voiceName, quality: s.quality, costCents: costFor(tenths, s.quality), tenths: null });
+  const title = input.title.trim().slice(0, 120) || "Video";
+  if (!isOwner(input.who)) {
+    const cast = await (await import("./drama")).castFromDescription(orgId, input.who!);
+    return db.createAvatarVideo({ organizationId: orgId, employeeId: emp.id, title, script, imageId: null, castId: cast.id, voiceId: cast.voiceId, voiceName: cast.voiceName, quality: s.quality, costCents: costFor(tenths, s.quality), tenths: null });
+  }
+  const pics = await photos(orgId);
+  const imageId = s.imageId && pics.some((p) => p.id === s.imageId) ? s.imageId : pics[0]?.id ?? null;
+  return db.createAvatarVideo({ organizationId: orgId, employeeId: emp.id, title, script, imageId, voiceId: s.voiceId, voiceName: s.voiceName, quality: s.quality, costCents: costFor(tenths, s.quality), tenths: null });
+}
+
+/** Who is on camera in a video: the owner, or the made-up person it was cast with. */
+export function castOf(v: Pick<AvatarVideo, "organizationId" | "castId">) {
+  return v.castId ? db.getDramaCast(v.castId, v.organizationId) : null;
 }
 
 export async function updateScript(orgId: number, id: number, input: { title?: string; script?: string }) {
@@ -167,16 +185,31 @@ export async function make(orgId: number, id: number): Promise<AvatarVideo> {
   if (!ENV.elevenLabsKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Your voice isn't connected yet: ELEVENLABS_API_KEY is missing on the server." });
   const emp = await elena(orgId);
   const s = settingsOf(emp);
-  const pics = await photos(orgId);
-  const photo = pics.find((p) => p.id === v.imageId) ?? pics.find((p) => p.id === s.imageId) ?? pics[0];
-  if (!photo) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Add a photo of yourself to the Brain (or attach one in Elena's chat) first." });
-  let voiceId = v.voiceId ?? s.voiceId;
-  let voiceName = v.voiceName ?? s.voiceName;
-  if (!voiceId) {
-    const own = (await voices()).find((x) => x.own);
-    if (!own) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Pick your voice under Your avatar on Elena's Videos tab first." });
-    voiceId = own.id;
-    voiceName = own.name;
+  const cast = castOf(v);
+  let photo: { id: number | null; url: string } | undefined;
+  let voiceId = v.voiceId ?? (cast ? cast.voiceId : s.voiceId);
+  let voiceName = v.voiceName ?? (cast ? cast.voiceName : s.voiceName);
+  if (cast) {
+    // A made-up person: their portrait (made once from their description) and a stock voice.
+    const drama = await import("./drama");
+    photo = { id: null, url: await drama.portraitFor(orgId, cast, "") };
+    if (!voiceId) {
+      const stock = (await voices()).find((x) => !x.own);
+      if (!stock) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `No stock voice is available for ${cast.name}.` });
+      voiceId = stock.id;
+      voiceName = stock.name;
+      db.updateDramaCast(cast.id, orgId, { voiceId, voiceName });
+    }
+  } else {
+    const pics = await photos(orgId);
+    photo = pics.find((p) => p.id === v.imageId) ?? pics.find((p) => p.id === s.imageId) ?? pics[0];
+    if (!photo) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Add a photo of yourself to the Brain (or attach one in Elena's chat) first." });
+    if (!voiceId) {
+      const own = (await voices()).find((x) => x.own);
+      if (!own) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Pick your voice under Your avatar on Elena's Videos tab first." });
+      voiceId = own.id;
+      voiceName = own.name;
+    }
   }
   const quality = (v.quality as Quality) ?? s.quality;
   const estimate = costFor(estimateTenths(v.script), quality);
@@ -190,7 +223,7 @@ export async function make(orgId: number, id: number): Promise<AvatarVideo> {
     // MP3 at 128 kbps: the length of the audio is the length of the video, and what fal bills.
     const tenths = Math.max(10, Math.round((audio.length * 8) / 128_000 * 10));
     const image = await readStored(photo.url);
-    const sub = await fal(`https://queue.fal.run/${MODEL[quality]}`, { method: "POST", body: { image_url: dataUri(image, mimeOf(photo.url)), audio_url: dataUri(audio, "audio/mpeg"), prompt: PROMPT } });
+    const sub = await fal(`https://queue.fal.run/${MODEL[quality]}`, { method: "POST", body: { image_url: dataUri(image, mimeOf(photo.url)), audio_url: dataUri(audio, "audio/mpeg"), prompt: cast ? PROMPT_CAST : PROMPT } });
     if (!sub.request_id) throw new Error("fal.ai didn't start the video.");
     const job = JSON.stringify({ id: sub.request_id, status: sub.status_url, result: sub.response_url });
     const out = db.updateAvatarVideo(id, orgId, { requestId: job, tenths, costCents: costFor(tenths, quality) })!;
@@ -207,7 +240,8 @@ export async function make(orgId: number, id: number): Promise<AvatarVideo> {
 export async function again(orgId: number, id: number): Promise<AvatarVideo> {
   const v = db.getAvatarVideo(id, orgId);
   if (!v) throw new TRPCError({ code: "NOT_FOUND", message: "That video is not in this workspace." });
-  const copy = await draft(orgId, { title: v.title, script: v.script });
+  const cast = castOf(v);
+  const copy = await draft(orgId, { title: v.title, script: v.script, who: cast ? cast.name : null });
   return make(orgId, copy.id);
 }
 
@@ -291,6 +325,7 @@ export async function avatarTicks() {
 
 /** What a card or row shows. */
 export function view(v: AvatarVideo, photoTitle?: string) {
+  const cast = castOf(v);
   return {
     id: v.id,
     title: v.title,
@@ -300,7 +335,9 @@ export function view(v: AvatarVideo, photoTitle?: string) {
     cost: `${v.status === "ready" || v.status === "failed" ? "" : "about "}$${(v.costCents / 100).toFixed(2)}`,
     quality: v.quality,
     voiceName: v.voiceName,
-    photoTitle: photoTitle ?? null,
+    /** Who is on camera: the owner (null) or a made-up person from the cast. */
+    who: cast ? { id: cast.id, name: cast.name, look: cast.look, photoUrl: cast.photoUrl } : null,
+    photoTitle: cast ? `${cast.name} (made up)` : photoTitle ?? null,
     imageId: v.imageId,
     videoUrl: v.videoUrl,
     error: v.error,

@@ -33,6 +33,12 @@ beforeEach(() => {
     if (u.endsWith("/requests/r1/status")) return Response.json({ status: falStatus });
     if (u.endsWith("/requests/r1")) return Response.json({ video: { url: "https://v3.fal.media/files/out.mp4" } });
     if (u === "https://v3.fal.media/files/out.mp4") return new Response(Buffer.from("mp4-bytes"), { status: 200 });
+    // A made-up person's portrait (Elena's casting tools) and the stock voices on the account.
+    if (u === "https://queue.fal.run/fal-ai/nano-banana-pro") return Response.json({ request_id: "p1", status_url: "https://queue.fal.run/req/p1/status", response_url: "https://queue.fal.run/req/p1" });
+    if (u.endsWith("/req/p1/status")) return Response.json({ status: "COMPLETED" });
+    if (u.endsWith("/req/p1")) return Response.json({ images: [{ url: "https://fal.media/maya.png" }] });
+    if (u === "https://fal.media/maya.png") return new Response(Buffer.from("png-bytes"), { status: 200 });
+    if (u === "https://api.elevenlabs.io/v1/voices") return Response.json({ voices: [{ voice_id: "v-ashley", name: "Ashley", category: "cloned", labels: { gender: "female" } }, { voice_id: "v-brian", name: "Brian", category: "premade", labels: { gender: "male" } }, { voice_id: "v-rachel", name: "Rachel", category: "premade", labels: { gender: "female" } }] });
     return new Response("no route", { status: 500 });
   });
 });
@@ -88,6 +94,39 @@ describe("Elena makes videos of the owner from her photo and voice", () => {
     expect(JSON.parse(last.cards!)[0]).toMatchObject({ type: "avatar_video", id: v.id });
     expect((await c.avatar.settings({ organizationId: orgId })).spentCents).toBe(225);
     expect((await c.avatar.list({ organizationId: orgId })).map((x) => x.status)).toEqual(["ready"]);
+  });
+
+  it("puts a made-up person on camera when asked: cast from the description, portrait made once, a fitting stock voice", async () => {
+    const { orgId, owner } = await makeWorkspace("avatar-cast");
+    const c = caller(owner);
+    const elena = (await db.getEmployeeByKind(orgId, "video"))!;
+    decision = { ...blank, action: "avatar_script", title: "Finally on time", message: SCRIPT, from: "Maya: a therapist in her 40s, braids, cardigan, warm and a little tired" };
+    const r = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make a 30 second UGC about a therapist finishing notes on time, not me this time" });
+    expect(r.reply.content).toMatch(/Maya is on camera: a therapist in her 40s/);
+    const card = JSON.parse(r.reply.cards!)[0];
+    const draft = (await c.avatar.get({ organizationId: orgId, id: card.id }))!;
+    expect(draft.who).toMatchObject({ name: "Maya", look: "a therapist in her 40s, braids, cardigan, warm and a little tired" });
+    expect(draft.photoTitle).toBe("Maya (made up)");
+    expect(draft.voiceName).toBe("Rachel");
+
+    // Make it: the portrait is made from her description, then the talking video from that portrait and her voice.
+    const made = await c.avatar.make({ organizationId: orgId, id: card.id });
+    expect(made.status).toBe("making");
+    const portrait = calls.find((x) => x.url === "https://queue.fal.run/fal-ai/nano-banana-pro");
+    expect(JSON.parse(portrait!.init.body).prompt).toMatch(/Candid portrait photograph of Maya, a therapist in her 40s/);
+    const tts = calls.find((x) => x.url.includes("/v1/text-to-speech/"));
+    expect(tts!.url).toContain("/v1/text-to-speech/v-rachel");
+    const video = calls.find((x) => x.url === "https://queue.fal.run/fal-ai/kling-video/ai-avatar/v2/standard");
+    expect(JSON.parse(video!.init.body).prompt).toMatch(/the kind a real person films on their phone/);
+    expect(db.listDramaCast(orgId).find((x) => x.name === "Maya")?.photoUrl).toMatch(/\/files\//);
+
+    // The same name again reuses her, portrait and all.
+    const d2 = await avatar.draft(orgId, { title: "Again", script: SCRIPT, who: "Maya" });
+    expect(d2.castId).toBe(draft.who!.id);
+    expect(db.listDramaCast(orgId).filter((x) => x.name === "Maya")).toHaveLength(1);
+    // "me" is still the owner.
+    const d3 = await avatar.draft(orgId, { title: "Me", script: SCRIPT, who: "me" });
+    expect(d3.castId).toBeNull();
   });
 
   it("won't start a video that would go over the monthly limit, and says what's missing", async () => {

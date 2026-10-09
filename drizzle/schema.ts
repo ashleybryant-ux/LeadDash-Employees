@@ -1515,6 +1515,8 @@ export const avatarVideos = sqliteTable(
     imageId: integer("imageId"),
     voiceId: text("voiceId"),
     voiceName: text("voiceName"),
+    /** A made-up person on camera instead of the owner: a drama cast member (its portrait and voice are used). */
+    castId: integer("castId"),
     quality: text("quality", { enum: ["standard", "pro"] }).notNull().default("standard"),
     /** Length in tenths of a second, once made. */
     tenths: integer("tenths"),

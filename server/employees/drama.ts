@@ -548,7 +548,41 @@ async function speak(voiceId: string, text: string) {
 // ==========================================
 
 /** A made-up character needs a portrait before their first shot, so they look the same in every shot. */
-async function portraitFor(orgId: number, c: DramaCastMember, look: string) {
+/**
+ * A made-up person to put on camera, for any kind of video. Reuses the cast: an existing
+ * character by name, or a new one from a description ("Maya: a therapist in her 40s, braids,
+ * cardigan"), with a stock voice matched to the description and a portrait made on first use.
+ */
+export async function castFromDescription(orgId: number, who: string) {
+  const text = who.trim();
+  const existing = db.listDramaCast(orgId).filter((c) => c.kind === "made_up");
+  const byName = existing.find((c) => c.name.toLowerCase() === text.toLowerCase() || text.toLowerCase().startsWith(c.name.toLowerCase() + ":"));
+  if (byName) return byName;
+  const m = text.match(/^([A-Z][\w'-]{1,30}(?:\s[A-Z][\w'-]{1,30})?)\s*[:,]\s*(.+)$/);
+  const name = (m ? m[1] : `Creator ${existing.length + 1}`).slice(0, 80);
+  const look = (m ? m[2] : text).slice(0, 500);
+  const voice = await stockVoiceFor(look);
+  return db.createDramaCast({ organizationId: orgId, name, role: "On camera", kind: "made_up", look, photoUrl: null, voiceId: voice?.id ?? null, voiceName: voice?.name ?? null });
+}
+
+/** A stock ElevenLabs voice that fits a description: by the gender it reads, else any stock voice. */
+async function stockVoiceFor(look: string) {
+  let list: { id: string; name: string; gender: string; own: boolean }[] = [];
+  try {
+    list = await (await import("./huddle")).listVoices();
+  } catch {
+    return null;
+  }
+  // Never the owner's own cloned voice for someone who is not her.
+  const stock = list.filter((v) => !v.own);
+  const wantsF = /\b(she|her|woman|female|mom|mother|lady|girl)\b/i.test(look);
+  const wantsM = /\b(he|him|his|man|male|dad|father|guy|boy)\b/i.test(look);
+  const fit = stock.filter((v) => (wantsF ? /female/i.test(v.gender) : wantsM ? /^male/i.test(v.gender) : true));
+  return fit[0] ?? stock[0] ?? null;
+}
+
+/** The character's portrait, made once from their description and kept. */
+export async function portraitFor(orgId: number, c: DramaCastMember, look: string) {
   if (c.photoUrl) return c.photoUrl;
   const r = await falRun(MODELS.portrait, { prompt: `Candid portrait photograph of ${c.name}, ${c.look}, as they look in 2026: current clothes and hair, no heavy makeup. Head and shoulders, facing the camera, neutral expression, soft window light, plain background, real skin with pores and natural shine, no beauty-filter smoothing, no orange tan, muted colors, 50mm lens. ${look}`, aspect_ratio: "3:4", num_images: 1, output_format: "png" }, 5);
   const url = r?.images?.[0]?.url;

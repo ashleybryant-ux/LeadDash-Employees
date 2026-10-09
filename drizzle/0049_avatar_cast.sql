@@ -1,0 +1,1 @@
+ALTER TABLE `avatar_videos` ADD `castId` integer;

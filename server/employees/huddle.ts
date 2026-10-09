@@ -153,7 +153,7 @@ export async function listVoices() {
   const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": ENV.elevenLabsKey }, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`ElevenLabs didn't list voices (${res.status}): ${(await res.text()).slice(0, 200)}`);
   const data = (await res.json()) as { voices?: (ElevenVoice & { preview_url?: string })[] };
-  return (data.voices ?? []).filter((v) => v.voice_id).map((v) => ({ id: v.voice_id, name: v.name, gender: v.labels?.gender ?? "", accent: v.labels?.accent ?? "", description: v.labels?.description ?? "", previewUrl: v.preview_url ?? null }));
+  return (data.voices ?? []).filter((v) => v.voice_id).map((v) => ({ id: v.voice_id, name: v.name, gender: v.labels?.gender ?? "", accent: v.labels?.accent ?? "", description: v.labels?.description ?? "", previewUrl: v.preview_url ?? null, own: ["cloned", "professional", "generated"].includes((v as { category?: string }).category ?? "") }));
 }
 
 /** After a voice is chosen for an employee, the next answer uses it. */
