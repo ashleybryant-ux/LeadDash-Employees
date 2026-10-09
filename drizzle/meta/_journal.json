@@ -330,6 +330,13 @@
       "when": 1791507928308,
       "tag": "0046_drop_mcp_client_info",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1791549544417,
+      "tag": "0047_ehr_link_and_roster_defaults",
+      "breakpoints": true
     }
   ]
 }

@@ -99,7 +99,7 @@ export async function verifyCode(rawEmail: string, rawCode: string, req: Request
   return user;
 }
 
-async function startSession(userId: number, req: Request, res: Response) {
+export async function startSession(userId: number, req: Request, res: Response) {
   const token = randomToken();
   const expiresAt = new Date(Date.now() + ENV.sessionDays * 86400_000);
   await db.createSession(userId, sha256(token), expiresAt, req.ip ?? null);

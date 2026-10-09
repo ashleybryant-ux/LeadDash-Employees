@@ -56,6 +56,8 @@ async function startServer() {
 
   app.use(express.json({ limit: "16mb" })); // Brain uploads arrive as base64
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
+  // The door from LeadDash EHR: a practice opens this app from its Settings, and the EHR's agency screen sets portraits and voices.
+  (await import("../ehrLink")).registerEhrLink(app);
   // The Claude and ChatGPT connector.
   (await import("../mcp")).registerMcp(app);
 
@@ -114,6 +116,12 @@ async function startServer() {
   });
   app.use("/files", async (req, res, next) => {
     try {
+      // A roster portrait (chosen by LeadDash staff for every workspace) is a public picture of an AI employee: shown
+      // on the EHR's agency screen and the huddle bot's page without a sign-in. Its name is random; nothing else is.
+      if (/^\/roster\/[a-z0-9_-]+\/portrait-[a-z0-9_]+\.(png|jpg|webp|gif)$/i.test(req.path)) {
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        return files(req, res, next);
+      }
       const { user } = await authenticateRequest(req);
       if (!user) return res.status(401).send("Sign in to open this file.");
       // Every file belongs to a workspace (org-<id>/) or is one person's photo (user-<id>/). Anything else is never served.

@@ -141,6 +141,14 @@ export async function saveImage(orgId: number, base64: string, folder = "brain")
 }
 
 /** A person's own photo (My account). */
+/** A roster employee's portrait for every workspace, chosen by LeadDash staff. */
+export async function saveRosterPortrait(kind: string, base64: string) {
+  const buf = decode(base64, 8_000_000);
+  const type = sniffImage(buf);
+  if (!type) throw new TRPCError({ code: "BAD_REQUEST", message: "Portraits must be PNG, JPG, WebP or GIF." });
+  return storagePut(`roster/${kind.replace(/[^a-z0-9_-]/gi, "")}/portrait-${Date.now()}${IMAGE_TYPES[type]}`, buf, type);
+}
+
 export async function savePhoto(userId: number, base64: string) {
   const buf = decode(base64, 8_000_000);
   const type = sniffImage(buf);

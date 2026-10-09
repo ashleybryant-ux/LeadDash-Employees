@@ -147,7 +147,24 @@ export function assignVoices(voices: ElevenVoice[], overrides: Record<string, st
 
 let elevenCache: { at: number; map: Record<string, string> } | null = null;
 
+/** The voices on the ElevenLabs account, for choosing one per employee on the EHR's agency screen. */
+export async function listVoices() {
+  if (!ENV.elevenLabsKey) throw new Error("Voices are not set up on the LeadDash Employees server yet (ELEVENLABS_API_KEY).");
+  const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": ENV.elevenLabsKey }, signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`ElevenLabs didn't list voices (${res.status}): ${(await res.text()).slice(0, 200)}`);
+  const data = (await res.json()) as { voices?: (ElevenVoice & { preview_url?: string })[] };
+  return (data.voices ?? []).filter((v) => v.voice_id).map((v) => ({ id: v.voice_id, name: v.name, gender: v.labels?.gender ?? "", accent: v.labels?.accent ?? "", description: v.labels?.description ?? "", previewUrl: v.preview_url ?? null }));
+}
+
+/** After a voice is chosen for an employee, the next answer uses it. */
+export function forgetVoices() {
+  elevenCache = null;
+}
+
 export async function elevenVoiceFor(kind: string) {
+  // A voice chosen for everyone (LeadDash staff, from the EHR's agency screen) comes first.
+  const chosen = db.rosterDefaults.get(kind)?.voiceId;
+  if (chosen) return chosen;
   if (!elevenCache || Date.now() - elevenCache.at > 60 * 60_000) {
     const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": ENV.elevenLabsKey }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`ElevenLabs didn't list voices (${res.status}): ${(await res.text()).slice(0, 200)}`);

@@ -68,6 +68,8 @@ export const ENV = {
   /** GitHub fine-grained token for Kai: issues, pull requests and contents on the owner's repos. */
   githubToken: process.env.GITHUB_TOKEN || "",
   elevenLabsModel: process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5",
+  /** Shared with the LeadDash EHR server: signs the sign-in pass a practice opens this app with, and the roster calls the EHR's agency screen makes. */
+  ehrLinkSecret: process.env.EHR_LINK_SECRET || "",
   /** OpenAI key: images, voices when ElevenLabs is not set, and web search when SEARCH_PROVIDER=openai. */
   openAiKey: process.env.OPENAI_API_KEY || "",
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",

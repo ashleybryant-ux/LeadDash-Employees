@@ -1,3 +1,4 @@
+import * as db from "./db";
 import express, { type Express, type Request, type Response } from "express";
 import { audioClip, botHeard, botNext, botPageData } from "./employees/huddle";
 
@@ -52,7 +53,7 @@ function esc(s: string) {
 
 function botPage(token: string, data: { emps: { kind: string; name: string; role: string }[]; lastIndex: number }) {
   const tiles = data.emps
-    .map((e) => `<div class="t" data-kind="${esc(e.kind)}"><img src="/avatars/${esc(e.kind)}.webp" alt=""><b>${esc(e.name)}</b><span>${esc(e.role)}</span></div>`)
+    .map((e) => `<div class="t" data-kind="${esc(e.kind)}"><img src="${esc(db.rosterDefaults.get(e.kind)?.avatarUrl || `/avatars/${e.kind}.webp`)}" alt=""><b>${esc(e.name)}</b><span>${esc(e.role)}</span></div>`)
     .join("");
   return `<!doctype html>
 <html lang="en">

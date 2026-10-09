@@ -1091,11 +1091,11 @@ function EhrConnection() {
         <span className="ld-lbl">LeadDash EHR</span>
         <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {v?.connected ? <span className="ld-pill green">Connected</span> : <span className="ld-pill gray">Not connected</span>}
-          {!editing && <button type="button" className="ld-btn sm" onClick={() => setEditing(true)}>{v?.connected ? "Change" : "Connect"}</button>}
+          {!editing && !v?.viaEhr && <button type="button" className="ld-btn sm" onClick={() => setEditing(true)}>{v?.connected ? "Change" : "Connect"}</button>}
         </span>
       </div>
       {v?.connected && !editing && (
-        <span style={{ fontSize: 14 }}>Connected as <b>{v.practice}</b>{v.fetchedAt ? <span className="ld-small ld-muted"> · last read {fmtDate(v.fetchedAt)}</span> : <span className="ld-small ld-muted"> · first read pending</span>}{v.error ? <span className="ld-small" style={{ color: "#b42318" }}> · last read failed: {v.error}</span> : null}</span>
+        <span style={{ fontSize: 14 }}>{v.viaEhr ? "Connected from LeadDash EHR as " : "Connected as "}<b>{v.practice}</b>{v.fetchedAt ? <span className="ld-small ld-muted"> · last read {fmtDate(v.fetchedAt)}</span> : <span className="ld-small ld-muted"> · first read pending</span>}{v.error ? <span className="ld-small" style={{ color: "#b42318" }}> · last read failed: {v.error}</span> : null}</span>
       )}
       {!v?.connected && !editing && <span style={{ fontSize: 14 }}>Harper, Camille and Malik read from LeadDash EHR once it is connected. The key comes from LeadDash EHR, Practice Settings, LeadDash Employees.</span>}
       {editing && (

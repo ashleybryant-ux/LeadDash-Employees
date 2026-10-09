@@ -28,6 +28,7 @@ import More from "./ld/pages/More";
 import Handbook from "./ld/pages/Handbook";
 import SopPage from "./ld/sops/SopPage";
 import BaseInstructions from "./ld/pages/BaseInstructions";
+import Welcome from "./ld/pages/Welcome";
 import { Rail, Switcher } from "./ld/ui";
 import Notices from "./ld/Notices";
 import "./ld/theme.css";
@@ -50,7 +51,12 @@ function NoWorkspace() {
 }
 
 function Router() {
-  const { organizations, isLoading, currentOrg, chatOnly } = useTenant();
+  const { organizations, isLoading, currentOrg, chatOnly, currentOrgId, switchOrganization } = useTenant();
+  // Opened from LeadDash EHR with ?org=<id>: that workspace, not the one last used.
+  useEffect(() => {
+    const wanted = Number(new URLSearchParams(window.location.search).get("org") || 0);
+    if (wanted && wanted !== currentOrgId && organizations.some((o) => o.id === wanted)) switchOrganization(wanted);
+  }, [organizations, currentOrgId, switchOrganization]);
   if (isLoading) return <Spinner />;
   if (organizations.length === 0) return <NoWorkspace />;
   // A guest on shared Projects lists sees those lists and nothing else.
@@ -101,6 +107,7 @@ function Router() {
       <Route path="/handbook" component={Handbook} />
       <Route path="/handbook/sop/:id" component={SopPage} />
       <Route path="/base" component={BaseInstructions} />
+      <Route path="/welcome" component={Welcome} />
       <Route>{() => <Redirect to="/chats" />}</Route>
     </Switch>
   );

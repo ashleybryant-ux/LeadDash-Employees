@@ -112,6 +112,8 @@ export const organizations = sqliteTable("organizations", {
   ops: text("ops"),
   /** AI limits per person (JSON): the default monthly limit, whether owners and admins are exempt, the heads-up point and what happens at the limit. */
   aiLimits: text("aiLimits"),
+  /** The LeadDash EHR practice this workspace came from (its location id), when it was opened from the EHR; the sign-in door finds the workspace by it. */
+  ehrLocationId: text("ehrLocationId"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -3248,6 +3250,22 @@ export type SopJob = typeof sopJobs.$inferSelect;
 // ==========================================
 // LeadDash EHR: what a healthcare practice's employees read from it
 // ==========================================
+
+/**
+ * How each roster employee looks and sounds in every workspace, set by LeadDash
+ * staff (from LeadDash EHR's agency screen). A portrait or voice chosen here is
+ * the default wherever a workspace has not chosen its own; the bundled
+ * portrait and the assigned voice stay the fallback when a row is empty.
+ */
+export const rosterDefaults = sqliteTable("roster_defaults", {
+  kind: text("kind").primaryKey(),
+  avatarUrl: text("avatarUrl"),
+  voiceId: text("voiceId"),
+  voiceName: text("voiceName"),
+  updatedBy: text("updatedBy"),
+  updatedAt: updatedAt(),
+});
+export type RosterDefault = typeof rosterDefaults.$inferSelect;
 
 /** The last snapshot read from LeadDash EHR for a workspace: claims, paperwork, appointments, notes, balances. Harper, Camille and Malik work from it; the next read is compared to it for what is new. */
 export const ehrSnapshots = sqliteTable("ehr_snapshots", {

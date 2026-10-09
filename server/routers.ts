@@ -596,14 +596,16 @@ export const appRouter = router({
   employees: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return db.listEmployeesByOrg(input.organizationId);
+      const { withPortrait } = await import("./ehrLink");
+      return (await db.listEmployeesByOrg(input.organizationId)).map(withPortrait);
     }),
 
     get: protectedProcedure
       .input(z.object({ id: z.number(), organizationId: z.number() }))
       .query(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId);
-        return db.getEmployeeForOrg(input.id, input.organizationId);
+        const emp = await db.getEmployeeForOrg(input.id, input.organizationId);
+        return emp ? (await import("./ehrLink")).withPortrait(emp) : emp;
       }),
 
     toggleStatus: protectedProcedure

@@ -59,7 +59,7 @@ const EVERY_MS = 15 * 60_000;
 
 function settingsOf(c: { settings: string | null } | null | undefined) {
   try {
-    return JSON.parse(c?.settings ?? "{}") as { url?: string; practice?: string; locationId?: string };
+    return JSON.parse(c?.settings ?? "{}") as { url?: string; practice?: string; locationId?: string; via?: string };
   } catch {
     return {};
   }
@@ -141,7 +141,7 @@ export async function view(orgId: number) {
   const c = await connection(orgId);
   const snap = snapshotOf(orgId);
   const s = settingsOf(c);
-  return { connected: Boolean(c), practice: s.practice || c?.accountLabel || null, url: s.url ?? null, fetchedAt: snap?.fetchedAt ?? null, error: snap?.error ?? null, snapshot: snap?.data ?? null };
+  return { connected: Boolean(c), practice: s.practice || c?.accountLabel || null, url: s.url ?? null, viaEhr: s.via === "ehr", fetchedAt: snap?.fetchedAt ?? null, error: snap?.error ?? null, snapshot: snap?.data ?? null };
 }
 
 export async function disconnect(orgId: number) {

@@ -307,6 +307,12 @@ export async function getOrganizationBySlug(slug: string) {
   return rows[0] || null;
 }
 
+/** The workspace a LeadDash EHR practice opens into, by the practice's location id. */
+export async function getOrganizationByEhrLocation(locationId: string) {
+  const rows = getDb().select().from(organizations).where(eq(organizations.ehrLocationId, locationId)).limit(1).all();
+  return rows[0] || null;
+}
+
 export async function createOrganization(org: InsertOrganization) {
   const rows = getDb().insert(organizations).values(org).returning().all();
   return rows[0];
@@ -2239,6 +2245,24 @@ export const ehr = {
   },
   clear(orgId: number) {
     getDb().delete(schema.ehrSnapshots).where(eq(schema.ehrSnapshots.organizationId, orgId)).run();
+  },
+};
+
+/** How each roster employee looks and sounds everywhere, set by LeadDash staff. */
+export const rosterDefaults = {
+  list() {
+    return getDb().select().from(schema.rosterDefaults).all();
+  },
+  get(kind: string) {
+    const t = schema.rosterDefaults;
+    return getDb().select().from(t).where(eq(t.kind, kind)).limit(1).all()[0] ?? null;
+  },
+  set(kind: string, patch: { avatarUrl?: string | null; voiceId?: string | null; voiceName?: string | null }, by: string) {
+    const t = schema.rosterDefaults;
+    const now = new Date();
+    const row = this.get(kind);
+    if (row) return getDb().update(t).set({ ...patch, updatedBy: by, updatedAt: now }).where(eq(t.kind, kind)).returning().all()[0];
+    return getDb().insert(t).values({ kind, avatarUrl: patch.avatarUrl ?? null, voiceId: patch.voiceId ?? null, voiceName: patch.voiceName ?? null, updatedBy: by, updatedAt: now }).returning().all()[0];
   },
 };
 
