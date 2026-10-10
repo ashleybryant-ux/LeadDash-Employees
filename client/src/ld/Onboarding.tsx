@@ -209,7 +209,22 @@ function AssignmentEditor({ emp, templates, task, onDone }: { emp: EmployeeRow; 
         )}
         <div className="ld-field">
           <label className="ld-lbl" htmlFor="as-what">What to do</label>
-          <input id="as-what" className="ld-in" value={what} maxLength={4000} onChange={(e) => { setWhat(e.target.value); setTpl(null); }} />
+          <textarea
+            id="as-what"
+            className="ld-ta"
+            rows={3}
+            value={what}
+            maxLength={4000}
+            style={{ minHeight: 84, resize: "vertical" }}
+            onChange={(e) => {
+              setWhat(e.target.value);
+              setTpl(null);
+              // Grows with the words, so a long assignment is never a one-line scroll.
+              e.target.style.height = "auto";
+              e.target.style.height = `${Math.max(84, e.target.scrollHeight)}px`;
+            }}
+          />
+          <span className="ld-small ld-muted">Write it the way you would tell a staff member. {emp.name} already knows your business from the Brain.</span>
         </div>
         <div className="ld-field">
           <span className="ld-lbl">Repeats</span>
