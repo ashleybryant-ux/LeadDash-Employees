@@ -2027,6 +2027,11 @@ export const pressSettings = sqliteTable("press_settings", {
   pausedReason: text("pausedReason"),
   lastScoutAt: integer("lastScoutAt", { mode: "timestamp" }),
   lastBriefAt: integer("lastBriefAt", { mode: "timestamp" }),
+  /** How many reporters the media list should reach; the list builder works every day until it does. */
+  listGoal: integer("listGoal").notNull().default(500),
+  lastBuildAt: integer("lastBuildAt", { mode: "timestamp" }),
+  /** Which beat the next build pass starts from, so every beat gets its turn. */
+  buildCursor: integer("buildCursor").notNull().default(0),
   updatedAt: integer("updatedAt", { mode: "timestamp" }),
 });
 export type PressSettings = typeof pressSettings.$inferSelect;

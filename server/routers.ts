@@ -2838,8 +2838,15 @@ export const appRouter = router({
       press_bg(input.organizationId, "scouting", () => newsroom.scout(input.organizationId, { focus: input.focus }));
       return { started: true };
     }),
+    buildList: protectedProcedure.input(orgInput.extend({ focus: z.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      if (newsroom.settingsOf(input.organizationId).paused) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "This desk is paused. Resume it in Press settings first." });
+      if (!db.press.getSettings(input.organizationId)) db.press.saveSettings(input.organizationId, {});
+      press_bg(input.organizationId, "building the media list", () => newsroom.buildList(input.organizationId, { focus: input.focus, passes: 4 }));
+      return { started: true };
+    }),
     saveSettings: protectedProcedure
-      .input(orgInput.extend({ shared: z.array(z.number().int()).max(10), coolingDays: z.number().int().min(0).max(120), level: z.number().int().min(1).max(5), alwaysNeedsYou: z.string().max(500), stopWords: z.string().max(500), owns: z.string().max(500).optional(), beats: z.array(z.string().max(60)).max(20).optional() }))
+      .input(orgInput.extend({ shared: z.array(z.number().int()).max(10), coolingDays: z.number().int().min(0).max(120), level: z.number().int().min(1).max(5), alwaysNeedsYou: z.string().max(500), stopWords: z.string().max(500), owns: z.string().max(500).optional(), beats: z.array(z.string().max(60)).max(20).optional(), listGoal: z.number().int().min(20).max(5000).optional() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "admin");
         const { organizationId, ...rest } = input;
@@ -4010,6 +4017,15 @@ export const appRouter = router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       return db.listKnowledgeByOrg(input.organizationId);
+    }),
+    /** Reads the business's website and says what it found; nothing is saved until applyWebsite. */
+    readWebsite: protectedProcedure.input(orgInput.extend({ url: z.string().trim().min(3).max(300) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/websiteFacts")).readWebsite(input.organizationId, input.url);
+    }),
+    applyWebsite: protectedProcedure.input(orgInput.extend({ website: z.string().trim().max(300), keep: z.record(z.string().max(40), z.string().max(2000)) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/websiteFacts")).applyWebsite(input.organizationId, input.website, input.keep as never);
     }),
 
     create: protectedProcedure

@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine } from "../ui";
+import { WebsiteRead } from "./WebsiteRead";
 import type { Outputs } from "../types";
 
 export type View = Outputs["onboarding"]["get"]["interview"];
@@ -179,8 +180,14 @@ function BrainPart({ emp, view, onDone, inline }: { emp: EmployeeRow; view: View
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const [fixing, setFixing] = React.useState(false);
+  const [reading, setReading] = React.useState(false);
   const [facts, setFacts] = React.useState<Record<string, string>>(() => Object.fromEntries(view.brain.map((f) => [f.key, f.value])));
   const save = trpc.onboarding.saveBrain.useMutation({ onSuccess: async () => { await utils.onboarding.get.invalidate(); setFixing(false); onDone?.(); } });
+  // After the site is read, the rows show what was saved.
+  React.useEffect(() => {
+    setFacts(Object.fromEntries(view.brain.map((f) => [f.key, f.value])));
+  }, [view.brain]);
+  if (reading) return <WebsiteRead website={facts.website ?? ""} onSaved={() => utils.onboarding.get.invalidate()} onClose={() => setReading(false)} />;
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {view.brain.map((f) => (
@@ -197,11 +204,12 @@ function BrainPart({ emp, view, onDone, inline }: { emp: EmployeeRow; view: View
           <span className={`ld-pill ${f.missing ? "amber" : "green"}`} style={{ justifySelf: "start" }}>{f.missing ? "Missing" : "Looks right"}</span>
         </div>
       ))}
-      <span style={{ ...small, paddingTop: 8 }}>What you add here is saved to your Brain, so every employee has it.</span>
+      <span style={{ ...small, paddingTop: 8 }}>What you add here is saved to your Brain, so every employee has it. Or have the team read your website and fill it in.</span>
       <ErrorLine error={save.error} />
-      <div className="ld-row" style={{ gap: 8, paddingTop: 12 }}>
+      <div className="ld-row" style={{ gap: 8, paddingTop: 12, flexWrap: "wrap" }}>
         <button type="button" className="ld-btn p" style={{ width: 128 }} disabled={save.isPending} onClick={() => save.mutate({ organizationId: currentOrgId, employeeId: emp.id, facts, advance: !inline })}>{save.isPending ? "Saving..." : inline ? "Save" : "Looks right"}</button>
         {!fixing && <button type="button" className="ld-btn" style={{ width: 128 }} onClick={() => setFixing(true)}>Fix something</button>}
+        <button type="button" className="ld-btn" style={{ width: 150 }} onClick={() => setReading(true)}>Read my website</button>
       </div>
     </div>
   );

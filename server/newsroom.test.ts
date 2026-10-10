@@ -284,3 +284,88 @@ describe("the desk speaks for this workspace's company", () => {
     expect(scoutAsk).toContain("not the owner's speaking topics");
   });
 });
+
+describe("the media list builder", () => {
+  it("builds the list a beat at a time every day until the goal, skips names on file, finds emails only from public pages, and reports progress", async () => {
+    const { orgId, owner } = await makeWorkspace("list-build");
+    const me = caller(owner);
+    db.press.saveSettings(orgId, { owns: "LeadDash, the AI employees and the HIPAA-compliant EHR", beats: JSON.stringify(["AI for small business", "health tech", "women founders"]), listGoal: 4 });
+    const reporter = (name: string, outlet: string, email = "") => ({
+      ...DANA([orgId]),
+      name,
+      outlet,
+      email,
+      emailSource: email ? `https://${outlet.toLowerCase().replace(/\W/g, "")}.example/contact` : "",
+      authorPage: "",
+      articles: [{ title: `${name} on AI`, url: `https://${outlet.toLowerCase().replace(/\W/g, "")}.example/ai`, date: recent(20), topics: "AI" }],
+    });
+    // Each pass finds two reporters; the sources prove the article hosts. The contact pass finds one email from a public page and one it only guessed.
+    let pass = 0;
+    const { searchJson } = await import("./_core/llm");
+    (searchJson as any).mockImplementation(async (opts: any) => {
+      (prompts[opts.schemaName] ??= []).push(`${opts.system}\n${opts.prompt}`);
+      if (opts.schemaName === "press_list") {
+        pass++;
+        const found = pass === 1 ? [reporter("Emma Burleigh", "Fortune", "emma@fortune.example"), reporter("Sherin Shibu", "Entrepreneur")] : pass === 2 ? [reporter("Craig Hale", "TechRadar"), reporter("Emma Burleigh", "Fortune")] : [reporter("Laura Lovett", "Behavioral Health Business")];
+        return { data: { reporters: found }, queries: ["q"], sources: [{ url: "https://fortune.example/x", title: "" }, { url: "https://entrepreneur.example/x", title: "" }, { url: "https://techradar.example/x", title: "" }, { url: "https://behavioralhealthbusiness.example/x", title: "" }], costUsd: 0 };
+      }
+      if (opts.schemaName === "press_contacts") {
+        const ids = [...opts.prompt.matchAll(/contactId (\d+): ([^,]+)/g)].map((m: any) => ({ id: Number(m[1]), name: m[2] }));
+        const sherin = ids.find((x) => x.name === "Sherin Shibu");
+        const craig = ids.find((x) => x.name === "Craig Hale");
+        const found = [
+          ...(sherin ? [{ contactId: sherin.id, email: "sshibu@entrepreneur.example", emailSource: "https://entrepreneur.example/author/sherin", authorPage: "https://entrepreneur.example/author/sherin", reach: "", reachSource: "" }] : []),
+          ...(craig ? [{ contactId: craig.id, email: "craig.hale@techradar.example", emailSource: "https://somewhere-else.example/guess", authorPage: "", reach: "Tips: news@techradar.example", reachSource: "https://techradar.example/contact" }] : []),
+        ];
+        return { data: { found }, queries: ["q"], sources: [{ url: "https://entrepreneur.example/author/sherin", title: "" }, { url: "https://techradar.example/contact", title: "" }], costUsd: 0 };
+      }
+      return { data: scoutData, queries: ["q"], sources: scoutSources, costUsd: 0 };
+    });
+
+    const r = await newsroom.buildList(orgId, { passes: 2 });
+    expect(r.beats).toEqual(["AI for small business", "health tech"]);
+    expect(r.added).toBe(3);
+    expect(r.updated).toBe(1);
+    expect(r.count).toBe(3);
+    expect(r.goal).toBe(4);
+    // The second pass was told to skip the names from the first.
+    expect(prompts.press_list[1]).toContain("Emma Burleigh (Fortune)");
+    expect(prompts.press_list[1]).toContain("The beat to search now: health tech");
+    expect(prompts.press_list[0]).toMatch(/talks and frameworks; those are speaking material/);
+    // Emails: Emma's came with the article pass, Sherin's from her author page; Craig's guess from an unrelated page is dropped, his tips address kept.
+    const list = newsroom.contactsFor(orgId);
+    expect(list.find((c) => c.name === "Emma Burleigh")!.email).toBe("emma@fortune.example");
+    expect(list.find((c) => c.name === "Sherin Shibu")!.email).toBe("sshibu@entrepreneur.example");
+    const craig = list.find((c) => c.name === "Craig Hale")!;
+    expect(craig.email).toBeNull();
+    expect(JSON.parse(craig.profile!).reach).toContain("news@techradar.example");
+    expect(r.emails).toBe(1);
+    expect(r.withEmail).toBe(2);
+    // The cursor moved on so the next build starts at the third beat, and Taylor said where the list stands.
+    expect(db.press.getSettings(orgId)!.buildCursor).toBe(2);
+    const msgs = await db.listChatMessages(orgId, (await db.getEmployeeByKind(orgId, "speaking"))!.id);
+    expect(msgs[msgs.length - 1].content).toMatch(/Media list: 3 of 4 reporters, 2 with an email on file\. This pass added 3 new reporters and refreshed 1 on AI for small business, health tech, and found an email/);
+    expect(msgs[msgs.length - 1].content).toContain("1 to go");
+
+    // The daily tick builds again only when five hours have passed and the goal is not met; once met, it stops.
+    db.press.saveSettings(orgId, { lastBuildAt: new Date(Date.now() - 6 * 3_600_000) });
+    const noon = new Date();
+    noon.setUTCHours(18, 0, 0, 0); // 1:00 PM Central
+    if (noon.getTime() < Date.now()) noon.setTime(noon.getTime() + 86_400_000);
+    await newsroom.newsroomTicks(noon);
+    expect(newsroom.listProgress(orgId).count).toBe(4);
+    // One pass (women founders) reached the goal, so the build stopped there and the cursor wrapped to the first beat.
+    expect(prompts.press_list.filter((p) => p.includes("The beat to search now: women founders"))).toHaveLength(1);
+    expect(db.press.getSettings(orgId)!.buildCursor).toBe(0);
+    const before = pass;
+    // An hour later (every desk built an hour ago in tick time): this desk is at its goal and the others wait their five hours.
+    for (const id of await db.listAllOrganizationIds()) if (db.press.getSettings(id)) db.press.saveSettings(id, { lastBuildAt: noon });
+    db.press.saveSettings(orgId, { lastBuildAt: new Date(noon.getTime() - 6 * 3_600_000) });
+    await newsroom.newsroomTicks(new Date(noon.getTime() + 3_600_000));
+    expect(pass).toBe(before);
+    expect((await me.newsroom.view({ organizationId: orgId })).list).toMatchObject({ count: 4, goal: 4, withEmail: 2 });
+    expect(await newsroom.newsroomFacts(orgId)).toMatch(/Media list: 4 of 4 reporters on file, 2 with an email/);
+    expect(await newsroom.newsroomFacts(orgId)).toMatch(/frameworks in the Brain are speaking material/);
+    (searchJson as any).mockImplementation(async () => ({ data: scoutData, queries: ["q"], sources: scoutSources, costUsd: 0 }));
+  });
+});

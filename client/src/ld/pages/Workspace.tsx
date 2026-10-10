@@ -5,6 +5,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, OrgLogo, Page } from "../ui";
 import { initials, parseJson } from "../meta";
 import { UsageCard } from "../work/Usage";
+import { WebsiteRead } from "../onboarding/WebsiteRead";
 
 const TIMEZONES = [
   { value: "America/New_York", label: "Eastern" },
@@ -97,6 +98,7 @@ function colorsOf(raw: string | null | undefined) {
 
 export default function Workspace() {
   const { currentOrg, refetchOrgs } = useTenant();
+  const [reading, setReading] = React.useState(false);
   const [editing, setEditing] = React.useState<SectionKey | null>(null);
   const [f, setF] = React.useState<Form | null>(null);
   const [logoError, setLogoError] = React.useState<string | null>(null);
@@ -253,6 +255,17 @@ export default function Workspace() {
             {val(o.audience)}
             <span className="ld-k">Entity</span>
             {val(o.entity)}
+          </div>
+        )}
+        {editing !== "basic" && !reading && (
+          <div style={{ padding: "0 18px 16px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button type="button" className="ld-btn" style={{ width: 150 }} onClick={() => setReading(true)}>Read my website</button>
+            <span className="ld-small ld-muted">The team reads your site and fills in what you do, who you serve, services, booking link and more. You pick what to keep.</span>
+          </div>
+        )}
+        {reading && (
+          <div style={{ padding: "0 18px 16px" }}>
+            <WebsiteRead website={o.website ?? ""} onSaved={() => refetchOrgs()} onClose={() => setReading(false)} />
           </div>
         )}
       </section>

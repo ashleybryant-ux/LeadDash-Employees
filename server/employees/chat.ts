@@ -65,7 +65,7 @@ export const LAYOUTS = [
 
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_beats", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_list", "press_beats", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   social: ["none", "report", "write_post", "post_graphic", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -188,7 +188,8 @@ const ACTION_HELP: Record<string, string> = {
   find_grants: "find_grants: search the web now. Set `oppKind` to grant, pitch (pitch competitions), accelerator (accelerator or incubator programs) or bid (government or agency RFPs and bids); default grant. Put any focus the person gave in `focus`.",
   press_campaign: "press_campaign: she wants a media campaign or a media list for a story, launch or topic (\"build a media list for the LeadDash Employees launch\", \"pitch me on burnout\"). Put what it's about in `notes`. You plan it (goal, story, angles), then match reporters and write pitches; every pitch waits for her approval.",
   press_beats: "press_beats: the person tells you what this workspace's media list, reporters or pitches should be about (\"the media list should be about tech, women in tech and women founders\", \"stop pitching HR reporters\"). Put their words in `notes`. This rewrites the beats your scout watches for this desk and then scouts again on them; use it instead of add_guideline for anything about who to pitch or what to pitch.",
-  press_scout: "press_scout: she wants you to find reporters and stories now (\"who's covering AI in healthcare this week\", \"scout the news\"). Put any focus in `focus`.",
+  press_scout: "press_scout: she wants this week's stories and news hooks now (\"who's covering AI in healthcare this week\", \"scout the news\"). Put any focus in `focus`.",
+  press_list: "press_list: she wants more reporters on the media list (\"find 20 journalists\", \"add reporters who cover AI for small business\", \"build the media list\"). Put a beat or topic in `focus` if she named one and the number she asked for in `count` (0 if none). This runs the list builder: one search pass per beat, each with proof, then a pass for emails. It also runs on its own every day until the list reaches its goal, so never say the list is as big as it will get.",
   press_brief: "press_brief: she asks for the weekly press briefing or what's going on with the press desk.",
   find_events: "find_events: search the web now for NEW opportunities, only when the person asks you to look for some. A question about a talk, proposal, event or pitch she already has (\"do you have the info on my SHRM Arkansas presentation?\") is never a search: choose none and answer from the Brain, your documents and your Opportunities. Set `oppKind` to speaking (events taking speaker proposals) or media (press: journalist source requests, podcasts booking guests, reporters covering the topic, op-ed and contributed article openings). Put any focus in `focus`.",
   add_link: "add_link: the person gave a link to an opportunity they found. Put the link in `url`.",
@@ -223,7 +224,7 @@ function decisionSchema(kind: string, allowed?: string[]): JsonSchema {
       focus: str,
       topic: str,
       platforms: { type: "array", items: { type: "string", enum: ["linkedin", "instagram", "facebook", "x", "threads"] } },
-      count: { type: "integer", description: "A number the action asks for (posts for schedule_posts, days for check_schedule and task_due). 0 otherwise." },
+      count: { type: "integer", description: "A number the action asks for (posts for schedule_posts, days for check_schedule and task_due, reporters for press_list). 0 otherwise." },
       title: str,
       notes: str,
       page: str,
@@ -741,6 +742,24 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const c = await pitching.planCampaign(org, d.notes || d.focus || d.title || "A media campaign");
       const v = pitching.campaignView(org, c);
       return { text: `I planned "${v.title}": ${v.plan.story} Here are five angles; I picked the two strongest. Change the plan or the angles on my Campaigns tab, then press Add reporters and I'll match the right reporters and write each a pitch. Nothing goes out until you approve it.`, cards: [{ type: "press_campaign", id: v.id, title: v.title }], queries: [] };
+    }
+    case "press_list": {
+      const newsroom = await import("./newsroom");
+      if (!db.press.getSettings(org)) db.press.saveSettings(org, {});
+      const want = Math.max(0, Number(d.count) || 0);
+      const passes = want ? Math.min(6, Math.max(2, Math.ceil(want / 8))) : 4;
+      try {
+        const r = await newsroom.buildList(org, { focus: d.focus || undefined, passes, quiet: true });
+        const left = Math.max(0, r.goal - r.count);
+        return {
+          text: `Media list: ${r.count} of ${r.goal} reporters, ${r.withEmail} with an email on file. This pass added ${plural(r.added, "new reporter")}${r.updated ? ` and refreshed ${r.updated}` : ""} on ${r.beats.join(", ")}${r.emails ? `, and found ${plural(r.emails, "email")} for reporters already on file` : ""}. Every one has an article from the last six months as proof; I never pad the list with names I can't verify.${left ? ` ${left} to go. I run more passes every day until the list is full, three a day, and each pass takes a different beat.` : " The list is at its goal."} They're on my Media list tab.`,
+          cards: [{ type: "press_brief", id: Date.now(), title: "Newsroom" }],
+          queries: [],
+          choices: ["Show me the new reporters", "Write pitches for them"],
+        };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
     }
     case "press_scout": {
       const newsroom = await import("./newsroom");

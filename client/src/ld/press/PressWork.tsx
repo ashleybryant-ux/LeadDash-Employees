@@ -369,7 +369,7 @@ function PressSettings({ v }: { v: View }) {
   const all = trpc.newsroom.view.useQuery({ organizationId: orgId }).data?.myWorkspaces ?? [];
   const st = v.settings;
   const [edit, setEdit] = React.useState<null | { shared: number[]; coolingDays: string; level: number; alwaysNeedsYou: string; stopWords: string }>(null);
-  const [own, setOwn] = React.useState<null | { owns: string; beats: string }>(null);
+  const [own, setOwn] = React.useState<null | { owns: string; beats: string; goal: string }>(null);
   const save = trpc.newsroom.saveSettings.useMutation({ onSuccess: async () => { setEdit(null); setOwn(null); await refresh(); } });
   const base = { organizationId: orgId, shared: st.shared, coolingDays: st.coolingDays, level: st.level, alwaysNeedsYou: st.alwaysNeedsYou, stopWords: st.stopWords };
   const names = (ids: number[]) => ids.map((id) => v.desks.find((d) => d.id === id)?.name ?? all.find((w) => w.id === id)?.name ?? "").filter(Boolean).join(", ");
@@ -427,21 +427,23 @@ function PressSettings({ v }: { v: View }) {
             <Form>
               <Field id="pr-owns" label={`${v.desk.name} owns`}><input id="pr-owns" className="ld-in" value={own.owns} onChange={(e) => setOwn({ ...own, owns: e.target.value })} /></Field>
               <Field id="pr-beats" label="Beats it watches"><input id="pr-beats" className="ld-in" value={own.beats} placeholder="AI in healthcare, behavioral health technology" onChange={(e) => setOwn({ ...own, beats: e.target.value })} /></Field>
+              <Field id="pr-goal" label="Media list goal (reporters)"><input id="pr-goal" className="ld-in" style={{ maxWidth: 120 }} inputMode="numeric" value={own.goal} onChange={(e) => setOwn({ ...own, goal: e.target.value })} /></Field>
             </Form>
           ) : (
             <KV rows={v.desks.map((d) => [d.name, (d.id === orgId ? st.owns : d.owns) || (d.id === orgId ? "Written from the Brain on the first scout" : "Set on that workspace's Press settings")] as [string, string])} />
           )}
           {!own && st.beats.length > 0 && <span className="ld-small">Beats this desk watches: {st.beats.join(", ")}</span>}
+          {!own && <span className="ld-small">Media list goal: {st.listGoal} reporters. Taylor builds the list every day, a beat at a time, until it gets there.</span>}
           <span className="ld-small">When a story fits two desks, the one with the higher fit takes it and the other is noted.</span>
         </div>
         <Buttons>
           {own ? (
             <>
-              <button type="button" className="ld-btn p" disabled={save.isPending} onClick={() => save.mutate({ ...base, shared: st.shared.filter((x) => x !== orgId), owns: own.owns, beats: own.beats.split(",").map((b) => b.trim()).filter(Boolean) })}>Save</button>
+              <button type="button" className="ld-btn p" disabled={save.isPending} onClick={() => save.mutate({ ...base, shared: st.shared.filter((x) => x !== orgId), owns: own.owns, beats: own.beats.split(",").map((b) => b.trim()).filter(Boolean), listGoal: Number(own.goal) || undefined })}>Save</button>
               <button type="button" className="ld-btn" onClick={() => setOwn(null)}>Cancel</button>
             </>
           ) : (
-            <button type="button" className="ld-btn" onClick={() => setOwn({ owns: st.owns, beats: st.beats.join(", ") })}>Edit</button>
+            <button type="button" className="ld-btn" onClick={() => setOwn({ owns: st.owns, beats: st.beats.join(", "), goal: String(st.listGoal) })}>Edit</button>
           )}
         </Buttons>
       </div>
@@ -456,6 +458,9 @@ function PressSettings({ v }: { v: View }) {
 type ContactEdit = { id?: number; name: string; outlet: string; title: string; email: string; beats: string; relationship: string; notes: string; doNotContact: boolean };
 
 function MediaList({ v, list, loading }: { v: View; list: Contact[]; loading: boolean }) {
+  const orgId = useOrg();
+  const refresh = useRefresh();
+  const build = trpc.newsroom.buildList.useMutation({ onSuccess: refresh });
   const [q, setQ] = React.useState("");
   const [desk, setDesk] = React.useState<number>(0);
   const [open, setOpen] = React.useState<number | null>(null);
@@ -475,12 +480,15 @@ function MediaList({ v, list, loading }: { v: View; list: Contact[]; loading: bo
         <input id="ml-q" className="ld-in" style={{ maxWidth: 280 }} placeholder="Search reporters, outlets or beats" value={q} onChange={(e) => setQ(e.target.value)} />
         {v.desks.length > 1 && <Seg label="Desk" value={desk} onChange={setDesk} options={[{ key: 0, label: "All desks" }, ...v.desks.map((d) => ({ key: d.id, label: d.name }))]} />}
         <span style={{ flex: 1 }} />
+        <button type="button" className="ld-btn" style={{ width: 170 }} disabled={v.list.building || build.isPending} onClick={() => build.mutate({ organizationId: orgId })}>{v.list.building ? "Finding reporters" : "Find more reporters"}</button>
         <button type="button" className="ld-btn p" onClick={() => { setOpen(null); setAdding(true); }}>Add reporter</button>
       </div>
+      <span className="ld-small">Media list: {v.list.count} of {v.list.goal} reporters, {v.list.withEmail} with an email on file{v.list.addedToday ? `, ${v.list.addedToday} added today` : ""}. Taylor builds it every day until the goal.</span>
+      <ErrorLine error={build.error} />
       {adding && <ContactForm v={v} initial={{ name: "", outlet: "", title: "", email: "", beats: "", relationship: "prospect", notes: "", doNotContact: false }} onDone={() => setAdding(false)} />}
       <div className="ld-card" style={{ overflow: "hidden" }}>
         <div className="ld-hd" style={{ gridTemplateColumns: COLS }}><span>Reporter</span><span>Beat</span><span>Fit: {v.desks.map((d) => d.name.replace(/^Dr\.?\s+/, "").split(" ")[0]).join(" · ")}</span><span>Relationship</span><span /></div>
-        {shown.length === 0 && <div className="ld-empty">{loading ? "Loading..." : list.length ? "No reporters match." : "No reporters yet. Press Scout now on the Newsroom tab and Taylor finds reporters with recent articles on your beats."}</div>}
+        {shown.length === 0 && <div className="ld-empty">{loading ? "Loading..." : list.length ? "No reporters match." : "No reporters yet. Press Find more reporters and Taylor builds the list from your beats, with recent articles as proof."}</div>}
         {shown.map((c) => <ContactRow key={c.id} c={c} v={v} cols={COLS} open={open === c.id} onToggle={() => setOpen(open === c.id ? null : c.id)} />)}
       </div>
       {list.length > 0 && <span className="ld-small">{list.length} reporters · {recentCount} checked in the last 30 days · {proven === list.length ? "every one has" : `${proven} have`} an article from the last 6 months</span>}

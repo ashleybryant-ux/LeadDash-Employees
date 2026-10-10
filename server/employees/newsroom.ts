@@ -61,6 +61,9 @@ export function settingsOf(orgId: number): PressSettings {
       pausedReason: null,
       lastScoutAt: null,
       lastBriefAt: null,
+      listGoal: 500,
+      lastBuildAt: null,
+      buildCursor: 0,
       updatedAt: null,
     }
   );
@@ -86,7 +89,7 @@ export function wordsIn(list: string, text: string) {
  * desk in it, so each linked workspace gets the same list; a workspace taken
  * out goes back to a newsroom of its own. The person must run each workspace.
  */
-export async function saveSettings(orgId: number, userId: number, isAdmin: boolean, input: { shared: number[]; coolingDays: number; level: number; alwaysNeedsYou: string; stopWords: string; owns?: string; beats?: string[] }) {
+export async function saveSettings(orgId: number, userId: number, isAdmin: boolean, input: { shared: number[]; coolingDays: number; level: number; alwaysNeedsYou: string; stopWords: string; owns?: string; beats?: string[]; listGoal?: number }) {
   const want = Array.from(new Set([orgId, ...input.shared]));
   for (const id of want) {
     if (isAdmin) continue;
@@ -103,6 +106,7 @@ export async function saveSettings(orgId: number, userId: number, isAdmin: boole
     stopWords: input.stopWords.trim().slice(0, 500),
     ...(input.owns !== undefined ? { owns: input.owns.trim().slice(0, 500) } : {}),
     ...(input.beats ? { beats: JSON.stringify(input.beats.map((b) => b.trim()).filter(Boolean).slice(0, 20)) } : {}),
+    ...(input.listGoal ? { listGoal: Math.max(20, Math.min(5000, Math.round(input.listGoal))) } : {}),
   });
 }
 
@@ -291,7 +295,8 @@ const SCOUT_JOB = `Your job now: you are the publicist, scouting the news for th
 - Reporters: only people with a real byline you found, each with 1 to 4 recent articles (title, URL, date as Mon D, YYYY). Never invent a reporter, an article or an email. An email only when it is printed on a public page you found (their author page, the outlet's contact page); give that page as emailSource; otherwise "".
 - For each reporter, say in two or three sentences why they matter (what they've written lately and how it connects), how they work (story type, who they quote, whether they cover launches, their strongest angle for us, what they like), and score their fit 0 to 100 for each desk.
 - Stories: say which desk it fits best (one desk pitches), which other desks it also fits and why, the window (the last good day to pitch, as Mon D, YYYY, or "Rolling"), a 0 to 100 score, the angle (a story bigger than the company), what we can offer, and the reporters on it by name.
-- A story about a crisis, a tragedy or a patient is never an opportunity.`;
+- A story about a crisis, a tragedy or a patient is never an opportunity.
+- The Brain may hold the owner's talks, keynote titles and frameworks. Those are speaking material for stages, not this desk's story. This desk's story is what the desk owns (below). Never make a talk or a framework the angle unless the owner said so.`;
 
 const SCOUT_SCHEMA = obj({
   reporters: arr(
@@ -424,6 +429,175 @@ export async function applyScout(orgId: number, data: ScoutResult, sources: { ur
   return { added, moved, stories: stories.length, coverage: covered };
 }
 
+
+// ==========================================
+// The media list builder (every day until the goal)
+// ==========================================
+
+const LIST_JOB = `Your job now: you are building this desk's media list, one beat at a time. The owner wants a real list: hundreds of reporters who cover the beats this desk pitches, each with proof they cover it and a way to reach them.
+- Search the beat you are given: the outlets that cover it (trade press, business press, local press, podcasts and newsletters with named hosts or editors), their author pages, mastheads and recent articles. Vary the searches: outlet names, "<beat> reporter", "<beat> editor", recent headlines on the beat, "<outlet> contact".
+- Reporters: only people with a real byline you found, each with 1 to 4 articles from the last six months (title, URL, date as Mon D, YYYY). Never invent a reporter, an article or an email.
+- An email only when it is printed on a public page you found (their author page, the outlet's contact or masthead page); give that page as emailSource; otherwise "". Give the author page URL whenever you find one.
+- Skip anyone already on file (the list below). Spend the searches on new names.
+- For each reporter: beats in their words, location, two or three sentences on why they matter to this desk, how they work (story type, who they quote, whether they cover launches, strongest angle, what they like), and a 0 to 100 fit score for each desk.
+- The Brain may hold the owner's talks and frameworks; those are speaking material, not this desk's story. Fit is about what the desk owns.`;
+
+const LIST_SCHEMA = obj({
+  reporters: arr(
+    obj({
+      name: str,
+      outlet: str,
+      title: str,
+      beats: arr(str),
+      location: str,
+      email: str,
+      emailSource: str,
+      authorPage: str,
+      articles: arr(obj({ title: str, url: str, date: str, topics: str })),
+      why: str,
+      profile: obj({ storyType: str, sources: str, launches: str, strongest: str, likes: str }),
+      fit: arr(obj({ deskId: int, score: int })),
+    })
+  ),
+});
+
+const CONTACT_JOB = `Your job now: find how to reach the reporters below. For each one, look for their author page on the outlet, the outlet's contact, masthead or "tips" page, and their own site. Report an email only when it is printed on a public page you found, with that page as the source; never guess an email or build one from a pattern. Also give the author page URL and the best public way to reach them in one line (the outlet's tips address, a contact form, a newsletter reply address, a public social profile) with the page it came from.`;
+
+const CONTACT_SCHEMA = obj({
+  found: arr(obj({ contactId: int, email: str, emailSource: str, authorPage: str, reach: str, reachSource: str })),
+});
+
+const building = new Set<number>();
+export const isBuilding = (orgId: number) => building.has(orgId);
+
+/** Where the list stands against its goal, for chat, the brief and the Media list tab. */
+export function listProgress(orgId: number) {
+  const st = settingsOf(orgId);
+  const all = contactsFor(orgId);
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    goal: st.listGoal,
+    count: all.length,
+    withEmail: all.filter((c) => c.email).length,
+    withReach: all.filter((c) => c.email || c.authorPage).length,
+    addedToday: all.filter((c) => new Date(c.createdAt).toISOString().slice(0, 10) === today).length,
+    lastBuildAt: st.lastBuildAt,
+    building: building.has(orgId),
+  };
+}
+
+/**
+ * One pass per beat: the scout searches that beat alone and brings back up to
+ * 15 reporters it can prove, skipping the names already on file. Then a contact
+ * pass looks up emails and author pages for reporters that have none. Runs
+ * every day until the list reaches its goal; the owner can also run it from
+ * chat or the Newsroom tab.
+ */
+export async function buildList(orgId: number, opts: { passes?: number; quiet?: boolean; focus?: string } = {}) {
+  if (building.has(orgId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Taylor is already building the media list." });
+  const st = settingsOf(orgId);
+  if (st.paused) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `This desk is paused: ${st.pausedReason ?? "a crisis question came in"}. Resume it in Press settings first.` });
+  const emp = await employeeFor(orgId, "speaking");
+  building.add(orgId);
+  // Marked now, so a pass that fails waits its turn like one that worked instead of retrying every half hour.
+  db.press.saveSettings(orgId, { lastBuildAt: new Date() });
+  try {
+    return await working(emp, async () => {
+      await ensureDeskProfile(emp);
+      const ds = await desks(orgId);
+      const here = ds.find((d) => d.id === orgId) ?? ds[0];
+      const beats = opts.focus ? [opts.focus] : parse<string[]>(settingsOf(orgId).beats, []);
+      if (!beats.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Tell me what this desk's media list should be about first." });
+      const { system, brain } = await systemPromptFor(emp, LIST_JOB);
+      const deskIds = newsroomOrgs(orgId);
+      const passes = Math.max(1, Math.min(opts.passes ?? 4, beats.length));
+      const cursor = opts.focus ? 0 : settingsOf(orgId).buildCursor % beats.length;
+      let added = 0;
+      let updated = 0;
+      const ran: string[] = [];
+      for (let i = 0; i < passes; i++) {
+        if (contactsFor(orgId).length >= settingsOf(orgId).listGoal && !opts.focus) break;
+        const beat = beats[(cursor + i) % beats.length];
+        ran.push(beat);
+        // Names already on file, the ones on this beat first, so the searches go to new people.
+        const onBeat = (c: PressContact) => parse<string[]>(c.beats, []).some((b) => norm(b).includes(norm(beat)) || norm(beat).includes(norm(b)));
+        const known = [...contactsFor(orgId)].sort((a, b) => Number(onBeat(b)) - Number(onBeat(a))).slice(0, 400).map((c) => `${c.name} (${c.outlet})`);
+        const prompt = `Desks in this newsroom (use these ids for fit):\n${ds.map((d) => `- id ${d.id}: ${d.name}. Owns: ${d.owns || "see the Brain"}.`).join("\n")}
+This pass is for the ${here?.name ?? "this"} desk (id ${here?.id ?? orgId}). The beat to search now: ${beat}.
+The owner: ${brain.org?.signerName ?? ""}${brain.org?.signerTitle ? `, ${brain.org.signerTitle}` : ""}, ${brain.org?.name ?? ""}.
+Already on file, skip these: ${known.join("; ") || "none yet"}
+Return up to 15 new reporters you can prove.`;
+        try {
+          const res = await searchJson<{ reporters: FoundReporter[] }>({ system, prompt, schemaName: "press_list", schema: LIST_SCHEMA, maxUses: 12, maxTokens: 14000 });
+          for (const raw of res.data.reporters ?? []) {
+            const r = provenReporter(raw, res.sources);
+            if (!r) continue;
+            const m = mergeReporter(orgId, r, deskIds);
+            if (m.isNew) added++;
+            else updated++;
+          }
+        } catch (err) {
+          console.warn(`[newsroom] list pass on "${beat}" for ${orgId}:`, err instanceof Error ? err.message : err);
+        }
+        if (!opts.focus) db.press.saveSettings(orgId, { buildCursor: (cursor + i + 1) % beats.length });
+      }
+      const contacts = await findContacts(orgId, 12);
+      db.press.saveSettings(orgId, { lastBuildAt: new Date() });
+      const p = listProgress(orgId);
+      if (!opts.quiet) {
+        const left = Math.max(0, p.goal - p.count);
+        await db.createChatMessage({
+          organizationId: orgId,
+          employeeId: emp.id,
+          role: "employee",
+          authorName: emp.name,
+          content: `Media list: ${p.count} of ${p.goal} reporters, ${p.withEmail} with an email on file. This pass added ${added} new ${added === 1 ? "reporter" : "reporters"}${updated ? ` and refreshed ${updated}` : ""} on ${ran.join(", ")}${contacts.emails ? `, and found ${contacts.emails === 1 ? "an email" : `${contacts.emails} emails`} for reporters already on file` : ""}. Every one has an article from the last six months as proof.${left ? ` ${left} to go; I keep building every day until the list is full.` : " The list is at its goal; I keep it fresh from here."}`,
+          cards: JSON.stringify([{ type: "press_brief", id: Date.now(), title: "Newsroom" }]),
+        });
+      }
+      return { added, updated, emails: contacts.emails, beats: ran, ...p };
+    });
+  } finally {
+    building.delete(orgId);
+  }
+}
+
+/** Looks up public emails and author pages for reporters that have none, a dozen at a time. */
+export async function findContacts(orgId: number, limit = 12) {
+  const emp = await employeeFor(orgId, "speaking");
+  const missing = contactsFor(orgId)
+    .filter((c) => !c.email && !c.doNotContact && !parse<{ reach?: string; reachAt?: string }>(c.profile, {}).reachAt)
+    .sort((a, b) => fitOf(b, orgId) - fitOf(a, orgId))
+    .slice(0, limit);
+  if (!missing.length) return { emails: 0, pages: 0 };
+  const { system } = await systemPromptFor(emp, CONTACT_JOB);
+  const prompt = `Reporters (use contactId as given):\n${missing.map((c) => `- contactId ${c.id}: ${c.name}, ${c.title || "reporter"} at ${c.outlet}${c.authorPage ? ` (author page: ${c.authorPage})` : ""}`).join("\n")}`;
+  let emails = 0;
+  let pages = 0;
+  try {
+    const res = await searchJson<{ found: { contactId: number; email: string; emailSource: string; authorPage: string; reach: string; reachSource: string }[] }>({ system, prompt, schemaName: "press_contacts", schema: CONTACT_SCHEMA, maxUses: Math.min(15, missing.length + 3), maxTokens: 6000 });
+    const hosts = new Set(res.sources.map((s) => hostOf(s.url)).filter(Boolean));
+    const ok = (u: string) => /^https?:\/\//i.test(u ?? "") && (hosts.size === 0 || hosts.has(hostOf(u)));
+    for (const f of res.data.found ?? []) {
+      const c = missing.find((m) => m.id === f.contactId);
+      if (!c) continue;
+      const email = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(f.email ?? "") && ok(f.emailSource) ? f.email.trim().toLowerCase() : null;
+      const authorPage = !c.authorPage && ok(f.authorPage) ? f.authorPage : undefined;
+      const reach = f.reach && ok(f.reachSource) ? `${f.reach.slice(0, 200)} (${f.reachSource})` : "";
+      if (email) emails++;
+      if (authorPage) pages++;
+      db.press.contacts.update(c.id, c.organizationId, {
+        ...(email ? { email, emailSource: f.emailSource } : {}),
+        ...(authorPage ? { authorPage } : {}),
+        profile: JSON.stringify({ ...parse<Record<string, string>>(c.profile, {}), ...(reach ? { reach } : {}), reachAt: new Date().toISOString() }),
+      });
+    }
+  } catch (err) {
+    console.warn(`[newsroom] contact pass for ${orgId}:`, err instanceof Error ? err.message : err);
+  }
+  return { emails, pages };
+}
+
 /** Days until a story's window closes (Rolling counts as far off). */
 export function windowDays(windowEnds: string) {
   const t = Date.parse(windowEnds);
@@ -545,8 +719,10 @@ const localNow = (tz: string, now: Date) => {
 let lastTick = 0;
 /**
  * Every 30 minutes: on Monday mornings each desk scouts (7:00) and posts its
- * briefing (8:00); every day, follow-ups come due and seasonal moments six
- * weeks out are flagged.
+ * briefing (8:00); every day between 7:00 and 7:00 PM the media list builder
+ * runs (up to three passes a day, five hours apart) until the list reaches its
+ * goal; every day, follow-ups come due and seasonal moments six weeks out are
+ * flagged.
  */
 export async function newsroomTicks(now = new Date()) {
   if (now.getTime() - lastTick < 30 * 60_000) return;
@@ -561,6 +737,10 @@ export async function newsroomTicks(now = new Date()) {
     try {
       if (t.weekday === "Mon" && t.hour >= 7 && !st.paused && !sameWeek(st.lastScoutAt) && !scouting.has(orgId)) await scout(orgId, { quiet: true });
       if (t.weekday === "Mon" && t.hour >= 8 && !sameWeek(st.lastBriefAt)) await postBrief(orgId);
+      const sinceBuild = st.lastBuildAt ? now.getTime() - new Date(st.lastBuildAt).getTime() : Infinity;
+      if (!st.paused && t.hour >= 7 && t.hour < 19 && sinceBuild > 5 * 3_600_000 && !building.has(orgId) && !scouting.has(orgId) && contactsFor(orgId).length < st.listGoal && parse<string[]>(st.beats, []).length) {
+        await buildList(orgId, { passes: 4 });
+      }
       const pitching = await import("./pitching");
       await pitching.followUpsDue(orgId);
       await (await import("./presslib")).seasonalAlerts(orgId);
@@ -644,8 +824,9 @@ export async function newsroomView(orgId: number) {
       .filter((s) => s.status !== "dismissed")
       .sort((a, b) => Number(a.status !== "open") - Number(b.status !== "open") || b.score - a.score)
       .map((s) => storyView(orgId, s)),
-    settings: { shared: newsroomOrgs(orgId), coolingDays: st.coolingDays, level: st.level, alwaysNeedsYou: st.alwaysNeedsYou, stopWords: st.stopWords, owns: st.owns, beats: parse<string[]>(st.beats, []), paused: st.paused, pausedReason: st.pausedReason, lastScoutAt: st.lastScoutAt },
+    settings: { shared: newsroomOrgs(orgId), coolingDays: st.coolingDays, level: st.level, alwaysNeedsYou: st.alwaysNeedsYou, stopWords: st.stopWords, owns: st.owns, beats: parse<string[]>(st.beats, []), listGoal: st.listGoal, paused: st.paused, pausedReason: st.pausedReason, lastScoutAt: st.lastScoutAt },
     scouting: scouting.has(orgId),
+    list: listProgress(orgId),
   };
 }
 
@@ -654,5 +835,6 @@ export async function newsroomFacts(orgId: number) {
   const ds = await desks(orgId);
   const counts = await briefCounts(orgId);
   const me = counts.find((c) => c.orgId === orgId);
-  return `\nNewsroom: this desk is ${ds[0]?.name ?? "this workspace"}${ds.length > 1 ? `, sharing reporters with ${ds.slice(1).map((d) => d.name).join(" and ")}` : ""}. ${contactsFor(orgId).length} reporters on file. Open stories: ${me?.stories ?? 0}; pitches waiting for the owner: ${me?.ready ?? 0}; open replies: ${me?.replies ?? 0}; upcoming interviews: ${me?.interviews ?? 0}. Sending level ${st.level} (1 means the owner approves every pitch). Cooling period ${st.coolingDays} days.${st.paused ? ` This desk is PAUSED: ${st.pausedReason}. Send nothing until the owner resumes it.` : ""}`;
+  const p = listProgress(orgId);
+  return `\nNewsroom: this desk is ${ds[0]?.name ?? "this workspace"}${ds.length > 1 ? `, sharing reporters with ${ds.slice(1).map((d) => d.name).join(" and ")}` : ""}. This desk owns: ${st.owns || "(not set yet; ask the owner what the media list should be about)"}. Beats: ${parse<string[]>(st.beats, []).join(", ") || "(none yet)"}. Media list: ${p.count} of ${p.goal} reporters on file, ${p.withEmail} with an email, ${p.addedToday} added today; the list builder runs every day until the goal${p.lastBuildAt ? `, last pass ${fmtDay(new Date(p.lastBuildAt))}` : ""}. The owner's talks, keynote titles and frameworks in the Brain are speaking material for stages; this desk's story, pitches and media list are about what the desk owns, so leave the frameworks out of press work unless the owner asks for them. Open stories: ${me?.stories ?? 0}; pitches waiting for the owner: ${me?.ready ?? 0}; open replies: ${me?.replies ?? 0}; upcoming interviews: ${me?.interviews ?? 0}. Sending level ${st.level} (1 means the owner approves every pitch). Cooling period ${st.coolingDays} days.${st.paused ? ` This desk is PAUSED: ${st.pausedReason}. Send nothing until the owner resumes it.` : ""}`;
 }
