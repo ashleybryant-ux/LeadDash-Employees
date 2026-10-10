@@ -2248,6 +2248,15 @@ export const appRouter = router({
         else await requireMember(ctx, input.organizationId, "member");
         return (await import("./work/projects")).saveList(input.organizationId, input);
       }),
+    /** A status renamed, recolored, added after or removed from a list's group header. */
+    editStatus: protectedProcedure
+      .input(orgInput.extend({ listId: z.number().int(), name: z.string().max(40), rename: statusZ.optional(), addAfter: statusZ.optional(), remove: z.object({ moveTo: z.string().max(40) }).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const v = await pjViewer(ctx, input.organizationId);
+        (await import("./work/pjAccess")).mustLevel(input.organizationId, v, input.listId, "full");
+        const { organizationId, listId, ...rest } = input;
+        return (await import("./work/projects")).editStatus(organizationId, listId, rest);
+      }),
     removeList: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "admin");
       (await import("./work/projects")).removeList(input.organizationId, input.id);
@@ -2757,6 +2766,11 @@ export const appRouter = router({
     next: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       return (await import("./employees/calendarPage")).nextMeeting(input.organizationId);
+    }),
+    /** The Next up bar at the top of every page. */
+    nextUp: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/calendarPage")).nextUp(input.organizationId);
     }),
     start: protectedProcedure.input(orgInput.extend({ url: z.string().max(600) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

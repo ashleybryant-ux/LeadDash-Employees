@@ -5,6 +5,68 @@ import { AddInline, Check, Counts, dueText, PRIORITY_TEXT, SelectBox, statusColo
 import { AssigneeCell, DateCell, FieldCell, PriorityCell, StatusCell, type QuickCtx, type QuickTask } from "./Quick";
 import { ColumnsPlus, columnWidth, type ColKey } from "./Columns";
 import type { PjCtx, TaskRow } from "../pages/Projects";
+import { Menu } from "../goals/shared";
+import { ErrorLine } from "../ui";
+
+type StatusEditState = { name: string; mode: "rename" | "color" | "add" | "remove" };
+const STATUS_COLORS = ["#87909e", "#1090e0", "#f76808", "#e5484d", "#12a594", "#7c3aed", "#008844", "#d97706"];
+const TYPES: { key: "open" | "active" | "done" | "closed"; label: string }[] = [
+  { key: "open", label: "Open" },
+  { key: "active", label: "Active" },
+  { key: "done", label: "Done" },
+  { key: "closed", label: "Closed" },
+];
+
+/** Rename, recolor, add after or remove one status, in the group header, with Save and Cancel. */
+function StatusEditor({ c, edit, onDone }: { c: PjCtx; edit: StatusEditState; onDone: () => void }) {
+  const cur = c.data.statuses.find((s) => s.name === edit.name);
+  const [name, setName] = React.useState(edit.mode === "add" ? "" : edit.name);
+  const [color, setColor] = React.useState(edit.mode === "add" ? STATUS_COLORS[1] : cur?.color ?? STATUS_COLORS[0]);
+  const [type, setType] = React.useState<"open" | "active" | "done" | "closed">(edit.mode === "add" ? "active" : (cur?.type as never) ?? "open");
+  const [moveTo, setMoveTo] = React.useState(c.data.statuses.find((s) => s.name !== edit.name)?.name ?? "");
+  const save = trpc.pj.editStatus.useMutation({ onSuccess: async () => { await c.refresh(); onDone(); } });
+  const submit = () => {
+    const base = { organizationId: c.orgId, listId: c.listId!, name: edit.name || c.data.statuses[c.data.statuses.length - 1].name };
+    if (edit.mode === "remove") return save.mutate({ ...base, remove: { moveTo } });
+    if (edit.mode === "add") return save.mutate({ ...base, addAfter: { name, color, type } });
+    save.mutate({ ...base, rename: { name, color, type } });
+  };
+  const others = c.data.statuses.filter((s) => s.name !== edit.name);
+  return (
+    <span className="gp-stedit" role="group" aria-label={edit.mode === "remove" ? "Remove status" : edit.mode === "add" ? "New status" : "Edit status"}>
+      {edit.mode === "remove" ? (
+        <>
+          <span className="gp-sgp" style={{ background: cur?.color }}>{edit.name}</span>
+          <span className="ld-small">Move its tasks to</span>
+          <select className="ld-in xs" aria-label="Move its tasks to" value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
+            {others.map((s) => (
+              <option key={s.name} value={s.name}>{s.name}</option>
+            ))}
+          </select>
+        </>
+      ) : (
+        <>
+          <input className="ld-in xs" aria-label="Status name" autoFocus placeholder={edit.mode === "add" ? "New status" : "Status name"} value={name} maxLength={40} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") onDone(); }} />
+          <span className="gp-swatch" role="radiogroup" aria-label="Color">
+            {STATUS_COLORS.map((x) => (
+              <button key={x} type="button" role="radio" aria-checked={color === x} aria-label={`Color ${x}`} className={color === x ? "on" : ""} style={{ background: x }} onClick={() => setColor(x)} />
+            ))}
+          </span>
+          <span className="gp-seg">
+            {TYPES.map((t) => (
+              <button key={t.key} type="button" className={type === t.key ? "on" : ""} aria-pressed={type === t.key} onClick={() => setType(t.key)}>{t.label}</button>
+            ))}
+          </span>
+        </>
+      )}
+      <button type="button" className="ld-btn sm" style={{ width: 80 }} onClick={onDone}>Cancel</button>
+      <button type="button" className={`ld-btn sm ${edit.mode === "remove" ? "danger" : "p"}`} style={{ width: 80 }} disabled={save.isPending || (edit.mode !== "remove" && !name.trim()) || (edit.mode === "remove" && !moveTo)} onClick={submit}>
+        {save.isPending ? "Saving" : edit.mode === "remove" ? "Remove" : edit.mode === "add" ? "Add" : "Save"}
+      </button>
+      <ErrorLine error={save.error} />
+    </span>
+  );
+}
 
 /**
  * List view: tasks grouped by project (folder and list), status, priority or
@@ -209,6 +271,7 @@ export function ListView({ c }: { c: PjCtx }) {
     ids.splice(ids.indexOf(toId), 0, drag.id);
     reorder.mutate({ organizationId: c.orgId, ids });
   };
+  const [statusEdit, setStatusEdit] = React.useState<StatusEditState | null>(null);
   const toggleShut = (k: string) => setShut((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const parentName = (t: TaskRow) => (t.parentId ? c.tasks.find((p) => p.id === t.parentId)?.name ?? c.subtasks.find((p) => p.id === t.parentId)?.name ?? "" : "");
   const expanded = c.subtaskMode === "expanded";
@@ -273,9 +336,28 @@ export function ListView({ c }: { c: PjCtx }) {
           ) : (
             <div className="gp-sg">
               <button type="button" className="gp-car" aria-expanded={!closedUp} aria-label={closedUp ? `Show ${g.label}` : `Hide ${g.label}`} onClick={() => toggleShut(g.key)}>{closedUp ? "▸" : "▾"}</button>
-              <span className="gp-sgp" style={{ background: g.color }}>{g.label}</span>
-              <span className="ld-small ld-muted">{g.tasks.length}</span>
-              {c.opts.estimates && <span className="ld-small ld-muted" title="Time estimates in this group">Σ {hours(g.tasks.reduce((n, t) => n + (t.timeEstimate ?? 0), 0))}</span>}
+              {statusEdit && statusEdit.name === g.status && statusEdit.mode !== "remove" ? (
+                <StatusEditor c={c} edit={statusEdit} onDone={() => setStatusEdit(null)} />
+              ) : (
+                <>
+                  <span className="gp-sgp" style={{ background: g.color }}>{g.label}</span>
+                  <span className="ld-small ld-muted">{g.tasks.length}</span>
+                  {c.opts.estimates && <span className="ld-small ld-muted" title="Time estimates in this group">Σ {hours(g.tasks.reduce((n, t) => n + (t.timeEstimate ?? 0), 0))}</span>}
+                  {c.group === "status" && c.listId && c.level === "full" && g.status && (
+                    <Menu label={`Status ${g.label}`} align="left">
+                      {(close) => (
+                        <>
+                          <button type="button" role="menuitem" onClick={() => { setStatusEdit({ name: g.status!, mode: "rename" }); close(); }}>Rename status</button>
+                          <button type="button" role="menuitem" onClick={() => { setStatusEdit({ name: g.status!, mode: "color" }); close(); }}>Change color</button>
+                          <button type="button" role="menuitem" onClick={() => { setStatusEdit({ name: g.status!, mode: "add" }); close(); }}>Add a status after this one</button>
+                          {c.data.statuses.length > 1 && <button type="button" role="menuitem" className="danger" onClick={() => { setStatusEdit({ name: g.status!, mode: "remove" }); close(); }}>Remove status</button>}
+                        </>
+                      )}
+                    </Menu>
+                  )}
+                  {statusEdit && statusEdit.name === g.status && statusEdit.mode === "remove" && <StatusEditor c={c} edit={statusEdit} onDone={() => setStatusEdit(null)} />}
+                </>
+              )}
             </div>
           );
         return (
@@ -305,6 +387,13 @@ export function ListView({ c }: { c: PjCtx }) {
         );
       })}
       {!c.tasks.length && !c.listId && <div className="gp-empty">No tasks match.</div>}
+      {c.group === "status" && c.listId && c.level === "full" && c.data.statuses.length > 0 && (
+        statusEdit?.mode === "add" && statusEdit.name === "" ? (
+          <div className="gp-sg"><StatusEditor c={c} edit={statusEdit} onDone={() => setStatusEdit(null)} /></div>
+        ) : (
+          <button type="button" className="gp-link" style={{ padding: "10px 16px 14px", textAlign: "left" }} onClick={() => setStatusEdit({ name: "", mode: "add" })}>+ Add status</button>
+        )
+      )}
     </div>
   );
 }

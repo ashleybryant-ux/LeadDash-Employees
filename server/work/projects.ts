@@ -160,6 +160,42 @@ const cleanField = (f: FieldDef): FieldDef => ({
   ...(f.setup ? { setup: f.setup.slice(0, 300) } : {}),
 });
 
+/**
+ * One status changed from a list's group header: renamed or recolored (its
+ * tasks follow the new name), a new status added after it, or removed with its
+ * tasks moved to another status. Nothing changes until Save in the header.
+ */
+export function editStatus(orgId: number, listId: number, input: { name: string; rename?: StatusDef; addAfter?: StatusDef; remove?: { moveTo: string } }) {
+  const l = mustList(orgId, listId);
+  const statuses = statusesOf(l).map((s) => ({ ...s }));
+  const i = statuses.findIndex((s) => s.name === input.name.trim().toLowerCase());
+  if (i < 0) throw new TRPCError({ code: "NOT_FOUND", message: "That status isn't on this list." });
+  const clean = (s: StatusDef): StatusDef => ({ name: s.name.trim().toLowerCase().slice(0, 40), color: /^#[0-9a-f]{6}$/i.test(s.color) ? s.color : "#87909e", type: s.type });
+  const tasks = db.work.tasks.where(orgId, "listId", l.id);
+  let next = statuses;
+  if (input.rename) {
+    const r = clean(input.rename);
+    if (!r.name) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the status." });
+    if (statuses.some((s, k) => k !== i && s.name === r.name)) throw new TRPCError({ code: "BAD_REQUEST", message: `There is already a status called "${r.name}".` });
+    next = statuses.map((s, k) => (k === i ? r : s));
+    if (r.name !== statuses[i].name) for (const t of tasks) if (t.status === statuses[i].name) db.work.tasks.update(orgId, t.id, { status: r.name });
+  } else if (input.addAfter) {
+    const a = clean(input.addAfter);
+    if (!a.name) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the status." });
+    if (statuses.some((s) => s.name === a.name)) throw new TRPCError({ code: "BAD_REQUEST", message: `There is already a status called "${a.name}".` });
+    if (statuses.length >= 20) throw new TRPCError({ code: "BAD_REQUEST", message: "A list can have up to 20 statuses." });
+    next = [...statuses.slice(0, i + 1), a, ...statuses.slice(i + 1)];
+  } else if (input.remove) {
+    if (statuses.length < 2) throw new TRPCError({ code: "BAD_REQUEST", message: "A list needs at least one status." });
+    const to = statuses.find((s, k) => k !== i && s.name === input.remove!.moveTo.trim().toLowerCase());
+    if (!to) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick the status its tasks move to." });
+    next = statuses.filter((_, k) => k !== i);
+    for (const t of tasks) if (t.status === statuses[i].name) db.work.tasks.update(orgId, t.id, { status: to.name });
+  }
+  if (!next.some((s) => s.type === "done" || s.type === "closed")) throw new TRPCError({ code: "BAD_REQUEST", message: "Keep at least one status that means done." });
+  return db.work.lists.update(orgId, l.id, { statuses: JSON.stringify(next) })!;
+}
+
 export function saveList(orgId: number, input: { id?: number; name: string; folderId: number | null; description?: string; statuses?: StatusDef[]; fields?: FieldDef[] }) {
   const name = input.name.trim().slice(0, 120);
   if (!name) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the list." });

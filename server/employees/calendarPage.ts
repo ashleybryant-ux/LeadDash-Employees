@@ -2,6 +2,7 @@ import * as db from "../db";
 import * as integrations from "../integrations";
 import type { AIEmployee, LaunchTask, OutboundItem } from "../../drizzle/schema";
 import { schedule, type EventExtra } from "./calendars";
+import { knownNames, redactText } from "../ehr";
 import { nextRun, partsIn, zonedToUtc } from "./schedule";
 
 /**
@@ -318,6 +319,29 @@ export async function nextMeeting(orgId: number, now = new Date()) {
   if (!next) return { tz, meeting: null };
   decorate(orgId, [next], ev.extras, notetaker);
   return { tz, meeting: next };
+}
+
+/**
+ * A title with any client's name shortened to initials: names the EHR has seen,
+ * and a "with First Last" in the event itself, so "Individual Therapy with Jane
+ * Doe" shows as "Individual Therapy, J. Doe" in the app chrome, the same form
+ * staff notices use.
+ */
+export function shortTitle(orgId: number, title: string) {
+  let t = redactText("initial", title, knownNames(orgId));
+  t = t.replace(new RegExp("\\b(with|for|w/)\\s+([A-Z][\\p{L}'-]+(?:\\s+[A-Z][\\p{L}'-]+){1,2})\\b", "gu"), (_m, _w, name: string) => { const parts = name.split(/\s+/); return `, ${parts[0][0].toUpperCase()}. ${parts[parts.length - 1]}`; });
+  return t.replace(/\s+,/g, ",").trim();
+}
+
+/** The Next up bar: the next timed event on the workspace's calendars (a link or not), with a client's name shortened to initials. */
+export async function nextUp(orgId: number, now = new Date()) {
+  const tz = await tzOf(orgId);
+  const connected = db.listAccountLinks(orgId, "calendar").length > 0 || (await db.listMeetings(orgId)).length > 0;
+  if (!connected) return { tz, connected, item: null };
+  const ev = await eventsIn(orgId, new Date(now.getTime() - 4 * 3600_000), new Date(now.getTime() + 7 * DAY));
+  const next = ev.items.filter((e) => e.kind === "event" && !e.allDay && e.end.getTime() > now.getTime()).sort((a, b) => a.start.getTime() - b.start.getTime())[0];
+  if (!next) return { tz, connected, item: null };
+  return { tz, connected, item: { title: shortTitle(orgId, next.title), start: next.start, end: next.end, meeting: next.meeting, host: next.host, calendar: next.calendar } };
 }
 
 /** For Start on Zoom: the host's start link when the connected Zoom account runs the meeting, else the join link. Anyone in the workspace may start it. */

@@ -1,6 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { NextUpBar } from "./NextUp";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AVATAR_FILES, KIND_META, KIND_ORDER, fmtWhen, initials, type Kind, DEPARTMENT_ORDER, worksWithClientInfo } from "./meta";
@@ -203,6 +204,8 @@ export function Rail({ active }: { active: RailKey }) {
     </Link>
   );
   return (
+    <>
+    <NextUpBar />
     <nav
       aria-label="Main"
       className="ld-rail"
@@ -254,6 +257,7 @@ export function Rail({ active }: { active: RailKey }) {
       </div>
       {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 84, top: 12, zIndex: 95 }} />}
     </nav>
+    </>
   );
 }
 

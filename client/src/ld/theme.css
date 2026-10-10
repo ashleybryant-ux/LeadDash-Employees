@@ -137,6 +137,31 @@ html.ld-review .ld-chatlist { margin-top: 34px; top: 34px !important; height: ca
 html.ld-review .ld-chatmain { padding-top: 34px; box-sizing: border-box; }
 html.ld-review .ld-emphead { top: 34px !important; }
 
+/* Next up: a 36px bar across the top of every page; everything below moves down. */
+.ld-nextbar { position: fixed; top: 0; left: 0; right: 0; height: 36px; z-index: 60; box-sizing: border-box; background: #12211d; color: #fff; font-family: "Plus Jakarta Sans", system-ui, sans-serif; font-size: 13px; display: flex; align-items: center; gap: 10px; padding: 0 14px 0 16px; white-space: nowrap; }
+.ld-nextbar-k { font-weight: 800; flex-shrink: 0; }
+.ld-nextbar-t { color: #a9c0b6; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ld-nextbar-c { background: #e88a3a; color: #14221c; font-weight: 800; border-radius: 999px; padding: 2px 9px; font-size: 12px; flex-shrink: 0; }
+.ld-nextbar-c.live { background: #2fbf71; }
+.ld-nextbar-sp { flex: 1; }
+.ld-nextbar-b { height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid #3b5a4e; color: #fff !important; font: inherit; font-size: 12.5px; font-weight: 700; display: inline-flex; align-items: center; background: none; cursor: pointer; text-decoration: none; flex-shrink: 0; }
+.ld-nextbar-b.p { background: var(--ld-accent); border-color: var(--ld-accent); }
+html.ld-next .ld { padding-top: 36px; }
+html.ld-next .ld-rail { top: 36px !important; height: calc(100vh - 36px); height: calc(100dvh - 36px); }
+html.ld-next .ld-chatlist { top: 36px !important; height: calc(100vh - 36px) !important; }
+html.ld-next .ld-emphead { top: 36px !important; }
+html.ld-next .gp-ptree { top: 36px; height: calc(100vh - 36px); height: calc(100dvh - 36px); }
+html.ld-next .tc-side { top: 36px; height: calc(100vh - 36px); }
+html.ld-next .gp-dtb { top: 44px; }
+html.ld-next.ld-review .ld-reviewbar { top: 36px; }
+html.ld-next .ld-switcher-pop { top: 48px !important; }
+@media (max-width: 760px) {
+  .ld-nextbar { padding: 0 10px; gap: 8px; font-size: 12.5px; }
+  .ld-nextbar-b:not(.p) { display: none; }
+  html.ld-next .tc-side { height: auto; }
+}
+@media print { .ld-nextbar { display: none !important; } html.ld-next .ld { padding-top: 0; } }
+
 /* ==========================================
  * Phone layout (760px and narrower)
  * The rail becomes a bottom bar, the chat list and a chat are separate
@@ -1846,6 +1871,17 @@ html[data-theme="dark"] .gp-page mark { color: #14221c !important; }
 .gp-pgr { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .gp-attn { box-shadow: inset 0 0 0 1.5px #f0b27a; border-radius: 12px 12px 0 0; }
 .gp-sg .gp-car, .gp-pg .gp-car { border: 0; background: none; cursor: pointer; padding: 0; }
+.gp-sg .gp-dots { width: 24px; height: 22px; opacity: 0; transition: opacity 0.1s; }
+.gp-sg:hover .gp-dots, .gp-sg .gp-dots[aria-expanded="true"], .gp-sg:focus-within .gp-dots { opacity: 1; }
+@media (hover: none) { .gp-sg .gp-dots { opacity: 1; } }
+.gp-stedit { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gp-stedit .ld-in { width: 170px; }
+.gp-swatch { display: inline-flex; gap: 5px; }
+.gp-swatch > button { width: 20px; height: 20px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.gp-swatch > button.on { border-color: var(--ld-ink); }
+.gp-seg { display: inline-flex; gap: 4px; }
+.gp-seg > button { height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--ld-line3); background: var(--ld-surface); font: inherit; font-size: 12px; font-weight: 700; color: var(--ld-ink); cursor: pointer; }
+.gp-seg > button.on { background: var(--ld-accent-bg); border-color: var(--ld-accent-line); color: var(--ld-accent-dark); }
 .gp-tr.over { box-shadow: inset 0 2px 0 var(--ld-accent); }
 .gp-tr.sel, .gp-table tr.sel { background: var(--ld-accent-bg); }
 .gp-tr.open { background: var(--ld-hover); box-shadow: inset 3px 0 0 var(--ld-accent); }
