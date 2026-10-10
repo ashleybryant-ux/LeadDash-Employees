@@ -800,7 +800,15 @@ select.gp-fb { max-width: 150px; text-overflow: ellipsis; }
 .ld a.gp-td:hover { background: #f8fbf9; }
 
 /* Projects: folder tree */
-.gp-ptree { width: 250px; flex-shrink: 0; background: #fff; border-right: 1px solid #e3e9e6; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-height: 100vh; box-sizing: border-box; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.gp-ptree { width: 250px; flex-shrink: 0; background: #fff; border-right: 1px solid #e3e9e6; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; box-sizing: border-box; position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; }
+/* The rail: the workspace at the top (click it to switch), then the pages. It scrolls on a short screen instead of cutting off. */
+.ld-rail { height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+.ld-rail::-webkit-scrollbar { display: none; }
+.ld-ws { width: 68px; border: 0; background: transparent; padding: 4px 2px 6px; margin-bottom: 6px; border-radius: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; color: #fff; flex-shrink: 0; font: inherit; }
+.ld-ws:hover { background: #1b2f2a; }
+.ld-wsname { display: flex; align-items: center; gap: 3px; max-width: 64px; font-size: 10.5px; font-weight: 700; line-height: 1.2; }
+.ld-wsname > span:first-child { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-align: center; }
+.ld-wsname > span:last-child { color: #a9c0b6; flex-shrink: 0; }
 .gp-ptree .ph2 { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6b64; padding: 8px 8px 4px; display: flex; justify-content: space-between; align-items: center; }
 .gp-plus { border: 0; background: none; font: inherit; font-size: 16px; font-weight: 800; color: #5b6b64; cursor: pointer; padding: 0 4px; }
 .gp-tl { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 30px; border-radius: 7px; color: #3d4c45; justify-content: space-between; border: 0; background: none; font: inherit; font-size: 13px; text-align: left; cursor: pointer; width: 100%; text-decoration: none; min-width: 0; }
@@ -1174,7 +1182,7 @@ button.gp-ts:hover { background: #f8fbf9; }
 .gp-tlr .gp-tl:hover { background: none; }
 .gp-tlr .gp-dots, .gp-tf-acts { opacity: 0.45; transition: opacity 0.1s; }
 .gp-tlr:hover .gp-dots, .gp-tlr:focus-within .gp-dots, .gp-tf:hover .gp-tf-acts, .gp-tf:focus-within .gp-tf-acts { opacity: 1; }
-.gp-tree-grip { width: 6px; margin-left: -3px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; cursor: col-resize; z-index: 3; }
+.gp-tree-grip { width: 6px; margin-left: -3px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; height: 100dvh; cursor: col-resize; z-index: 3; }
 .gp-tree-grip:hover, .gp-tree-grip:active { background: rgba(27, 107, 74, 0.25); }
 .gp-crumbbtn { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; color: inherit; }
 .gp-crumbbtn:hover { color: #1b6b4a; text-decoration: underline; }
@@ -1188,7 +1196,7 @@ button.gp-ts:hover { background: #f8fbf9; }
 @media (hover: none) { .gp-tlr .gp-dots, .gp-tf-acts { opacity: 1; } }
 @media (max-width: 760px) {
   .gp-show-sm { display: inline-flex !important; margin-right: 8px; }
-  .gp-ptree.open { display: flex; position: fixed; left: 0; top: 0; bottom: 0; z-index: 60; width: 290px !important; height: 100vh; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2); }
+  .gp-ptree.open { display: flex; position: fixed; left: 0; top: 0; bottom: 0; z-index: 60; width: 290px !important; height: 100vh; height: 100dvh; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2); }
   .gp-drawer-bg { display: block; position: fixed; inset: 0; z-index: 59; background: rgba(15, 25, 20, 0.35); }
 }
 @media (max-width: 760px) {

@@ -2,7 +2,7 @@ import React from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
-import { BottomNav, ErrorLine, Rail } from "../ui";
+import { BottomNav, ErrorLine, Rail, Switcher } from "../ui";
 import { Menu } from "../goals/shared";
 import type { Outputs } from "../types";
 import { Tree, type Ask } from "../projects/Tree";
@@ -170,6 +170,7 @@ export default function Projects() {
   const [adding, setAdding] = React.useState(false);
   const [ask, setAsk] = React.useState<Ask>(null);
   const [drawer, setDrawer] = React.useState(false);
+  const [wsMenu, setWsMenu] = React.useState(false);
   const guest = !!(currentOrg as { guest?: boolean } | null)?.guest;
   const tree = trpc.pj.tree.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const meQ = trpc.pj.me.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
@@ -467,6 +468,11 @@ export default function Projects() {
                   <button type="button" className="ld-btn sm gp-auto gp-show-sm" onClick={() => setDrawer(true)} aria-label="Folders and lists">☰</button>
                   {crumb && (where.scope === "list" && data?.list?.folderId ? (
                     <button type="button" className="crumb gp-crumbbtn" style={{ fontSize: 14, marginLeft: 0 }} onClick={() => pick({ scope: "folder", folderId: data.list!.folderId!, tab: "overview" })}>{crumb}</button>
+                  ) : isFolder ? (
+                    <span style={{ position: "relative", display: "inline-flex" }}>
+                      <button type="button" className="crumb gp-crumbbtn" style={{ fontSize: 14, marginLeft: 0 }} aria-haspopup="menu" aria-expanded={wsMenu} onClick={() => setWsMenu((v) => !v)}>{crumb}</button>
+                      {wsMenu && <Switcher onClose={() => setWsMenu(false)} style={{ position: "absolute", left: 0, top: "calc(100% + 6px)", fontWeight: 500, textTransform: "none", letterSpacing: 0 }} />}
+                    </span>
                   ) : (
                     <span className="crumb" style={{ fontSize: 14, marginLeft: 0 }}>{crumb}</span>
                   ))}

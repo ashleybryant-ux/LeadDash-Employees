@@ -2106,6 +2106,10 @@ export const appRouter = router({
       const v = await pjViewer(ctx, input.organizationId);
       return (await import("./work/pjPortfolios")).addWork(input.organizationId, v, input.portfolioId, input.kind, input.itemId);
     }),
+    addFolderToPortfolio: protectedProcedure.input(orgInput.extend({ portfolioId: z.number().int(), folderId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjPortfolios")).addFolder(input.organizationId, v, input.portfolioId, input.folderId);
+    }),
     removeWork: protectedProcedure.input(orgInput.extend({ portfolioId: z.number().int(), rowId: z.number().int() })).mutation(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);
       return (await import("./work/pjPortfolios")).removeWork(input.organizationId, v, input.portfolioId, input.rowId);

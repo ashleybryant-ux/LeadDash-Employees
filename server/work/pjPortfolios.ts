@@ -190,6 +190,17 @@ export function addWork(orgId: number, v: Viewer, portfolioId: number, kind: "li
   return { ok: true };
 }
 
+/** Every project in a folder joins the portfolio (the ones already there stay as they are). */
+export function addFolder(orgId: number, v: Viewer, portfolioId: number, folderId: number) {
+  canChange(v);
+  mustPortfolio(orgId, portfolioId);
+  const f = db.work.folders.get(orgId, folderId);
+  if (!f) throw new TRPCError({ code: "NOT_FOUND", message: "That folder isn't in this workspace." });
+  const lists = visibleLists(orgId, v).map((x) => x.list).filter((l) => l.folderId === f.id && !l.archivedAt).sort((a, b) => a.sort - b.sort || a.id - b.id);
+  for (const l of lists) addWork(orgId, v, portfolioId, "list", l.id);
+  return { added: lists.length };
+}
+
 export function removeWork(orgId: number, v: Viewer, portfolioId: number, rowId: number) {
   canChange(v);
   const it = db.work.portfolioItems.get(orgId, rowId);

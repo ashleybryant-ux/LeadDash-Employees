@@ -114,6 +114,17 @@ describe("Customize view, the Dashboards hub and the sidebar", () => {
     expect((await her.pj.favorites({ organizationId: orgId })).filter((f) => f.kind === "dash")).toEqual([]);
   });
 
+  it("adds a whole folder to a portfolio from the sidebar", async () => {
+    const { orgId, me, folder, list } = await setup("pj-addfolder");
+    const other = await me.pj.saveList({ organizationId: orgId, name: "Grow Without Hiring, round 2", folderId: folder.id });
+    const p = await me.pj.savePortfolio({ organizationId: orgId, name: "Q4 launches" });
+    expect(await me.pj.addFolderToPortfolio({ organizationId: orgId, portfolioId: p.id, folderId: folder.id })).toEqual({ added: 2 });
+    expect((await me.pj.portfolio({ organizationId: orgId, id: p.id })).rows.map((r) => r.name)).toEqual([list.name, other.name]);
+    // Again: nothing doubles up.
+    await me.pj.addFolderToPortfolio({ organizationId: orgId, portfolioId: p.id, folderId: folder.id });
+    expect((await me.pj.portfolio({ organizationId: orgId, id: p.id })).rows).toHaveLength(2);
+  });
+
   it("lets each person pick the sidebar items that show; the rest sit under More", async () => {
     const { orgId, me, her } = await setup("pj-nav");
     expect(await her.pj.nav({ organizationId: orgId })).toEqual({ shown: ["home", "mine", "everything", "docs", "portfolios", "dash"], more: ["time", "templates", "boards", "forms", "goals", "import"] });

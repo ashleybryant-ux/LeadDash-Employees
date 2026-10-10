@@ -90,6 +90,30 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
   const favWhere = (f: NonNullable<typeof favQ.data>[number]): Where =>
     f.kind === "dash" ? { scope: "dash", id: f.id } : f.kind === "doc" ? { scope: "doc", id: f.id } : f.kind === "board" ? { scope: "board", id: f.id } : f.kind === "form" ? { scope: "form", id: f.id } : f.listId ? { scope: "list", listId: f.listId } : f.folderId ? { scope: "folder", folderId: f.folderId } : { scope: "everything" };
   const moveList = trpc.pj.saveList.useMutation({ onSuccess: async () => { setMoving(null); await refresh(); } });
+  // Add to portfolio: a list, or every list in a folder, from the ··· menu.
+  const [toPortfolio, setToPortfolio] = React.useState<{ kind: "list" | "folder"; id: number; name: string; portfolioId: number | "" } | null>(null);
+  const portfoliosQ = trpc.pj.portfolios.useQuery({ organizationId: orgId }, { enabled: !!toPortfolio });
+  const utils = trpc.useUtils();
+  const afterPortfolio = async () => { setToPortfolio(null); await Promise.all([utils.pj.portfolios.invalidate(), utils.pj.portfolio.invalidate()]); };
+  const addWork = trpc.pj.addWork.useMutation({ onSuccess: afterPortfolio });
+  const addFolder = trpc.pj.addFolderToPortfolio.useMutation({ onSuccess: afterPortfolio });
+  const PortfolioForm = toPortfolio && (
+    <div className="gp-tf-form">
+      <span className="ld-small ld-muted">Add {toPortfolio.name} to</span>
+      <select className="ld-in xs" aria-label="Portfolio" value={toPortfolio.portfolioId} onChange={(e) => setToPortfolio({ ...toPortfolio, portfolioId: e.target.value ? Number(e.target.value) : "" })}>
+        <option value="">Pick a portfolio</option>
+        {(portfoliosQ.data ?? []).map((p) => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))}
+      </select>
+      {portfoliosQ.data && !portfoliosQ.data.length && <span className="ld-small ld-muted">No portfolios yet. Make one under Portfolios.</span>}
+      <span className="ld-row">
+        <button type="button" className="ld-btn sm" onClick={() => setToPortfolio(null)}>Cancel</button>
+        <button type="button" className="ld-btn p sm" disabled={!toPortfolio.portfolioId || addWork.isPending || addFolder.isPending} onClick={() => { if (!toPortfolio.portfolioId) return; if (toPortfolio.kind === "list") addWork.mutate({ organizationId: orgId, portfolioId: toPortfolio.portfolioId, kind: "list", itemId: toPortfolio.id }); else addFolder.mutate({ organizationId: orgId, portfolioId: toPortfolio.portfolioId, folderId: toPortfolio.id }); }}>Add</button>
+      </span>
+      <ErrorLine error={portfoliosQ.error || addWork.error || addFolder.error} />
+    </div>
+  );
   const guest = !!tree?.guest;
   const archivedQ = trpc.pj.archived.useQuery({ organizationId: orgId }, { enabled: showArchived && !guest });
   const archiveList = trpc.pj.archiveList.useMutation({ onSuccess: async () => { await refresh(); void archivedQ.refetch(); } });
@@ -148,6 +172,7 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
               <>
                 <button type="button" role="menuitem" onClick={() => { setForm({ kind: "list", id: l.id, folderId, name: l.name, color: "" }); close(); }}>Rename</button>
                 <button type="button" role="menuitem" onClick={() => { setMoving({ id: l.id, name: l.name, folderId }); close(); }}>Move to folder</button>
+                <button type="button" role="menuitem" onClick={() => { setToPortfolio({ kind: "list", id: l.id, name: l.name, portfolioId: "" }); close(); }}>Add to portfolio</button>
                 <button type="button" role="menuitem" onClick={() => { archiveList.mutate({ organizationId: orgId, id: l.id, on: true }); if (where.scope === "list" && where.listId === l.id) onPick({ scope: "everything" }); close(); }}>Archive</button>
                 <button type="button" role="menuitem" className="danger" onClick={() => { if (window.confirm(`Delete the ${l.name} list and its tasks?`)) removeList.mutate({ organizationId: orgId, id: l.id }); close(); }}>Delete list</button>
               </>
@@ -155,6 +180,7 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
           </Menu>
         )}
       </div>
+      {toPortfolio?.kind === "list" && toPortfolio.id === l.id && PortfolioForm}
       {moving?.id === l.id && (
         <div className="gp-tf-form">
           <select className="ld-in xs" aria-label="Folder" value={moving.folderId ?? ""} onChange={(e) => setMoving({ ...moving, folderId: e.target.value ? Number(e.target.value) : null })}>
@@ -266,6 +292,7 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
                         <>
                           {adds(f.id, close)}
                           <button type="button" role="menuitem" onClick={() => { setForm({ kind: "folder", id: f.id, name: f.name, color: f.color }); close(); }}>Rename or recolor</button>
+                          <button type="button" role="menuitem" onClick={() => { setToPortfolio({ kind: "folder", id: f.id, name: f.name, portfolioId: "" }); close(); }}>Add to portfolio</button>
                           <button type="button" role="menuitem" onClick={() => { if (window.confirm(`Archive the ${f.name} folder and every list in it?`)) { archiveFolder.mutate({ organizationId: orgId, id: f.id, on: true }); if (where.scope === "folder" && where.folderId === f.id) onPick({ scope: "everything" }); } close(); }}>Archive folder</button>
                           <button type="button" role="menuitem" className="danger" onClick={() => { if (window.confirm(`Remove the ${f.name} folder? What's in it stays, out of the folder.`)) removeFolder.mutate({ organizationId: orgId, id: f.id }); close(); }}>Remove folder</button>
                         </>
@@ -276,6 +303,7 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
               </div>
             )}
             {form && form.kind !== "folder" && form.folderId === f.id && !form.id && Form}
+            {toPortfolio?.kind === "folder" && toPortfolio.id === f.id && PortfolioForm}
             {!shut.has(f.id) && (
               <>
                 {f.lists.map((l) => listRow(l, f.id))}

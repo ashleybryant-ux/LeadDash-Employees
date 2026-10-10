@@ -165,7 +165,7 @@ export type RailKey = "chats" | "calendar" | "goals" | "projects" | "huddle" | "
 export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
   const { user, logout } = useAuth();
-  const { chatOnly } = useTenant();
+  const { chatOnly, currentOrg } = useTenant();
   const railUnread = useUnreadElsewhere();
   const [switcher, setSwitcher] = React.useState(false);
   const [menu, setMenu] = React.useState(false);
@@ -205,18 +205,23 @@ export function Rail({ active }: { active: RailKey }) {
     <nav
       aria-label="Main"
       className="ld-rail"
-      style={{ width: 76, minHeight: "100vh", flexShrink: 0, boxSizing: "border-box", background: "#12211d", display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 0", gap: 6, position: "sticky", top: 0, height: "100vh", zIndex: 20 }}
+      style={{ width: 76, flexShrink: 0, boxSizing: "border-box", background: "#12211d", display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 0", gap: 6, position: "sticky", top: 0, zIndex: 20 }}
     >
       <button
         type="button"
-        aria-label={railUnread.elsewhere ? `Switch workspace, ${railUnread.elsewhere} unread in your other workspaces` : "Switch workspace"}
+        className="ld-ws"
+        aria-label={`${currentOrg?.name ?? "Workspace"}. Switch workspace`}
+        aria-haspopup="menu"
+        aria-expanded={switcher}
         onClick={() => setSwitcher((v) => !v)}
-        style={{ width: 44, height: 44, borderRadius: 11, background: "transparent", border: 0, padding: 0, cursor: "pointer", marginBottom: 12, position: "relative" }}
       >
-        <img src="/brand/icon.png" alt="LeadDash Employees" width={44} height={44} style={{ display: "block", width: 44, height: 44, borderRadius: 11 }} />
-        {railUnread.elsewhere > 0 && <span style={{ ...badge, position: "absolute", top: -4, right: -6 }}>{railUnread.elsewhere}</span>}
+        {currentOrg ? <OrgLogo name={currentOrg.name} src={currentOrg.logoUrl} size={40} /> : <img src="/brand/icon.png" alt="" width={40} height={40} style={{ display: "block", width: 40, height: 40, borderRadius: 10 }} />}
+        <span className="ld-wsname">
+          <span>{currentOrg?.name ?? "Workspace"}</span>
+          <span aria-hidden="true">▾</span>
+        </span>
       </button>
-      {item("chats", "Chats", "/chats", Icons.chats)}
+      {item("chats", "Chats", "/chats", Icons.chats, railUnread.total)}
       {!chatOnly && item("calendar", "Calendar", "/calendar", Icons.calendar)}
       {!chatOnly && item("goals", "Goals", "/goals", Icons.goals)}
       {!chatOnly && item("projects", "Projects", "/projects", Icons.projects)}
@@ -271,7 +276,8 @@ export function useUnreadElsewhere() {
   const rows = q.data ?? [];
   const by = new Map(rows.map((r) => [r.orgId, r]));
   const elsewhere = rows.filter((r) => r.orgId !== currentOrgId).reduce((n, r) => n + r.unread, 0);
-  return { by, elsewhere };
+  const total = rows.reduce((n, r) => n + r.unread, 0);
+  return { by, elsewhere, total };
 }
 
 const badge: React.CSSProperties = { background: "#c2410c", color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "0 7px", lineHeight: "18px", flexShrink: 0 };
