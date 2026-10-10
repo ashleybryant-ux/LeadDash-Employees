@@ -5,7 +5,7 @@ import { Menu } from "../goals/shared";
 import type { Outputs } from "../types";
 import type { Where } from "../pages/Projects";
 import { useLocation } from "wouter";
-import { NAV, navIcon, navLabel, type NavKey } from "./Sidebar";
+import { NAV, NAV_ICONS, navIcon, navLabel, type NavKey } from "./Sidebar";
 
 /**
  * The sidebar, laid out like ClickUp's: a "+ New" button (task, folder, list,
@@ -39,7 +39,26 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
     }
     setForm(ask.kind === "folder" ? { kind: "folder", name: "", color: COLORS[(tree?.folders.length ?? 0) % COLORS.length] } : { kind: "list", folderId: ask.folderId ?? null, name: "", color: "" });
   }, [ask]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [shut, setShut] = React.useState<Set<number>>(new Set());
+  // Folders start collapsed. Opening one is remembered on this device, and the folder holding the open list opens itself.
+  const [opened, setOpened] = React.useState<Set<number>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("ld.pj.open") ?? "[]") as number[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const shut = React.useMemo(() => new Set((tree?.folders ?? []).map((f) => f.id).filter((id) => !opened.has(id))), [tree?.folders, opened]);
+  const setShut = (next: Set<number> | ((s: Set<number>) => Set<number>)) => {
+    const n = typeof next === "function" ? next(shut) : next;
+    const all = (tree?.folders ?? []).map((f) => f.id);
+    const op = new Set(all.filter((id) => !n.has(id)));
+    setOpened(op);
+    try { localStorage.setItem("ld.pj.open", JSON.stringify(Array.from(op))); } catch { /* ignore */ }
+  };
+  React.useEffect(() => {
+    const id = where.scope === "list" ? tree?.folders.find((f) => f.lists.some((l) => l.id === where.listId))?.id : where.scope === "folder" ? where.folderId : null;
+    if (id && !opened.has(id)) setOpened((o) => { const n = new Set(o); n.add(id); return n; });
+  }, [where, tree?.folders]); // eslint-disable-line react-hooks/exhaustive-deps
   const [showArchived, setShowArchived] = React.useState(false);
   // The sidebar's width: drag its right edge; the choice is remembered on this device.
   const [width, setWidth] = React.useState(() => {
@@ -83,7 +102,7 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
   };
   const navBtn = (k: NavKey, inMore = false) => (
     <button key={k} type="button" className={`gp-tl top ${navOn(k) ? "on" : ""}`} style={inMore ? { paddingLeft: 8 } : undefined} onClick={() => goNav(k)}>
-      <span><span className="gp-nic" aria-hidden="true">{navIcon(k)}</span>{navLabel(k)}</span>
+      <span><span className="gp-nic">{navIcon(k)}</span>{navLabel(k)}</span>
       {k === "mine" && (tree?.mine ?? 0) > 0 && <span className="n">{tree?.mine}</span>}
     </button>
   );
@@ -240,14 +259,14 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
             {shownNav.map((k) => navBtn(k))}
             <div className="gp-more">
               <button type="button" className={`gp-tl top ${more ? "on" : ""}`} aria-expanded={more} onClick={() => setMore((v) => !v)}>
-                <span><span className="gp-nic" aria-hidden="true">···</span>More</span>
+                <span><span className="gp-nic">{NAV_ICONS.more}</span>More</span>
               </button>
               {more && (
                 <div className="gp-morebox" role="menu">
                   {moreNav.map((k) => navBtn(k, true))}
                   <div className="gp-csep" style={{ margin: "4px 0" }} />
                   <button type="button" className={`gp-tl top ${where.scope === "sidebar" ? "on" : ""}`} onClick={() => { setMore(false); pickAnd({ scope: "sidebar" }); }}>
-                    <span><span className="gp-nic" aria-hidden="true">⚙</span>Customize sidebar</span>
+                    <span><span className="gp-nic">{NAV_ICONS.settings}</span>Customize sidebar</span>
                   </button>
                 </div>
               )}

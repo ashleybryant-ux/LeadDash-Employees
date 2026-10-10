@@ -1931,7 +1931,8 @@ button.gp-crow:disabled { cursor: default; color: #9aa8a2; }
 @media (max-width: 900px) { .gp-tcards { grid-template-columns: 1fr; } .gp-dhrow { grid-template-columns: minmax(0, 1fr) 36px; } .gp-dhrow > :nth-child(n + 2):not(:last-child) { display: none; } }
 
 /* Projects: sidebar nav, More and Customize sidebar */
-.gp-nic { display: inline-block; width: 18px; color: #8a9a93; }
+.gp-nic { display: inline-flex; width: 18px; margin-right: 6px; color: #8a9a93; vertical-align: middle; align-items: center; }
+.gp-tl > span:first-child { display: inline-flex; align-items: center; min-width: 0; }
 .gp-tl.on .gp-nic { color: inherit; }
 .gp-more { position: relative; }
 .gp-morebox { position: absolute; left: 8px; right: -8px; top: calc(100% + 2px); z-index: 60; background: #fff; border: 1px solid #e3e9e6; border-radius: 12px; box-shadow: 0 14px 36px rgba(18, 33, 29, 0.18); padding: 6px; display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
