@@ -915,7 +915,8 @@ select.gp-fb { max-width: 150px; text-overflow: ellipsis; }
 .gp-act { font-size: 12px; color: var(--ld-muted); padding: 6px 16px; }
 .gp-tcm { display: flex; gap: 10px; font-size: 13px; line-height: 1.5; padding: 10px 16px; }
 .gp-tcm .body { display: block; white-space: pre-wrap; margin-top: 2px; }
-.gp-cbox { border-top: 1px solid var(--ld-line); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.gp-cbox { border-top: 1px solid var(--ld-line); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.gp-cbox .ld-ta { min-height: 64px; }
 .gp-auto-r { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid var(--ld-line); border-radius: 10px; padding: 10px 12px; font-size: 13px; flex-wrap: wrap; }
 .gp-auto-r.editing { border-color: var(--ld-accent); }
 .gp-auto-f { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -1893,7 +1894,7 @@ button.gp-ts:hover { background: var(--ld-hover2); }
 .gp-chead { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
 .gp-cback { border: 0; background: none; font: inherit; font-size: 15px; font-weight: 800; color: var(--ld-ink); cursor: pointer; padding: 0; }
 .gp-cname { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-.gp-cbox { width: 36px; height: 36px; border: 1px solid var(--ld-line3); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--ld-muted); flex-shrink: 0; }
+.gp-cvbox { width: 36px; height: 36px; border: 1px solid var(--ld-line3); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--ld-muted); flex-shrink: 0; }
 .gp-cin { height: 36px; border: 1px solid var(--ld-line3); border-radius: 8px; flex: 1; display: flex; align-items: center; padding: 0 10px; font-weight: 600; }
 .gp-cnote { font-size: 12px; color: var(--ld-warn); background: var(--ld-warn-bg); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; }
 .gp-crow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--ld-line2); border-left: 0; border-right: 0; border-top: 0; background: none; font: inherit; font-size: 13.5px; color: var(--ld-ink); text-align: left; width: 100%; cursor: default; }

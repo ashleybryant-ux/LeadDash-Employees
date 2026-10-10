@@ -781,11 +781,19 @@ async function assigned(orgId: number, t: PjTask, before: Assignee[], after: Ass
 /** What an employee made, worded for the task's comment: each card's title, what it says, and where it is. */
 export function workText(cards: { type: string; title: string; subtitle?: string; body?: string; url?: string | null }[]) {
   const skip = new Set(["choices", "browser_live", "limit_note", "question", "onboarding_q", "layout_choice"]);
-  return cards
-    .filter((c) => !skip.has(c.type) && (c.title || c.body))
-    .map((c) => [c.title ? `${c.title}${c.subtitle ? ` (${c.subtitle})` : ""}` : "", c.body?.trim() ?? "", c.url ? c.url : ""].filter(Boolean).join("\n"))
-    .join("\n\n")
-    .slice(0, 9000);
+  const clean = (t: string) =>
+    t
+      .replace(/\s[\u2013\u2014]\s/g, ": ")
+      .replace(/[\u2013\u2014]/g, "-")
+      .split("\n")
+      .filter((l) => !["undefined", "null"].includes(l.trim()))
+      .join("\n");
+  return clean(
+    cards
+      .filter((c) => !skip.has(c.type) && (c.title || c.body))
+      .map((c) => [c.title ? `${c.title}${c.subtitle ? ` (${c.subtitle})` : ""}` : "", c.body?.trim() ?? "", c.url ? c.url : ""].filter(Boolean).join("\n"))
+      .join("\n\n")
+  ).slice(0, 12000);
 }
 
 /**
@@ -817,7 +825,15 @@ export async function askEmployee(orgId: number, t: PjTask, e: Owner, said: stri
       from: "Projects",
     });
     const made = workText(r.cards);
-    const text = r.action === "none" ? `I can't do this one with what I have${r.text ? `: ${r.text}` : "."}` : [r.text || "Done. Here is what I made.", made].filter(Boolean).join("\n\n");
+    // What it made goes in the task's description, under the task's own words; the comment says it is there.
+    if (made) {
+      const cur = db.work.tasks.get(orgId, t.id);
+      const own = (cur?.description ?? "").trim();
+      const mark = `What ${emp.name} made`;
+      const kept = own.includes(`\n${mark}\n`) ? own.slice(0, own.indexOf(`\n${mark}\n`)).trim() : own.startsWith(`${mark}\n`) ? "" : own;
+      await updateTask(orgId, t.id, { description: `${kept ? `${kept}\n\n` : ""}${mark}\n${made}`.slice(0, 20_000) }, by, { quiet: true });
+    }
+    const text = r.action === "none" ? `I can't do this one with what I have${r.text ? `: ${r.text}` : "."}` : `${r.text || "Done."}${made ? " What I made is in the description." : ""}`;
     await comment(orgId, t.id, text, by);
     if (r.action === "none" && list) {
       // Back to open so a person picks it up.

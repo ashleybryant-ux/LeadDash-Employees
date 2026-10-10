@@ -202,7 +202,7 @@ export function Customize({
         <>
           {head("Customize view")}
           <div className="gp-cname">
-            <span className="gp-cbox" aria-hidden="true">{{ list: "☰", board: "▦", calendar: "▭", gantt: "▬", table: "▤", workload: "▥", timeline: "▭", mindmap: "⟡" }[view]}</span>
+            <span className="gp-cvbox" aria-hidden="true">{{ list: "☰", board: "▦", calendar: "▭", gantt: "▬", table: "▤", workload: "▥", timeline: "▭", mindmap: "⟡" }[view]}</span>
             <span className="gp-cin gp-ell">{saved ? saved.name : kindName}</span>
             {saved && saved.mine && <button type="button" className="ld-btn sm gp-auto" onClick={onSaveAs}>Rename</button>}
           </div>

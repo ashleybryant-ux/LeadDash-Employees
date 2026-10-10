@@ -172,7 +172,8 @@ describe("Projects", () => {
     expect(doTask.mock.calls[0][1]).toMatchObject({ title: "Founding member landing page", project: "Founding Members" });
     const d = await me.pj.task({ organizationId: orgId, id: t.id });
     // What it made is on the task itself: the words, then each card's title, body and link (quick-reply choices left out).
-    expect(d.comments.find((c) => c.kind === "comment")).toMatchObject({ authorName: jordan.name, body: "Built the founding member page.\n\nFounding member offer (Draft 1)\nHeadline: Join the founding 12.\nhttps://leaddash.io/founding" });
+    expect(d.comments.find((c) => c.kind === "comment")).toMatchObject({ authorName: jordan.name, body: "Built the founding member page. What I made is in the description." });
+    expect(d.task.description).toBe(`What ${jordan.name} made\nFounding member offer (Draft 1)\nHeadline: Join the founding 12.\nhttps://leaddash.io/founding`);
     expect(d.comments.some((c) => c.kind === "activity" && c.body === `${jordan.name} started on it`)).toBe(true);
     expect(d.task.status).toBe("in progress"); // started
     await me.pj.update({ organizationId: orgId, id: t.id, patch: { status: "complete" } });
