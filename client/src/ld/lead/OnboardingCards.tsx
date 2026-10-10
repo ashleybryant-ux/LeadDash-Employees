@@ -9,7 +9,7 @@ import { Buttons, Choice } from "../sales/OnboardingCards";
 const JOINS_LABEL: Record<string, string> = { mine: "Meetings you set up (you are the organizer on the calendar)", any: "Every meeting with a Zoom, Google Meet or Teams link", picked: "Only meetings you turn on" };
 
 const grid: React.CSSProperties = { padding: "18px 20px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24 };
-const small: React.CSSProperties = { fontSize: 12, color: "#5b6b64", lineHeight: 1.45 };
+const small: React.CSSProperties = { fontSize: 12, color: "var(--ld-muted)", lineHeight: 1.45 };
 
 function Row({ label, children, note }: { label: string; children: React.ReactNode; note?: string }) {
   return (

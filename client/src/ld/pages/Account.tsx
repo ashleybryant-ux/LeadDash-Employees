@@ -7,6 +7,7 @@ import { fmtDate, fmtTime } from "../meta";
 import { useTenant } from "@/contexts/TenantContext";
 import { currentSubscription, needsHomeScreen, pushSupported, subscribe, unsubscribeHere } from "../push";
 import { playSound, type SoundKind } from "../sounds";
+import { applyTheme, useTheme, type Theme } from "../theme";
 
 type Prefs = Record<string, { push: boolean; email: boolean; sound: boolean }>;
 type Sound = { kind: SoundKind; volume: number };
@@ -33,6 +34,7 @@ export default function Account() {
             </section>
           )}
           {a.staff && <ReviewCard />}
+          <AppearanceCard />
           <PushCard pushReady={a.pushReady} vapid={a.vapidPublicKey} devices={a.devices} />
           {!chatOnly && <ConnectorCard />}
           <PrefsCard prefs={a.prefs as Prefs} sound={a.sound as Sound} events={chatOnly ? a.events.filter((e) => e.key === "team_message") : a.events} />
@@ -44,6 +46,51 @@ export default function Account() {
       )}
       <ErrorLine error={account.error} />
     </Page>
+  );
+}
+
+const THEME_LABEL: Record<Theme, string> = { light: "Light", dark: "Dark", system: "Match my device" };
+
+/** Appearance: light, dark, or match the device. Saved on the account so every device follows it. */
+function AppearanceCard() {
+  const utils = trpc.useUtils();
+  const theme = useTheme();
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState<Theme>(theme);
+  const save = trpc.auth.setTheme.useMutation({
+    onSuccess: async (r) => {
+      applyTheme(r.theme);
+      setEditing(false);
+      await utils.auth.me.invalidate();
+    },
+  });
+  return (
+    <section className={`ld-card ${editing ? "editing" : ""}`}>
+      <div className="ld-between" style={{ padding: "14px 18px" }}>
+        <span>
+          <span className="ld-strong">Appearance</span>
+          {!editing && <span className="ld-small ld-muted" style={{ display: "block" }}>{THEME_LABEL[theme]}</span>}
+        </span>
+        {!editing && <button type="button" className="ld-btn sm" onClick={() => { setDraft(theme); setEditing(true); }}>Edit</button>}
+      </div>
+      {editing && (
+        <div style={{ padding: "0 18px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="ld-row" role="radiogroup" aria-label="Appearance" style={{ flexWrap: "wrap" }}>
+            {(["light", "dark", "system"] as Theme[]).map((t) => (
+              <label key={t} className="ld-row ld-small" style={{ gap: 6 }}>
+                <input type="radio" name="theme" checked={draft === t} onChange={() => { setDraft(t); applyTheme(t); }} />
+                {THEME_LABEL[t]}
+              </label>
+            ))}
+          </div>
+          <span className="ld-row">
+            <button type="button" className="ld-btn sm" onClick={() => { applyTheme(theme); setEditing(false); }}>Cancel</button>
+            <button type="button" className="ld-btn p sm" disabled={save.isPending} onClick={() => save.mutate({ theme: draft })}>Save</button>
+          </span>
+          <ErrorLine error={save.error} />
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -95,20 +142,20 @@ function YouCard({ name, email, photo }: { name: string; email: string; photo: s
               {photo && <button type="button" className="ld-btn sm" style={{ width: 120 }} disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</button>}
             </>
           )}
-          {!editing && !photo && <span style={{ color: "#8a9a93" }}>Not set. Your initials show until you add one.</span>}
+          {!editing && !photo && <span style={{ color: "var(--ld-soft2)" }}>Not set. Your initials show until you add one.</span>}
         </span>
         <span className="ld-k">Name</span>
         {editing ? (
           <input className="ld-in" style={{ maxWidth: 320 }} value={draft} maxLength={120} onChange={(e) => setDraft(e.target.value)} aria-label="Name" />
         ) : (
-          <span style={{ color: name ? undefined : "#8a9a93" }}>{name || "Not set. Your employees see your email until you add it."}</span>
+          <span style={{ color: name ? undefined : "var(--ld-soft2)" }}>{name || "Not set. Your employees see your email until you add it."}</span>
         )}
         <span className="ld-k">Email</span>
         <span style={{ overflowWrap: "anywhere" }}>{email}</span>
       </div>
       <div style={{ padding: "0 18px 12px" }}>
         <ErrorLine error={save.error ?? upload.error ?? remove.error} />
-        {fileError && <span className="ld-small" style={{ color: "#b42318" }}>{fileError}</span>}
+        {fileError && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{fileError}</span>}
       </div>
     </section>
   );
@@ -190,7 +237,7 @@ function PushCard({ pushReady, vapid, devices }: { pushReady: boolean; vapid: st
             </div>
           );
         })}
-        {error && <p role="alert" className="ld-small" style={{ color: "#b42318", margin: "8px 0 0" }}>{error}</p>}
+        {error && <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: "8px 0 0" }}>{error}</p>}
         <ErrorLine error={test.error} />
       </div>
       {needsHomeScreen() && (
@@ -213,14 +260,14 @@ function PrefsCard({ prefs, sound, events }: { prefs: Prefs; sound: Sound; event
       await utils.account.get.invalidate();
     },
   });
-  const cell = (on: boolean) => <span style={{ fontWeight: 700, color: on ? "#155c3e" : "#5b6b64" }}>{on ? "On" : "Off"}</span>;
+  const cell = (on: boolean) => <span style={{ fontWeight: 700, color: on ? "var(--ld-accent-dark)" : "var(--ld-muted)" }}>{on ? "On" : "Off"}</span>;
   const COLS = "minmax(0,1fr) 64px 64px 64px";
   const open = () => {
     setDraft(prefs);
     setSnd(sound);
     setEditing(true);
   };
-  const box = (label: string, on: boolean, set: (v: boolean) => void) => <input type="checkbox" checked={on} aria-label={label} onChange={(ev) => set(ev.target.checked)} style={{ width: 20, height: 20, accentColor: "#1b6b4a" }} />;
+  const box = (label: string, on: boolean, set: (v: boolean) => void) => <input type="checkbox" checked={on} aria-label={label} onChange={(ev) => set(ev.target.checked)} style={{ width: 20, height: 20, accentColor: "var(--ld-accent)" }} />;
   return (
     <section className={`ld-card ${editing ? "editing" : ""}`}>
       <div className="ld-sh">
@@ -275,7 +322,7 @@ function PrefsCard({ prefs, sound, events }: { prefs: Prefs; sound: Sound; event
             </span>
             <b>Volume</b>
             <span className="ld-row" style={{ gap: 10 }}>
-              <input type="range" min={0} max={100} step={5} value={snd.volume} aria-label="Volume" onChange={(ev) => setSnd((x) => ({ ...x, volume: Number(ev.target.value) }))} style={{ width: 180, accentColor: "#1b6b4a" }} />
+              <input type="range" min={0} max={100} step={5} value={snd.volume} aria-label="Volume" onChange={(ev) => setSnd((x) => ({ ...x, volume: Number(ev.target.value) }))} style={{ width: 180, accentColor: "var(--ld-accent)" }} />
               <button type="button" className="ld-btn sm" onClick={() => playSound(snd.kind, snd.volume)}>Play</button>
             </span>
           </div>
@@ -380,7 +427,7 @@ function ReviewCard() {
           <input id="rv-email" className="ld-in" style={{ maxWidth: 320 }} type="email" value={draft.email} maxLength={320} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} />
           <span className="ld-k">Code</span>
           <span className="ld-row" style={{ gap: 12 }}>
-            <span style={r.code ? { fontWeight: 800, letterSpacing: "0.18em", fontSize: 16 } : { color: "#8a9a93" }}>{r.code ? spaced(r.code) : "Made when you save"}</span>
+            <span style={r.code ? { fontWeight: 800, letterSpacing: "0.18em", fontSize: 16 } : { color: "var(--ld-soft2)" }}>{r.code ? spaced(r.code) : "Made when you save"}</span>
             {r.code && (
               <button
                 type="button"
@@ -402,7 +449,7 @@ function ReviewCard() {
           <span className="ld-k">Email</span>
           <span style={{ overflowWrap: "anywhere" }}>{r.email}</span>
           <span className="ld-k">Code</span>
-          <span style={r.code ? { fontWeight: 800, letterSpacing: "0.18em", fontSize: 16 } : { color: "#8a9a93" }}>{r.code ? spaced(r.code) : "Made when you turn it on"}</span>
+          <span style={r.code ? { fontWeight: 800, letterSpacing: "0.18em", fontSize: 16 } : { color: "var(--ld-soft2)" }}>{r.code ? spaced(r.code) : "Made when you turn it on"}</span>
           <span className="ld-k">Opens</span>
           <span>{r.opens}</span>
           <span className="ld-k">Ends</span>

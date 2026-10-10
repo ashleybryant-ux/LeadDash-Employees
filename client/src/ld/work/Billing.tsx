@@ -44,7 +44,7 @@ export default function Billing() {
         </span>
       </div>
       <ErrorLine error={refresh.error} />
-      {v.error && <div className="ld-card" style={{ padding: "10px 14px", color: "#b42318", fontSize: 13 }}>{v.error}</div>}
+      {v.error && <div className="ld-card" style={{ padding: "10px 14px", color: "var(--ld-bad)", fontSize: 13 }}>{v.error}</div>}
       {!s && <div className="ld-empty">Connected as {v.practice}. The first read is on its way; press Read now to do it this minute.</div>}
       {s && (tab === "today" || tab === "denials") && (
         <>

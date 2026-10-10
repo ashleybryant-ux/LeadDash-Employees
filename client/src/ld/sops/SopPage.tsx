@@ -187,13 +187,13 @@ function Editor({ s, onDone }: { s: SopFull; onDone: () => void }) {
                 <button type="button" className="ld-btn xs" onClick={() => set(i, { imageUrl: null })} disabled={!st.imageUrl}>No shot</button>
                 <button type="button" className="ld-btn xs" onClick={() => move(i, -1)} disabled={i === 0}>Up</button>
                 <button type="button" className="ld-btn xs" onClick={() => move(i, 1)} disabled={i === steps.length - 1}>Down</button>
-                <button type="button" className="ld-btn xs" style={{ color: "#b42318" }} onClick={() => setSteps((all) => all.filter((_, k) => k !== i))}>Remove</button>
+                <button type="button" className="ld-btn xs" style={{ color: "var(--ld-bad)" }} onClick={() => setSteps((all) => all.filter((_, k) => k !== i))}>Remove</button>
               </div>
             </div>
           ))}
         </div>
       </section>
-      {error && <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>}
+      {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
     </>
   );
 }

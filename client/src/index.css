@@ -68,7 +68,7 @@
   --sidebar-ring: #0d7858;
 }
 
-.dark {
+.dark, html[data-theme="dark"] {
   --primary: #10916a;
   --primary-foreground: #ffffff;
   --sidebar-primary: #10916a;

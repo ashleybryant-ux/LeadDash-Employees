@@ -159,7 +159,7 @@ function AddPanel({ emp, folders, start, onDone }: { emp: EmployeeRow; folders: 
   const addLink = trpc.employeeKnowledge.addLink.useMutation();
   const addText = trpc.employeeKnowledge.addText.useMutation();
   const fileRef = React.useRef<HTMLInputElement>(null);
-  const seg = (on: boolean, lastOne = false): React.CSSProperties => ({ height: 34, padding: "0 16px", border: 0, borderRight: lastOne ? 0 : "1px solid #cfd9d4", background: on ? "#e6f2ec" : "#fff", color: on ? "#155c3e" : "#3d4c45", font: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" });
+  const seg = (on: boolean, lastOne = false): React.CSSProperties => ({ height: 34, padding: "0 16px", border: 0, borderRight: lastOne ? 0 : "1px solid #cfd9d4", background: on ? "var(--ld-accent-bg)" : "#fff", color: on ? "var(--ld-accent-dark)" : "var(--ld-text2)", font: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" });
 
   const save = async () => {
     setError(null);
@@ -183,7 +183,7 @@ function AddPanel({ emp, folders, start, onDone }: { emp: EmployeeRow; folders: 
   };
 
   return (
-    <div style={{ background: "#f4f8f6", padding: "16px 18px", borderBottom: "1px solid #e3e9e6", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
+    <div style={{ background: "var(--ld-hover)", padding: "16px 18px", borderBottom: "1px solid #e3e9e6", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
         <span className="ld-st">Add to {emp.name}'s knowledge</span>
         <div role="group" aria-label="What you are adding" style={{ display: "flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", width: "max-content" }}>
@@ -227,7 +227,7 @@ function AddPanel({ emp, folders, start, onDone }: { emp: EmployeeRow; folders: 
           </div>
         )}
         <span className="ld-small ld-muted">{mode === "file" ? "PDF (scanned too), Word, Excel, PowerPoint or text" : mode === "link" ? "The page's text is saved" : "Boilerplate, facts, answers you reuse"}</span>
-        {error && <span className="ld-small" role="alert" style={{ color: "#b42318" }}>{error}</span>}
+        {error && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>{error}</span>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <button type="button" className="ld-btn p" disabled={busy} onClick={save}>{busy ? "Reading..." : "Save"}</button>

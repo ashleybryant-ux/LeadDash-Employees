@@ -103,7 +103,7 @@ export default function Leads({ emp }: { emp: EmployeeRow }) {
                         <KV label={`${emp.name} replied`}>
                           {l.reply.publishedAt ? `${long(l.reply.publishedAt, tz)}${mins !== null && mins <= 120 ? `, ${mins} minute${mins === 1 ? "" : "s"} later` : ""}` : waiting ? "Waiting for your approval" : l.reply.scheduledFor ? `Goes out ${long(l.reply.scheduledFor, tz)}` : "Not sent"}
                         </KV>
-                        <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "#fff", padding: "12px 14px", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{l.reply.body}</div>
+                        <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", padding: "12px 14px", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{l.reply.body}</div>
                       </>
                     ) : (
                       <KV label={`${emp.name} replied`}>{l.source === "Reply to outreach" ? "They replied to Jada's email. Answer from your Gmail." : "No reply yet. Connect Google on Integrations so replies can go out."}</KV>

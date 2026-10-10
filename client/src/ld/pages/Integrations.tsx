@@ -66,7 +66,7 @@ const tile: React.CSSProperties = {
   cursor: "pointer",
   boxSizing: "border-box",
 };
-const okTile: React.CSSProperties = { ...tile, background: "#e6f2ec", color: "#155c3e", cursor: "default" };
+const okTile: React.CSSProperties = { ...tile, background: "var(--ld-accent-bg)", color: "var(--ld-accent-dark)", cursor: "default" };
 const warnTile: React.CSSProperties = { ...tile, background: "#fdf0e3", color: "#8a4510" };
 
 export default function Integrations() {
@@ -108,7 +108,7 @@ export default function Integrations() {
       <SendingAddresses />
       <PressInbox />
       {notice && (
-        <div role="status" className="ld-card" style={{ padding: "12px 16px", borderColor: notice.ok ? "#1b6b4a" : "#e2a7a1", background: notice.ok ? "#f1f8f4" : "#fdf3f2", fontSize: 14, fontWeight: 600, color: notice.ok ? "#155c3e" : "#b42318" }}>
+        <div role="status" className="ld-card" style={{ padding: "12px 16px", borderColor: notice.ok ? "var(--ld-accent)" : "#e2a7a1", background: notice.ok ? "#f1f8f4" : "#fdf3f2", fontSize: 14, fontWeight: 600, color: notice.ok ? "var(--ld-accent-dark)" : "var(--ld-bad)" }}>
           {notice.text}
         </div>
       )}
@@ -119,7 +119,7 @@ export default function Integrations() {
         placeholder="Search integrations"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ height: 44, border: "1px solid #cfd9d4", borderRadius: 10, padding: "0 14px", font: "inherit", fontSize: 14, background: "#fff", boxSizing: "border-box" }}
+        style={{ height: 44, border: "1px solid #cfd9d4", borderRadius: 10, padding: "0 14px", font: "inherit", fontSize: 14, background: "var(--ld-surface)", boxSizing: "border-box" }}
       />
 
       <FolderTabs
@@ -199,7 +199,7 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
       </>
     );
   } else if (!ready) {
-    right = <span style={{ ...tile, background: "#eef2f0", color: "#5b6b64", cursor: "default" }}>{loading ? "..." : "Coming soon"}</span>;
+    right = <span style={{ ...tile, background: "var(--ld-line2)", color: "var(--ld-muted)", cursor: "default" }}>{loading ? "..." : "Coming soon"}</span>;
   } else {
     right = <button type="button" className="ld-btn p" onClick={connect}>Connect</button>;
   }
@@ -224,8 +224,8 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
       </div>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontWeight: 800, fontSize: 15 }}>{item.name}</div>
-        <div style={{ fontSize: 13, color: "#3d4c45", lineHeight: 1.45, marginTop: 2 }}>{item.desc}</div>
-        {account && <div style={{ fontSize: 13, fontWeight: 700, color: status === "error" ? "#8a4510" : "#155c3e", marginTop: 6, overflowWrap: "anywhere" }}>{account}</div>}
+        <div style={{ fontSize: 13, color: "var(--ld-text2)", lineHeight: 1.45, marginTop: 2 }}>{item.desc}</div>
+        {account && <div style={{ fontSize: 13, fontWeight: 700, color: status === "error" ? "#8a4510" : "var(--ld-accent-dark)", marginTop: 6, overflowWrap: "anywhere" }}>{account}</div>}
         {status === "connected" && item.app === "google_business" && settings.setupNote && (
           <div style={{ fontSize: 12, color: "#8a4510", marginTop: 4 }}>Google has not opened Business Profile access for LeadDash yet. Posts will wait until it does.</div>
         )}
@@ -243,7 +243,7 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
               ))}
             </div>
             {pick && (
-              <span style={{ fontSize: 13, color: "#3d4c45" }}>
+              <span style={{ fontSize: 13, color: "var(--ld-text2)" }}>
                 {settings.pages!.find((x) => x.id === pick)?.igUsername ? `Instagram: @${settings.pages!.find((x) => x.id === pick)?.igUsername} (linked to this page)` : "No Instagram business account is linked to this page."}
               </span>
             )}
@@ -267,7 +267,7 @@ function StatusTile({ conn, isOpen, toggle }: { conn: Conn | undefined; isOpen: 
   return <button type="button" className="ld-btn p" onClick={toggle} aria-expanded={isOpen}>Connect</button>;
 }
 
-const tileBox = (on: boolean): React.CSSProperties => ({ background: "#fff", border: `1px solid ${on ? "#1b6b4a" : "#e3e9e6"}`, borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 });
+const tileBox = (on: boolean): React.CSSProperties => ({ background: "var(--ld-surface)", border: `1px solid ${on ? "var(--ld-accent)" : "var(--ld-line)"}`, borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 });
 
 function TileHead({ logo, color, name, desc, right }: { logo: string; color: string; name: string; desc: string; right: React.ReactNode }) {
   return (
@@ -275,7 +275,7 @@ function TileHead({ logo, color, name, desc, right }: { logo: string; color: str
       <div style={{ width: 44, height: 44, borderRadius: 10, background: color, color: "#fff", fontWeight: 800, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" }} aria-hidden="true">{logo}</div>
       <div>
         <div style={{ fontWeight: 800, fontSize: 15 }}>{name}</div>
-        <div style={{ fontSize: 13, color: "#3d4c45", lineHeight: 1.45 }}>{desc}</div>
+        <div style={{ fontSize: 13, color: "var(--ld-text2)", lineHeight: 1.45 }}>{desc}</div>
       </div>
       {right}
     </div>
@@ -413,7 +413,7 @@ function GrantsGov({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) 
                 <option>Not set yet</option>
               </select>
             </div>
-            {error && <span className="ld-small" style={{ color: "#b42318", gridColumn: "span 2" }}>{error}</span>}
+            {error && <span className="ld-small" style={{ color: "var(--ld-bad)", gridColumn: "span 2" }}>{error}</span>}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <button type="button" className="ld-btn p" disabled={saveReg.isPending} onClick={save}>Save</button>
@@ -550,7 +550,7 @@ function WebsiteLogins() {
               ))}
             </div>
           ) : (
-            <span style={{ fontSize: 14, color: "#3d4c45" }}>{list.isLoading ? "Loading..." : "No logins yet. Add the sites your employees should sign in to, like the LeadDash platform or an agency portal."}</span>
+            <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{list.isLoading ? "Loading..." : "No logins yet. Add the sites your employees should sign in to, like the LeadDash platform or an agency portal."}</span>
           )}
           <span className="ld-small">Every employee can use these in their browser. Passwords are typed into the page directly and never shown to the AI.</span>
         </div>
@@ -614,7 +614,7 @@ function Seg<T extends string>({ value, options, onChange, label }: { value: T; 
   return (
     <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", alignSelf: "flex-start", justifySelf: "start" }}>
       {options.map((o) => (
-        <button key={o.key} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, background: value === o.key ? "#e6f2ec" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "#155c3e" : "#3d4c45", cursor: "pointer", whiteSpace: "nowrap" }}>
+        <button key={o.key} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, background: value === o.key ? "var(--ld-accent-bg)" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
           {o.label}
         </button>
       ))}
@@ -662,14 +662,14 @@ function Calendars() {
                 <React.Fragment key={r.id}>
                   <b style={{ ...CLIP, display: "flex", alignItems: "center", gap: 8 }}><span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 999, background: r.color, flexShrink: 0 }} />{r.name}</b>
                   <span style={CLIP} title={r.email ?? undefined}>{r.kind === "link" ? "Outlook or iCloud link" : r.email ?? "Google"}</span>
-                  <span style={{ ...CLIP, color: r.status === "error" ? "#b42318" : undefined }}>{r.status === "error" ? "Reconnect needed" : summary(r)}</span>
+                  <span style={{ ...CLIP, color: r.status === "error" ? "var(--ld-bad)" : undefined }}>{r.status === "error" ? "Reconnect needed" : summary(r)}</span>
                   {r.holds === "default" ? <span className="ld-pill green" style={{ justifySelf: "start" }}>Holds go here</span> : <span />}
                   <button type="button" className="ld-btn" onClick={() => { setAdding(null); setEdit({ id: r.id, name: r.name, include: r.calendars.filter((c) => c.include).map((c) => c.id), detail: r.detail, holds: r.holds, url: "" }); }}>Edit</button>
                 </React.Fragment>
               ))}
             </div>
           ) : (
-            <span style={{ fontSize: 14, color: "#3d4c45" }}>{q.isLoading ? "Loading..." : "No calendars yet. Avery uses your main Google calendar until you add them here."}</span>
+            <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{q.isLoading ? "Loading..." : "No calendars yet. Avery uses your main Google calendar until you add them here."}</span>
           )}
           {rows.length > 0 && <span className="ld-small">Avery checks all of these when you ask about your schedule, and warns you when two calendars overlap.</span>}
         </div>
@@ -704,7 +704,7 @@ function Calendars() {
                     {editing.calendars.map((c, i) => (
                       <div key={c.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 200px", gap: 12, alignItems: "center", padding: "8px 0", borderBottom: i < editing.calendars.length - 1 ? "1px solid #eef2f0" : 0 }}>
                         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <input type="checkbox" checked={edit.include.includes(c.id)} style={{ width: 16, height: 16, margin: 0, accentColor: "#1b6b4a" }} onChange={(e) => setEdit({ ...edit, include: e.target.checked ? [...edit.include, c.id] : edit.include.filter((x) => x !== c.id) })} />
+                          <input type="checkbox" checked={edit.include.includes(c.id)} style={{ width: 16, height: 16, margin: 0, accentColor: "var(--ld-accent)" }} onChange={(e) => setEdit({ ...edit, include: e.target.checked ? [...edit.include, c.id] : edit.include.filter((x) => x !== c.id) })} />
                           {c.name}
                         </label>
                         <span className="ld-small">{c.primary ? "Your main calendar" : ""}</span>
@@ -804,14 +804,14 @@ function SendingAddresses() {
               {rows.map((r) => (
                 <React.Fragment key={r.id}>
                   <b style={CLIP}>{r.name}</b>
-                  <span style={{ ...CLIP, color: r.status === "error" ? "#b42318" : undefined }}>{r.status === "error" ? "Reconnect needed" : r.email ?? ""}</span>
+                  <span style={{ ...CLIP, color: r.status === "error" ? "var(--ld-bad)" : undefined }}>{r.status === "error" ? "Reconnect needed" : r.email ?? ""}</span>
                   <span style={CLIP}>{r.sendsFor.length ? `Used by ${r.sendsFor.map(nameOf).join(", ")}` : "No one sends from it yet"}</span>
                   <button type="button" className="ld-btn" onClick={() => { setAdding(null); setEdit({ id: r.id, name: r.name, sendsFor: r.sendsFor }); }}>Edit</button>
                 </React.Fragment>
               ))}
             </div>
           ) : (
-            <span style={{ fontSize: 14, color: "#3d4c45" }}>{q.isLoading ? "Loading..." : "Everyone sends from your main Google account. Add an address on its own domain for outreach so cold email never affects your main one."}</span>
+            <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{q.isLoading ? "Loading..." : "Everyone sends from your main Google account. Add an address on its own domain for outreach so cold email never affects your main one."}</span>
           )}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -837,7 +837,7 @@ function SendingAddresses() {
                   {SENDERS.map((x) => {
                     const on = edit.sendsFor.includes(x.kind);
                     return (
-                      <button key={x.kind} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "#e6f2ec" : "#fff", borderColor: on ? "#1b6b4a" : undefined, color: on ? "#155c3e" : "#14221c" }} onClick={() => setEdit({ ...edit, sendsFor: on ? edit.sendsFor.filter((k) => k !== x.kind) : [...edit.sendsFor, x.kind] })}>
+                      <button key={x.kind} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setEdit({ ...edit, sendsFor: on ? edit.sendsFor.filter((k) => k !== x.kind) : [...edit.sendsFor, x.kind] })}>
                         {nameOf(x.kind)}
                       </button>
                     );
@@ -907,17 +907,17 @@ function PressInbox() {
           {v?.connected ? (
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 28px", fontSize: 14, alignItems: "center" }}>
               <b style={{ overflowWrap: "anywhere" }}>{v.email}</b>
-              <span style={{ color: v.status === "error" ? "#b42318" : undefined }}>{v.status === "error" ? v.error ?? "Can't read the inbox" : v.checkedAt ? `Checked ${fmtDate(v.checkedAt)}, ${fmtTime(v.checkedAt)}` : "Checking soon"}</span>
+              <span style={{ color: v.status === "error" ? "var(--ld-bad)" : undefined }}>{v.status === "error" ? v.error ?? "Can't read the inbox" : v.checkedAt ? `Checked ${fmtDate(v.checkedAt)}, ${fmtTime(v.checkedAt)}` : "Checking soon"}</span>
               <span>{v.found} {v.found === 1 ? "request" : "requests"} found · {v.pitched} {v.pitched === 1 ? "pitch" : "pitches"} started</span>
             </div>
           ) : (
-            <span style={{ fontSize: 14, color: "#3d4c45", lineHeight: 1.5 }}>{q.isLoading ? "Loading..." : "Taylor reads reporter requests from free services the moment they arrive and pitches you for the ones that fit. Sign up for each one as a source with one email address, then connect that inbox here."}</span>
+            <span style={{ fontSize: 14, color: "var(--ld-text2)", lineHeight: 1.5 }}>{q.isLoading ? "Loading..." : "Taylor reads reporter requests from free services the moment they arrive and pitches you for the ones that fit. Sign up for each one as a source with one email address, then connect that inbox here."}</span>
           )}
           <span style={{ fontSize: 14, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <b>Sign up free:</b>
             {services.map((sv, i) => (
               <React.Fragment key={sv.name}>
-                <a href={sv.signup} target="_blank" rel="noreferrer noopener" style={{ color: "#155c3e", fontWeight: 700 }}>{sv.name}</a>
+                <a href={sv.signup} target="_blank" rel="noreferrer noopener" style={{ color: "var(--ld-accent-dark)", fontWeight: 700 }}>{sv.name}</a>
                 {i < services.length - 1 && <span aria-hidden="true">·</span>}
               </React.Fragment>
             ))}
@@ -1095,7 +1095,7 @@ function EhrConnection() {
         </span>
       </div>
       {v?.connected && !editing && (
-        <span style={{ fontSize: 14 }}>{v.viaEhr ? "Connected from LeadDash EHR as " : "Connected as "}<b>{v.practice}</b>{v.fetchedAt ? <span className="ld-small ld-muted"> · last read {fmtDate(v.fetchedAt)}</span> : <span className="ld-small ld-muted"> · first read pending</span>}{v.error ? <span className="ld-small" style={{ color: "#b42318" }}> · last read failed: {v.error}</span> : null}</span>
+        <span style={{ fontSize: 14 }}>{v.viaEhr ? "Connected from LeadDash EHR as " : "Connected as "}<b>{v.practice}</b>{v.fetchedAt ? <span className="ld-small ld-muted"> · last read {fmtDate(v.fetchedAt)}</span> : <span className="ld-small ld-muted"> · first read pending</span>}{v.error ? <span className="ld-small" style={{ color: "var(--ld-bad)" }}> · last read failed: {v.error}</span> : null}</span>
       )}
       {!v?.connected && !editing && <span style={{ fontSize: 14 }}>Harper, Camille and Malik read from LeadDash EHR once it is connected. The key comes from LeadDash EHR, Practice Settings, LeadDash Employees.</span>}
       {editing && (

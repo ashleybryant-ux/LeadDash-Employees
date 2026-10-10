@@ -7,7 +7,7 @@ import { FIELD_TYPE_LABEL, FIELD_TYPES, type FieldDef } from "./fields";
 /** A list's name, folder, statuses and custom fields (every type, on this list or the whole folder), with Save and Cancel. */
 type S = { name: string; color: string; type: "open" | "active" | "done" | "closed" };
 type F = { id: string; name: string; type: FieldDef["type"]; options: string; setup: string; scope: "list" | "folder" };
-const COLORS = ["#87909e", "#1090e0", "#f76808", "#e5484d", "#12a594", "#7c3aed"];
+const COLORS = ["var(--ld-soft3)", "#1090e0", "#f76808", "#e5484d", "#12a594", "#7c3aed"];
 
 export function ListSettings({ c, onClose, onRemoved }: { c: PjCtx; onClose: () => void; onRemoved: () => void }) {
   const l = c.data.list!;

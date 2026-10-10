@@ -99,7 +99,7 @@ function Details({ c }: { c: Change }) {
   const meta = [c.label, c.prNumber ? `Change #${c.prNumber}` : c.issueNumber ? `Issue #${c.issueNumber}` : "", c.files != null ? `${c.files} file${c.files === 1 ? "" : "s"}` : "", c.checks && c.checks !== "no checks" ? c.checks : ""].filter(Boolean).join(" · ");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
-      <span className="ld-small" style={{ color: "#3d4c45" }}>{meta}</span>
+      <span className="ld-small" style={{ color: "var(--ld-text2)" }}>{meta}</span>
       {c.summary.length > 0 ? (
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.6 }}>
           {c.summary.map((p, i) => (
@@ -109,7 +109,7 @@ function Details({ c }: { c: Change }) {
       ) : (
         <span style={{ fontSize: 14, lineHeight: 1.55, overflowWrap: "anywhere" }}>{c.request}</span>
       )}
-      {c.status === "failed" && c.error && <span className="ld-small" style={{ color: "#b42318" }}>{c.error}</span>}
+      {c.status === "failed" && c.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{c.error}</span>}
     </div>
   );
 }
@@ -209,7 +209,7 @@ function Row({ c, open, onToggle }: { c: Change; open: boolean; onToggle: () => 
   const [cls, label] = PILL[c.status];
   return (
     <>
-      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "#f4f8f6", borderBottom: 0 } : {}) }}>
+      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "var(--ld-hover)", borderBottom: 0 } : {}) }}>
         <span className="ld-strong" style={{ overflowWrap: "anywhere" }}>{c.title}</span>
         <span>{c.label}</span>
         <span className={`ld-pill ${cls}`}>{label}</span>

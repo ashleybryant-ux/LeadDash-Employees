@@ -126,7 +126,7 @@ export function BoardPage({ orgId, id, onPick, onOpenTask, refresh }: { orgId: n
       const xs = nums.filter((_, k) => k % 2 === 0);
       const ys = nums.filter((_, k) => k % 2 === 1);
       if (xs.length > 2) {
-        const it: Item = { id: uid(), kind: "pen", x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), color: "#14221c", path, z: topZ() };
+        const it: Item = { id: uid(), kind: "pen", x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), color: "var(--ld-ink)", path, z: topZ() };
         commit([...items, it]);
       }
     }
@@ -244,7 +244,7 @@ export function BoardPage({ orgId, id, onPick, onOpenTask, refresh }: { orgId: n
               <svg className="gp-wb-svg" width={W} height={H}>
                 <defs>
                   <marker id="wbarrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-                    <path d="M0 0 L10 5 L0 10 z" fill="#5b6b64" />
+                    <path d="M0 0 L10 5 L0 10 z" fill="var(--ld-muted)" />
                   </marker>
                 </defs>
                 {items
@@ -264,7 +264,7 @@ export function BoardPage({ orgId, id, onPick, onOpenTask, refresh }: { orgId: n
                     return (
                       <g key={a.id} onPointerDown={(e) => { e.stopPropagation(); setSel([a.id]); }} style={{ cursor: "pointer" }}>
                         <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="transparent" strokeWidth="12" />
-                        <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={sel.includes(a.id) ? "#2563eb" : "#5b6b64"} strokeWidth="2" markerEnd="url(#wbarrow)" />
+                        <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={sel.includes(a.id) ? "#2563eb" : "var(--ld-muted)"} strokeWidth="2" markerEnd="url(#wbarrow)" />
                       </g>
                     );
                   })}
@@ -272,9 +272,9 @@ export function BoardPage({ orgId, id, onPick, onOpenTask, refresh }: { orgId: n
                   .filter((i) => i.kind === "pen")
                   .map((i) => {
                     const m = sel.includes(i.id) ? moving : { dx: 0, dy: 0 };
-                    return <path key={i.id} d={i.path ?? ""} transform={`translate(${m.dx} ${m.dy})`} stroke={sel.includes(i.id) ? "#2563eb" : i.color ?? "#14221c"} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => itemDown(e as unknown as React.PointerEvent, i)} style={{ cursor: "move" }} />;
+                    return <path key={i.id} d={i.path ?? ""} transform={`translate(${m.dx} ${m.dy})`} stroke={sel.includes(i.id) ? "#2563eb" : i.color ?? "var(--ld-ink)"} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => itemDown(e as unknown as React.PointerEvent, i)} style={{ cursor: "move" }} />;
                   })}
-                {drag?.kind === "pen" && <path d={drag.start![0].path} stroke="#14221c" strokeWidth="2.5" fill="none" strokeLinecap="round" />}
+                {drag?.kind === "pen" && <path d={drag.start![0].path} stroke="var(--ld-ink)" strokeWidth="2.5" fill="none" strokeLinecap="round" />}
                 {drag?.kind === "box" && <rect x={Math.min(drag.x0, drag.x)} y={Math.min(drag.y0, drag.y)} width={Math.abs(drag.x - drag.x0)} height={Math.abs(drag.y - drag.y0)} fill="rgba(37,99,235,.08)" stroke="#2563eb" strokeDasharray="4 3" />}
               </svg>
               {items

@@ -192,7 +192,7 @@ export default function Tasks() {
                   <span className="ld-strong">{r.title}</span>
                   {task ? who(task.employeeId, task.employeeName, task.employeeKind) : <span className="ld-muted">Deleted task</span>}
                   {r.status === "failed" ? (
-                    <span className="ld-small" style={{ color: "#b42318", overflowWrap: "anywhere" }}>{r.error || "Failed"}</span>
+                    <span className="ld-small" style={{ color: "var(--ld-bad)", overflowWrap: "anywhere" }}>{r.error || "Failed"}</span>
                   ) : (
                     <span className="ld-pill green">Ran</span>
                   )}
@@ -375,7 +375,7 @@ function TaskEditor({ task, defaultEmployeeId, onDone }: { task: TaskRow | null;
         )}
         <div style={{ gridColumn: "span 2", display: "flex", flexDirection: "column", gap: 4 }}>
           {localError && (
-            <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>
+            <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0 }}>
               {localError}
             </p>
           )}

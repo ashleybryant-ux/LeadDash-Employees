@@ -9,7 +9,7 @@ import type { EmployeeRow } from "../ChatPage";
 type Answer = string | string[];
 const card: React.CSSProperties = { padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 16, alignItems: "start" };
 const col: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 8 };
-const small: React.CSSProperties = { fontSize: 12, color: "#5b6b64", lineHeight: 1.45 };
+const small: React.CSSProperties = { fontSize: 12, color: "var(--ld-muted)", lineHeight: 1.45 };
 
 function useView(employeeId: number) {
   const { currentOrgId } = useTenant();
@@ -43,7 +43,7 @@ export function OnboardingCard({ emp }: { emp: EmployeeRow }) {
           <span style={{ fontWeight: 800, fontSize: 15 }}>My onboarding</span>
           <span className={`ld-pill ${pill.c}`}>{pill.l}</span>
         </div>
-        <span style={{ fontSize: 14, color: "#3d4c45" }}>{s.done ? "Everything you told me is in my Guidelines. You can change any line there." : `${v.total} parts · about 10 minutes · you can stop and pick up later`}</span>
+        <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{s.done ? "Everything you told me is in my Guidelines. You can change any line there." : `${v.total} parts · about 10 minutes · you can stop and pick up later`}</span>
         {!s.done && remind && <span style={small}>{`I'll remind you ${remind}.`}</span>}
         <ErrorLine error={start.error || later.error || tryIt.error} />
       </div>

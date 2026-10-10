@@ -45,7 +45,7 @@ type Ai = { userId: number; used: number; limit: number | null; source: "own" | 
 type Limits = { defaultDollars: number | null; ownersExempt: boolean; warnPct: 0 | 80 | 90; atLimit: "stop" | "warn" };
 
 const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const radio: React.CSSProperties = { margin: 0, accentColor: "#1b6b4a" };
+const radio: React.CSSProperties = { margin: 0, accentColor: "var(--ld-accent)" };
 
 /** This month's AI cost against the person's limit, with a bar that turns orange near it and red at it. */
 function AiCell({ a, warnPct }: { a?: Ai; warnPct: number }) {
@@ -59,7 +59,7 @@ function AiCell({ a, warnPct }: { a?: Ai; warnPct: number }) {
     );
   const pct = a.limit > 0 ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 100;
   const reached = a.used >= a.limit;
-  const color = reached ? "#b42318" : warnPct && pct >= warnPct ? "#e88a3a" : "#1b6b4a";
+  const color = reached ? "var(--ld-bad)" : warnPct && pct >= warnPct ? "#e88a3a" : "var(--ld-accent)";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <span style={{ fontSize: 14 }}>
@@ -68,7 +68,7 @@ function AiCell({ a, warnPct }: { a?: Ai; warnPct: number }) {
       <div style={{ height: 6, borderRadius: 999, background: "#e8eeeb", overflow: "hidden" }} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="AI used this month">
         <div style={{ width: `${pct}%`, height: "100%", background: color }} />
       </div>
-      {reached && <span style={{ fontSize: 12, fontWeight: 700, color: "#b42318" }}>Limit reached</span>}
+      {reached && <span style={{ fontSize: 12, fontWeight: 700, color: "var(--ld-bad)" }}>Limit reached</span>}
     </div>
   );
 }
@@ -89,7 +89,7 @@ function AiLimitsSection({ canEdit }: { canEdit: boolean }) {
   if (!l) return null;
   const amountOk = !edit || edit.amount.trim() === "" || /^\d+(\.\d{1,2})?$/.test(edit.amount.trim().replace(/^\$/, ""));
   return (
-    <section className="ld-card" style={edit ? { borderColor: "#1b6b4a" } : undefined}>
+    <section className="ld-card" style={edit ? { borderColor: "var(--ld-accent)" } : undefined}>
       <div className="ld-between" style={{ padding: "14px 18px", borderBottom: "1px solid #eef2f0" }}>
         <span className="ld-st">AI limits</span>
         {edit ? (
@@ -155,7 +155,7 @@ function AiLimitsSection({ canEdit }: { canEdit: boolean }) {
             <label className="ld-row" style={{ gap: 6 }}><input type="radio" name="ai-at" style={radio} checked={edit.atLimit === "stop"} onChange={() => setEdit({ ...edit, atLimit: "stop" })} />Employees stop starting new work for that person</label>
             <label className="ld-row" style={{ gap: 6 }}><input type="radio" name="ai-at" style={radio} checked={edit.atLimit === "warn"} onChange={() => setEdit({ ...edit, atLimit: "warn" })} />Keep working, just tell me</label>
           </span>
-          {!amountOk && <span style={{ gridColumn: "1 / -1", color: "#b42318", fontSize: 13 }}>Type the limit in dollars, like 20 or 25.50.</span>}
+          {!amountOk && <span style={{ gridColumn: "1 / -1", color: "var(--ld-bad)", fontSize: 13 }}>Type the limit in dollars, like 20 or 25.50.</span>}
           <div style={{ gridColumn: "1 / -1" }}><ErrorLine error={save.error} /></div>
         </div>
       )}
@@ -242,7 +242,7 @@ export default function Team() {
 
       <div className="ld-card" style={{ overflow: "hidden" }}>
         {members.length > 0 && (
-          <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: COLS, gap: 16, padding: "12px 18px 8px", borderBottom: "1px solid #eef2f0", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5b6b64" }}>
+          <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: COLS, gap: 16, padding: "12px 18px 8px", borderBottom: "1px solid #eef2f0", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ld-muted)" }}>
             <span />
             <span>Person</span>
             <span>AI this month</span>
@@ -324,7 +324,7 @@ export default function Team() {
                       <span />
                     </label>
                     {a && <span className="ld-small ld-muted">Used in {a.month}: {money(a.used)}{a.limit != null ? ` of ${money(a.limit)}` : ""}</span>}
-                    {!ownOk && <span style={{ color: "#b42318", fontSize: 13 }}>Type the limit in dollars, like 25 or 40.50.</span>}
+                    {!ownOk && <span style={{ color: "var(--ld-bad)", fontSize: 13 }}>Type the limit in dollars, like 25 or 40.50.</span>}
                     <ErrorLine error={updateRole.error ?? setLimit.error ?? setChatAccess.error ?? remove.error} />
                   </fieldset>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, gridColumn: 4, gridRow: "1 / 3" }}>

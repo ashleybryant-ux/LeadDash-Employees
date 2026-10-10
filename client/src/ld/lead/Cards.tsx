@@ -28,7 +28,7 @@ export function LaunchPlanCard({ id }: { id: number }) {
           <span style={{ fontWeight: 800, fontSize: 15 }}>{v.launch.name}</span>
           <span className={`ld-pill ${st === "planning" ? "amber" : st === "dropped" ? "gray" : "green"}`}>{st === "planning" ? "Waiting for you" : st === "dropped" ? "Not now" : st === "done" ? "Done" : "Started"}</span>
         </div>
-        <span style={{ fontSize: 14, color: "#3d4c45" }}>{`Launch day ${day(v.launch.launchDate, tz)} · ${v.milestones.length} milestones · ${v.tasks.length} task${v.tasks.length === 1 ? "" : "s"} · ${owners} owner${owners === 1 ? "" : "s"}`}</span>
+        <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{`Launch day ${day(v.launch.launchDate, tz)} · ${v.milestones.length} milestones · ${v.tasks.length} task${v.tasks.length === 1 ? "" : "s"} · ${owners} owner${owners === 1 ? "" : "s"}`}</span>
         <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: "170px minmax(0,1fr)", gap: "4px 14px", fontSize: 14, lineHeight: 1.5 }}>
           {v.milestones.map((m) => (
             <React.Fragment key={m.id}>
@@ -37,11 +37,11 @@ export function LaunchPlanCard({ id }: { id: number }) {
             </React.Fragment>
           ))}
         </div>
-        <span style={{ fontSize: 13, color: "#5b6b64" }}>
+        <span style={{ fontSize: 13, color: "var(--ld-muted)" }}>
           {v.launch.pjListId ? <>In Projects: <Link href={`/projects?list=${v.launch.pjListId}`}>{`Launches › ${v.launch.name}`}</Link></> : `Goes to Projects: Launches folder, new list "${v.launch.name}"`}
         </span>
         <ErrorLine error={approve.error || drop.error} />
-        {approve.data?.error && <span className="ld-small" style={{ color: "#b42318" }}>{`Started, but Projects said: ${approve.data.error}`}</span>}
+        {approve.data?.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{`Started, but Projects said: ${approve.data.error}`}</span>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {st === "planning" && <button type="button" className="ld-btn p" disabled={approve.isPending} onClick={() => approve.mutate({ organizationId: currentOrgId, id })}>{approve.isPending ? "Starting..." : "Approve plan"}</button>}
@@ -71,7 +71,7 @@ export function MeetingAgendaCard({ id }: { id: number }) {
           <span style={{ fontWeight: 800, fontSize: 15 }}>{m.title}</span>
           <span className={`ld-pill ${st.c}`}>{st.l}</span>
         </div>
-        <span style={{ fontSize: 14, color: "#3d4c45" }}>{`${day(m.startsAt, tz)}, ${time(m.startsAt, tz)} to ${time(end, tz)} · ${m.linkKind === "zoom" ? "Zoom" : "Google Meet"} · ${m.attendees.map((a: { name: string }) => a.name).join(", ") || "No one yet"}`}</span>
+        <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{`${day(m.startsAt, tz)}, ${time(m.startsAt, tz)} to ${time(end, tz)} · ${m.linkKind === "zoom" ? "Zoom" : "Google Meet"} · ${m.attendees.map((a: { name: string }) => a.name).join(", ") || "No one yet"}`}</span>
         <AgendaList items={m.agenda} />
         <ErrorLine error={invite.error} />
       </div>
@@ -108,7 +108,7 @@ export function MeetingNotesCard({ id }: { id: number }) {
           <span style={{ fontWeight: 800, fontSize: 15 }}>{r.title}</span>
           <span className={`ld-pill ${st.c}`}>{st.l}</span>
         </div>
-        <span style={{ fontSize: 14, color: "#3d4c45" }}>{[`${day(r.startsAt, tz)}`, r.heldMinutes ? `${r.heldMinutes} minute${r.heldMinutes === 1 ? "" : "s"}` : null, who || null].filter(Boolean).join(" · ")}</span>
+        <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{[`${day(r.startsAt, tz)}`, r.heldMinutes ? `${r.heldMinutes} minute${r.heldMinutes === 1 ? "" : "s"}` : null, who || null].filter(Boolean).join(" · ")}</span>
         {r.summary && <NotesBody summary={r.summary.summary} decisions={r.summary.decisions} questions={r.summary.questions} items={r.actionItems} compact />}
         {r.actionItems.length > 0 && <span className="ld-small ld-muted">{byOwner}</span>}
         <ErrorLine error={recap.error} />

@@ -59,11 +59,11 @@ function GraphicFace({ s, theme, small }: { s: Slide; theme: { dark: string; acc
   if (s.kind === "stat") {
     const pct = ringPercent(s.figure);
     return (
-      <div className={cls} style={{ background: "#fff" }}>
+      <div className={cls} style={{ background: "var(--ld-surface)" }}>
         {bar}
         {pct !== null ? (
           <svg viewBox="0 0 100 100" className="ld-g-ring" aria-hidden="true">
-            <circle cx="50" cy="50" r="40" fill="none" stroke="#eef2f0" strokeWidth="13" />
+            <circle cx="50" cy="50" r="40" fill="none" stroke="var(--ld-line2)" strokeWidth="13" />
             <circle cx="50" cy="50" r="40" fill="none" stroke={theme.accent} strokeWidth="13" strokeDasharray={`${(pct / 100) * 251.3} 251.3`} transform="rotate(-90 50 50)" />
           </svg>
         ) : null}
@@ -77,7 +77,7 @@ function GraphicFace({ s, theme, small }: { s: Slide; theme: { dark: string; acc
   }
   if (s.kind === "steps")
     return (
-      <div className={cls} style={{ background: "#fff" }}>
+      <div className={cls} style={{ background: "var(--ld-surface)" }}>
         {bar}
         {h()}
         <div className="ld-g-steps">
@@ -118,7 +118,7 @@ function GraphicFace({ s, theme, small }: { s: Slide; theme: { dark: string; acc
     const colors = [theme.dark, theme.accent, "#8AA39A"];
     const max = Math.max(1, ...items.flatMap((x) => x.values ?? []));
     return (
-      <div className={cls} style={{ background: "#fff" }}>
+      <div className={cls} style={{ background: "var(--ld-surface)" }}>
         {bar}
         {h()}
         {series.length > 1 && (
@@ -398,12 +398,12 @@ export function SlideFace({ s, theme, event, headshot, small }: { s: Slide; them
   }
   if (s.kind === "big") {
     return (
-      <div className={`ld-slide ${small ? "sm" : ""}`} style={{ background: "#fff", color: "#24332c" }}>
+      <div className={`ld-slide ${small ? "sm" : ""}`} style={{ background: "var(--ld-surface)", color: "#24332c" }}>
         <span className="ld-slide-bar" style={{ background: theme.accent }} />
         <div className="ld-slide-big">
           <div className="ld-slide-huge" style={{ color: theme.dark }}>{s.title}</div>
           {s.points.map((p, i) => (
-            <div key={i} className="ld-slide-sub" style={{ color: "#3d4c45" }}>{p}</div>
+            <div key={i} className="ld-slide-sub" style={{ color: "var(--ld-text2)" }}>{p}</div>
           ))}
         </div>
       </div>
@@ -411,7 +411,7 @@ export function SlideFace({ s, theme, event, headshot, small }: { s: Slide; them
   }
   const picLeft = s.kind === "activity";
   return (
-    <div className={`ld-slide ${small ? "sm" : ""}`} style={{ background: s.kind === "activity" ? "#f4f8f6" : "#fff", color: "#24332c" }}>
+    <div className={`ld-slide ${small ? "sm" : ""}`} style={{ background: s.kind === "activity" ? "var(--ld-hover)" : "#fff", color: "#24332c" }}>
       {pic && <img src={pic} alt="" className="ld-slide-img" style={{ top: 0, bottom: 0, height: "100%", width: picLeft ? "37%" : "43%", [picLeft ? "left" : "right"]: 0 }} />}
       {(!pic || !picLeft) && <span className="ld-slide-bar" style={{ background: theme.accent }} />}
       <div className="ld-slide-body" style={pic ? (picLeft ? { left: "40%" } : { right: "45%" }) : undefined}>

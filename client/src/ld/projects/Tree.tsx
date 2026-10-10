@@ -18,7 +18,7 @@ import { NAV, NAV_ICONS, navIcon, navLabel, type NavKey } from "./Sidebar";
  * at the bottom and open read only. On a phone it opens as a drawer. A guest
  * sees only the lists and docs shared with them.
  */
-const COLORS = ["#1b6b4a", "#b45309", "#7c3aed", "#2563eb", "#0f766e", "#9a4f2c", "#c2253c", "#4b5563"];
+const COLORS = ["var(--ld-accent)", "#b45309", "#7c3aed", "#2563eb", "#0f766e", "#9a4f2c", "#c2253c", "#4b5563"];
 type Tree = Outputs["pj"]["tree"];
 type Kind = "folder" | "list" | "doc" | "board" | "form";
 const ICON: Record<string, string> = { doc: "📄", board: "▢", form: "☰" };

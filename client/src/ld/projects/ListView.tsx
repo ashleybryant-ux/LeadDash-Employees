@@ -58,12 +58,12 @@ export function dueBucket(due: string | null, today: string): string {
 }
 const DUE_BUCKETS: { key: string; label: string; color: string }[] = [
   { key: "overdue", label: "Overdue", color: "#c2253c" },
-  { key: "today", label: "Today", color: "#1b6b4a" },
+  { key: "today", label: "Today", color: "var(--ld-accent)" },
   { key: "tomorrow", label: "Tomorrow", color: "#2563eb" },
   { key: "week", label: "This week", color: "#0f766e" },
   { key: "next", label: "Next week", color: "#7c3aed" },
   { key: "later", label: "Later", color: "#475569" },
-  { key: "none", label: "No date", color: "#87909e" },
+  { key: "none", label: "No date", color: "var(--ld-soft3)" },
 ];
 
 /** Tasks with their subtasks as rows of their own (Subtasks: separate). */
@@ -80,7 +80,7 @@ export function groupsOf(c: PjCtx): Group[] {
   const order = (groups: Group[]) => (c.dir === "desc" ? [...groups].reverse() : groups);
   if (c.group === "tags") {
     const names = Array.from(new Set(t.flatMap((x) => x.tags))).sort();
-    return order([...names.map((n) => ({ key: `t:${n}`, label: n, color: "#0f766e", tasks: t.filter((x) => x.tags.includes(n)) })), { key: "none", label: "No tags", color: "#87909e", tasks: t.filter((x) => !x.tags.length) }].filter((g) => g.tasks.length || keepEmpty));
+    return order([...names.map((n) => ({ key: `t:${n}`, label: n, color: "#0f766e", tasks: t.filter((x) => x.tags.includes(n)) })), { key: "none", label: "No tags", color: "var(--ld-soft3)", tasks: t.filter((x) => !x.tags.length) }].filter((g) => g.tasks.length || keepEmpty));
   }
   if (c.group === "due") return order(DUE_BUCKETS.map((b) => ({ key: b.key, label: b.label, color: b.color, tasks: t.filter((x) => dueBucket(x.dueDate, today) === b.key) })).filter((g) => g.tasks.length || keepEmpty));
   if (c.group.startsWith("f:")) {
@@ -97,7 +97,7 @@ export function groupsOf(c: PjCtx): Group[] {
     const opts = (f as { options?: string[] }).options ?? [];
     const found = Array.from(new Set(t.flatMap(valueOf)));
     const names = [...opts.filter((o) => found.includes(o) || keepEmpty), ...found.filter((n) => !opts.includes(n)).sort()];
-    return order([...names.map((n) => ({ key: `v:${n}`, label: n, color: "#2563eb", tasks: t.filter((x) => valueOf(x).includes(n)) })), { key: "none", label: `No ${f.name}`, color: "#87909e", tasks: t.filter((x) => !valueOf(x).length) }].filter((g) => g.tasks.length || keepEmpty));
+    return order([...names.map((n) => ({ key: `v:${n}`, label: n, color: "#2563eb", tasks: t.filter((x) => valueOf(x).includes(n)) })), { key: "none", label: `No ${f.name}`, color: "var(--ld-soft3)", tasks: t.filter((x) => !valueOf(x).length) }].filter((g) => g.tasks.length || keepEmpty));
   }
   if (c.group === "project") {
     const lists = [...c.data.lists].sort((a, b) => (a.folderId ?? 1e9) - (b.folderId ?? 1e9) || a.sort - b.sort || a.id - b.id);
@@ -119,10 +119,10 @@ export function groupsOf(c: PjCtx): Group[] {
   if (c.group === "status")
     return order(c.data.statuses.map((s) => ({ key: s.name, label: s.name, color: s.color, status: s.name, tasks: t.filter((x) => x.status === s.name) })).filter((g, i) => g.tasks.length || c.listId || i === 0 || keepEmpty));
   if (c.group === "priority")
-    return order(["urgent", "high", "normal", "low", ""].map((p) => ({ key: p || "none", label: p ? PRIORITY_TEXT[p] : "No priority", color: p ? { urgent: "#c2253c", high: "#d97706", normal: "#2563eb", low: "#9aa8a2" }[p]! : "#87909e", tasks: t.filter((x) => (x.priority ?? "") === p) })).filter((g) => g.tasks.length || keepEmpty));
+    return order(["urgent", "high", "normal", "low", ""].map((p) => ({ key: p || "none", label: p ? PRIORITY_TEXT[p] : "No priority", color: p ? { urgent: "#c2253c", high: "#d97706", normal: "#2563eb", low: "var(--ld-soft)" }[p]! : "var(--ld-soft3)", tasks: t.filter((x) => (x.priority ?? "") === p) })).filter((g) => g.tasks.length || keepEmpty));
   if (c.group === "assignee") {
     const names = Array.from(new Set(t.flatMap((x) => x.assignees.map((a) => a.name))));
-    return order([...names.map((n) => ({ key: n, label: n, color: "#475569", tasks: t.filter((x) => x.assignees.some((a) => a.name === n)) })), { key: "", label: "Unassigned", color: "#87909e", tasks: t.filter((x) => !x.assignees.length) }].filter((g) => g.tasks.length || keepEmpty));
+    return order([...names.map((n) => ({ key: n, label: n, color: "#475569", tasks: t.filter((x) => x.assignees.some((a) => a.name === n)) })), { key: "", label: "Unassigned", color: "var(--ld-soft3)", tasks: t.filter((x) => !x.assignees.length) }].filter((g) => g.tasks.length || keepEmpty));
   }
   return [{ key: "all", label: "All tasks", color: "#475569", tasks: t }];
 }
@@ -254,7 +254,7 @@ export function ListView({ c }: { c: PjCtx }) {
           c.group === "project" ? (
             <div className={`gp-pg ${g.attention ? "attn" : ""}`}>
               <button type="button" className="gp-car" aria-expanded={!closedUp} aria-label={closedUp ? `Show ${g.label}` : `Hide ${g.label}`} onClick={() => toggleShut(g.key)}>{closedUp ? "▸" : "▾"}</button>
-              {g.attention ? <span className="gp-sgp" style={{ background: "#fde8e8", color: "#9b1c1c" }}>Needs attention</span> : <span className="gp-fi" style={{ background: g.color }} />}
+              {g.attention ? <span className="gp-sgp" style={{ background: "var(--ld-bad-bg)", color: "var(--ld-bad)" }}>Needs attention</span> : <span className="gp-fi" style={{ background: g.color }} />}
               {!g.attention && (
                 <span className="gp-pgn">
                   {g.folder && <span className="ld-muted">{g.folder} › </span>}

@@ -329,7 +329,7 @@ export function MindMapView({ c }: { c: PjCtx }) {
       <div className="gp-mm" ref={box} style={{ height: Math.min(720, height * zoom + 20) }}>
         <div style={{ transform: `scale(${zoom})`, transformOrigin: "0 0", width: 1100, height, position: "relative" }}>
           <svg width={1100} height={height} style={{ position: "absolute", inset: 0 }} aria-hidden="true">
-            <g stroke="#9aa8a2" strokeWidth="1.5" fill="none">
+            <g stroke="var(--ld-soft)" strokeWidth="1.5" fill="none">
               {placed.map((p) => (
                 <path key={p.t.id} d={`M${X0 + 200} ${rootY + 18} C ${X0 + 260} ${rootY + 18}, ${X1 - 60} ${p.y + 18}, ${X1} ${p.y + 18}`} />
               ))}

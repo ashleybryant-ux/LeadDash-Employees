@@ -38,7 +38,7 @@ const TABS: [Tab, string][] = [["all", "All"], ["mine", "Mine"], ["shared", "Sha
 const TEMPLATES: { key: "simple" | "ai" | "project"; label: string; blurb: string; color: string; icon: string }[] = [
   { key: "simple", label: "Simple dashboard", blurb: "Open tasks, by status, by person, due this week", color: "#2563eb", icon: "▥" },
   { key: "ai", label: "AI team center", blurb: "What each employee did, time, handoffs", color: "#7c3aed", icon: "✦" },
-  { key: "project", label: "Project management", blurb: "Progress, overdue, burndown, workload", color: "#1b6b4a", icon: "◔" },
+  { key: "project", label: "Project management", blurb: "Progress, overdue, burndown, workload", color: "var(--ld-accent)", icon: "◔" },
 ];
 const fmtAt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
 
@@ -420,15 +420,15 @@ function Line({ series, labels }: { series: { values: number[]; color: string; d
   const y = (v: number) => 130 - (v / max) * 110;
   return (
     <svg viewBox="0 0 600 150" className="gp-line" role="img" aria-label="Chart">
-      <g stroke="#eef2f0">
+      <g stroke="var(--ld-line2)">
         <path d="M0 20H600M0 75H600M0 130H600" />
       </g>
       {series.map((s, k) => (
         <path key={k} d={s.values.map((v, i) => `${i ? "L" : "M"}${x(i)} ${y(v)}`).join(" ")} fill="none" stroke={s.color} strokeWidth={s.dash ? 2 : 3} strokeDasharray={s.dash ? "5 4" : undefined} />
       ))}
-      <text x="4" y="146" fontSize="11" fill="#5b6b64">{labels[0]}</text>
-      <text x="596" y="146" fontSize="11" fill="#5b6b64" textAnchor="end">{labels[n - 1]}</text>
-      <text x="4" y="16" fontSize="11" fill="#5b6b64">{max}</text>
+      <text x="4" y="146" fontSize="11" fill="var(--ld-muted)">{labels[0]}</text>
+      <text x="596" y="146" fontSize="11" fill="var(--ld-muted)" textAnchor="end">{labels[n - 1]}</text>
+      <text x="4" y="16" fontSize="11" fill="var(--ld-muted)">{max}</text>
     </svg>
   );
 }
@@ -454,7 +454,7 @@ function CardBody({ c, onOpenTask, onPick }: { c: CardData; onOpenTask: (id: num
     const weeks = (x.weeks as string[]) ?? [];
     return (
       <>
-        <Line labels={weeks.map((w) => fmtYmd(w))} series={[{ values: (x.done as number[]) ?? [], color: "#1b6b4a" }, { values: (x.added as number[]) ?? [], color: "#9aa8a2", dash: true }]} />
+        <Line labels={weeks.map((w) => fmtYmd(w))} series={[{ values: (x.done as number[]) ?? [], color: "var(--ld-accent)" }, { values: (x.added as number[]) ?? [], color: "var(--ld-soft)", dash: true }]} />
         <span className="ld-small ld-muted">Green: tasks done. Gray: tasks added. Weekly, last 8 weeks.</span>
       </>
     );

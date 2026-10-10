@@ -4,7 +4,7 @@ export type HbTable = { columns: string[]; rows: string[][] };
 export type HbSection = { title: string; rules: string[]; table?: HbTable | null };
 export type HbPart = { key: string; title: string; lead: string; sections: HbSection[] };
 
-const num: React.CSSProperties = { fontWeight: 800, color: "#5b6b64" };
+const num: React.CSSProperties = { fontWeight: 800, color: "var(--ld-muted)" };
 const ro: React.CSSProperties = { display: "grid", gridTemplateColumns: "28px minmax(0,1fr)", gap: 10, padding: "8px 0", borderBottom: "1px solid #eef2f0", fontSize: 14, lineHeight: 1.5 };
 const sub: React.CSSProperties = { fontSize: 13, fontWeight: 800, padding: "12px 0 4px 0" };
 

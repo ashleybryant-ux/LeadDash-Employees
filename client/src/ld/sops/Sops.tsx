@@ -157,7 +157,7 @@ function JobCard({ job }: { job: Job }) {
           {running && <span><b className="w">…</b>{job.stage}</span>}
         </div>
       )}
-      {job.status === "failed" && <span className="ld-small" style={{ color: "#b42318" }}>{job.note}</span>}
+      {job.status === "failed" && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{job.note}</span>}
     </div>
   );
 }
@@ -255,7 +255,7 @@ function RecordModal({ onClose }: { onClose: () => void }) {
     <Modal title={state === "recording" ? <span className="sop-rec"><i className={paused ? "p" : ""} />{paused ? "Paused" : "Recording"} · {mm}</span> : state === "done" ? "Recording sent" : "Record my screen"} onClose={state === "recording" ? undefined : onClose}>
       {state === "pick" && (
         <>
-          {!supported && <span className="ld-small" style={{ color: "#b42318" }}>This browser cannot record the screen. Use Chrome, Edge or Safari on a computer.</span>}
+          {!supported && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>This browser cannot record the screen. Use Chrome, Edge or Safari on a computer.</span>}
           <label className="ld-lbl" htmlFor="sop-rec-title">What is the SOP for</label>
           <input id="sop-rec-title" className="ld-in lg" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Adding a clinician's availability" />
           <div className="sop-opt">
@@ -267,7 +267,7 @@ function RecordModal({ onClose }: { onClose: () => void }) {
             <span>Say what you are doing as you do it. The steps are written from your words.</span>
           </label>
           <span className="ld-small ld-muted">Recording LeadDash EHR: use the demo practice, not a real chart. The recording is read by the AI to write the steps.</span>
-          {error && <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>}
+          {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
           <div className="sop-mf">
             <button type="button" className="ld-btn" onClick={onClose}>Cancel</button>
             <button type="button" className="ld-btn p" disabled={!supported} onClick={() => void start()}>Start</button>
@@ -278,7 +278,7 @@ function RecordModal({ onClose }: { onClose: () => void }) {
         <>
           <video ref={video} autoPlay muted playsInline className="sop-preview" />
           <span className="ld-small ld-muted">{mic ? "Your microphone is on. " : ""}Press Stop when you are done; the steps are written from the recording.</span>
-          {error && <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>}
+          {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
           <div className="sop-mf">
             <button
               type="button"
@@ -318,7 +318,7 @@ function RecordModal({ onClose }: { onClose: () => void }) {
       )}
       {state === "error" && (
         <>
-          <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>
+          <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>
           <div className="sop-mf">
             <button type="button" className="ld-btn" onClick={onClose}>Close</button>
             <button type="button" className="ld-btn p" onClick={() => setState("pick")}>Try again</button>
@@ -377,7 +377,7 @@ function SiteModal({ onClose }: { onClose: () => void }) {
         ))}
       </select>
       <span className="ld-small ld-muted">For LeadDash EHR, use the demo practice login, never a real chart. The employee changes nothing and stops before any Save or Submit.</span>
-      {error && <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>}
+      {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
       <div className="sop-mf">
         <button type="button" className="ld-btn" onClick={onClose}>Cancel</button>
         <button type="button" className="ld-btn p" disabled={start.isPending || !title.trim() || (!login && !url.trim())} onClick={() => start.mutate({ organizationId: currentOrgId, title: title.trim(), login: login || undefined, url: login ? undefined : url.trim(), employeeKind: kind })}>Go</button>

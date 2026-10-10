@@ -105,7 +105,7 @@ export function FolderOverview({ orgId, folderId, onPick, onOpenTask, onNewList,
           {d.byPerson.map((p) => (
             <span key={p.name} className="gp-ovhb">
               <span className="gp-ell">{p.name}</span>
-              <span><i style={{ width: `${Math.round((p.n / most) * 100)}%`, background: p.who ? (p.who.type === "employee" ? "#7c3aed" : "#1b6b4a") : "#9aa8a2" }} /></span>
+              <span><i style={{ width: `${Math.round((p.n / most) * 100)}%`, background: p.who ? (p.who.type === "employee" ? "#7c3aed" : "var(--ld-accent)") : "var(--ld-soft)" }} /></span>
               <b>{p.n}</b>
             </span>
           ))}

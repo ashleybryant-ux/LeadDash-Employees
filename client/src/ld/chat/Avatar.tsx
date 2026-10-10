@@ -150,7 +150,7 @@ export function AvatarVideoCard({ id }: { id: number }) {
             <span style={{ fontWeight: 800, fontSize: 15 }}>{v.title}</span>
             <StatusPill status={v.status} />
           </div>
-          <span className="ld-small" style={{ color: "#3d4c45" }}>{meta}</span>
+          <span className="ld-small" style={{ color: "var(--ld-text2)" }}>{meta}</span>
           {v.who && <span className="ld-small ld-muted">On camera: <b>{v.who.name}</b>, {v.who.look}</span>}
           {v.who && !editing && <CastVoice v={v} a={a} />}
           {v.status === "ready" ? (
@@ -159,7 +159,7 @@ export function AvatarVideoCard({ id }: { id: number }) {
             <span style={{ fontSize: 14, lineHeight: 1.6 }}>"{v.script}"</span>
           )}
           {v.status === "making" && <span className="ld-small ld-muted">This usually takes 3 to 8 minutes. Elena posts it here when it's done.</span>}
-          {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "#b42318" }}>{v.error}</span>}
+          {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{v.error}</span>}
           <ErrorLine error={a.make.error ?? a.again.error ?? a.newLook.error} />
         </div>
       )}
@@ -319,7 +319,7 @@ function VideoRow({ v, open, onToggle }: { v: View; open: boolean; onToggle: () 
   const [editing, setEditing] = React.useState(false);
   return (
     <>
-      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "#f4f8f6", borderBottom: 0 } : {}) }}>
+      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "var(--ld-hover)", borderBottom: 0 } : {}) }}>
         <span className="ld-strong" style={{ overflowWrap: "anywhere" }}>{v.title}</span>
         <span>{v.length}</span>
         <StatusPill status={v.status} />
@@ -345,7 +345,7 @@ function VideoRow({ v, open, onToggle }: { v: View; open: boolean; onToggle: () 
               <span style={{ fontSize: 14, lineHeight: 1.6 }}>"{v.script}"</span>
               <span className="ld-small ld-muted">{[v.photoTitle ? `Photo: ${v.photoTitle}` : "", v.voiceName ? `Voice: ${v.voiceName}` : "", v.quality === "pro" ? "Pro" : "Standard"].filter(Boolean).join(" · ")}</span>
               {v.status === "making" && <span className="ld-small ld-muted">This usually takes 3 to 8 minutes.</span>}
-              {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "#b42318" }}>{v.error}</span>}
+              {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{v.error}</span>}
               <ErrorLine error={a.make.error ?? a.again.error ?? a.remove.error} />
             </div>
           )}

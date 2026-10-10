@@ -21,7 +21,7 @@ type Portfolio = Outputs["pj"]["portfolio"];
 type Row = Portfolio["rows"][number];
 type Tab = "list" | "timeline" | "dashboard" | "progress" | "workload";
 const TABS: [Tab, string][] = [["list", "☰ List"], ["timeline", "▭ Timeline"], ["dashboard", "▥ Dashboard"], ["progress", "◔ Progress"], ["workload", "⚖ Workload"]];
-const COLORS = ["#1b6b4a", "#b45309", "#7c3aed", "#2563eb", "#0f766e", "#9a4f2c", "#c2253c", "#4b5563"];
+const COLORS = ["var(--ld-accent)", "#b45309", "#7c3aed", "#2563eb", "#0f766e", "#9a4f2c", "#c2253c", "#4b5563"];
 
 export function PortfoliosPage({ orgId, onPick }: { orgId: number; onPick: (w: Where) => void }) {
   const q = trpc.pj.portfolios.useQuery({ organizationId: orgId });
@@ -131,7 +131,7 @@ export function PortfolioPage({ orgId, id, onPick, onOpenTask }: { orgId: number
       <div className="gp-head" style={{ paddingBottom: 0 }}>
         <div className="gp-hrow">
           <span className="gp-ttl" style={{ fontSize: 18 }}>
-            <button type="button" className="gp-link" style={{ fontSize: 14, fontWeight: 600, color: "#5b6b64" }} onClick={() => onPick({ scope: "portfolios" })}>Portfolios /</button>
+            <button type="button" className="gp-link" style={{ fontSize: 14, fontWeight: 600, color: "var(--ld-muted)" }} onClick={() => onPick({ scope: "portfolios" })}>Portfolios /</button>
             <span className="gp-fi" style={{ background: p.color, width: 12, height: 12 }} />
             {p.name}
             <StatusPill status={d.status?.status ?? null} at={d.status?.at} />
@@ -189,7 +189,7 @@ export function PortfolioPage({ orgId, id, onPick, onOpenTask }: { orgId: number
                 </span>
                 <span>{r.owner ? <OwnerAvatar o={person(r.owner)} size={26} /> : <NobodyAvatar size={26} />}</span>
                 <span className="ld-small" style={r.end && r.end < d.today && r.progress.done < r.progress.total ? { color: "#c2253c", fontWeight: 700 } : undefined}>{r.start && r.end ? `${fmtYmd(r.start)} to ${fmtYmd(r.end)}` : r.end ? `to ${dueText(r.end, d.today)}` : <span className="ld-muted">No dates</span>}</span>
-                <span className="ld-small" style={{ fontWeight: 700, color: r.priority ? PRIORITY_COLOR[r.priority] : "#9aa8a2" }}>{r.priority ? `⚑ ${PRIORITY_TEXT[r.priority]}` : "None"}</span>
+                <span className="ld-small" style={{ fontWeight: 700, color: r.priority ? PRIORITY_COLOR[r.priority] : "var(--ld-soft)" }}>{r.priority ? `⚑ ${PRIORITY_TEXT[r.priority]}` : "None"}</span>
                 <span onClick={(e) => e.stopPropagation()}>
                   {d.canEdit && (
                     <Menu label={`Options for ${r.name}`}>
@@ -358,7 +358,7 @@ function Dashboard({ rows }: { rows: Row[] }) {
         {[...byStatus.map((s) => ({ label: STATUS_TEXT[s.k], n: s.n, k: s.k })), { label: "No status", n: none, k: "none" }].map((s) => (
           <div key={s.k} className="gp-bar">
             <span><span className={`gp-status ${s.k} sm`}>{s.label}</span></span>
-            <span className="gp-barlane"><i style={{ width: `${(s.n / Math.max(1, rows.length)) * 100}%`, background: s.k === "on" ? "#1b6b4a" : s.k === "risk" ? "#d97706" : s.k === "off" ? "#c2253c" : "#9aa8a2" }} /></span>
+            <span className="gp-barlane"><i style={{ width: `${(s.n / Math.max(1, rows.length)) * 100}%`, background: s.k === "on" ? "var(--ld-accent)" : s.k === "risk" ? "#d97706" : s.k === "off" ? "#c2253c" : "var(--ld-soft)" }} /></span>
             <span className="ld-small ld-muted">{s.n}</span>
           </div>
         ))}

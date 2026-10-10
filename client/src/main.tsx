@@ -7,6 +7,10 @@ import { registerServiceWorker } from "./ld/push";
 import superjson from "superjson";
 import App from "./App";
 import "./index.css";
+import { applyTheme, cachedTheme } from "./ld/theme";
+
+// Appearance before the first paint, from what this device remembers; the account's choice takes over once it loads.
+applyTheme(cachedTheme());
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },

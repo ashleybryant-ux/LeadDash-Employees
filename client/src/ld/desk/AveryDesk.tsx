@@ -173,7 +173,7 @@ function TodayTab({ t, empKind, onDecide }: { t: Today; empKind: string; onDecid
           <div>
             {t.top.map((x, i) => (
               <div key={x.key} className="ld-desk-top" style={{ display: "grid", gridTemplateColumns: "28px minmax(0,1fr) 128px", gap: 12, alignItems: "center", padding: "10px 0", borderBottom: i < t.top.length - 1 ? "1px solid #eef2f0" : 0, fontSize: 15 }}>
-                <span aria-hidden style={{ width: 26, height: 26, borderRadius: 999, background: "#e6f2ec", color: "#155c3e", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+                <span aria-hidden style={{ width: 26, height: 26, borderRadius: 999, background: "var(--ld-accent-bg)", color: "var(--ld-accent-dark)", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
                 <span>
                   <b>{x.title}</b> {x.body}
                 </span>
@@ -197,7 +197,7 @@ function TodayTab({ t, empKind, onDecide }: { t: Today; empKind: string; onDecid
           ["Handled for you", t.counts.handled],
         ].map(([k, v]) => (
           <div key={k as string} className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-            <span className="ld-small" style={{ color: "#5b6b64" }}>{k}</span>
+            <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{k}</span>
             <b style={{ fontSize: 22 }}>{v}</b>
           </div>
         ))}
@@ -209,7 +209,7 @@ function TodayTab({ t, empKind, onDecide }: { t: Today; empKind: string; onDecid
           <div key={e.key} className="ld-rw" style={{ gridTemplateColumns: "170px minmax(0,1fr) 190px 150px" }}>
             <b>{e.when}</b>
             <span style={{ overflowWrap: "anywhere" }}>{e.title}</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#3d4c45", fontWeight: 600 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--ld-text2)", fontWeight: 600 }}>
               <span aria-hidden style={{ width: 10, height: 10, borderRadius: 999, background: e.color, display: "inline-block", flexShrink: 0 }} />
               {e.calendar}
             </span>
@@ -244,7 +244,7 @@ function TodayTab({ t, empKind, onDecide }: { t: Today; empKind: string; onDecid
                 <div className="ld-expand">
                   {h.lines.slice(0, 30).map((l, i) => (
                     <div key={i} style={{ display: "grid", gridTemplateColumns: "150px 120px minmax(0,1fr)", gap: 12, fontSize: 13, padding: "6px 0", borderBottom: "1px solid #e3e9e6" }}>
-                      <span style={{ color: "#5b6b64" }}>{fmtDate(l.at)}, {fmtTime(l.at)}</span>
+                      <span style={{ color: "var(--ld-muted)" }}>{fmtDate(l.at)}, {fmtTime(l.at)}</span>
                       <b>{l.who}</b>
                       <span>{l.text}</span>
                     </div>
@@ -347,18 +347,18 @@ function DecisionRow({ d, owner, open, onToggle }: { d: Q; owner: string; open: 
             {d.options.length > 0 && (
               <div role="radiogroup" aria-label="Options" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {d.options.map((o, i) => (
-                  <label key={i} className="ld-desk-opt" style={{ display: "grid", gridTemplateColumns: "20px 110px minmax(0,1fr) 150px", gap: 12, alignItems: "start", padding: "10px 12px", border: `1px solid ${pick === i ? "#1b6b4a" : "#e3e9e6"}`, boxShadow: pick === i ? "0 0 0 2px #cfe6da" : "none", borderRadius: 10, background: "#fff", fontSize: 14, lineHeight: 1.5, cursor: d.canDecide ? "pointer" : "default" }}>
-                    <input type="radio" name={`opt-${d.key}`} checked={pick === i} disabled={!d.canDecide} onChange={() => setPick(i)} style={{ margin: "4px 0 0 0", accentColor: "#1b6b4a" }} />
+                  <label key={i} className="ld-desk-opt" style={{ display: "grid", gridTemplateColumns: "20px 110px minmax(0,1fr) 150px", gap: 12, alignItems: "start", padding: "10px 12px", border: `1px solid ${pick === i ? "var(--ld-accent)" : "var(--ld-line)"}`, boxShadow: pick === i ? "0 0 0 2px #cfe6da" : "none", borderRadius: 10, background: "var(--ld-surface)", fontSize: 14, lineHeight: 1.5, cursor: d.canDecide ? "pointer" : "default" }}>
+                    <input type="radio" name={`opt-${d.key}`} checked={pick === i} disabled={!d.canDecide} onChange={() => setPick(i)} style={{ margin: "4px 0 0 0", accentColor: "var(--ld-accent)" }} />
                     <b>{o.label}</b>
                     <span>{o.text}</span>
-                    {d.suggested === i ? <span className="ld-pill green">Avery suggests</span> : <span className="ld-small" style={{ color: "#5b6b64" }}>{o.source}</span>}
+                    {d.suggested === i ? <span className="ld-pill green">Avery suggests</span> : <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{o.source}</span>}
                   </label>
                 ))}
               </div>
             )}
-            {d.suggestedWhy && <span className="ld-small" style={{ color: "#5b6b64" }}>{d.suggestedWhy}</span>}
-            {d.source === "desk" && !d.canDecide && <span className="ld-small" style={{ color: "#5b6b64" }}>Only {owner} can decide {d.categoryLabel.toLowerCase()}. You can add a note for {owner}.</span>}
-            {d.source !== "desk" && <span className="ld-small" style={{ color: "#5b6b64" }}>{d.why || "Open it to review and approve it where the work is."}</span>}
+            {d.suggestedWhy && <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{d.suggestedWhy}</span>}
+            {d.source === "desk" && !d.canDecide && <span className="ld-small" style={{ color: "var(--ld-muted)" }}>Only {owner} can decide {d.categoryLabel.toLowerCase()}. You can add a note for {owner}.</span>}
+            {d.source !== "desk" && <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{d.why || "Open it to review and approve it where the work is."}</span>}
             {mode !== "none" && (
               <div className="ld-card editing" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
                 <label className="ld-lbl" htmlFor={`desk-note-${d.key}`}>{mode === "note" ? "Your note" : "What to change"}</label>
@@ -447,7 +447,7 @@ function WaitingTab({ v }: { v: D["waiting"] }) {
         ))}
       </FolderTabs>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "start", flexWrap: "wrap" }}>
-        <span className="ld-small" style={{ color: "#5b6b64", maxWidth: 760, lineHeight: 1.5 }}>
+        <span className="ld-small" style={{ color: "var(--ld-muted)", maxWidth: 760, lineHeight: 1.5 }}>
           {folder === "owed" ? "Avery nudges people outside the company himself. Work owed by an employee goes to Nora, and sales and speaking follow-ups go to Jada and Taylor, so nobody chases the same thing twice." : "Avery picks up promises from meeting notes and from what you tell her in chat."}
         </span>
         {!adding && <button type="button" className="ld-btn" onClick={() => setAdding(true)}>Add</button>}
@@ -482,7 +482,7 @@ function AddWaiting({ kind, onDone }: { kind: "owed" | "promise"; onDone: () => 
           <label htmlFor="w-by" style={{ fontWeight: 700 }}>{kind === "owed" ? "Expected" : "By"}</label>
           <input id="w-by" className="ld-in" placeholder="MM/DD/YYYY" value={by} onChange={(e) => setBy(e.target.value)} style={{ maxWidth: 160 }} />
         </Form>
-        {iso === null && <span className="ld-small" style={{ color: "#b42318" }}>Type the date as MM/DD/YYYY.</span>}
+        {iso === null && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>Type the date as MM/DD/YYYY.</span>}
         <ErrorLine error={add.error} />
       </div>
       <Buttons>
@@ -558,7 +558,7 @@ function WaitingRow({ w, open, onToggle }: { w: W; open: boolean; onToggle: () =
                     </>
                   )}
                 </Form>
-                {(expIso === null || nudgeIso === null) && <span className="ld-small" style={{ color: "#b42318" }}>Type dates as MM/DD/YYYY.</span>}
+                {(expIso === null || nudgeIso === null) && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>Type dates as MM/DD/YYYY.</span>}
               </div>
             ) : owed ? (
               <>
@@ -764,7 +764,7 @@ function RulesTab() {
               <Chips label="Brief days" options={DAY_CHIPS} value={draft.briefDays} onToggle={(k) => setDraft({ ...draft, briefDays: toggle(draft.briefDays, k as number) })} />
             </div>
           </Form>
-          {timesBad && <span className="ld-small" style={{ color: "#b42318" }}>Type times like 9:00 AM.</span>}
+          {timesBad && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>Type times like 9:00 AM.</span>}
           <ErrorLine error={save.error} />
         </Card>
       ) : (

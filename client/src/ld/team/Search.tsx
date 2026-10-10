@@ -58,7 +58,7 @@ export default function TeamSearchPage() {
       <ChatList activeKind="team:search" />
       <section className="ld-chatmain tc-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         <header className="ld-emphead tc-head2">
-          <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "#14221c", display: "flex" }}>
+          <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "var(--ld-ink)", display: "flex" }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
           </Link>
           <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, minWidth: 0 }}>

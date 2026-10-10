@@ -88,7 +88,7 @@ function Seg<T extends string | number>({ value, options, onChange, label }: { v
   return (
     <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", justifySelf: "start", alignSelf: "flex-start", flexWrap: "wrap" }}>
       {options.map((o) => (
-        <button key={String(o.key)} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid #e3e9e6", background: value === o.key ? "#e6f2ec" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "#155c3e" : "#3d4c45", cursor: "pointer", whiteSpace: "nowrap" }}>
+        <button key={String(o.key)} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid #e3e9e6", background: value === o.key ? "var(--ld-accent-bg)" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
           {o.label}
         </button>
       ))}
@@ -140,7 +140,7 @@ export default function PressWork({ emp }: { emp: EmployeeRow }) {
   return (
     <main className="ld-main" style={{ padding: "24px 32px", gap: 16 }}>
       {v && (
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: "#3d4c45" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: "var(--ld-text2)" }}>
           <span className="ld-pill green">{v.desk.name} desk</span>
           <span>{others.length ? `Shared newsroom with ${others.map((d) => d.name).join(" and ")}` : "Its own newsroom. Link your other workspaces in Press settings."}</span>
         </div>
@@ -384,7 +384,7 @@ function PressSettings({ v }: { v: View }) {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {all.map((w) => {
                   const on = edit.shared.includes(w.id) || w.id === orgId;
-                  return <button key={w.id} type="button" aria-pressed={on} disabled={w.id === orgId} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "#e6f2ec" : "#fff", borderColor: on ? "#1b6b4a" : undefined, color: on ? "#155c3e" : "#14221c" }} onClick={() => setEdit({ ...edit, shared: on ? edit.shared.filter((x) => x !== w.id) : [...edit.shared, w.id] })}>{w.name}</button>;
+                  return <button key={w.id} type="button" aria-pressed={on} disabled={w.id === orgId} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setEdit({ ...edit, shared: on ? edit.shared.filter((x) => x !== w.id) : [...edit.shared, w.id] })}>{w.name}</button>;
                 })}
               </div>
               <Field id="pr-cool" label="Cooling period"><div style={{ display: "flex", gap: 8, alignItems: "center" }}><input id="pr-cool" className="ld-in" style={{ width: 80 }} inputMode="numeric" value={edit.coolingDays} onChange={(e) => setEdit({ ...edit, coolingDays: e.target.value.replace(/\D/g, "") })} /><span>days between desks pitching the same reporter</span></div></Field>
@@ -669,7 +669,7 @@ function CampaignDetail({ c, paused }: { c: Campaign; paused: boolean }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {edit.angles.map((a, i) => (
                   <div key={i} style={{ display: "grid", gridTemplateColumns: "24px minmax(0,1fr)", gap: 8, alignItems: "center" }}>
-                    <input type="checkbox" aria-label={`Use angle ${i + 1}`} checked={a.use} style={{ accentColor: "#1b6b4a" }} onChange={(e) => setEdit({ ...edit, angles: edit.angles.map((x, j) => (j === i ? { ...x, use: e.target.checked } : x)) })} />
+                    <input type="checkbox" aria-label={`Use angle ${i + 1}`} checked={a.use} style={{ accentColor: "var(--ld-accent)" }} onChange={(e) => setEdit({ ...edit, angles: edit.angles.map((x, j) => (j === i ? { ...x, use: e.target.checked } : x)) })} />
                     <input className="ld-in" aria-label={`Angle ${i + 1}`} value={a.text} onChange={(e) => setEdit({ ...edit, angles: edit.angles.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
                   </div>
                 ))}
@@ -1067,7 +1067,7 @@ function Library() {
                 {desks.map((d) => {
                   const list = (e.meta.desks as number[] | undefined) ?? [];
                   const on = list.includes(d.id);
-                  return <button key={d.id} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "#e6f2ec" : "#fff", borderColor: on ? "#1b6b4a" : undefined, color: on ? "#155c3e" : "#14221c" }} onClick={() => setE(e, { meta: { ...e.meta, desks: on ? list.filter((x) => x !== d.id) : [...list, d.id] } })}>{d.name}</button>;
+                  return <button key={d.id} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setE(e, { meta: { ...e.meta, desks: on ? list.filter((x) => x !== d.id) : [...list, d.id] } })}>{d.name}</button>;
                 })}
               </div>
             </>

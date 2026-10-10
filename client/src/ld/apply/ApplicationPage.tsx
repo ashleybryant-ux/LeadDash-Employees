@@ -41,7 +41,7 @@ function Header({ d, base, back, backHref, right }: { d: AppDetail; base: string
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>{app.title}</h1>
             <span className={`ld-pill ${st.cls}`}>{app.status === "writing" && app.progress ? app.progress : app.mode === "outline" && app.status === "ready" ? "You write" : st.label}</span>
           </div>
-          <span className="ld-body" style={{ color: "#3d4c45" }}>
+          <span className="ld-body" style={{ color: "var(--ld-text2)" }}>
             {[opp?.host, opp?.amount, opp?.deadline && `Due ${opp.deadline}`, channelText(app.channel, app.channelDetail)].filter(Boolean).join(" · ")}
           </span>
         </div>
@@ -146,7 +146,7 @@ function MainView({ d, emp, base }: { d: AppDetail; emp: EmployeeRow; base: stri
       )}
       {app.status === "error" && (
         <div className="ld-card" style={{ padding: "12px 16px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 12, alignItems: "center", borderColor: "#f3c7c1" }}>
-          <span className="ld-body" style={{ color: "#b42318" }}>{app.errorNote || "Something went wrong."}</span>
+          <span className="ld-body" style={{ color: "var(--ld-bad)" }}>{app.errorNote || "Something went wrong."}</span>
           <button type="button" className="ld-btn p" disabled={rewrite.isPending} onClick={() => rewrite.mutate({ organizationId: currentOrgId, id: app.id })}>Write again</button>
         </div>
       )}
@@ -247,11 +247,11 @@ function AskCard({ q, onDone }: { q: AppDetail["questions"][number]; onDone: () 
       <span style={{ fontSize: 15, fontWeight: 700 }}>{q.question}</span>
       <div className="ld-row" style={{ flexWrap: "wrap" }}>
         {parseJson<string[]>(q.options, []).map((o) => (
-          <button key={o} type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "#14221c" }} disabled={busy} onClick={() => answer.mutate({ organizationId: currentOrgId, questionId: q.id, answer: o })}>
+          <button key={o} type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "var(--ld-ink)" }} disabled={busy} onClick={() => answer.mutate({ organizationId: currentOrgId, questionId: q.id, answer: o })}>
             {o}
           </button>
         ))}
-        <button type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "#155c3e", borderColor: "#1b6b4a" }} disabled={busy} onClick={() => research.mutate({ organizationId: currentOrgId, questionId: q.id })}>
+        <button type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "var(--ld-accent-dark)", borderColor: "var(--ld-accent)" }} disabled={busy} onClick={() => research.mutate({ organizationId: currentOrgId, questionId: q.id })}>
           {research.isPending ? "Looking it up..." : "Look it up"}
         </button>
       </div>
@@ -283,7 +283,7 @@ function QuestionCard({ q, n, appId, outline, locked, onSaved }: { q: Question; 
     <div className={`ld-card ${editing ? "editing" : ""}`} style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 16, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
         <div style={{ fontWeight: 800, fontSize: 15, lineHeight: 1.4 }}>{n}. {q.text}</div>
-        {limit && <span style={{ fontSize: 12, fontWeight: 600, color: over ? "#b42318" : "#5b6b64" }}>{limit}</span>}
+        {limit && <span style={{ fontSize: 12, fontWeight: 600, color: over ? "var(--ld-bad)" : "var(--ld-muted)" }}>{limit}</span>}
         {outline && (q.outline.length > 0 || q.facts.length > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16 }}>
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.6, color: "#24332c" }}>
@@ -291,7 +291,7 @@ function QuestionCard({ q, n, appId, outline, locked, onSaved }: { q: Question; 
             </ul>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {q.facts.map((f, i) => (
-                <span key={i} className="ld-small" style={{ color: "#3d4c45", lineHeight: 1.5 }}>{f.text} <span className="ld-muted">({f.source})</span></span>
+                <span key={i} className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.5 }}>{f.text} <span className="ld-muted">({f.source})</span></span>
               ))}
             </div>
           </div>
@@ -364,7 +364,7 @@ function AttachmentRow({ a, last, appId, empName, locked, onSaved }: { a: Attach
       </div>
       {a.needsSignature && a.source !== "upload" && <span className="ld-small" style={{ color: "#8a4510" }}>Needs your signature. Sign the host's form and upload it.</span>}
       {a.source === "missing" && <span className="ld-small ld-muted">{a.required ? "Required" : "Optional"}. Not found in the Brain or Knowledge.</span>}
-      {err && <span className="ld-small" style={{ color: "#b42318" }}>{err}</span>}
+      {err && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{err}</span>}
     </div>
   );
 }
@@ -427,7 +427,7 @@ function PitchCards({ appId, extras, reqs, locked, onSaved }: { appId: number; e
             <button type="button" className={`ld-btn sm ${extras.videoUrl ? "" : "p"}`} disabled={busy} onClick={() => ref.current?.click()}>{busy ? "Uploading" : extras.videoUrl ? "Replace" : "Upload"}</button>
           </>
         )}
-        {err && <span className="ld-small" style={{ color: "#b42318", gridColumn: "1 / -1" }}>{err}</span>}
+        {err && <span className="ld-small" style={{ color: "var(--ld-bad)", gridColumn: "1 / -1" }}>{err}</span>}
       </div>
       {extras.financials && (
         <div className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -461,7 +461,7 @@ function ReviewView({ d, base }: { d: AppDetail; base: string }) {
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 16, alignItems: "start" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Reviewer check</h1>
-          <span className="ld-body" style={{ color: "#3d4c45" }}>
+          <span className="ld-body" style={{ color: "var(--ld-text2)" }}>
             Scored against {reqs.scoring?.length ? `the host's rubric${reqs.pages?.scoring ? ` (${reqs.pages.scoring})` : ""}` : "a standard rubric"} by a reviewer that did not write the application
           </span>
         </div>
@@ -475,7 +475,7 @@ function ReviewView({ d, base }: { d: AppDetail; base: string }) {
           <div className="ld-card" style={{ overflow: "hidden" }}>
             <div className="ld-between" style={{ padding: "16px 18px", borderBottom: "1px solid #e3e9e6", alignItems: "baseline" }}>
               <span className="ld-lbl">Estimated score</span>
-              <span style={{ fontSize: 28, fontWeight: 800 }}>{review.score} <span style={{ fontSize: 15, color: "#5b6b64", fontWeight: 700 }}>of {review.total}</span></span>
+              <span style={{ fontSize: 28, fontWeight: 800 }}>{review.score} <span style={{ fontSize: 15, color: "var(--ld-muted)", fontWeight: 700 }}>of {review.total}</span></span>
             </div>
             {review.criteria.map((c, i) => {
               const pct = c.max ? Math.round((c.points / c.max) * 100) : 0;
@@ -484,7 +484,7 @@ function ReviewView({ d, base }: { d: AppDetail; base: string }) {
                   <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) 90px minmax(0,2fr)", gap: 16, alignItems: "center", fontSize: 14 }}>
                     <span className="ld-strong">{c.name}</span>
                     <span>{c.points} of {c.max}</span>
-                    <div style={{ height: 8, borderRadius: 999, background: "#e3e9e6", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${pct}%`, background: pct < 75 ? "#c2410c" : "#1b6b4a" }} /></div>
+                    <div style={{ height: 8, borderRadius: 999, background: "var(--ld-line)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${pct}%`, background: pct < 75 ? "#c2410c" : "var(--ld-accent)" }} /></div>
                   </div>
                   {c.note && <span className="ld-small ld-muted">{c.note}</span>}
                 </div>

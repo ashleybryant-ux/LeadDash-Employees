@@ -120,14 +120,14 @@ export function GanttView({ c }: { c: PjCtx }) {
     const ts = dated.filter((t) => t.listId === l.id);
     if (!ts.length && c.listId !== l.id) return;
     const key = `l${l.id}`;
-    rows.push({ key, kind: "list", name: l.name, color: l.folderColor ?? "#1b6b4a", depth, ...summary(ts), open: !shut.has(key), parent });
+    rows.push({ key, kind: "list", name: l.name, color: l.folderColor ?? "var(--ld-accent)", depth, ...summary(ts), open: !shut.has(key), parent });
     if (!shut.has(key)) for (const t of ts) rows.push({ key: `t${t.id}`, kind: "task", name: t.name, depth: depth + 1, t, start: t.startDate ?? t.dueDate, end: t.dueDate ?? t.startDate, parent: key });
   };
   if (c.listId) {
     const l = lists.find((x) => x.id === c.listId);
     if (l) pushList(l, 0);
   } else {
-    const folders = Array.from(new Map(lists.filter((l) => l.folderId).map((l) => [l.folderId!, { id: l.folderId!, name: l.folderName ?? "", color: l.folderColor ?? "#1b6b4a" }])).values());
+    const folders = Array.from(new Map(lists.filter((l) => l.folderId).map((l) => [l.folderId!, { id: l.folderId!, name: l.folderName ?? "", color: l.folderColor ?? "var(--ld-accent)" }])).values());
     for (const f of folders) {
       const inF = lists.filter((l) => l.folderId === f.id);
       const ts = dated.filter((t) => inF.some((l) => l.id === t.listId));
@@ -307,7 +307,7 @@ export function GanttView({ c }: { c: PjCtx }) {
                 const mid = Math.max(x1 + 6, Math.min(x2 - 6, x1 + 12));
                 const red = critical.has(l.from) && critical.has(l.to);
                 return (
-                  <g key={`${l.from}-${l.to}`} stroke={red ? "#c2253c" : "#5b6b64"} fill="none">
+                  <g key={`${l.from}-${l.to}`} stroke={red ? "#c2253c" : "var(--ld-muted)"} fill="none">
                     <path d={`M${x1} ${y1} H${mid} V${y2} H${x2 - 1}`} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
                     <path d={`M${x2 - 8} ${y2 - 4} L${x2} ${y2} L${x2 - 8} ${y2 + 4}`} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
                   </g>

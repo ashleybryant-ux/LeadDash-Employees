@@ -129,7 +129,7 @@ export default function Outreach({ emp, embedded = false }: { emp: EmployeeRow; 
                       <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                         <span className="ld-lbl">Note to send with the request</span>
                         {r.note ? (
-                          <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "#fff", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
                             <span style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}>{r.note}</span>
                             <span className="ld-small ld-muted" style={{ fontSize: 12 }}>{`${r.note.length} of 200 characters`}</span>
                           </div>
@@ -202,7 +202,7 @@ export default function Outreach({ emp, embedded = false }: { emp: EmployeeRow; 
                       const d = draft[s.id] ?? { title: s.title, body: s.body };
                       const l = seq.linkedin;
                       const liStep = s.step === 2 && l && l.status !== "cancelled" ? (
-                        <div key={`li-${seq.sequence}`} style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "#fff", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, opacity: l.status === "skipped" ? 0.6 : 1 }}>
+                        <div key={`li-${seq.sequence}`} style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, opacity: l.status === "skipped" ? 0.6 : 1 }}>
                           <div className="ld-between">
                             <span style={{ fontWeight: 800, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 8 }}><LinkedInMark />Connect on LinkedIn</span>
                             <span className="ld-small ld-muted" style={{ fontSize: 12 }}>{l.status === "done" ? `You sent it${l.doneAt ? ` ${when(l.doneAt, tz)}` : ""}` : l.status === "skipped" ? "Skipped" : `For you, ${when(l.due, tz)}`}</span>
@@ -211,7 +211,7 @@ export default function Outreach({ emp, embedded = false }: { emp: EmployeeRow; 
                           {isEditing && (l.status === "waiting" || l.status === "todo") ? (
                             <>
                               <textarea className="ld-ta" rows={2} aria-label="LinkedIn note" value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} />
-                              <span className="ld-small ld-muted" style={{ fontSize: 12, color: noteDraft.length > 200 ? "#b42318" : undefined }}>{`${noteDraft.length} of 200 characters`}</span>
+                              <span className="ld-small ld-muted" style={{ fontSize: 12, color: noteDraft.length > 200 ? "var(--ld-bad)" : undefined }}>{`${noteDraft.length} of 200 characters`}</span>
                             </>
                           ) : (
                             <span style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}>{l.note || "No note."}</span>
@@ -221,7 +221,7 @@ export default function Outreach({ emp, embedded = false }: { emp: EmployeeRow; 
                       return (
                         <React.Fragment key={s.id}>
                         {liStep}
-                        <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "#fff", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, opacity: s.status === "cancelled" ? 0.6 : 1 }}>
+                        <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, opacity: s.status === "cancelled" ? 0.6 : 1 }}>
                           <div className="ld-between">
                             <span style={{ fontWeight: 800, fontSize: 14 }}>Email {s.step}</span>
                             <span className="ld-small ld-muted" style={{ fontSize: 12 }}>{stepLabel(s, first)}</span>

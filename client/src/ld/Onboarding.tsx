@@ -272,7 +272,7 @@ function AssignmentEditor({ emp, templates, task, onDone }: { emp: EmployeeRow; 
             </div>
           </div>
         )}
-        {error && <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>{error}</p>}
+        {error && <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0 }}>{error}</p>}
         <ErrorLine error={save.error || del.error} />
         <div className="ld-row" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
           {task && (

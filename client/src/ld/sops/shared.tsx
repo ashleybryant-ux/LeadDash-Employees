@@ -77,7 +77,7 @@ export function StatusActions({ sop, onDone, reviewerName }: { sop: Pick<SopRow,
       {sop.status === "review" && <button type="button" className="ld-btn" disabled={busy} onClick={() => set.mutate({ organizationId: currentOrgId, id: sop.id, status: "draft" })}>Back to draft</button>}
       {sop.status === "current" && sop.reviewDue && <button type="button" className="ld-btn p" disabled={busy} onClick={() => reviewed.mutate({ organizationId: currentOrgId, id: sop.id })}>Mark reviewed</button>}
       {sop.status === "current" && <button type="button" className="ld-btn" disabled={busy} onClick={() => set.mutate({ organizationId: currentOrgId, id: sop.id, status: "retired" })}>Retire</button>}
-      {error && <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>}
+      {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
     </>
   );
 }

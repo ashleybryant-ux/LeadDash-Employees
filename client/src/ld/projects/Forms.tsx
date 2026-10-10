@@ -105,7 +105,7 @@ function Questions({ orgId, d, mapName, refresh }: { orgId: number; d: F; mapNam
           <div key={x.id} className="gp-ff">
             <span style={{ minWidth: 0 }}>
               <b>{x.label}</b>
-              {x.required && <span className="ld-small" style={{ color: "#b42318" }}> *</span>}
+              {x.required && <span className="ld-small" style={{ color: "var(--ld-bad)" }}> *</span>}
               <span className="ld-small ld-muted"> · {typeLabel(x.type)}{x.options?.length ? `: ${x.options.join(", ")}` : ""}</span>
             </span>
             <span className="ld-small ld-muted">→ {mapName(x.mapTo)}</span>

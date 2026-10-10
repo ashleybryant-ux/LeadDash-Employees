@@ -12,7 +12,7 @@ export type Owner = { type: "user" | "employee" | "name"; id: number; name: stri
 export type Status = "on" | "risk" | "off" | "done";
 
 export const STATUS_TEXT: Record<Status, string> = { on: "On track", risk: "At risk", off: "Off track", done: "Done" };
-export const COLORS = ["#1b6b4a", "#2563eb", "#7c3aed", "#d97706", "#c2253c", "#0f766e", "#9a4f2c", "#475569"];
+export const COLORS = ["var(--ld-accent)", "#2563eb", "#7c3aed", "#d97706", "#c2253c", "#0f766e", "#9a4f2c", "#475569"];
 
 export function StatusPill({ s }: { s: Status | null | undefined }) {
   if (!s) return <span className="gp-sd s-none">No number yet</span>;
@@ -23,7 +23,7 @@ export function Bar({ p, color, red }: { p: number; color?: string; red?: boolea
   return (
     <span className="gp-pb" aria-label={`${p}%`}>
       <span className="t">
-        <i style={{ width: `${Math.max(0, Math.min(100, p))}%`, background: red ? "#e8384f" : color ?? "#1b6b4a" }} />
+        <i style={{ width: `${Math.max(0, Math.min(100, p))}%`, background: red ? "#e8384f" : color ?? "var(--ld-accent)" }} />
       </span>
       <span className="n">{p}%</span>
     </span>
@@ -111,7 +111,7 @@ export function valueText(v: number | null | undefined, unit: string) {
 // Sparkline
 // ==========================================
 
-export function Spark({ values, goal, w = 120, h = 30, color = "#1b6b4a" }: { values: (number | null)[]; goal: number | null; w?: number; h?: number; color?: string }) {
+export function Spark({ values, goal, w = 120, h = 30, color = "var(--ld-accent)" }: { values: (number | null)[]; goal: number | null; w?: number; h?: number; color?: string }) {
   const pts = values.map((v, i) => ({ v, i })).filter((p): p is { v: number; i: number } => p.v !== null);
   if (pts.length < 2) return <span className="ld-small ld-muted">Not enough weeks</span>;
   const all = [...pts.map((p) => p.v), ...(goal !== null ? [goal] : [])];
@@ -123,7 +123,7 @@ export function Spark({ values, goal, w = 120, h = 30, color = "#1b6b4a" }: { va
   const last = pts[pts.length - 1];
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
-      {goal !== null && <line x1="0" x2={w} y1={y(goal)} y2={y(goal)} stroke="#9aa8a2" strokeDasharray="3 3" />}
+      {goal !== null && <line x1="0" x2={w} y1={y(goal)} y2={y(goal)} stroke="var(--ld-soft)" strokeDasharray="3 3" />}
       <polyline points={pts.map((p) => `${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")} fill="none" stroke={color} strokeWidth="2" />
       <circle cx={x(last.i)} cy={y(last.v)} r="3" fill={color} />
     </svg>
@@ -238,7 +238,7 @@ export function AddFiles({ orgId, onAdded, label = "+ Add", disabled }: { orgId:
       <button type="button" className="gp-link" disabled={busy || disabled} onClick={() => input.current?.click()}>
         {busy ? "Uploading" : label}
       </button>
-      {err && <span className="ld-small" role="alert" style={{ color: "#b42318" }}>{err}</span>}
+      {err && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>{err}</span>}
     </span>
   );
 }

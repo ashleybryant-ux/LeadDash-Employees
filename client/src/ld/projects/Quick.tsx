@@ -175,7 +175,7 @@ export function DatePick({ value, onChange, close, today }: { value: string | nu
         <input className="ld-in xs" style={{ flex: 1 }} aria-label="Type a date" placeholder="Or type 10/16/2026" value={typed} onChange={(e) => { setTyped(e.target.value); setErr(""); }} onKeyDown={(e) => e.key === "Enter" && submitTyped()} />
         <button type="button" className="ld-btn sm" onClick={submitTyped} disabled={!typed.trim()}>Set</button>
       </div>
-      {err && <span className="ld-small" style={{ color: "#b42318" }}>{err}</span>}
+      {err && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{err}</span>}
     </Pop>
   );
 }

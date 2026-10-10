@@ -55,7 +55,7 @@ export type PreviewInput = {
   when: string | null;
 };
 
-const post: React.CSSProperties = { border: "1px solid #e3e9e6", borderRadius: 10, background: "#fff", fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", color: "#1c1e21", overflow: "hidden" };
+const post: React.CSSProperties = { border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", color: "#1c1e21", overflow: "hidden" };
 const ph: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", padding: "12px 14px" };
 const pn: React.CSSProperties = { fontWeight: 700, fontSize: 14 };
 const pm: React.CSSProperties = { fontSize: 12, color: "#65676b" };
@@ -232,7 +232,7 @@ export function PostPreview({ input, account }: { input: PreviewInput; account: 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: isReel && (c === "instagram" || c === "facebook" || c === "tiktok") ? "center" : "stretch", gap: 10 }}>
       {body}
-      <div style={{ fontSize: 12, color: input.text.length > limit ? "#8a4510" : "#5b6b64", alignSelf: "flex-start", lineHeight: 1.45 }}>{note}</div>
+      <div style={{ fontSize: 12, color: input.text.length > limit ? "#8a4510" : "var(--ld-muted)", alignSelf: "flex-start", lineHeight: 1.45 }}>{note}</div>
     </div>
   );
 }

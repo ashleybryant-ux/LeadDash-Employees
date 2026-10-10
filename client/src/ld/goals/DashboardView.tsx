@@ -29,7 +29,7 @@ const SIZES: { span: Card["span"]; label: string }[] = [
   { span: 8, label: "Large" },
   { span: 12, label: "Full width" },
 ];
-const PALETTE = ["#2563eb", "#7c3aed", "#1b6b4a", "#d97706", "#c2253c", "#0f766e"];
+const PALETTE = ["#2563eb", "#7c3aed", "var(--ld-accent)", "#d97706", "#c2253c", "#0f766e"];
 
 export function DashboardView({ c }: { c: GoalsCtx }) {
   const [cards, setCards] = React.useState<Card[]>(c.data.layout);
@@ -266,23 +266,23 @@ export function PaceChart({ f }: { f: F }) {
   return (
     <div>
       <div className="gp-leg">
-        <span><i style={{ background: "#1b6b4a" }} />Actual</span>
-        <span><i style={{ background: "#9aa8a2" }} />Goal pace</span>
+        <span><i style={{ background: "var(--ld-accent)" }} />Actual</span>
+        <span><i style={{ background: "var(--ld-soft)" }} />Goal pace</span>
         <span><i style={{ background: off ? "#c2410c" : "#2563eb" }} />Forecast</span>
       </div>
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label={`Now ${fmt(f.current)} of ${fmt(f.target)}; at this pace ${fmt(f.landing)} by ${fmtYmd(f.end)}`}>
         {ticks.map((v) => (
           <g key={v}>
-            <line x1={L} x2={w - R} y1={Y(v)} y2={Y(v)} stroke="#eef2f0" />
-            <text x={L - 8} y={Y(v) + 4} fontSize="11" textAnchor="end" fill="#5b6b64">{fmt(v)}</text>
+            <line x1={L} x2={w - R} y1={Y(v)} y2={Y(v)} stroke="var(--ld-line2)" />
+            <text x={L - 8} y={Y(v) + 4} fontSize="11" textAnchor="end" fill="var(--ld-muted)">{fmt(v)}</text>
           </g>
         ))}
-        {months.length <= 14 && months.map((m) => <text key={m.d} x={X(m.d)} y={h - 10} fontSize="11" textAnchor="middle" fill="#5b6b64">{m.label}</text>)}
-        <line x1={X(f.start)} y1={Y(f.startValue)} x2={X(f.end)} y2={Y(f.target)} stroke="#9aa8a2" strokeWidth="2" strokeDasharray="5 4" />
-        {actual && <polyline points={actual} fill="none" stroke="#1b6b4a" strokeWidth="3" />}
+        {months.length <= 14 && months.map((m) => <text key={m.d} x={X(m.d)} y={h - 10} fontSize="11" textAnchor="middle" fill="var(--ld-muted)">{m.label}</text>)}
+        <line x1={X(f.start)} y1={Y(f.startValue)} x2={X(f.end)} y2={Y(f.target)} stroke="var(--ld-soft)" strokeWidth="2" strokeDasharray="5 4" />
+        {actual && <polyline points={actual} fill="none" stroke="var(--ld-accent)" strokeWidth="3" />}
         <line x1={X(f.today)} y1={Y(f.current)} x2={X(f.end)} y2={Y(f.landing)} stroke={off ? "#c2410c" : "#2563eb"} strokeWidth="2.5" strokeDasharray="6 4" />
-        <circle cx={X(f.today)} cy={Y(f.current)} r="5" fill="#1b6b4a" />
-        <text x={w - R - 4} y={Y(f.target) - 8} fontSize="12" fontWeight="800" textAnchor="end" fill="#5b6b64">Goal {fmt(f.target)}</text>
+        <circle cx={X(f.today)} cy={Y(f.current)} r="5" fill="var(--ld-accent)" />
+        <text x={w - R - 4} y={Y(f.target) - 8} fontSize="12" fontWeight="800" textAnchor="end" fill="var(--ld-muted)">Goal {fmt(f.target)}</text>
         <text x={w - R - 4} y={Y(f.landing) + (Math.abs(Y(f.landing) - Y(f.target)) < 18 ? 18 : -10)} fontSize="12" fontWeight="800" textAnchor="end" fill={off ? "#c2410c" : "#2563eb"}>{fmt(f.landing)} at this pace</text>
       </svg>
     </div>
@@ -320,7 +320,7 @@ function Donut({ rows }: { rows: { name: string; v: number; color: string }[] })
   return (
     <div className="gp-donut">
       <svg width="120" height="120" viewBox="0 0 120 120" aria-hidden="true">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="#eef2f0" strokeWidth="18" />
+        <circle cx="60" cy="60" r={r} fill="none" stroke="var(--ld-line2)" strokeWidth="18" />
         {tot > 0 &&
           rows.map((x) => {
             const len = (Math.max(0, x.v) / tot) * L;
@@ -328,7 +328,7 @@ function Donut({ rows }: { rows: { name: string; v: number; color: string }[] })
             off += len;
             return el;
           })}
-        <text x="60" y="64" textAnchor="middle" fontSize="20" fontWeight="800" fill="#14221c">{Math.round(tot * 10) / 10}</text>
+        <text x="60" y="64" textAnchor="middle" fontSize="20" fontWeight="800" fill="var(--ld-ink)">{Math.round(tot * 10) / 10}</text>
       </svg>
       <div className="lg">
         {rows.map((x) => (
@@ -356,7 +356,7 @@ function WeekBars({ c, r }: { c: GoalsCtx; r: Overview["scorecard"]["rows"][numb
         {vals.map((v, i) => (
           <span key={weeks[i]} className="col">
             <em>{v === null ? "" : short(v, r.measure.unit === "currency" ? "currency" : undefined)}</em>
-            <span className="b" style={{ height: `${((v ?? 0) / mx) * 110}px`, background: v === null ? "#eef2f0" : met(v) ? "#1b6b4a" : "#e8384f" }} />
+            <span className="b" style={{ height: `${((v ?? 0) / mx) * 110}px`, background: v === null ? "var(--ld-line2)" : met(v) ? "var(--ld-accent)" : "#e8384f" }} />
             <span className="w">{fmtYmd(weeks[i]).replace(/, \d{4}$/, "")}</span>
           </span>
         ))}
@@ -376,9 +376,9 @@ function Funnel({ rows }: { rows: { name: string; v: number }[] }) {
         <div key={r.name} className="gp-fun">
           <span className="ld-between">
             <span>{r.name} <b>{Math.round(r.v * 10) / 10}</b></span>
-            <span className="ld-small" style={i === worst ? { color: "#c2253c", fontWeight: 800 } : { color: "#5b6b64" }}>{conv[i] === null ? "" : `${conv[i]}%`}</span>
+            <span className="ld-small" style={i === worst ? { color: "#c2253c", fontWeight: 800 } : { color: "var(--ld-muted)" }}>{conv[i] === null ? "" : `${conv[i]}%`}</span>
           </span>
-          <span className="t"><i style={{ width: `${Math.max(3, (r.v / top) * 100)}%`, background: i === worst ? "#e8384f" : "#1b6b4a" }} /></span>
+          <span className="t"><i style={{ width: `${Math.max(3, (r.v / top) * 100)}%`, background: i === worst ? "#e8384f" : "var(--ld-accent)" }} /></span>
         </div>
       ))}
       {worst !== null && <span className="ld-small" style={{ color: "#c2253c", fontWeight: 700 }}>Biggest leak: {rows[worst - 1].name} to {rows[worst].name.toLowerCase()}</span>}

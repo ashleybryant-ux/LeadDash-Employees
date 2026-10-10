@@ -92,7 +92,7 @@ function Detail({ c, r }: { c: GoalsCtx; r: Row }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
         <div className="gp-leg">
           <span><i style={{ background: STATUS_COLOR[r.status ?? "on"] }} />Actual</span>
-          {r.measure.weeklyGoal !== null && <span><i style={{ background: "#9aa8a2" }} />Goal {valueText(r.measure.weeklyGoal, r.measure.unit)}</span>}
+          {r.measure.weeklyGoal !== null && <span><i style={{ background: "var(--ld-soft)" }} />Goal {valueText(r.measure.weeklyGoal, r.measure.unit)}</span>}
         </div>
         <WeekChart r={r} weeks={c.data.scorecard.weeks} />
       </div>
@@ -161,15 +161,15 @@ function WeekChart({ r, weeks }: { r: Row; weeks: string[] }) {
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" className="gp-chartbox" role="img" aria-label={`${r.measure.name}, last ${vals.length} weeks`}>
       {[0, 0.5, 1].map((k) => (
         <g key={k}>
-          <line x1={L} x2={w - 10} y1={Y(mx * k)} y2={Y(mx * k)} stroke="#eef2f0" />
-          <text x={L - 6} y={Y(mx * k) + 4} fontSize="10" textAnchor="end" fill="#5b6b64">{valueText(Math.round(mx * k * 10) / 10, r.measure.unit)}</text>
+          <line x1={L} x2={w - 10} y1={Y(mx * k)} y2={Y(mx * k)} stroke="var(--ld-line2)" />
+          <text x={L - 6} y={Y(mx * k) + 4} fontSize="10" textAnchor="end" fill="var(--ld-muted)">{valueText(Math.round(mx * k * 10) / 10, r.measure.unit)}</text>
         </g>
       ))}
-      {goal !== null && <line x1={L} x2={w - 10} y1={Y(goal)} y2={Y(goal)} stroke="#9aa8a2" strokeDasharray="5 4" />}
+      {goal !== null && <line x1={L} x2={w - 10} y1={Y(goal)} y2={Y(goal)} stroke="var(--ld-soft)" strokeDasharray="5 4" />}
       {avg !== null && <line x1={L} x2={w - 10} y1={Y(avg)} y2={Y(avg)} stroke="#c98a1b" strokeDasharray="2 3" />}
       {pts && <polyline points={pts} fill="none" stroke={STATUS_COLOR[r.status ?? "on"]} strokeWidth="2.5" />}
-      <text x={L} y={h - 6} fontSize="10" fill="#5b6b64">{fmtYmd(weeks[0])}</text>
-      <text x={w - 10} y={h - 6} fontSize="10" textAnchor="end" fill="#5b6b64">{fmtYmd(weeks[weeks.length - 1])}</text>
+      <text x={L} y={h - 6} fontSize="10" fill="var(--ld-muted)">{fmtYmd(weeks[0])}</text>
+      <text x={w - 10} y={h - 6} fontSize="10" textAnchor="end" fill="var(--ld-muted)">{fmtYmd(weeks[weeks.length - 1])}</text>
     </svg>
   );
 }

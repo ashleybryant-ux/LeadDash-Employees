@@ -323,9 +323,15 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(({ ctx }) =>
       ctx.user
-        ? { id: ctx.user.id, email: ctx.user.email, name: ctx.user.name, avatarUrl: ctx.user.avatarUrl ?? null, role: ctx.user.role, reviewer: review.isReviewUser(ctx.user) }
+        ? { id: ctx.user.id, email: ctx.user.email, name: ctx.user.name, avatarUrl: ctx.user.avatarUrl ?? null, role: ctx.user.role, reviewer: review.isReviewUser(ctx.user), theme: ctx.user.theme ?? "system" }
         : null
     ),
+
+    /** Appearance: light, dark, or match the device. Saved on the account so every device follows it. */
+    setTheme: protectedProcedure.input(z.object({ theme: z.enum(["light", "dark", "system"]) })).mutation(async ({ ctx, input }) => {
+      await db.updateUser(ctx.user.id, { theme: input.theme });
+      return { theme: input.theme };
+    }),
 
     requestCode: publicProcedure
       .input(z.object({ email: z.string().trim().email().max(320) }))
@@ -335,7 +341,7 @@ export const appRouter = router({
       .input(z.object({ email: z.string().trim().email().max(320), code: z.string().min(6).max(12) }))
       .mutation(async ({ ctx, input }) => {
         const user = await verifyCode(input.email, input.code, ctx.req, ctx.res);
-        return { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl ?? null, role: user.role, reviewer: review.isReviewUser(user) };
+        return { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl ?? null, role: user.role, reviewer: review.isReviewUser(user), theme: user.theme ?? "system" };
       }),
 
     logout: publicProcedure.mutation(async ({ ctx }) => {

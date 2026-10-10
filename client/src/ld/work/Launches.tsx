@@ -37,7 +37,7 @@ function Owner({ t }: { t: Pick<Task, "ownerName" | "ownerType" | "ownerKind"> }
   );
 }
 
-const groupHead: React.CSSProperties = { padding: "10px 18px", fontSize: 12, fontWeight: 700, color: "#5b6b64", textTransform: "uppercase", letterSpacing: ".06em", background: "#f8fafb", borderBottom: "1px solid #eef2f0", display: "flex", justifyContent: "space-between" };
+const groupHead: React.CSSProperties = { padding: "10px 18px", fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: ".06em", background: "var(--ld-page)", borderBottom: "1px solid #eef2f0", display: "flex", justifyContent: "space-between" };
 
 /** What a project card says on its right: the thing that needs attention first. */
 function attention(c: Card, tz: string) {

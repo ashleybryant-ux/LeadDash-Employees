@@ -171,7 +171,7 @@ function ReadTask({ orgId, d, onEdit, onOpen, onEditFields, onSaveTemplate }: { 
         </span>
       </div>
       <div className="ld-row" style={{ flexWrap: "wrap" }}>
-        <StatusCell q={q} t={t} color={status?.color ?? "#87909e"} />
+        <StatusCell q={q} t={t} color={status?.color ?? "var(--ld-soft3)"} />
         {t.priority && <Flag p={t.priority} />}
         {t.goal && <span className="gp-chip">◎ {t.goal}</span>}
         {t.repeat && <span className="gp-xpill blue">↻ {repeatText(t.repeat)}</span>}
@@ -257,7 +257,7 @@ function ReadTask({ orgId, d, onEdit, onOpen, onEditFields, onSaveTemplate }: { 
         {d.task.checklistItems.map((x, i) => (
           <label key={i} className="gp-cl">
             <input type="checkbox" disabled={!canComment} checked={x.done} onChange={() => up.mutate({ organizationId: orgId, id: t.id, patch: { checklist: d.task.checklistItems.map((y, k) => (k === i ? { ...y, done: !y.done } : y)) } })} />
-            <span style={x.done ? { textDecoration: "line-through", color: "#5b6b64" } : undefined}>{x.text}</span>
+            <span style={x.done ? { textDecoration: "line-through", color: "var(--ld-muted)" } : undefined}>{x.text}</span>
           </label>
         ))}
         {canEdit && <input className="ld-in xs" aria-label="New checklist item" placeholder="Add an item, then Enter" value={item} onChange={(e) => setItem(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && item.trim()) { up.mutate({ organizationId: orgId, id: t.id, patch: { checklist: [...d.task.checklistItems, { text: item.trim(), done: false }] } }); setItem(""); } }} />}
@@ -294,7 +294,7 @@ function Waits({ orgId, d, canEdit, onOpen, person, refresh }: { orgId: number; 
       {rows.map((r) => (
         <div key={`${r.kind}${r.linkId}`} className="gp-dep">
           <span className={`gp-xpill ${r.kind === "Waiting on" ? (r.closed ? "green" : "red") : "amber"}`}>{r.kind === "Waiting on" && r.closed ? "Done" : r.kind}</span>
-          <button type="button" className="gp-link gp-ell" style={{ textAlign: "left", fontWeight: 600, color: "#14221c" }} onClick={() => onOpen(r.id)}>{r.name}</button>
+          <button type="button" className="gp-link gp-ell" style={{ textAlign: "left", fontWeight: 600, color: "var(--ld-ink)" }} onClick={() => onOpen(r.id)}>{r.name}</button>
           <span className="ld-row">{r.assignees.slice(0, 2).map((a) => <OwnerAvatar key={`${a.type}:${a.id}`} o={person(a)} size={22} />)}</span>
           <span className="ld-small ld-muted">{r.dueDate ? `Due ${fmtYmd(r.dueDate)}` : ""}</span>
         </div>

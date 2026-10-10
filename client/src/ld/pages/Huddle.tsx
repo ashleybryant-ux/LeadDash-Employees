@@ -241,7 +241,7 @@ export default function Huddle() {
   return (
     <div className="ld">
       <Rail active="huddle" />
-      <section style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh", background: "#f8fafb" }}>
+      <section style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh", background: "var(--ld-page)" }}>
         <header className="ld-hud-head">
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <h1 style={{ margin: 0, fontWeight: 800, fontSize: 18 }}>Team huddle</h1>
@@ -282,7 +282,7 @@ export default function Huddle() {
             )}
             <div className="ld-card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
               <span style={{ fontWeight: 800, fontSize: 16 }}>Talk with your team out loud</span>
-              <span style={{ fontSize: 14, lineHeight: 1.6, color: "#3d4c45" }}>Say a name to ask someone directly, or ask the whole team. Each employee answers from their own work, in their own voice. When you end, Simone writes the notes and Nora tracks the action items.</span>
+              <span style={{ fontSize: 14, lineHeight: 1.6, color: "var(--ld-text2)" }}>Say a name to ask someone directly, or ask the whole team. Each employee answers from their own work, in their own voice. When you end, Simone writes the notes and Nora tracks the action items.</span>
               <span className="ld-lbl">Who's in</span>
               {whoPicker}
               <div>
@@ -320,10 +320,10 @@ export default function Huddle() {
               </div>
               <div className="ld-card" style={{ padding: "12px 16px", display: "flex", gap: 10, alignItems: "center" }}>
                 <span className={`ld-pill ${listening && !muted ? "green" : "gray"}`}>You</span>
-                <span style={{ fontSize: 14, color: "#3d4c45", minWidth: 0 }}>{partial || (live.inMeeting ? "The team is in your meeting and answers there. Talk in the meeting." : listening ? (muted ? "You're muted." : "Talk normally. Say a name to ask someone directly.") : "Press Start talking and allow the microphone.")}</span>
+                <span style={{ fontSize: 14, color: "var(--ld-text2)", minWidth: 0 }}>{partial || (live.inMeeting ? "The team is in your meeting and answers there. Talk in the meeting." : listening ? (muted ? "You're muted." : "Talk normally. Say a name to ask someone directly.") : "Press Start talking and allow the microphone.")}</span>
               </div>
-              {micError && <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>{micError}</p>}
-              {voiceError && <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>{`The answer showed but had no voice. ${voiceError}`}</p>}
+              {micError && <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0 }}>{micError}</p>}
+              {voiceError && <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0 }}>{`The answer showed but had no voice. ${voiceError}`}</p>}
               {blocked && (
                 <div className="ld-card" style={{ padding: "12px 16px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 14, flex: 1, minWidth: 0 }}>{`Your browser blocked ${blocked.name}'s voice.`}</span>

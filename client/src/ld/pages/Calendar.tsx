@@ -101,7 +101,7 @@ function title(view: View, anchor: string) {
 /** Light fill for an event's color. */
 function tint(hex: string) {
   const n = parseInt(hex.replace("#", ""), 16);
-  if (Number.isNaN(n)) return "#eef2f0";
+  if (Number.isNaN(n)) return "var(--ld-line2)";
   const mix = (c: number) => Math.round(c + (255 - c) * 0.86);
   return `rgb(${mix((n >> 16) & 255)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
 }
@@ -213,7 +213,7 @@ export default function Calendar() {
             </div>
           )}
           {r && r.failed.length > 0 && (
-            <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>
+            <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0 }}>
               Couldn't read {r.failed.join(" and ")}. <Link href="/integrations">Reconnect on Integrations</Link>.
             </p>
           )}
@@ -360,12 +360,12 @@ function onDay(i: Item, ymd: string, tz: string) {
 }
 
 function Chip({ item, sel, onPick }: { item: Item; sel: boolean; onPick: (k: string) => void }) {
-  const late = item.late ? { background: "#fdecea", color: "#b42318" } : null;
+  const late = item.late ? { background: "#fdecea", color: "var(--ld-bad)" } : null;
   return (
     <button
       type="button"
       className={`ld-cal-chip ${sel ? "sel" : ""}`}
-      style={late ?? { background: tint(item.color), color: item.kind === "team" ? "#3d4c45" : item.color }}
+      style={late ?? { background: tint(item.color), color: item.kind === "team" ? "var(--ld-text2)" : item.color }}
       title={item.title}
       onClick={() => onPick(item.key)}
     >
@@ -473,7 +473,7 @@ function MonthGrid({ from, days, anchor, today, tz, items, sel, onPick, onDay: o
             </button>
             {shown.map((i) => (
               <button type="button" key={i.key} className={`ld-cal-dot ${sel === i.key ? "sel" : ""}`} title={i.title} onClick={() => onPick(i.key)}>
-                <i style={{ background: i.late ? "#b42318" : i.color }} />
+                <i style={{ background: i.late ? "var(--ld-bad)" : i.color }} />
                 <span className="ld-clip">{i.allDay ? i.title : `${timeText(i.start, tz).replace(/ (AM|PM)$/, "")} ${i.title}`}</span>
               </button>
             ))}

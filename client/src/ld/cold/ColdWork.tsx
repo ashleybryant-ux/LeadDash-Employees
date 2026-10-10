@@ -88,7 +88,7 @@ function KV({ rows }: { rows: [string, React.ReactNode][] }) {
 }
 function Box({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: "#fff", border: "1px solid #e3e9e6", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+    <div style={{ background: "var(--ld-surface)", border: "1px solid #e3e9e6", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
       {label && <span className="ld-lbl">{label}</span>}
       {children}
     </div>
@@ -97,9 +97,9 @@ function Box({ label, children }: { label?: string; children: React.ReactNode })
 function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
     <Box>
-      <span className="ld-small" style={{ color: "#5b6b64" }}>{label}</span>
+      <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{label}</span>
       <b style={{ fontSize: 22 }}>{value}</b>
-      {sub && <span className="ld-small" style={{ color: "#5b6b64" }}>{sub}</span>}
+      {sub && <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{sub}</span>}
     </Box>
   );
 }
@@ -107,7 +107,7 @@ function Seg<T extends string | number>({ value, options, onChange, label }: { v
   return (
     <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", alignSelf: "flex-start", flexWrap: "wrap" }}>
       {options.map((o) => (
-        <button key={String(o.key)} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid #e3e9e6", background: value === o.key ? "#e6f2ec" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "#155c3e" : "#3d4c45", cursor: "pointer", whiteSpace: "nowrap" }}>
+        <button key={String(o.key)} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid #e3e9e6", background: value === o.key ? "var(--ld-accent-bg)" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
           {o.label}
         </button>
       ))}
@@ -123,17 +123,17 @@ function Label({ id, children, top }: { id: string; children: React.ReactNode; t
 function Bar({ value, max, warn }: { value: number; max: number; warn?: boolean }) {
   const w = max ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
-    <div style={{ height: 8, borderRadius: 999, background: "#eef2f0", overflow: "hidden" }} role="img" aria-label={`${w}%`}>
-      <div style={{ width: `${w}%`, height: "100%", background: warn ? "#c26a1c" : "#1b6b4a" }} />
+    <div style={{ height: 8, borderRadius: 999, background: "var(--ld-line2)", overflow: "hidden" }} role="img" aria-label={`${w}%`}>
+      <div style={{ width: `${w}%`, height: "100%", background: warn ? "#c26a1c" : "var(--ld-accent)" }} />
     </div>
   );
 }
 function Step({ title, when, children }: { title: string; when?: string; children: React.ReactNode }) {
   return (
-    <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "#fff", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
         <b style={{ fontSize: 14 }}>{title}</b>
-        {when && <span className="ld-small" style={{ color: "#5b6b64" }}>{when}</span>}
+        {when && <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{when}</span>}
       </div>
       {children}
     </div>
@@ -235,7 +235,7 @@ function ColdEmail({ v }: { v: Overview }) {
           <b>Emails this month</b><Bar value={b.monthSent} max={v.plan.emails} warn /><span>{n(b.monthSent)} of {n(v.plan.emails)}</span>
           <b>Your inboxes could send</b><Bar value={Math.min(v.plan.emails, b.inboxCapacityMonth)} max={Math.max(v.plan.emails, b.inboxCapacityMonth)} /><span>About {n(b.inboxCapacityMonth)} a month</span>
         </div>
-        <span className="ld-small" style={{ color: "#3d4c45", lineHeight: 1.5 }}>
+        <span className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.5 }}>
           Jada moves finished leads out of Instantly so new ones fit.{b.inboxCapacityMonth > v.plan.emails ? ` Your ${b.healthy} healthy inboxes could send more than your plan allows.` : ""}
         </span>
       </Card>
@@ -258,7 +258,7 @@ function Connect({ error }: { error: string | null }) {
         <Label id="ik">API key</Label>
         <input id="ik" className="ld-in" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
       </Form>
-      {error && <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>}
+      {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
       <ErrorLine error={connect.error} />
     </Card>
   );
@@ -308,7 +308,7 @@ function Inboxes({ v }: { v: Overview }) {
         </React.Fragment>
       ))}
       <div style={{ padding: "10px 18px 14px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }} className="ld-small">
-        <span style={{ color: "#3d4c45" }}>
+        <span style={{ color: "var(--ld-text2)" }}>
           {resting.length ? `${resting.length} out of rotation. ` : ""}
           {v.inboxes.length - resting.length} healthy.{v.lastInboxCheckAt ? ` Checked ${fmtWhen(v.lastInboxCheckAt)}.` : ""}
         </span>
@@ -351,7 +351,7 @@ function Review({ r }: { r: NonNullable<Overview["review"]> }) {
           ))}
         </Box>
       )}
-      <span className="ld-small" style={{ color: "#5b6b64" }}>Jada changes one thing at a time so she can tell what worked. At level 3 she makes these changes on her own.</span>
+      <span className="ld-small" style={{ color: "var(--ld-muted)" }}>Jada changes one thing at a time so she can tell what worked. At level 3 she makes these changes on her own.</span>
       <ErrorLine error={apply.error || dismiss.error} />
     </Card>
   );
@@ -402,7 +402,7 @@ function ColdSettings({ v }: { v: Overview }) {
             <b>How much Jada does</b>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <Seg label="Level" value={edit.level} onChange={(x) => setEdit({ ...edit, level: x })} options={LEVELS.map((l) => ({ key: l, label: `Level ${l}` }))} />
-              <span className="ld-small" style={{ color: "#5b6b64" }}>{LEVEL_SHORT[edit.level]}</span>
+              <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{LEVEL_SHORT[edit.level]}</span>
             </div>
             <b>Instantly plan</b>
             <Seg label="Plan" value={edit.plan} onChange={(x) => setEdit({ ...edit, plan: x })} options={[{ key: "growth", label: "Growth" }, { key: "hypergrowth", label: "Hypergrowth" }, { key: "lightspeed", label: "Light Speed" }, { key: "custom", label: "Other" }]} />
@@ -454,7 +454,7 @@ function ColdSettings({ v }: { v: Overview }) {
               ["Rest an inbox when", `Bounces over ${s.bounceRest}%, or Instantly reports an error`],
               ["Open tracking", "Off. Jada measures replies, demos and sales."],
               ["Signature", s.signature || "Not set"],
-              ["Mailing address", s.addressUsed ? `${s.addressUsed}${!s.address && s.site.address ? ", from your website" : ""}, in every email` : <span style={{ color: "#b42318" }}>Not set. Campaigns can't start without it.</span>],
+              ["Mailing address", s.addressUsed ? `${s.addressUsed}${!s.address && s.site.address ? ", from your website" : ""}, in every email` : <span style={{ color: "var(--ld-bad)" }}>Not set. Campaigns can't start without it.</span>],
               ["Opt-out line", `"${s.optOut}"`],
               ["Pricing", s.site.plans.length ? `Read from ${s.site.url}${s.siteCheckedAt ? `. Last checked ${fmt(s.siteCheckedAt)}` : ""}.` : s.siteError || "Not read yet"],
               ["Always needs you", s.alwaysNeedsYou],
@@ -547,22 +547,22 @@ function LeadList() {
       >
         <div className="ld-cold-grid" style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: 12 }}>
           {tiers.map((t) => (
-            <button key={t.key} type="button" onClick={() => { setTier(tier === t.key ? "" : t.key); setPage(0); }} aria-pressed={tier === t.key} style={{ textAlign: "left", font: "inherit", background: tier === t.key ? "#e6f2ec" : "#fff", border: `1px solid ${tier === t.key ? "#1b6b4a" : "#e3e9e6"}`, borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer", color: "#14221c" }}>
-              <span className="ld-small" style={{ color: "#5b6b64" }}>{t.label}</span>
+            <button key={t.key} type="button" onClick={() => { setTier(tier === t.key ? "" : t.key); setPage(0); }} aria-pressed={tier === t.key} style={{ textAlign: "left", font: "inherit", background: tier === t.key ? "var(--ld-accent-bg)" : "#fff", border: `1px solid ${tier === t.key ? "var(--ld-accent)" : "var(--ld-line)"}`, borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer", color: "var(--ld-ink)" }}>
+              <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{t.label}</span>
               <b style={{ fontSize: 20 }}>{n(t.value)}</b>
-              <span className="ld-small" style={{ color: "#5b6b64" }}>{t.sub}</span>
+              <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{t.sub}</span>
             </button>
           ))}
           {d && <Stat label="Do not contact" value={n(d.suppress)} sub="Never emailed" />}
         </div>
-        {d && d.counts.unresearched > 0 && <span className="ld-small" style={{ color: "#3d4c45" }}>{n(d.counts.unresearched)} not researched yet. Jada researches the best few hundred at a time and scores them, so money isn't spent on leads that never get emailed.</span>}
+        {d && d.counts.unresearched > 0 && <span className="ld-small" style={{ color: "var(--ld-text2)" }}>{n(d.counts.unresearched)} not researched yet. Jada researches the best few hundred at a time and scores them, so money isn't spent on leads that never get emailed.</span>}
         {researching !== null && (
           <Box label="Research the next best leads">
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <Seg label="How many" value={researching} onChange={setResearching} options={["50", "100", "500", "1000"].map((x) => ({ key: x, label: x }))} />
               <button type="button" className="ld-btn p" disabled={research.isPending} onClick={() => research.mutate({ organizationId: orgId, count: Number(researching), state: state.trim() || undefined })}>Start</button>
             </div>
-            <span className="ld-small" style={{ color: "#5b6b64" }}>Their practice website first, a web search when there isn't one{state.trim() ? `, only in ${state.trim()}` : ""}. Public business information only.</span>
+            <span className="ld-small" style={{ color: "var(--ld-muted)" }}>Their practice website first, a web search when there isn't one{state.trim() ? `, only in ${state.trim()}` : ""}. Public business information only.</span>
           </Box>
         )}
         <ErrorLine error={research.error} />
@@ -583,7 +583,7 @@ function LeadList() {
         ))}
         {d && d.total > d.size && (
           <div style={{ padding: "12px 18px", display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
-            <span className="ld-small" style={{ color: "#5b6b64" }}>{n(page * d.size + 1)} to {n(Math.min(d.total, (page + 1) * d.size))} of {n(d.total)}</span>
+            <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{n(page * d.size + 1)} to {n(Math.min(d.total, (page + 1) * d.size))} of {n(d.total)}</span>
             <button type="button" className="ld-btn" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button>
             <button type="button" className="ld-btn" disabled={(page + 1) * d.size >= d.total} onClick={() => setPage(page + 1)}>Next</button>
           </div>
@@ -641,7 +641,7 @@ function LeadRow({ l, open, onToggle, cols }: { l: Lead; open: boolean; onToggle
               </Box>
             )}
             <ErrorLine error={stop.error || dnc.error || pre.error} />
-            {pre.isSuccess && <span className="ld-small" style={{ color: "#155c3e" }}>The pre-call report is on its way. It shows on the Pre-call tab.</span>}
+            {pre.isSuccess && <span className="ld-small" style={{ color: "var(--ld-accent-dark)" }}>The pre-call report is on its way. It shows on the Pre-call tab.</span>}
           </div>
           <Buttons>
             {(l.stage === "in_campaign" || l.stage === "queued") && <button type="button" className="ld-btn" disabled={stop.isPending} onClick={() => stop.mutate({ organizationId: orgId, id: l.id })}>Stop emails</button>}
@@ -700,7 +700,7 @@ function AddLeads({ onDone }: { onDone: () => void }) {
           <input id="lf" type="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </Form>
       )}
-      <span className="ld-small" style={{ color: "#5b6b64" }}>The list stays here. Jada only sends Instantly the next batch she's ready to email. Emails already on the list or on do not contact are skipped, and expired licenses are kept out.</span>
+      <span className="ld-small" style={{ color: "var(--ld-muted)" }}>The list stays here. Jada only sends Instantly the next batch she's ready to email. Emails already on the list or on do not contact are skipped, and expired licenses are kept out.</span>
       {result && (
         <Box label="Added">
           <span style={{ fontSize: 14, lineHeight: 1.6 }}>
@@ -711,7 +711,7 @@ function AddLeads({ onDone }: { onDone: () => void }) {
           </span>
         </Box>
       )}
-      {err && <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>{err}</p>}
+      {err && <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0 }}>{err}</p>}
       <ErrorLine error={pull.error} />
     </Card>
   );
@@ -745,7 +745,7 @@ function Campaigns() {
       <Card label="Angles Jada can use" buttons={<button type="button" className="ld-btn p" disabled={write.isPending} onClick={() => write.mutate({ organizationId: orgId, angle: angle as never })}>{write.isPending ? "Writing..." : "New campaign"}</button>}>
         <Seg label="Angle" value={angle} onChange={setAngle} options={(q.data?.angles ?? []).map((a) => ({ key: a.key, label: a.name }))} />
         <span style={{ fontSize: 14, lineHeight: 1.6 }}>{q.data?.angles.find((a) => a.key === angle)?.idea}</span>
-        <span className="ld-small" style={{ color: "#5b6b64" }}>Each campaign starts with a subject line test. Jada scales what books demos and stops the rest.</span>
+        <span className="ld-small" style={{ color: "var(--ld-muted)" }}>Each campaign starts with a subject line test. Jada scales what books demos and stops the rest.</span>
         <ErrorLine error={write.error} />
       </Card>
     </>
@@ -795,7 +795,7 @@ function CampaignRow({ c, open, onToggle, cols, segments }: { c: Campaign; open:
                   {segments.map((sg) => {
                     const on = edit.segments.includes(sg.key);
                     return (
-                      <button key={sg.key} type="button" aria-pressed={on} className="ld-btn" style={{ width: "auto", height: 30, fontSize: 12, background: on ? "#e6f2ec" : "#fff", borderColor: on ? "#1b6b4a" : undefined, color: on ? "#155c3e" : undefined }} onClick={() => setEdit({ ...edit, segments: on ? edit.segments.filter((x) => x !== sg.key) : [...edit.segments, sg.key].slice(0, 6) })}>
+                      <button key={sg.key} type="button" aria-pressed={on} className="ld-btn" style={{ width: "auto", height: 30, fontSize: 12, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : undefined }} onClick={() => setEdit({ ...edit, segments: on ? edit.segments.filter((x) => x !== sg.key) : [...edit.segments, sg.key].slice(0, 6) })}>
                         {sg.label}
                       </button>
                     );
@@ -824,7 +824,7 @@ function CampaignRow({ c, open, onToggle, cols, segments }: { c: Campaign; open:
                   </Form>
                 </Step>
               ))}
-              <span className="ld-small" style={{ color: "#5b6b64" }}>[first name] and [practice name] are filled in for each lead. Your signature, mailing address and opt-out line go under every email.</span>
+              <span className="ld-small" style={{ color: "var(--ld-muted)" }}>[first name] and [practice name] are filled in for each lead. Your signature, mailing address and opt-out line go under every email.</span>
               <ErrorLine error={err} />
             </div>
           ) : (
@@ -837,10 +837,10 @@ function CampaignRow({ c, open, onToggle, cols, segments }: { c: Campaign; open:
                     <span>A: "{c.steps[0].subject}"</span><span>{n(st.a?.replies)}</span><span>{n(st.a?.positive)}</span>
                     <span>B: "{c.steps[0].subjectB}"</span><span>{n(st.b?.replies)}</span><span>{n(st.b?.positive)}</span>
                   </div>
-                  <span className="ld-small" style={{ color: "#5b6b64" }}>Same body, audience, ask and send times. Jada picks a winner at about 500 sends each.</span>
+                  <span className="ld-small" style={{ color: "var(--ld-muted)" }}>Same body, audience, ask and send times. Jada picks a winner at about 500 sends each.</span>
                 </Box>
               )}
-              {c.test.winner && <span className="ld-small" style={{ color: "#3d4c45" }}>Subject line test done: kept "{c.test.kept ?? c.steps[0]?.subject}".</span>}
+              {c.test.winner && <span className="ld-small" style={{ color: "var(--ld-text2)" }}>Subject line test done: kept "{c.test.kept ?? c.steps[0]?.subject}".</span>}
               {c.steps.map((s, i) => (
                 <Step key={i} title={`Email ${i + 1}`} when={`Day ${s.day}`}>
                   {s.subject && <b style={{ fontSize: 14 }}>{s.subject}</b>}
@@ -908,8 +908,8 @@ function Replies({ list }: { list: Reply[] }) {
   return (
     <>
       <Card label={`${list.filter((r) => r.status === "open").length} waiting for you`} buttons={<button type="button" className="ld-btn" disabled={check.isPending} onClick={() => check.mutate({ organizationId: orgId })}>{check.isPending ? "Checking..." : "Check now"}</button>}>
-        <span className="ld-small" style={{ color: "#3d4c45", lineHeight: 1.5 }}>Every reply is read and sorted. Opt-outs are honored right away. What Jada answers on her own depends on the level in Cold email settings.</span>
-        {check.data && <span className="ld-small" style={{ color: "#155c3e" }}>{check.data.read ? `${check.data.read} new.` : "Nothing new."}</span>}
+        <span className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.5 }}>Every reply is read and sorted. Opt-outs are honored right away. What Jada answers on her own depends on the level in Cold email settings.</span>
+        {check.data && <span className="ld-small" style={{ color: "var(--ld-accent-dark)" }}>{check.data.read ? `${check.data.read} new.` : "Nothing new."}</span>}
         <ErrorLine error={check.error} />
       </Card>
       <div className="ld-card" style={{ overflow: "hidden" }}>
@@ -1042,7 +1042,7 @@ function Precalls({ list }: { list: Precall[] }) {
         </Card>
       ) : (
         <Card buttons={<button type="button" className="ld-btn p" onClick={() => setForm({ person: "", practice: "", website: "", meetingAt: "" })}>Run a report</button>}>
-          <span className="ld-small" style={{ color: "#3d4c45", lineHeight: 1.6 }}>Public business information only. No home addresses, family, health or personal accounts. Every fact shows where it came from, and anything not confirmed is marked Likely or Unknown. Any employee can run one in chat: "Run a pre-call report on Bayou Family Therapy."</span>
+          <span className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.6 }}>Public business information only. No home addresses, family, health or personal accounts. Every fact shows where it came from, and anything not confirmed is marked Likely or Unknown. Any employee can run one in chat: "Run a pre-call report on Bayou Family Therapy."</span>
         </Card>
       )}
     </>
@@ -1072,7 +1072,7 @@ function PrecallRow({ r, open, onToggle, cols }: { r: Precall; open: boolean; on
         <div className="ld-av-exp" style={{ gridTemplateColumns: "minmax(0,1fr) 128px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
             {r.status === "running" && <span style={{ fontSize: 14 }}>Jada is reading the practice's public pages. This takes a few minutes.</span>}
-            {r.status === "failed" && <span style={{ fontSize: 14, color: "#b42318" }}>{r.error}</span>}
+            {r.status === "failed" && <span style={{ fontSize: 14, color: "var(--ld-bad)" }}>{r.error}</span>}
             {(r.status === "ready" || r.status === "done") && (
               <div className="ld-card" style={{ overflow: "hidden" }}>
                 <Sec label="30-second brief">
@@ -1093,11 +1093,11 @@ function PrecallRow({ r, open, onToggle, cols }: { r: Precall; open: boolean; on
                           <span>{t.job}</span>
                           <b>{t.tool}</b>
                           <Conf c={t.confidence} />
-                          <span style={{ color: "#5b6b64" }}>{t.evidence}</span>
+                          <span style={{ color: "var(--ld-muted)" }}>{t.evidence}</span>
                         </React.Fragment>
                       ))}
                     </div>
-                    {rep.costRange && <span className="ld-small" style={{ color: "#5b6b64" }}>Rough cost of these tools today: {rep.costRange}. A range, not their bill.</span>}
+                    {rep.costRange && <span className="ld-small" style={{ color: "var(--ld-muted)" }}>Rough cost of these tools today: {rep.costRange}. A range, not their bill.</span>}
                   </Sec>
                 )}
                 {rep.journey.steps.length > 0 && (
@@ -1128,7 +1128,7 @@ function PrecallRow({ r, open, onToggle, cols }: { r: Precall; open: boolean; on
                 {rep.objections.length > 0 && (
                   <Sec label="Likely objections">
                     <KV rows={rep.objections.map((o) => [o.objection, `${o.reason} ${o.response}`] as [string, string])} />
-                    {r.battle && <span className="ld-small" style={{ color: "#5b6b64" }}>{r.battle.title} battle card attached from the playbook: {r.battle.body.differs}</span>}
+                    {r.battle && <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{r.battle.title} battle card attached from the playbook: {r.battle.body.differs}</span>}
                   </Sec>
                 )}
                 {rep.questions.length > 0 && (
@@ -1147,7 +1147,7 @@ function PrecallRow({ r, open, onToggle, cols }: { r: Precall; open: boolean; on
                   </Sec>
                 )}
                 <Sec label="Sources">
-                  <span className="ld-small" style={{ color: "#3d4c45", lineHeight: 1.8 }}>
+                  <span className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.8 }}>
                     {rep.sources.map((s, i) => (
                       <React.Fragment key={i}>
                         {i > 0 && " · "}
@@ -1181,7 +1181,7 @@ function PrecallRow({ r, open, onToggle, cols }: { r: Precall; open: boolean; on
                   ))}
                 </div>
                 {r.after.nextStep && <span style={{ fontSize: 14 }}><b>Next step:</b> {r.after.nextStep}</span>}
-                <span className="ld-small" style={{ color: "#5b6b64" }}>{r.status === "done" ? "Saved to the lead." : "Approve to save these to the lead, so the next report and Jada's weekly review use them."}</span>
+                <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{r.status === "done" ? "Saved to the lead." : "Approve to save these to the lead, so the next report and Jada's weekly review use them."}</span>
               </Box>
             )}
             <ErrorLine error={err} />
@@ -1304,7 +1304,7 @@ function Playbook({ v }: { v?: Overview }) {
             ) : (
               <span style={{ fontSize: 14 }}>{v?.settings.siteError || "Not read from the website yet."}</span>
             )}
-            <span className="ld-small" style={{ color: "#5b6b64" }}>Read from {v?.settings.site.url || `${v?.settings.website ?? "your website"}/pricing`} every Monday{v?.settings.siteCheckedAt ? `. Last checked ${fmt(v.settings.siteCheckedAt)}` : ""}. Jada quotes only these prices. Change the website in Cold email settings.</span>
+            <span className="ld-small" style={{ color: "var(--ld-muted)" }}>Read from {v?.settings.site.url || `${v?.settings.website ?? "your website"}/pricing`} every Monday{v?.settings.siteCheckedAt ? `. Last checked ${fmt(v.settings.siteCheckedAt)}` : ""}. Jada quotes only these prices. Change the website in Cold email settings.</span>
             <ErrorLine error={site.error} />
           </div>
           <Buttons><button type="button" className="ld-btn" disabled={site.isPending} onClick={() => site.mutate({ organizationId: orgId })}>{site.isPending ? "Checking..." : "Check now"}</button></Buttons>
@@ -1345,7 +1345,7 @@ function Playbook({ v }: { v?: Overview }) {
           {!editing && tab !== "example" && (
             <div style={{ padding: "14px 18px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <button type="button" className="ld-btn p" onClick={() => { setOpen(null); setEditing({ title: "", body: {} }); }}>{tab === "objection" ? "Add objection" : tab === "battle" ? "Add card" : tab === "fact" ? "Add fact" : "Add phrase"}</button>
-              {tab === "objection" && <span className="ld-small" style={{ color: "#5b6b64" }}>When you answer a reply yourself, Jada saves it as a real example.</span>}
+              {tab === "objection" && <span className="ld-small" style={{ color: "var(--ld-muted)" }}>When you answer a reply yourself, Jada saves it as a real example.</span>}
             </div>
           )}
           <ErrorLine error={save.error || remove.error} />

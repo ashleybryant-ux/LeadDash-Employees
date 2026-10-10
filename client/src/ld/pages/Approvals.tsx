@@ -152,7 +152,7 @@ export default function Approvals() {
         {shown.length === 0 && shownApps.length === 0 && (
           <div className="ld-empty">{q.isLoading ? "Loading..." : tab === "done" ? "Nothing approved or sent back yet." : tab === "submitted" ? "Nothing submitted yet." : "Nothing is waiting for approval."}</div>
         )}
-        {shown.length > 0 && shownApps.length > 0 && <div style={{ height: 1, background: "#e3e9e6" }} />}
+        {shown.length > 0 && shownApps.length > 0 && <div style={{ height: 1, background: "var(--ld-line)" }} />}
         {shown.map((item) => {
           const emp = employees.find((e) => e.id === item.employeeId);
           const isOpen = open === item.id;
@@ -240,7 +240,7 @@ export default function Approvals() {
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             <span className="ld-lbl">Result</span>
                             {dispatch.map((d) => (
-                              <span key={d.channel} className="ld-body" style={{ color: d.ok ? "#155c3e" : "#b42318" }}>
+                              <span key={d.channel} className="ld-body" style={{ color: d.ok ? "var(--ld-accent-dark)" : "var(--ld-bad)" }}>
                                 {CH_NAME[d.channel] ?? d.channel}: {d.ok ? "posted" : d.error}
                                 {d.ok && d.url ? (
                                   <>
@@ -285,7 +285,7 @@ export default function Approvals() {
                       <>
                         <span className="ld-lbl" style={{ marginTop: 8 }}>Result</span>
                         {dispatch.map((d) => (
-                          <span key={d.channel} className="ld-body" style={{ color: d.ok ? "#155c3e" : "#b42318" }}>
+                          <span key={d.channel} className="ld-body" style={{ color: d.ok ? "var(--ld-accent-dark)" : "var(--ld-bad)" }}>
                             {CH_NAME[d.channel] ?? d.channel}: {d.ok ? (item.kind === "social_post" ? "posted" : item.kind === "calendar_hold" ? "added" : "sent") : d.error}
                             {d.ok && d.url ? (
                               <>

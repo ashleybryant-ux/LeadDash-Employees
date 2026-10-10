@@ -163,7 +163,7 @@ function UpcomingMeeting({ m, tz }: { m: M; tz: string }) {
           ))}
           <div className="ld-row" style={{ gap: 12, alignItems: "center" }}>
             <button type="button" className="ld-btn" style={{ width: 128 }} onClick={() => setD({ ...d, agenda: [...d.agenda, { item: "", who: "", minutes: 5 }] })}>Add item</button>
-            <span className="ld-small" style={{ color: total > d.minutes ? "#b42318" : "#5b6b64" }}>{`${total} of ${d.minutes} minutes`}</span>
+            <span className="ld-small" style={{ color: total > d.minutes ? "var(--ld-bad)" : "var(--ld-muted)" }}>{`${total} of ${d.minutes} minutes`}</span>
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -552,7 +552,7 @@ export function NotesDetail({ r, tz, onClose }: { r: NT; tz: string; onClose?: (
         )}
         {facts.length > 0 && <span className="ld-small ld-muted" style={{ paddingTop: 6 }}>{facts.join(" · ")}</span>}
         {showText && (
-          <div className="ld-body" style={{ whiteSpace: "pre-line", maxHeight: 320, overflowY: "auto", border: "1px solid #e3e9e6", borderRadius: 8, padding: "10px 12px", background: "#fff", fontSize: 13 }}>
+          <div className="ld-body" style={{ whiteSpace: "pre-line", maxHeight: 320, overflowY: "auto", border: "1px solid #e3e9e6", borderRadius: 8, padding: "10px 12px", background: "var(--ld-surface)", fontSize: 13 }}>
             {transcript.isLoading ? "Loading..." : transcript.data?.transcript || "No transcript."}
           </div>
         )}

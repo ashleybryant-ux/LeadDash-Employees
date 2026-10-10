@@ -21,7 +21,7 @@ import type { Names } from "./team/text";
 
 export function TeamIcon({ size = 46, priv = false }: { size?: number; priv?: boolean }) {
   return (
-    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: Math.round(size * 0.26), background: priv ? "#5b6b64" : "#1b6b4a", color: "#fff", fontSize: Math.round(size * (priv ? 0.4 : 0.44)), fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: Math.round(size * 0.26), background: priv ? "var(--ld-muted)" : "var(--ld-accent)", color: "#fff", fontSize: Math.round(size * (priv ? 0.4 : 0.44)), fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
       {priv ? "🔒" : "#"}
     </span>
   );
@@ -31,7 +31,7 @@ export function OnlineAvatar({ name, src, size, online }: { name: string; src: s
   return (
     <span style={{ position: "relative", display: "flex", flexShrink: 0 }}>
       <PersonAvatar name={name} src={src} size={size} />
-      {online && <span aria-label="Online" style={{ position: "absolute", right: -1, bottom: -1, width: Math.max(9, Math.round(size * 0.26)), height: Math.max(9, Math.round(size * 0.26)), borderRadius: 999, background: "#22a06b", border: "2px solid #fff" }} />}
+      {online && <span aria-label="Online" style={{ position: "absolute", right: -1, bottom: -1, width: Math.max(9, Math.round(size * 0.26)), height: Math.max(9, Math.round(size * 0.26)), borderRadius: 999, background: "#22a06b", border: "2px solid var(--ld-surface)" }} />}
     </span>
   );
 }
@@ -146,7 +146,7 @@ function TeamPane({ channel }: { channel: string }) {
     <div className="tc-wrap">
       <div className={`tc-pane ${side && mobile ? "ld-hide-sm" : ""}`}>
         <header className="ld-emphead tc-head2">
-          <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "#14221c", display: "flex" }}>
+          <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "var(--ld-ink)", display: "flex" }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
           </Link>
           {isDm ? <OnlineAvatar name={d?.title ?? ""} src={d?.people.find((p) => p.name === d.title)?.avatarUrl ?? null} size={40} online={!!d?.online} /> : <span className="tc-hash" aria-hidden="true">{d?.private ? "🔒" : "#"}</span>}

@@ -273,10 +273,10 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             return (
               <React.Fragment key={m.id}>
                 {sep && <DaySep date={day} />}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#3d4c45", background: "#eef3f0", borderRadius: 10, padding: "8px 12px" }}>
-                  <span style={{ fontWeight: 800, color: "#155c3e" }}>Handoff</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--ld-text2)", background: "var(--ld-faint2)", borderRadius: 10, padding: "8px 12px" }}>
+                  <span style={{ fontWeight: 800, color: "var(--ld-accent-dark)" }}>Handoff</span>
                   <span style={{ flex: 1, minWidth: 0 }}>{m.content}</span>
-                  <span style={{ fontSize: 12, color: "#5b6b64", whiteSpace: "nowrap" }}>{fmtTime(m.createdAt)}</span>
+                  <span style={{ fontSize: 12, color: "var(--ld-muted)", whiteSpace: "nowrap" }}>{fmtTime(m.createdAt)}</span>
                 </div>
               </React.Fragment>
             );
@@ -290,7 +290,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                   <div>
                     <div>
                       <span style={{ fontWeight: 800, fontSize: 14 }}>{m.authorName}</span>
-                      <span style={{ fontSize: 12, color: "#5b6b64", fontWeight: 500, marginLeft: 6 }}>{fmtTime(m.createdAt)}</span>
+                      <span style={{ fontSize: 12, color: "var(--ld-muted)", fontWeight: 500, marginLeft: 6 }}>{fmtTime(m.createdAt)}</span>
                       {(m.content || cards.length > 0) && (
                         <button type="button" className="ld-msgreply" onClick={() => startReply(m)} aria-label={`Reply to ${m.authorName}`}>
                           Reply
@@ -352,7 +352,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                   )}
                   <QuickReplies options={replies} onPick={pick} disabled={send.isPending} />
                   {queries.length > 0 && (
-                    <details style={{ fontSize: 13, color: "#3d4c45" }}>
+                    <details style={{ fontSize: 13, color: "var(--ld-text2)" }}>
                       <summary style={{ cursor: "pointer", fontWeight: 700 }}>
                         Searches {emp.name} ran ({queries.length})
                       </summary>
@@ -412,7 +412,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
         <div ref={bottom} />
       </div>
 
-      <div ref={composer} className="ld-composer" style={{ padding: "0 32px 24px 32px", display: "flex", flexDirection: "column", gap: 12, maxWidth: 900, boxSizing: "border-box", width: "100%", position: "sticky", bottom: 0, background: "#f8fafb", paddingTop: 12 }}>
+      <div ref={composer} className="ld-composer" style={{ padding: "0 32px 24px 32px", display: "flex", flexDirection: "column", gap: 12, maxWidth: 900, boxSizing: "border-box", width: "100%", position: "sticky", bottom: 0, background: "var(--ld-page)", paddingTop: 12 }}>
         <VoiceBar o={talk} emp={emp} thinking={send.isPending} />
         {!lastHasReplies && !talk.active && <div className="ld-sugs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(SUGGESTIONS[emp.kind as Kind] ?? []).map((s) => (
@@ -478,10 +478,10 @@ function Rich({ text }: { text: string }) {
 function DaySep({ date }: { date: Date }) {
   const today = isSameDay(date, new Date());
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, color: "#5b6b64", fontSize: 13, fontWeight: 700 }}>
-      <span style={{ flex: 1, height: 1, background: "#e3e9e6" }} />
+    <div style={{ display: "flex", alignItems: "center", gap: 12, color: "var(--ld-muted)", fontSize: 13, fontWeight: 700 }}>
+      <span style={{ flex: 1, height: 1, background: "var(--ld-line)" }} />
       {today ? `Today, ${fmtDate(date)}` : fmtDate(date)}
-      <span style={{ flex: 1, height: 1, background: "#e3e9e6" }} />
+      <span style={{ flex: 1, height: 1, background: "var(--ld-line)" }} />
     </div>
   );
 }
@@ -655,11 +655,11 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
         ) : (
           <div className="ld-row" style={{ flexWrap: "wrap" }}>
             {(card.options ?? []).map((o) => (
-              <button key={o} type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "#14221c" }} disabled={answer.isPending} onClick={() => answer.mutate({ organizationId: currentOrgId, questionId: card.id, answer: o })}>
+              <button key={o} type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "var(--ld-ink)" }} disabled={answer.isPending} onClick={() => answer.mutate({ organizationId: currentOrgId, questionId: card.id, answer: o })}>
                 {o}
               </button>
             ))}
-            <button type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "#155c3e", borderColor: "#1b6b4a" }} disabled={research.isPending} onClick={() => research.mutate({ organizationId: currentOrgId, questionId: card.id })}>
+            <button type="button" className="ld-sug" style={{ borderRadius: 9, height: 36, fontWeight: 700, color: "var(--ld-accent-dark)", borderColor: "var(--ld-accent)" }} disabled={research.isPending} onClick={() => research.mutate({ organizationId: currentOrgId, questionId: card.id })}>
               {research.isPending ? "Looking it up..." : "Look it up"}
             </button>
           </div>
@@ -751,10 +751,10 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
           <span style={{ fontWeight: 800, fontSize: 15 }}>{card.title}</span>
           {pill}
         </div>
-        {card.subtitle && <span style={{ fontSize: 14, color: "#3d4c45" }}>{card.subtitle}</span>}
+        {card.subtitle && <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{card.subtitle}</span>}
         {card.body && <span style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>{card.body}</span>}
         {card.type === "application" && card.status === "ready" && (
-          <span style={{ fontSize: 12, color: "#5b6b64", lineHeight: 1.5, marginTop: 4 }}>Approving certifies the application is true and complete and that you are authorized to submit it.</span>
+          <span style={{ fontSize: 12, color: "var(--ld-muted)", lineHeight: 1.5, marginTop: 4 }}>Approving certifies the application is true and complete and that you are authorized to submit it.</span>
         )}
         {card.url && (
           <a href={card.url} target="_blank" rel="noreferrer noopener" style={{ fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>
@@ -802,11 +802,11 @@ function ScheduleCard({ events }: { events: NonNullable<Card["events"]> }) {
         if (e.day) lastDay = e.day;
         return (
           <React.Fragment key={i}>
-            {header && <div style={{ padding: "10px 16px 6px", fontSize: 12, fontWeight: 700, color: "#5b6b64", textTransform: "uppercase", letterSpacing: "0.06em", borderTop: i ? "1px solid #e3e9e6" : 0 }}>{header}</div>}
+            {header && <div style={{ padding: "10px 16px 6px", fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: "0.06em", borderTop: i ? "1px solid #e3e9e6" : 0 }}>{header}</div>}
             <div className="ld-sched" style={{ display: "grid", gridTemplateColumns: "170px minmax(0,1fr) 200px", gap: 14, padding: "11px 16px", borderBottom: i < events.length - 1 ? "1px solid #eef2f0" : 0, fontSize: 14, alignItems: "center", background: e.clash ? "#fdf6ee" : undefined }}>
               <b>{e.when}</b>
               <span style={{ overflowWrap: "anywhere" }}>{e.title}{e.clash ? <span className="ld-small" style={{ color: "#8a4510", marginLeft: 8, fontWeight: 700 }}>Overlaps</span> : null}</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#3d4c45", fontWeight: 600, minWidth: 0 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--ld-text2)", fontWeight: 600, minWidth: 0 }}>
                 <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 999, background: e.color, flexShrink: 0 }} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.calendar}</span>
               </span>
@@ -836,7 +836,7 @@ function CodeCard({ card }: { card: Card }) {
     <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 128px", gap: 16, alignItems: "end" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
         <span style={{ fontWeight: 800, fontSize: 15 }}>{card.title}</span>
-        {card.subtitle && <span style={{ fontSize: 14, color: "#3d4c45" }}>{card.subtitle}</span>}
+        {card.subtitle && <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{card.subtitle}</span>}
         {card.imageUrl && (
           <a href={card.imageUrl} target="_blank" rel="noreferrer noopener"><img src={card.imageUrl} alt="What the site showed" style={{ width: "100%", maxWidth: 480, borderRadius: 8, border: "1px solid #e3e9e6", marginTop: 4 }} /></a>
         )}
@@ -915,7 +915,7 @@ function BrowserCard({ card }: { card: Card }) {
     : state === "waiting" ? <span className="ld-pill amber">Waiting for you</span>
     : state === "done" ? <span className="ld-pill green">Finished</span>
     : state === "stopped" ? <span className="ld-pill gray">Stopped</span>
-    : <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#155c3e" }}><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: "#1b8a5a" }} />Live</span>;
+    : <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--ld-accent-dark)" }}><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: "#1b8a5a" }} />Live</span>;
 
   return (
     <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 128px", gap: 16, alignItems: "start" }}>
@@ -929,9 +929,9 @@ function BrowserCard({ card }: { card: Card }) {
             {card.title.replace(/'s browser$/, "")} is paused. Click and type right in the page. What you type goes straight to the site and isn't saved.
           </div>
         )}
-        <div style={{ border: control ? "2px solid #1d4ed8" : "1px solid #cfd9d4", boxShadow: control ? "0 0 0 4px #dbe6fd" : undefined, borderRadius: 10, overflow: "hidden", background: "#fff" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "8px 10px", background: "#eef2f0", borderBottom: "1px solid #dbe4df" }}>
-            <span style={{ flex: 1, background: "#fff", border: "1px solid #dbe4df", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "#3d4c45", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div style={{ border: control ? "2px solid #1d4ed8" : "1px solid #cfd9d4", boxShadow: control ? "0 0 0 4px #dbe6fd" : undefined, borderRadius: 10, overflow: "hidden", background: "var(--ld-surface)" }}>
+          <div style={{ display: "flex", alignItems: "center", padding: "8px 10px", background: "var(--ld-line2)", borderBottom: "1px solid #dbe4df" }}>
+            <span style={{ flex: 1, background: "var(--ld-surface)", border: "1px solid #dbe4df", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "var(--ld-text2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {mine && v.url ? v.url.replace(/^https?:\/\//, "") : "Opening..."}
             </span>
           </div>
@@ -967,7 +967,7 @@ function BrowserCard({ card }: { card: Card }) {
             )}
           </div>
         </div>
-        {mine && !control && (state === "waiting" ? v.reason : v.step) && <span style={{ fontSize: 13, color: "#3d4c45", lineHeight: 1.6 }}>{state === "waiting" ? v.reason : v.step}</span>}
+        {mine && !control && (state === "waiting" ? v.reason : v.step) && <span style={{ fontSize: 13, color: "var(--ld-text2)", lineHeight: 1.6 }}>{state === "waiting" ? v.reason : v.step}</span>}
         {control && (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px", gap: 8, alignItems: "end" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

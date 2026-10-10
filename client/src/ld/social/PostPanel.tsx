@@ -141,17 +141,17 @@ function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean;
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!on)}
-        style={{ width: 40, height: 22, borderRadius: 999, background: on ? "#1b6b4a" : "#cfd9d4", position: "relative", border: 0, cursor: disabled ? "default" : "pointer", flexShrink: 0, padding: 0 }}
+        style={{ width: 40, height: 22, borderRadius: 999, background: on ? "var(--ld-accent)" : "var(--ld-line4)", position: "relative", border: 0, cursor: disabled ? "default" : "pointer", flexShrink: 0, padding: 0 }}
       >
-        <span style={{ position: "absolute", top: 3, left: on ? 21 : 3, width: 16, height: 16, borderRadius: 999, background: "#fff", transition: "left .15s" }} />
+        <span style={{ position: "absolute", top: 3, left: on ? 21 : 3, width: 16, height: 16, borderRadius: 999, background: "var(--ld-surface)", transition: "left .15s" }} />
       </button>
     </div>
   );
 }
 
 const kv: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 0 };
-const help: React.CSSProperties = { fontSize: 12, color: "#5b6b64", lineHeight: 1.45 };
-const drop: React.CSSProperties = { border: "1.5px dashed #b7c6bf", borderRadius: 10, padding: 12, display: "flex", gap: 14, alignItems: "center", background: "#fff" };
+const help: React.CSSProperties = { fontSize: 12, color: "var(--ld-muted)", lineHeight: 1.45 };
+const drop: React.CSSProperties = { border: "1.5px dashed #b7c6bf", borderRadius: 10, padding: 12, display: "flex", gap: 14, alignItems: "center", background: "var(--ld-surface)" };
 const section: React.CSSProperties = { borderTop: "1px solid #dbe4df", paddingTop: 12, display: "flex", flexDirection: "column", gap: 12 };
 
 /** A file box: shows what is there, Upload and Remove buttons, and takes a dropped file. */
@@ -161,7 +161,7 @@ function FileBox({ kind, url, meta, onFile, onRemove, busy, thumb }: { kind: "im
   const dims = meta?.w && meta?.h ? ` · ${meta.w} × ${meta.h}` : "";
   return (
     <div
-      style={{ ...drop, borderColor: over ? "#1b6b4a" : "#b7c6bf" }}
+      style={{ ...drop, borderColor: over ? "var(--ld-accent)" : "#b7c6bf" }}
       onDragOver={(e) => {
         e.preventDefault();
         setOver(true);
@@ -376,7 +376,7 @@ export default function PostPanel({
         {shown.length > 0 ? (
           <>
             <PreviewTabs list={shown} value={active} onChange={setTab} reel={reel} />
-            <div style={{ background: "#fff", border: "1px solid #dbe4df", borderRadius: "0 12px 12px 12px", padding: 16 }}>
+            <div style={{ background: "var(--ld-surface)", border: "1px solid #dbe4df", borderRadius: "0 12px 12px 12px", padding: 16 }}>
               <PostPreview
                 account={accounts[active]}
                 input={{ channel: active, type: d.type, text: curText, imageUrl: curImage, imageMeta: curImageMeta, videoUrl: d.videoUrl, videoMeta: d.videoMeta, coverUrl: coverMode === "upload" ? d.coverUrl : null, coverMs: d.coverMs, when }}
@@ -554,11 +554,11 @@ export default function PostPanel({
               <FileBox kind="image" url={curImage} meta={curImageMeta} busy={busy === "image"} onFile={(f) => upload(f, "image")} onRemove={() => setImage(null, null)} thumb={curImage ? <img src={curImage} alt="" style={{ width: 72, height: 90, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} /> : null} />
             </div>
           )}
-          {uploadErr && <span className="ld-small" style={{ color: "#b42318", fontWeight: 600 }}>{uploadErr}</span>}
+          {uploadErr && <span className="ld-small" style={{ color: "var(--ld-bad)", fontWeight: 600 }}>{uploadErr}</span>}
           <div style={kv}>
             <label className="ld-lbl" htmlFor={`cap-${item?.id ?? "new"}`}>Caption</label>
             <textarea id={`cap-${item?.id ?? "new"}`} className="ld-ta" rows={active === "x" ? 3 : 5} value={curText} onChange={(e) => setText(e.target.value)} />
-            <span style={{ ...help, color: curText.length > limit ? "#8a4510" : "#5b6b64" }}>
+            <span style={{ ...help, color: curText.length > limit ? "#8a4510" : "var(--ld-muted)" }}>
               {curText.length.toLocaleString("en-US")} of {limit.toLocaleString("en-US")}
               {d.mode === "same" && shown.length > 1 ? `, for ${PLAT[active].name}` : ""}
             </span>
@@ -636,7 +636,7 @@ export default function PostPanel({
               {suggest.isPending ? "Thinking..." : "Suggest time"}
             </button>
           </div>
-          {d.date && !dateValid(d.date) && <span style={{ ...help, color: "#b42318" }}>Type the date as MM/DD/YYYY.</span>}
+          {d.date && !dateValid(d.date) && <span style={{ ...help, color: "var(--ld-bad)" }}>Type the date as MM/DD/YYYY.</span>}
           <span style={help}>{reason ?? (item?.status === "scheduled" ? "Scheduled. It posts on its own at this time." : item?.status === "approved" ? (d.date ? "Approved. Goes on the calendar at this time." : "Approved. Pick a time to put it on the calendar.") : "Goes on the calendar once approved. Leave it blank to keep it in Drafts.")}</span>
           {(d.date || d.time) && (
             <button type="button" className="ld-btn sm" style={{ width: "auto", alignSelf: "flex-start" }} onClick={() => { set({ date: "", time: "" }); setReason(null); }}>

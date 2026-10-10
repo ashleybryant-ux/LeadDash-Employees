@@ -60,7 +60,7 @@ export function BoardView({ c }: { c: PjCtx }) {
                   {t.goal && <span className="gp-chip gp-ell">◎ {t.goal}</span>}
                   <span className="ld-between">
                     <People c={c} list={t.assignees} />
-                    <span className="ld-small" style={!t.closed && t.dueDate && t.dueDate < c.data.today ? { color: "#c2253c", fontWeight: 700 } : { color: "#5b6b64" }}>{t.dueDate ? fmtYmd(t.dueDate) : ""}</span>
+                    <span className="ld-small" style={!t.closed && t.dueDate && t.dueDate < c.data.today ? { color: "#c2253c", fontWeight: 700 } : { color: "var(--ld-muted)" }}>{t.dueDate ? fmtYmd(t.dueDate) : ""}</span>
                   </span>
                   <span className="ld-between">
                     <Flag p={t.priority} />

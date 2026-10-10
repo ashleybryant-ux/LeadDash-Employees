@@ -22,7 +22,7 @@ export function ListView({ c, openId }: { c: GoalsCtx; openId: number | null }) 
   if (c.filters.group === "parent") roots.forEach((g) => walk(g, 0));
   else if (c.filters.group === "none") rows.forEach((g) => out.push(<Row key={g.goal.id} c={c} g={g} depth={0} sel={openId === g.goal.id} kids={0} />));
   else {
-    const folders = [...c.data.folders.map((f) => ({ id: f.id as number | null, name: f.name, color: f.color })), { id: null, name: "Not in a folder", color: "#9aa8a2" }];
+    const folders = [...c.data.folders.map((f) => ({ id: f.id as number | null, name: f.name, color: f.color })), { id: null, name: "Not in a folder", color: "var(--ld-soft)" }];
     for (const f of folders) {
       const inF = rows.filter((g) => (g.goal.folderId ?? null) === f.id || (f.id === null && g.goal.folderId && !c.data.folders.some((x) => x.id === g.goal.folderId)));
       if (!inF.length) continue;

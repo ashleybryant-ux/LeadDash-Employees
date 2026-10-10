@@ -144,7 +144,7 @@ export function HomePage({ orgId, onOpenTask, onPick, onNewTask }: { orgId: numb
                 <span className="gp-ell">{p.name}</span>
                 {p.due && <span className="ld-small ld-muted">{dueText(p.due, d.today)}</span>}
               </span>
-              <span className="gp-hbar" aria-label={`${p.done} of ${p.total} done`}><i style={{ width: `${p.total ? Math.round((p.done / p.total) * 100) : 0}%`, background: p.health === "off" ? "#c2253c" : p.health === "risk" ? "#d97706" : "#1b6b4a" }} /></span>
+              <span className="gp-hbar" aria-label={`${p.done} of ${p.total} done`}><i style={{ width: `${p.total ? Math.round((p.done / p.total) * 100) : 0}%`, background: p.health === "off" ? "#c2253c" : p.health === "risk" ? "#d97706" : "var(--ld-accent)" }} /></span>
               <span className={`gp-health ${p.health}`}>{HEALTH_TEXT[p.health]}</span>
             </button>
           ))}

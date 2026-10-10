@@ -130,16 +130,16 @@ const workTab = "/chats/video/work";
 
 function Face({ name, url, size = 28 }: { name: string; url?: string | null; size?: number }) {
   return url ? (
-    <img src={url} alt={name} style={{ width: size, height: size, borderRadius: 999, objectFit: "cover", border: "2px solid #fff" }} />
+    <img src={url} alt={name} style={{ width: size, height: size, borderRadius: 999, objectFit: "cover", border: "2px solid var(--ld-surface)" }} />
   ) : (
-    <span aria-label={name} style={{ width: size, height: size, borderRadius: 999, background: "#8a2f3a", color: "#fff", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff" }}>{initials(name)}</span>
+    <span aria-label={name} style={{ width: size, height: size, borderRadius: 999, background: "#8a2f3a", color: "#fff", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--ld-surface)" }}>{initials(name)}</span>
   );
 }
 
 function Frame({ shot, w = 96 }: { shot: Shot; w?: number }) {
   if (shot.clipUrl) return <video src={shot.clipUrl} muted playsInline preload="metadata" controls style={{ width: w, aspectRatio: "9 / 16", borderRadius: 8, background: "#000" }} />;
   if (shot.stillUrl) return <img src={shot.stillUrl} alt={`Shot ${shot.n}`} style={{ width: w, aspectRatio: "9 / 16", objectFit: "cover", borderRadius: 8 }} />;
-  return <span style={{ width: w, aspectRatio: "9 / 16", borderRadius: 8, background: "#eef2f0", display: "block" }} />;
+  return <span style={{ width: w, aspectRatio: "9 / 16", borderRadius: 8, background: "var(--ld-line2)", display: "block" }} />;
 }
 
 const VERSION_LABEL: Record<string, string> = { "9:16": "Vertical", "1:1": "Square", "16:9": "Wide" };
@@ -183,7 +183,7 @@ export function DramaSeasonCard({ firstId }: { firstId: number }) {
           <b style={{ fontSize: 15 }}>{st.series.title}</b>
           <span className="ld-pill gray">Scripts ready</span>
         </div>
-        <span style={{ fontSize: 13, color: "#3d4c45" }}>{eps.length} {eps.length === 1 ? "episode" : "episodes"} · {first.length} each · {st.cast.length} characters · {first.cost} per episode to make</span>
+        <span style={{ fontSize: 13, color: "var(--ld-text2)" }}>{eps.length} {eps.length === 1 ? "episode" : "episodes"} · {first.length} each · {st.cast.length} characters · {first.cost} per episode to make</span>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {st.cast.filter((c) => c.kind !== "team").map((c) => (
             <span key={c.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, marginRight: 8 }}>
@@ -218,12 +218,12 @@ function DirectionList({ e }: { e: Ep }) {
         <div key={i} className="ld-resultcard" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 14, padding: "14px 16px", borderBottom: i < e.plan.directions.length - 1 ? "1px solid #eef2f0" : 0, alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
             <b>{i + 1}. {d.title}</b>
-            <div style={{ display: "grid", gridTemplateColumns: "90px minmax(0,1fr)", gap: "4px 10px", fontSize: 13, color: "#3d4c45", lineHeight: 1.5 }}>
-              <b style={{ color: "#14221c" }}>Hook</b><span>{d.hook}</span>
-              <b style={{ color: "#14221c" }}>Story</b><span>{d.story}</span>
-              <b style={{ color: "#14221c" }}>Look</b><span>{[d.location, d.lighting, d.camera].filter(Boolean).join(". ")}</span>
-              <b style={{ color: "#14221c" }}>Wardrobe</b><span>{d.wardrobe}</span>
-              <b style={{ color: "#14221c" }}>Ending</b><span>{d.ending}</span>
+            <div style={{ display: "grid", gridTemplateColumns: "90px minmax(0,1fr)", gap: "4px 10px", fontSize: 13, color: "var(--ld-text2)", lineHeight: 1.5 }}>
+              <b style={{ color: "var(--ld-ink)" }}>Hook</b><span>{d.hook}</span>
+              <b style={{ color: "var(--ld-ink)" }}>Story</b><span>{d.story}</span>
+              <b style={{ color: "var(--ld-ink)" }}>Look</b><span>{[d.location, d.lighting, d.camera].filter(Boolean).join(". ")}</span>
+              <b style={{ color: "var(--ld-ink)" }}>Wardrobe</b><span>{d.wardrobe}</span>
+              <b style={{ color: "var(--ld-ink)" }}>Ending</b><span>{d.ending}</span>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -269,7 +269,7 @@ export function DramaKeyframesCard({ id }: { id: number }) {
             <div key={s.n} style={{ display: "flex", flexDirection: "column", gap: 4, width: 104 }}>
               <Frame shot={{ ...s, clipUrl: null }} w={104} />
               <span className="ld-small">{s.n}. {s.framing}</span>
-              {s.takeUrl && <span className="ld-small" style={{ color: "#155c3e", fontWeight: 700 }}>Your take, {s.takeSeconds} sec</span>}
+              {s.takeUrl && <span className="ld-small" style={{ color: "var(--ld-accent-dark)", fontWeight: 700 }}>Your take, {s.takeSeconds} sec</span>}
               {waiting && s.stillUrl && (
                 <>
                   <button type="button" className="ld-btn sm" disabled={a.remake.isPending} onClick={() => a.remake.mutate({ organizationId: a.orgId, id: e.id, n: s.n })}>Redo</button>
@@ -307,7 +307,7 @@ export function DramaEpisodeCard({ id }: { id: number }) {
         {e.status === "ready" ? (
           <Versions e={e} />
         ) : (
-          <span style={{ fontSize: 13, color: "#3d4c45", lineHeight: 1.6 }}>
+          <span style={{ fontSize: 13, color: "var(--ld-text2)", lineHeight: 1.6 }}>
             {e.status === "making" ? `${e.progress ?? "Starting"}.` : e.status === "failed" ? `${e.error ?? "It stopped."} What's made is kept.` : `${e.shots.length} shots · ${e.length} · ${e.cost}`}
           </span>
         )}
@@ -339,15 +339,15 @@ function ShotList({ e }: { e: Ep }) {
         const key = s.clipUrl ? "done" : s.status === "making" ? "making" : s.stillUrl ? "todo" : s.status ?? "todo";
         const [sc, sl] = s.stillUrl && !s.clipUrl && key !== "making" ? ["gray", "Keyframe"] : SHOT_STATUS[key] ?? SHOT_STATUS.todo;
         return (
-          <div key={s.n} className="ld-shot" style={{ display: "grid", gridTemplateColumns: "28px 72px minmax(0,1fr) 150px", gap: 12, alignItems: "start", background: "#fff", border: "1px solid #e3e9e6", borderRadius: 10, padding: 10 }}>
+          <div key={s.n} className="ld-shot" style={{ display: "grid", gridTemplateColumns: "28px 72px minmax(0,1fr) 150px", gap: 12, alignItems: "start", background: "var(--ld-surface)", border: "1px solid #e3e9e6", borderRadius: 10, padding: 10 }}>
             <b style={{ fontSize: 13 }}>{s.n}</b>
             <Frame shot={s} w={72} />
             <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14, lineHeight: 1.5, minWidth: 0 }}>
               <span><b>{s.framing}</b>, {s.move.toLowerCase()}: {s.action}</span>
-              {s.line && <span style={{ color: "#3d4c45" }}>{s.line.who}: "{s.line.text}"</span>}
-              {s.vo && <span style={{ color: "#3d4c45" }}>Voice-over: "{s.vo}"</span>}
-              {s.caption && <span style={{ color: "#3d4c45" }}>Caption: {s.caption}</span>}
-              {s.takeUrl && <span style={{ color: "#155c3e", fontWeight: 700 }}>Your take, {s.takeSeconds} sec: your movement and voice{s.vo ? " (in place of the voice-over)" : ""}</span>}
+              {s.line && <span style={{ color: "var(--ld-text2)" }}>{s.line.who}: "{s.line.text}"</span>}
+              {s.vo && <span style={{ color: "var(--ld-text2)" }}>Voice-over: "{s.vo}"</span>}
+              {s.caption && <span style={{ color: "var(--ld-text2)" }}>Caption: {s.caption}</span>}
+              {s.takeUrl && <span style={{ color: "var(--ld-accent-dark)", fontWeight: 700 }}>Your take, {s.takeSeconds} sec: your movement and voice{s.vo ? " (in place of the voice-over)" : ""}</span>}
               <span className="ld-small">{s.cast.length ? s.cast.join(", ") : "No one"}{s.plate ? ` · plate: ${s.plate}` : ""} · {s.seconds} sec · {s.takeUrl ? "your take" : ENGINE[s.engine ?? "kling"]}{s.sound ? ` · ${s.sound}` : ""}{s.costCents ? ` · $${(s.costCents / 100).toFixed(2)}` : ""}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "stretch" }}>
@@ -393,7 +393,7 @@ function EpisodeRow({ e, open, onToggle }: { e: Ep; open: boolean; onToggle: () 
   const [cls] = PILL[e.status];
   return (
     <>
-      <div className="ld-rw" style={{ gridTemplateColumns: ROW, ...(open ? { background: "#f4f8f6", borderBottom: 0 } : {}) }}>
+      <div className="ld-rw" style={{ gridTemplateColumns: ROW, ...(open ? { background: "var(--ld-hover)", borderBottom: 0 } : {}) }}>
         <b>Ep {e.number}</b>
         <span style={{ overflowWrap: "anywhere" }}>{e.title}</span>
         <span>{e.length}</span>
@@ -406,7 +406,7 @@ function EpisodeRow({ e, open, onToggle }: { e: Ep; open: boolean; onToggle: () 
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
             {e.status === "ready" && <Versions e={e} />}
             {e.status === "making" && <span style={{ fontSize: 14, fontWeight: 700, color: "#8a4510" }}>{e.progress ?? "Starting"}.</span>}
-            {e.status === "failed" && e.error && <span style={{ fontSize: 14, color: "#9b1c1c" }}>{e.error}</span>}
+            {e.status === "failed" && e.error && <span style={{ fontSize: 14, color: "var(--ld-bad)" }}>{e.error}</span>}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span className="ld-lbl">Beats</span>
               {e.beats.map((b, i) => (
@@ -495,8 +495,8 @@ function Timeline({ e }: { e: Ep }) {
   let t = 0;
   const fmt = (x: number) => `${Math.floor(x / 60)}:${String(Math.round(x % 60)).padStart(2, "0")}`;
   return (
-    <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, overflow: "hidden", background: "#fff" }}>
-      <div className="ld-tl" style={{ display: "grid", gridTemplateColumns: "100px minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1fr)", gap: 12, padding: "9px 16px", fontSize: 11, fontWeight: 700, color: "#5b6b64", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #eef2f0" }}>
+    <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, overflow: "hidden", background: "var(--ld-surface)" }}>
+      <div className="ld-tl" style={{ display: "grid", gridTemplateColumns: "100px minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1fr)", gap: 12, padding: "9px 16px", fontSize: 11, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #eef2f0" }}>
         <span>Time</span><span>Shot</span><span>Voice-over and caption</span><span>Sound</span>
       </div>
       {e.shots.map((s) => {
@@ -522,7 +522,7 @@ function CampaignRow({ e, open, onToggle }: { e: Ep; open: boolean; onToggle: ()
   const COLS = "minmax(0,1.6fr) 80px 170px 100px 128px";
   return (
     <>
-      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "#f4f8f6", borderBottom: 0 } : {}) }}>
+      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "var(--ld-hover)", borderBottom: 0 } : {}) }}>
         <b style={{ overflowWrap: "anywhere" }}>{e.title}</b>
         <span>{e.shots.length ? e.length : ""}</span>
         <span className={`ld-pill ${e.shots.length ? cls : "amber"}`} style={{ justifySelf: "start" }}>{statusLabel(e)}</span>
@@ -598,7 +598,7 @@ function OwnerPack() {
               <label key={p.id} style={{ display: "flex", flexDirection: "column", gap: 4, width: 88, fontSize: 12, cursor: "pointer" }}>
                 <img src={p.url} alt={p.title} style={{ width: 88, height: 110, objectFit: "cover", borderRadius: 8, outline: on ? "3px solid #1b6b4a" : "1px solid #e3e9e6" }} />
                 <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                  <input type="checkbox" checked={on} style={{ margin: 0, accentColor: "#1b6b4a" }} onChange={(ev) => setIds(ev.target.checked ? [...picked, p.id] : picked.filter((x) => x !== p.id))} />
+                  <input type="checkbox" checked={on} style={{ margin: 0, accentColor: "var(--ld-accent)" }} onChange={(ev) => setIds(ev.target.checked ? [...picked, p.id] : picked.filter((x) => x !== p.id))} />
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</span>
                 </span>
               </label>
@@ -667,7 +667,7 @@ export function DramaCastTab() {
           const open = edit?.id === c.id;
           return (
             <React.Fragment key={c.id}>
-              <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "#f4f8f6", borderBottom: 0 } : {}) }}>
+              <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "var(--ld-hover)", borderBottom: 0 } : {}) }}>
                 <Face name={c.name} url={c.photoUrl} size={40} />
                 <span><b>{c.kind === "owner" ? "You" : c.name}</b><br /><span className="ld-small">{c.kind === "owner" ? c.name : c.kind === "team" ? "Your AI team" : "Made up"}</span></span>
                 <span>{c.role}</span>
@@ -735,14 +735,14 @@ export function StyleTab() {
             <div className="ld-logins" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,2fr) 128px", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
               {refs.map((r) => (
                 <React.Fragment key={r.id}>
-                  <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.link ? <a href={r.link} target="_blank" rel="noreferrer noopener" style={{ color: "#14221c" }}>{r.name}</a> : r.name}</b>
+                  <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.link ? <a href={r.link} target="_blank" rel="noreferrer noopener" style={{ color: "var(--ld-ink)" }}>{r.name}</a> : r.name}</b>
                   <span>{[r.likes.join(", "), r.words].filter(Boolean).join(": ")}</span>
                   <button type="button" className="ld-btn" onClick={() => setEdit({ ...r })}>Edit</button>
                 </React.Fragment>
               ))}
             </div>
           ) : (
-            <span style={{ fontSize: 14, color: "#3d4c45" }}>{q.isLoading ? "Loading..." : "Add videos you love and tag what you like about each one. Elena can't watch them, so your tags and words are what she learns from."}</span>
+            <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{q.isLoading ? "Loading..." : "Add videos you love and tag what you like about each one. Elena can't watch them, so your tags and words are what she learns from."}</span>
           )}
           {refs.length > 0 && <span className="ld-small">Elena uses what you tag here in every plan. She can't watch the videos, so your words are what she learns from.</span>}
         </div>
@@ -764,7 +764,7 @@ export function StyleTab() {
                 {LIKES.map((l) => {
                   const on = edit.likes.includes(l);
                   return (
-                    <button key={l} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "#e6f2ec" : "#fff", borderColor: on ? "#1b6b4a" : undefined, color: on ? "#155c3e" : "#14221c" }} onClick={() => setEdit({ ...edit, likes: on ? edit.likes.filter((x) => x !== l) : [...edit.likes, l] })}>{l}</button>
+                    <button key={l} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setEdit({ ...edit, likes: on ? edit.likes.filter((x) => x !== l) : [...edit.likes, l] })}>{l}</button>
                   );
                 })}
               </div>

@@ -132,7 +132,7 @@ function GuidelineSections({ emp }: { emp: EmployeeRow }) {
             <span style={{ fontWeight: 800 }}>{`${emp.name} found guidelines that disagree`}</span>
           </div>
           {g.conflicts.map((c) => (
-            <div key={c.id} style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "#fff", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div key={c.id} style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
               <span style={{ fontSize: 14, lineHeight: 1.5 }}>{c.text}</span>
               <div className="ld-row" style={{ gap: 8, flexWrap: "wrap" }}>
                 {c.options.map((o, i) => (
@@ -149,7 +149,7 @@ function GuidelineSections({ emp }: { emp: EmployeeRow }) {
       <section className="ld-card" style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontWeight: 800, fontSize: 15 }}>{writes ? "Learn from your examples" : "Check for conflicts"}</span>
-          <span className="ld-body" style={{ color: "#3d4c45" }}>
+          <span className="ld-body" style={{ color: "var(--ld-text2)" }}>
             {writes
               ? g.canLearn
                 ? `${emp.name} reads the ${g.examples} example${g.examples === 1 ? "" : "s"} you gave in onboarding and writes your style into these guidelines for you to check.`
@@ -174,7 +174,7 @@ function GuidelineSections({ emp }: { emp: EmployeeRow }) {
               {s.items.length === 0 && <span className="ld-body ld-muted" style={{ padding: "6px 0" }}>Nothing yet. Answers from onboarding, and rules you give in chat, show up here.</span>}
               {s.items.map((i, n) => (
                 <div key={i.id} className="ld-keep" style={{ display: "grid", gridTemplateColumns: "28px minmax(0,1fr)", gap: 10, padding: "8px 0", borderBottom: n === s.items.length - 1 ? 0 : "1px solid #eef2f0" }}>
-                  <span style={{ width: 22, height: 22, borderRadius: 6, background: "#eef3f0", color: "#1b6b4a", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{n + 1}</span>
+                  <span style={{ width: 22, height: 22, borderRadius: 6, background: "var(--ld-faint2)", color: "var(--ld-accent)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{n + 1}</span>
                   <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                     <span style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{i.text}</span>
                     <span className="ld-small ld-muted">{sourceLabel(i)}</span>
@@ -210,7 +210,7 @@ function SectionEdit({ emp, section, onClose }: { emp: EmployeeRow; section: GVi
         <span style={{ fontWeight: 800, fontSize: 15, paddingBottom: 6 }}>{section.title}</span>
         {rows.map((r, i) => (
           <div key={i} className="ld-keep ld-guide-row" style={{ display: "grid", gridTemplateColumns: "28px minmax(0,1fr) 64px 64px 96px", gap: 8, alignItems: "start", padding: "4px 0" }}>
-            <span style={{ fontWeight: 800, color: "#5b6b64", paddingTop: 8 }}>{i + 1}</span>
+            <span style={{ fontWeight: 800, color: "var(--ld-muted)", paddingTop: 8 }}>{i + 1}</span>
             <textarea className="ld-ta" rows={r.text.length > 110 ? 3 : 1} aria-label={`Guideline ${i + 1}`} value={r.text} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} style={{ minHeight: 34 }} />
             <button type="button" className="ld-btn" style={{ width: 64, padding: 0 }} disabled={i === 0} onClick={() => move(i, -1)}>Up</button>
             <button type="button" className="ld-btn" style={{ width: 64, padding: 0 }} disabled={i === rows.length - 1} onClick={() => move(i, 1)}>Down</button>

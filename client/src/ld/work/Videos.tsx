@@ -94,7 +94,7 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
             return (
               <div key={v.id} className="ld-rw" style={{ gridTemplateColumns: TREND_COLS, alignItems: "start" }}>
                 <span className="ld-strong">{v.d.trend?.name || v.title}</span>
-                <span style={{ lineHeight: 1.55, color: "#3d4c45" }}>{v.d.trend?.whyItWorks || "Not noted."}</span>
+                <span style={{ lineHeight: 1.55, color: "var(--ld-text2)" }}>{v.d.trend?.whyItWorks || "Not noted."}</span>
                 <span style={{ overflowWrap: "anywhere" }}>
                   {url ? (
                     <a href={url} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 600 }}>{short(url)}</a>
@@ -129,14 +129,14 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
                       fontSize: 14,
                       border: 0,
                       background: on ? "#eef5f1" : "transparent",
-                      color: "#14221c",
+                      color: "var(--ld-ink)",
                       textAlign: "left",
                       cursor: "pointer",
                       maxWidth: 320,
                     }}
                   >
                     <span className="ld-strong">{v.d.plan?.title || v.title}</span>
-                    <span style={{ fontSize: 12, color: "#5b6b64" }}>{fmtDate(v.createdAt)}</span>
+                    <span style={{ fontSize: 12, color: "var(--ld-muted)" }}>{fmtDate(v.createdAt)}</span>
                   </button>
                 );
               })}
@@ -203,7 +203,7 @@ function PlanView({
           <span className="ld-lbl">Hook (first 2 seconds)</span>
           <span style={{ fontSize: 15, fontWeight: 700 }}>{p.hook || "Not written."}</span>
         </div>
-        <div style={{ ...sh, fontSize: 12, fontWeight: 700, color: "#5b6b64", textTransform: "uppercase", letterSpacing: "0.06em", paddingTop: 10, paddingBottom: 10 }}>
+        <div style={{ ...sh, fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: "0.06em", paddingTop: 10, paddingBottom: 10 }}>
           <span>Time</span>
           <span>Shot</span>
           <span>Say</span>
@@ -227,7 +227,7 @@ function PlanView({
       <div className="ld-card" style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
         <span className="ld-lbl">Trend this is built on</span>
         <span style={{ fontSize: 15, fontWeight: 700 }}>{t.name || "Not named"}</span>
-        {t.whyItWorks && <span style={{ fontSize: 14, lineHeight: 1.55, color: "#3d4c45" }}>{t.whyItWorks}</span>}
+        {t.whyItWorks && <span style={{ fontSize: 14, lineHeight: 1.55, color: "var(--ld-text2)" }}>{t.whyItWorks}</span>}
         <span className="ld-lbl">Source</span>
         {url ? (
           <a href={url} target="_blank" rel="noreferrer noopener" style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere" }}>{short(url)}</a>

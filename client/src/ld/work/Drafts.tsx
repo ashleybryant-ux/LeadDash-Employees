@@ -340,7 +340,7 @@ function HoldForm({ onAdded }: { onAdded: (id: number | undefined) => void }) {
       <label htmlFor="h-agenda" className="ld-lbl">Agenda</label>
       <textarea id="h-agenda" className="ld-ta" rows={2} value={agenda} onChange={(e) => setAgenda(e.target.value)} />
       <div className="ld-row" style={{ justifyContent: "flex-end" }}>
-        {date.trim() && !dateOk && <span className="ld-small" style={{ color: "#b42318" }}>Type the date as MM/DD/YYYY.</span>}
+        {date.trim() && !dateOk && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>Type the date as MM/DD/YYYY.</span>}
         <button type="submit" className="ld-btn p" disabled={!ok || add.isPending}>
           {add.isPending ? "Adding..." : "Add hold"}
         </button>

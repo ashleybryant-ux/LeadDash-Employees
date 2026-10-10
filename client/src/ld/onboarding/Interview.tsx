@@ -11,7 +11,7 @@ type Q = Section["questions"][number];
 type Answer = string | string[];
 type Example = { liked: boolean; text: string };
 
-const small: React.CSSProperties = { fontSize: 12, color: "#5b6b64", lineHeight: 1.45 };
+const small: React.CSSProperties = { fontSize: 12, color: "var(--ld-muted)", lineHeight: 1.45 };
 const col: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 8 };
 
 export function filled(v: Answer | undefined) {
@@ -80,7 +80,7 @@ export function Samples({ emp, view, value, onChange }: { emp: EmployeeRow; view
             type="button"
             onClick={() => onChange(s.label)}
             aria-pressed={on}
-            style={{ textAlign: "left", font: "inherit", background: "#fff", border: `1px solid ${on ? "#1b6b4a" : "#e3e9e6"}`, outline: on ? "1px solid #1b6b4a" : "none", borderRadius: 10, padding: "10px 12px", cursor: "pointer", display: "flex", flexDirection: "column", gap: 4 }}
+            style={{ textAlign: "left", font: "inherit", background: "var(--ld-surface)", border: `1px solid ${on ? "var(--ld-accent)" : "var(--ld-line)"}`, outline: on ? "1px solid #1b6b4a" : "none", borderRadius: 10, padding: "10px 12px", cursor: "pointer", display: "flex", flexDirection: "column", gap: 4 }}
           >
             <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
               <b style={{ fontSize: 14 }}>{`${String.fromCharCode(65 + i)}. ${s.label}`}</b>
@@ -105,7 +105,7 @@ export function Examples({ value, onChange }: { value: Example[]; onChange: (v: 
   return (
     <div style={col}>
       {value.map((e, i) => (
-        <div key={i} className="ld-keep" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px", gap: 8, alignItems: "start", border: "1px solid #e3e9e6", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
+        <div key={i} className="ld-keep" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px", gap: 8, alignItems: "start", border: "1px solid #e3e9e6", borderRadius: 10, padding: "8px 10px", background: "var(--ld-surface)" }}>
           <span style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
             <span className={`ld-pill ${e.liked ? "green" : "amber"}`} style={{ alignSelf: "flex-start" }}>{e.liked ? "Liked" : "Didn't like"}</span>
             <span style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{e.text.length > 400 ? `${e.text.slice(0, 400)}...` : e.text}</span>
@@ -163,10 +163,10 @@ function Steps({ view, current, onGo }: { view: View; current: number; onGo: (i:
             type="button"
             disabled={!can}
             onClick={() => onGo(i)}
-            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, background: on ? "#eef3f0" : "transparent", border: 0, font: "inherit", cursor: can ? "pointer" : "default", textAlign: "left" }}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, background: on ? "var(--ld-faint2)" : "transparent", border: 0, font: "inherit", cursor: can ? "pointer" : "default", textAlign: "left" }}
           >
-            <span style={{ width: 24, height: 24, borderRadius: 999, background: done ? "#1b6b4a" : on ? "#14221c" : "#e9efec", color: done || on ? "#fff" : "#5b6b64", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{done ? "✓" : i + 1}</span>
-            <span style={{ fontSize: 14, fontWeight: on ? 800 : 600, color: done || on ? "#14221c" : "#5b6b64" }}>{s.title}</span>
+            <span style={{ width: 24, height: 24, borderRadius: 999, background: done ? "var(--ld-accent)" : on ? "var(--ld-ink)" : "#e9efec", color: done || on ? "#fff" : "var(--ld-muted)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{done ? "✓" : i + 1}</span>
+            <span style={{ fontSize: 14, fontWeight: on ? 800 : 600, color: done || on ? "var(--ld-ink)" : "var(--ld-muted)" }}>{s.title}</span>
           </button>
         );
       })}
@@ -216,7 +216,7 @@ function Followups({ emp, view }: { emp: EmployeeRow; view: View }) {
   return (
     <section className="ld-card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column" }}>
       <span className="ld-lbl">{`${emp.name} has ${view.state.followups.length} follow-up question${view.state.followups.length === 1 ? "" : "s"}`}</span>
-      <span style={{ fontSize: 14, color: "#3d4c45", padding: "6px 0 2px" }}>From your answers so far.</span>
+      <span style={{ fontSize: 14, color: "var(--ld-text2)", padding: "6px 0 2px" }}>From your answers so far.</span>
       {view.state.followups.map((f, i) => (
         <QRow key={i} label={f.q}>
           <Chips options={f.options} value={f.answer} multi={false} onChange={(v) => answer.mutate({ organizationId: currentOrgId, employeeId: emp.id, index: i, answer: String(v) })} />
@@ -259,7 +259,7 @@ function PartCard({ emp, view, index, onIndex }: { emp: EmployeeRow; view: View;
       <section className="ld-card editing" style={{ padding: "18px 20px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24 }}>
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
           <span className="ld-lbl">{`${index + 1} of ${view.total} · ${section.title}`}</span>
-          <span style={{ fontSize: 14, color: "#3d4c45", padding: "6px 0 4px" }}>{section.intro}</span>
+          <span style={{ fontSize: 14, color: "var(--ld-text2)", padding: "6px 0 4px" }}>{section.intro}</span>
           {section.key === "brain" ? (
             <BrainPart emp={emp} view={view} onDone={() => onIndex(1)} />
           ) : (
@@ -300,7 +300,7 @@ function Brief({ emp, view }: { emp: EmployeeRow; view: View }) {
       <section className="ld-card ld-between" style={{ padding: "16px 20px", gap: 16, flexWrap: "wrap" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontWeight: 800, fontSize: 16 }}>{`${emp.name} is ready to start`}</span>
-          <span className="ld-body" style={{ color: "#3d4c45" }}>{`${view.total} of ${view.total} parts · ${count} answers · ${view.state.examples.length} example${view.state.examples.length === 1 ? "" : "s"}${doneAt ? ` · finished ${doneAt}` : ""}`}</span>
+          <span className="ld-body" style={{ color: "var(--ld-text2)" }}>{`${view.total} of ${view.total} parts · ${count} answers · ${view.state.examples.length} example${view.state.examples.length === 1 ? "" : "s"}${doneAt ? ` · finished ${doneAt}` : ""}`}</span>
         </div>
         <div className="ld-row" style={{ gap: 8 }}>
           <button type="button" className="ld-btn p" style={{ width: 170 }} disabled={tryIt.isPending} onClick={() => tryIt.mutate({ organizationId: currentOrgId, employeeId: emp.id })}>{tryIt.isPending ? "Working..." : view.tryIt.label}</button>

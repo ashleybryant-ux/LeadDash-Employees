@@ -42,7 +42,7 @@ export function Avatar({ name, kind, src, size = 44 }: { name: string; kind?: st
   const file = src || (kind ? AVATAR_FILES[kind as Kind] : undefined);
   const [broken, setBroken] = React.useState(false);
   React.useEffect(() => setBroken(false), [file]);
-  const color = KIND_META[(kind as Kind) ?? "custom"]?.color ?? "#3d4c45";
+  const color = KIND_META[(kind as Kind) ?? "custom"]?.color ?? "var(--ld-text2)";
   const style: React.CSSProperties = {
     width: size,
     height: size,
@@ -112,7 +112,7 @@ export function OrgLogo({ name, src, size = 36 }: { name: string; src?: string |
   const box: React.CSSProperties = { width: size, height: size, borderRadius: Math.round(size * 0.25), flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" };
   if (src && !broken) {
     return (
-      <span style={{ ...box, background: "#fff", border: "1px solid #e3e9e6", padding: Math.max(2, Math.round(size * 0.08)) }}>
+      <span style={{ ...box, background: "var(--ld-surface)", border: "1px solid #e3e9e6", padding: Math.max(2, Math.round(size * 0.08)) }}>
         <img src={src} alt={`${name} logo`} onError={() => setBroken(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
       </span>
     );
@@ -150,7 +150,7 @@ export const Icons = {
     </svg>
   ),
   check: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1b6b4a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ld-accent)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M5 12l5 5 9-10" />
     </svg>
   ),
@@ -324,20 +324,20 @@ export function Switcher({ onClose, style, className }: { onClose: () => void; s
       document.removeEventListener("mousedown", h);
     };
   }, [onClose]);
-  const it: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 10, border: 0, background: "none", font: "inherit", fontSize: 15, fontWeight: 600, color: "#14221c", cursor: "pointer", textAlign: "left", width: "100%" };
+  const it: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 10, border: 0, background: "none", font: "inherit", fontSize: 15, fontWeight: 600, color: "var(--ld-ink)", cursor: "pointer", textAlign: "left", width: "100%" };
   const lg = (bg: string, fg = "#fff"): React.CSSProperties => ({ width: 36, height: 36, borderRadius: 9, background: bg, color: fg, fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" });
   const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
   return (
     <div
       ref={ref}
       className={`ld-card ${className ?? ""}`}
-      style={{ width: 360, maxWidth: "calc(100vw - 24px)", boxSizing: "border-box", padding: 12, boxShadow: "0 12px 32px rgba(18,33,29,0.14)", display: "flex", flexDirection: "column", gap: 2, zIndex: 50, color: "#14221c", ...style }}
+      style={{ width: 360, maxWidth: "calc(100vw - 24px)", boxSizing: "border-box", padding: 12, boxShadow: "0 12px 32px rgba(18,33,29,0.14)", display: "flex", flexDirection: "column", gap: 2, zIndex: 50, color: "var(--ld-ink)", ...style }}
     >
       {organizations.map((o) => (
         <button
           key={o.id}
           type="button"
-          style={{ ...it, background: o.id === currentOrgId ? "#eef3f0" : "none" }}
+          style={{ ...it, background: o.id === currentOrgId ? "var(--ld-faint2)" : "none" }}
           onClick={() => {
             switchOrganization(o.id);
             onClose();
@@ -351,10 +351,10 @@ export function Switcher({ onClose, style, className }: { onClose: () => void; s
       ))}
       {user?.role === "admin" && (
         <>
-          <div style={{ height: 1, background: "#e3e9e6", margin: "6px 0" }} />
+          <div style={{ height: 1, background: "var(--ld-line)", margin: "6px 0" }} />
           {!creating ? (
-            <button type="button" style={{ ...it, color: "#1b6b4a", fontWeight: 700 }} onClick={() => setCreating(true)}>
-              <span style={lg("#eef3f0", "#1b6b4a")}>+</span>
+            <button type="button" style={{ ...it, color: "var(--ld-accent)", fontWeight: 700 }} onClick={() => setCreating(true)}>
+              <span style={lg("var(--ld-faint2)", "var(--ld-accent)")}>+</span>
               <span>New workspace</span>
             </button>
           ) : (
@@ -379,7 +379,7 @@ export function Switcher({ onClose, style, className }: { onClose: () => void; s
                   </label>
                 ))}
               </div>
-              {error && <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>}
+              {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
               <div className="ld-row" style={{ justifyContent: "flex-end" }}>
                 <button type="button" className="ld-btn sm" onClick={() => setCreating(false)}>Cancel</button>
                 <button type="submit" className="ld-btn p sm" disabled={create.isPending}>Create</button>
@@ -427,7 +427,7 @@ export function HoursSaved() {
   const n = u.hours;
   const label = `${n.toLocaleString("en-US", { maximumFractionDigits: 1 })} ${n === 1 ? "hour" : "hours"}`;
   return (
-    <Link href="/workspace" className="ld-hours" aria-label={`${label} saved this month`} style={{ marginTop: "auto", position: "sticky", bottom: 0, display: "block", textDecoration: "none", color: "#14221c", background: "#fff", borderTop: "1px solid #eef2f0", overflow: "hidden" }}>
+    <Link href="/workspace" className="ld-hours" aria-label={`${label} saved this month`} style={{ marginTop: "auto", position: "sticky", bottom: 0, display: "block", textDecoration: "none", color: "var(--ld-ink)", background: "var(--ld-surface)", borderTop: "1px solid #eef2f0", overflow: "hidden" }}>
       <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 0, width: "100%", height: h }}>
         <defs>
           <linearGradient id="ld-hours-fill" x1="0" y1="0" x2="0" y2="1">
@@ -440,7 +440,7 @@ export function HoursSaved() {
       </svg>
       <span style={{ position: "relative", display: "flex", flexDirection: "column", gap: 2, padding: "26px 18px 18px" }}>
         <span style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.01em", lineHeight: 1.1 }}>{label}</span>
-        <span style={{ fontSize: 14, color: "#5b6b64", fontWeight: 600 }}>saved this month →</span>
+        <span style={{ fontSize: 14, color: "var(--ld-muted)", fontWeight: 600 }}>saved this month →</span>
       </span>
     </Link>
   );
@@ -459,9 +459,9 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
   const [switcher, setSwitcher] = React.useState(false);
   const sorted = [...list].sort((a, b) => KIND_ORDER.indexOf(a.kind as Kind) - KIND_ORDER.indexOf(b.kind as Kind) || a.id - b.id);
   return (
-    <aside className="ld-chatlist" style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "#fff", borderRight: "1px solid #e3e9e6", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
+    <aside className="ld-chatlist" style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "var(--ld-surface)", borderRight: "1px solid #e3e9e6", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
       <div style={{ padding: "18px 18px 12px 18px", position: "relative" }} className="ld-between">
-        <button type="button" onClick={() => setSwitcher((v) => !v)} title={elsewhere.elsewhere ? `${elsewhere.elsewhere} unread in your other workspaces` : undefined} style={{ display: "flex", alignItems: "center", gap: 10, border: 0, background: "none", font: "inherit", fontSize: 16, fontWeight: 800, color: "#14221c", cursor: "pointer", padding: 0, minWidth: 0, textAlign: "left" }}>
+        <button type="button" onClick={() => setSwitcher((v) => !v)} title={elsewhere.elsewhere ? `${elsewhere.elsewhere} unread in your other workspaces` : undefined} style={{ display: "flex", alignItems: "center", gap: 10, border: 0, background: "none", font: "inherit", fontSize: 16, fontWeight: 800, color: "var(--ld-ink)", cursor: "pointer", padding: 0, minWidth: 0, textAlign: "left" }}>
           {currentOrg && <OrgLogo name={currentOrg.name} src={currentOrg.logoUrl} size={32} />}
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentOrg?.name ?? "Choose a workspace"}</span>
           {elsewhere.elsewhere > 0 && <span style={badge} aria-label={`${elsewhere.elsewhere} unread in other workspaces`}>{elsewhere.elsewhere}</span>}
@@ -479,23 +479,23 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
         if (people.length === 0) return null;
         return (
           <div key={group}>
-            <div style={{ padding: "10px 18px 4px 18px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5b6b64" }}>{group}</div>
+            <div style={{ padding: "10px 18px 4px 18px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ld-muted)" }}>{group}</div>
             {people.map((e) => {
               const s = summaries.data?.find((x) => x.employeeId === e.id);
               const href = e.kind === "custom" ? `/chats/e/${e.id}` : `/chats/${e.kind}`;
               const on = activeKind === (e.kind === "custom" ? `e${e.id}` : e.kind);
               const preview = s ? (s.role === "user" ? `${s.authorName.split(" ")[0]}: ${s.content}` : s.content || "Asked you a question") : e.description ?? "";
               return (
-                <Link key={e.id} href={href} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 14px", margin: "2px 8px", borderRadius: 12, textDecoration: "none", color: "#14221c", background: on ? "#eef3f0" : "transparent" }}>
+                <Link key={e.id} href={href} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 14px", margin: "2px 8px", borderRadius: 12, textDecoration: "none", color: "var(--ld-ink)", background: on ? "var(--ld-faint2)" : "transparent" }}>
                   <Avatar name={e.name} kind={e.kind} src={e.avatar} size={46} />
                   <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
                     <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
                       <span style={{ fontWeight: 800, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>
-                      <span style={{ fontSize: 12, color: "#5b6b64", whiteSpace: "nowrap" }}>{s ? fmtWhen(s.createdAt) : ""}</span>
+                      <span style={{ fontSize: 12, color: "var(--ld-muted)", whiteSpace: "nowrap" }}>{s ? fmtWhen(s.createdAt) : ""}</span>
                     </span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#1b6b4a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.roleTitle}{worksWithClientInfo(e.kind, currentOrg?.orgType) && <span className="ld-pill blue ld-ci">Client info</span>}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ld-accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.roleTitle}{worksWithClientInfo(e.kind, currentOrg?.orgType) && <span className="ld-pill blue ld-ci">Client info</span>}</span>
                     <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13, color: "#3d4c45", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview}</span>
+                      <span style={{ fontSize: 13, color: "var(--ld-text2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview}</span>
                       {s && s.unread > 0 && !on ? (
                         <span style={{ background: "#c2410c", color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "0 7px", lineHeight: "18px" }}>{s.unread}</span>
                       ) : null}
@@ -591,7 +591,7 @@ function TeamGroup({ activeKind }: { activeKind: string | null }) {
           c.key,
           <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
             <PersonAvatar name={c.name} src={c.avatarUrl} size={22} />
-            {c.online && <span aria-label="Online" style={{ position: "absolute", right: -2, bottom: -2, width: 9, height: 9, borderRadius: 999, background: "#22a06b", border: "2px solid #fff" }} />}
+            {c.online && <span aria-label="Online" style={{ position: "absolute", right: -2, bottom: -2, width: 9, height: 9, borderRadius: 999, background: "#22a06b", border: "2px solid var(--ld-surface)" }} />}
           </span>,
           c.name,
           c.unread,
@@ -636,24 +636,24 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
     textDecoration: "none",
     fontSize: 14,
     fontWeight: 700,
-    background: on ? "#fff" : "transparent",
-    color: on ? "#14221c" : "#5b6b64",
+    background: on ? "var(--ld-surface)" : "transparent",
+    color: on ? "var(--ld-ink)" : "var(--ld-muted)",
     boxShadow: on ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
   });
   return (
-    <header className="ld-emphead" style={{ boxSizing: "border-box", minHeight: 72, padding: "8px 24px", background: "#fff", borderBottom: "1px solid #e3e9e6", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 16px", position: "sticky", top: 0, zIndex: 10 }}>
+    <header className="ld-emphead" style={{ boxSizing: "border-box", minHeight: 72, padding: "8px 24px", background: "var(--ld-surface)", borderBottom: "1px solid #e3e9e6", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 16px", position: "sticky", top: 0, zIndex: 10 }}>
       <div className="ld-row ld-emphead-who" style={{ gap: 12 }}>
-        <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "#14221c", display: "flex" }}>
+        <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "var(--ld-ink)", display: "flex" }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
         </Link>
         <Avatar name={emp.name} kind={emp.kind} src={emp.avatar} size={44} />
         <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
           <span style={{ fontWeight: 800, fontSize: 16 }}>{emp.name}</span>
-          <span style={{ fontSize: 13, color: "#5b6b64", whiteSpace: "nowrap" }}>{emp.roleTitle}</span>
+          <span style={{ fontSize: 13, color: "var(--ld-muted)", whiteSpace: "nowrap" }}>{emp.roleTitle}</span>
         </span>
         {clientInfo && <span className="ld-pill blue ld-emphead-ci" title="Works with client information, on providers under a signed BAA. The Show, Initial and Hide switch sets how client names show on your screen; notices carry initials.">Client info</span>}
       </div>
-      <nav aria-label="Employee views" className="ld-emptabs" style={{ display: "flex", gap: 6, background: "#f1f5f3", padding: 4, borderRadius: 12 }}>
+      <nav aria-label="Employee views" className="ld-emptabs" style={{ display: "flex", gap: 6, background: "var(--ld-faint2)", padding: 4, borderRadius: 12 }}>
         <Link href={base} style={tab(active === "chat")} className="ld-tablink">Chat</Link>
         {work && <Link href={`${base}/work`} style={tab(active === "work")}>{work}</Link>}
         <Link href={`${base}/knowledge`} style={tab(active === "knowledge")}>Knowledge</Link>
@@ -785,7 +785,7 @@ export function useIsMobile() {
 export function ErrorLine({ error }: { error?: { message: string } | null }) {
   if (!error) return null;
   return (
-    <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>
+    <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0 }}>
       {error.message}
     </p>
   );

@@ -155,7 +155,7 @@ function DocRead({ orgId, d, onOpenTask }: { orgId: number; d: D; onOpenTask: (i
           return (
             <label key={b.id} className="ck">
               <input type="checkbox" checked={!!b.done} onChange={(e) => toggle.mutate({ organizationId: orgId, id: d.doc.id, blockId: b.id, done: e.target.checked })} />
-              <span style={b.done ? { textDecoration: "line-through", color: "#5b6b64" } : undefined}><Marks text={b.text} /></span>
+              <span style={b.done ? { textDecoration: "line-through", color: "var(--ld-muted)" } : undefined}><Marks text={b.text} /></span>
             </label>
           );
         if (b.type === "quote") return <blockquote key={b.id}><Marks text={b.text} /></blockquote>;
@@ -463,7 +463,7 @@ function ImageBlock({ orgId, b, onChange, onRemove }: { orgId: number; b: Block;
         />
       </label>
       <button type="button" className="ld-btn sm" onClick={onRemove}>Remove</button>
-      {err && <span className="ld-small" role="alert" style={{ color: "#b42318" }}>{err}</span>}
+      {err && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>{err}</span>}
     </div>
   );
 }

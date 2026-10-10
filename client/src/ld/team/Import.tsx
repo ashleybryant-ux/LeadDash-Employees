@@ -70,7 +70,7 @@ export default function SlackImportPage() {
       <ChatList activeKind="team:import" />
       <section className="ld-chatmain tc-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         <header className="ld-emphead tc-head2">
-          <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "#14221c", display: "flex" }}>
+          <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "var(--ld-ink)", display: "flex" }}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
           </Link>
           <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, minWidth: 0 }}>
@@ -94,7 +94,7 @@ export default function SlackImportPage() {
             <span className="ld-row">
               <button type="button" className="ld-btn p gp-auto" disabled={busy} onClick={() => input.current?.click()}>{busy ? "Reading the export" : plan ? "Choose another file" : "Upload the zip"}</button>
             </span>
-            {error && <span className="ld-small" role="alert" style={{ color: "#b42318" }}>{error}</span>}
+            {error && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>{error}</span>}
           </div>
 
           {plan && !r && (

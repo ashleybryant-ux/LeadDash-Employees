@@ -67,7 +67,7 @@ export default function Compliance() {
         <button type="button" className="ld-btn sm" onClick={() => setEditing(null)}>Cancel</button>
         <button type="button" className="ld-btn sm p" disabled={add.isPending || save.isPending || !form.title.trim()} onClick={submit}>Save</button>
       </span>
-      {error && <span className="ld-small" style={{ color: "#b42318", gridColumn: "1 / -1" }}>{error}</span>}
+      {error && <span className="ld-small" style={{ color: "var(--ld-bad)", gridColumn: "1 / -1" }}>{error}</span>}
     </div>
   );
   return (
@@ -101,7 +101,7 @@ export default function Compliance() {
                 <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <button type="button" className="ld-btn xs" disabled={editing !== null} onClick={() => start(it)}>Edit</button>
                   <button type="button" className="ld-btn xs p" disabled={setDone.isPending} onClick={() => setDone.mutate({ organizationId: currentOrgId, id: it.id, done: true })}>Done</button>
-                  <button type="button" className="ld-btn xs" style={{ color: "#b42318" }} disabled={remove.isPending} onClick={() => remove.mutate({ organizationId: currentOrgId, id: it.id })}>Remove</button>
+                  <button type="button" className="ld-btn xs" style={{ color: "var(--ld-bad)" }} disabled={remove.isPending} onClick={() => remove.mutate({ organizationId: currentOrgId, id: it.id })}>Remove</button>
                 </span>
               </div>
               {editing === it.id && editor}

@@ -164,7 +164,7 @@ function AddPanel({ empKind, onDone }: { empKind: EmpKind; onDone: () => void })
   };
 
   return (
-    <div style={{ background: "#f4f8f6", padding: "16px 18px", borderBottom: "1px solid #e3e9e6", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
+    <div style={{ background: "var(--ld-hover)", padding: "16px 18px", borderBottom: "1px solid #e3e9e6", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <span className="ld-st">{empKind === "speaking" ? "Add an event or media request" : "Add an opportunity"}</span>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)", gap: 12, alignItems: "end" }}>
@@ -183,7 +183,7 @@ function AddPanel({ empKind, onDone }: { empKind: EmpKind; onDone: () => void })
             </div>
           </div>
         </div>
-        {error && <span className="ld-small" role="alert" style={{ color: "#b42318" }}>{error}</span>}
+        {error && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>{error}</span>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <button type="button" className="ld-btn p" disabled={busy} onClick={submit}>{busy ? "Reading..." : "Add"}</button>
@@ -379,13 +379,13 @@ function AskPanel({ oppId, to, due, who, onDone }: { oppId: number; to?: string;
   const ask = trpc.opps.ask.useMutation({ onSuccess: () => utils.invalidate() });
   if (ask.isSuccess)
     return (
-      <div className="ld-between" style={{ background: "#f4f8f6", padding: "12px 16px", borderRadius: 8 }}>
+      <div className="ld-between" style={{ background: "var(--ld-hover)", padding: "12px 16px", borderRadius: 8 }}>
         <span className="ld-body">The question is in Approvals as an email draft{to ? ` to ${to}` : ""}.</span>
         <button type="button" className="ld-btn sm" onClick={onDone}>Close</button>
       </div>
     );
   return (
-    <div style={{ background: "#f4f8f6", padding: "14px 16px", borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{ background: "var(--ld-hover)", padding: "14px 16px", borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
       <label htmlFor={`ask-${oppId}`} className="ld-lbl">
         Question for the {who}{to ? ` (${to}` : ""}{to && due ? `, due ${due})` : to ? ")" : due ? ` (due ${due})` : ""}
       </label>
@@ -432,7 +432,7 @@ function Package({ opp, reqs, onRetry }: { opp: OppRow; reqs: Requirements; onRe
             ) : (
               <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{f.name}</span>
             )}
-            <span style={{ color: "#3d4c45" }}>{unit(f)}</span>
+            <span style={{ color: "var(--ld-text2)" }}>{unit(f)}</span>
             <span className={`ld-pill ${f.status === "read" ? "green" : f.status === "needs_signature" ? "amber" : "red"}`} title={f.note ?? undefined}>
               {f.status === "read" ? (f.note === "from the image" ? "Read from image" : "Read") : f.status === "needs_signature" ? "Needs signature" : "Could not read"}
             </span>
@@ -446,7 +446,7 @@ function Package({ opp, reqs, onRetry }: { opp: OppRow; reqs: Requirements; onRe
           <div style={{ display: "grid", gridTemplateColumns: "130px minmax(0,1fr)", gap: "8px 14px", fontSize: 14, lineHeight: 1.5 }}>
             {rows.filter(([, v]) => v).map(([k, v]) => (
               <React.Fragment key={k}>
-                <span style={{ color: "#5b6b64", fontWeight: 600 }}>{k}</span>
+                <span style={{ color: "var(--ld-muted)", fontWeight: 600 }}>{k}</span>
                 <span style={{ overflowWrap: "anywhere" }}>{v}</span>
               </React.Fragment>
             ))}
@@ -531,7 +531,7 @@ function AppExpand({ a, qs, base }: { a: AppRow; qs: Question[]; base: string })
             <KV label="Submitted">{`${fmtDate(a.submittedAt)}, through ${CHANNEL_LABEL[a.channel] ?? a.channel}`}</KV>
             {a.receiptUrl && (
               <KV label="Receipt">
-                <a href={a.receiptUrl} target="_blank" rel="noreferrer noopener" style={{ color: "#155c3e", fontWeight: 700 }}>{/^https?:\/\//.test(a.receiptUrl) ? "Open the sent email" : "See the page after Submit"}</a>
+                <a href={a.receiptUrl} target="_blank" rel="noreferrer noopener" style={{ color: "var(--ld-accent-dark)", fontWeight: 700 }}>{/^https?:\/\//.test(a.receiptUrl) ? "Open the sent email" : "See the page after Submit"}</a>
               </KV>
             )}
           </>
@@ -594,7 +594,7 @@ function DecisionEditor({ a, onDone }: { a: AppRow; onDone: () => void }) {
   const [comments, setComments] = React.useState("");
   const [reapply, setReapply] = React.useState("");
   const decide = trpc.applications.decide.useMutation({ onSuccess: async () => { await utils.applications.list.invalidate(); onDone(); } });
-  const seg = (on: boolean): React.CSSProperties => ({ height: 32, padding: "0 16px", border: 0, borderRight: "1px solid #cfd9d4", background: on ? "#e6f2ec" : "#fff", color: on ? "#155c3e" : "#3d4c45", font: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" });
+  const seg = (on: boolean): React.CSSProperties => ({ height: 32, padding: "0 16px", border: 0, borderRight: "1px solid #cfd9d4", background: on ? "var(--ld-accent-bg)" : "#fff", color: on ? "var(--ld-accent-dark)" : "var(--ld-text2)", font: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" });
   return (
     <div className="ld-card editing" style={{ gridColumn: "1 / -1", padding: "14px 16px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 16 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -761,10 +761,10 @@ function AwardExpand({ a, award }: { a: AppRow; award: Award }) {
         ) : (
           <>
             <div className="ld-between ld-body"><span>{money(award.spent)} spent</span><span className="ld-muted">of {money(award.total)}</span></div>
-            <div style={{ height: 8, borderRadius: 999, background: "#e3e9e6", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${pct}%`, background: "#1b6b4a" }} /></div>
+            <div style={{ height: 8, borderRadius: 999, background: "var(--ld-line)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${pct}%`, background: "var(--ld-accent)" }} /></div>
           </>
         )}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: "6px 12px", fontSize: 13, color: "#3d4c45", marginTop: 4 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: "6px 12px", fontSize: 13, color: "var(--ld-text2)", marginTop: 4 }}>
           <span>Award period</span><span>{award.period || "Not recorded"}</span>
           <span>Restricted to</span><span>{award.restrictions || "Not recorded"}</span>
           <span>Award letter</span>
@@ -782,7 +782,7 @@ function AwardExpand({ a, award }: { a: AppRow; award: Award }) {
             )}
           </span>
         </div>
-        {letterErr && <span className="ld-small" style={{ color: "#b42318" }}>{letterErr}</span>}
+        {letterErr && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{letterErr}</span>}
       </div>
       <span />
       <div style={{ gridColumn: "1 / -1" }}><ErrorLine error={draft.error || dl.error || save.error} /></div>

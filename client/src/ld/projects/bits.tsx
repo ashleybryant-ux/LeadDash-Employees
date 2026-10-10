@@ -5,7 +5,7 @@ import type { PjCtx, TaskRow } from "../pages/Projects";
 
 /** Small pieces every Projects view uses. */
 
-export const PRIORITY_COLOR: Record<string, string> = { urgent: "#c2253c", high: "#d97706", normal: "#2563eb", low: "#9aa8a2" };
+export const PRIORITY_COLOR: Record<string, string> = { urgent: "#c2253c", high: "#d97706", normal: "#2563eb", low: "var(--ld-soft)" };
 export const PRIORITY_TEXT: Record<string, string> = { urgent: "Urgent", high: "High", normal: "Normal", low: "Low" };
 
 export function Flag({ p }: { p: string | null }) {
@@ -27,7 +27,7 @@ export function StatusTag({ name, color }: { name: string; color: string }) {
 
 export function statusColor(c: PjCtx, t: { listId: number; status: string }) {
   const l = c.data.lists.find((x) => x.id === t.listId);
-  return l?.statuses.find((s) => s.name === t.status)?.color ?? c.data.statuses.find((s) => s.name === t.status)?.color ?? "#87909e";
+  return l?.statuses.find((s) => s.name === t.status)?.color ?? c.data.statuses.find((s) => s.name === t.status)?.color ?? "var(--ld-soft3)";
 }
 
 /** An empty dashed circle stands for nobody yet. */

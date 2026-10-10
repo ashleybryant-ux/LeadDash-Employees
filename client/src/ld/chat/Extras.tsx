@@ -48,7 +48,7 @@ export function AttachmentChip({ f, onRemove, busy, error }: { f: { name: string
     <>
       {f.kind === "image" && f.url ? <img src={f.url} alt="" /> : <span className="ic">{extLabel(f.name)}</span>}
       <span className="nm">{f.name}</span>
-      <span className="sz" style={error ? { color: "#b42318" } : undefined}>{error ? "Didn't upload" : busy ? "Uploading..." : fileSize(f.size)}</span>
+      <span className="sz" style={error ? { color: "var(--ld-bad)" } : undefined}>{error ? "Didn't upload" : busy ? "Uploading..." : fileSize(f.size)}</span>
       {onRemove && (
         <button type="button" className="x" aria-label={`Remove ${f.name}`} onClick={onRemove}>
           {X}
@@ -263,13 +263,13 @@ export function PagePreviewCard({ id, version, title, kind }: { id: number; vers
           <span className="dot" />
           <span style={{ marginLeft: 8 }}>Live preview · scroll inside to see the whole page</span>
         </div>
-        <div ref={box} style={{ background: phone ? "#eef2f0" : "#fff", display: "flex", justifyContent: "center", overflow: "hidden", height: 460 }}>
+        <div ref={box} style={{ background: phone ? "var(--ld-line2)" : "#fff", display: "flex", justifyContent: "center", overflow: "hidden", height: 460 }}>
           {q.data?.document ? (
             phone ? (
-              <iframe title={`${title}, version ${v}`} srcDoc={q.data.document} sandbox="allow-same-origin" style={{ width: 390, maxWidth: "100%", height: 460, border: 0, background: "#fff", display: "block" }} />
+              <iframe title={`${title}, version ${v}`} srcDoc={q.data.document} sandbox="allow-same-origin" style={{ width: 390, maxWidth: "100%", height: 460, border: 0, background: "var(--ld-surface)", display: "block" }} />
             ) : (
               <div style={{ width: "100%", height: 460, position: "relative" }}>
-                <iframe title={`${title}, version ${v}`} srcDoc={q.data.document} sandbox="allow-same-origin" style={{ width: DESK, height: 460 / scale, border: 0, background: "#fff", display: "block", transform: `scale(${scale})`, transformOrigin: "top left", position: "absolute", top: 0, left: 0 }} />
+                <iframe title={`${title}, version ${v}`} srcDoc={q.data.document} sandbox="allow-same-origin" style={{ width: DESK, height: 460 / scale, border: 0, background: "var(--ld-surface)", display: "block", transform: `scale(${scale})`, transformOrigin: "top left", position: "absolute", top: 0, left: 0 }} />
               </div>
             )
           ) : (

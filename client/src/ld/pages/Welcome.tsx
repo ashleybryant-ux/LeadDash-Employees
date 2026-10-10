@@ -51,12 +51,12 @@ export default function Welcome() {
                 <Avatar name={e.name} kind={e.kind} src={e.avatar} size={36} />
                 <div style={{ minWidth: 0 }}>
                   <b style={{ display: "block", fontSize: 14 }}>{e.name}</b>
-                  <span style={{ fontSize: 12.5, color: "#1b6b4a", fontWeight: 700 }}>{e.roleTitle}</span>
+                  <span style={{ fontSize: 12.5, color: "var(--ld-accent)", fontWeight: 700 }}>{e.roleTitle}</span>
                 </div>
               </div>
             ))}
             {team.length > shown.length && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #e3e9e6", borderRadius: 10, padding: "10px 12px", color: "#5b6b64", fontWeight: 700 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #e3e9e6", borderRadius: 10, padding: "10px 12px", color: "var(--ld-muted)", fontWeight: 700 }}>
                 and {team.length - shown.length} more
               </div>
             )}
@@ -70,7 +70,7 @@ export default function Welcome() {
 function Check({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #eef2f0" }}>
-      <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: 999, background: "#1b6b4a", color: "#fff", fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>✓</span>
+      <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: 999, background: "var(--ld-accent)", color: "#fff", fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>✓</span>
       <span>{children}</span>
     </div>
   );

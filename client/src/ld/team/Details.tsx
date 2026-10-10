@@ -102,7 +102,7 @@ export function Details({ channel, onClose, onLeft, people, employees, names, wh
           <div key={`${f.messageId}-${i}`} className="tc-pr">
             <span aria-hidden="true">{f.url ? "📎" : "🔗"}</span>
             {f.url ? (
-              <a className="gp-ell" href={f.url} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 700, color: "#14221c" }}>{f.name}</a>
+              <a className="gp-ell" href={f.url} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 700, color: "var(--ld-ink)" }}>{f.name}</a>
             ) : (
               <span className="gp-ell" title="Stored in Slack">{f.name} <span className="ld-small ld-muted">· in Slack</span></span>
             )}

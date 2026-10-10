@@ -33,6 +33,8 @@ export const users = sqliteTable("users", {
   role: text("role", { enum: ["user", "admin"] }).notNull().default("user"),
   /** JSON {event: {push: boolean, email: boolean}} for the "Tell me when" choices. */
   notifyPrefs: text("notifyPrefs"),
+  /** Appearance: light, dark, or system (match the device). */
+  theme: text("theme", { enum: ["light", "dark", "system"] }).notNull().default("system"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
   lastSignedIn: integer("lastSignedIn", { mode: "timestamp" }),

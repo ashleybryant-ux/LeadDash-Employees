@@ -39,7 +39,7 @@ type Entry = {
 };
 
 const cardStyle: React.CSSProperties = {
-  background: "#fff",
+  background: "var(--ld-surface)",
   border: "1px solid #e3e9e6",
   borderRadius: 12,
   padding: "16px 18px",
@@ -51,7 +51,7 @@ const cardStyle: React.CSSProperties = {
   minWidth: 0,
 };
 
-const editStyle: React.CSSProperties = { ...cardStyle, gridColumn: "span 2", borderColor: "#1b6b4a" };
+const editStyle: React.CSSProperties = { ...cardStyle, gridColumn: "span 2", borderColor: "var(--ld-accent)" };
 
 function CategorySelect({ id, value, onChange }: { id: string; value: Category; onChange: (v: Category) => void }) {
   return (
@@ -147,14 +147,14 @@ function EntryCard({ entry: e, onEdit }: { entry: Entry; onEdit: () => void }) {
         </button>
       </div>
       {e.kind === "image" && e.fileUrl && (
-        <img src={e.fileUrl} alt={e.title} style={{ width: "100%", maxHeight: 140, objectFit: "contain", borderRadius: 8, background: "#f4f8f6" }} />
+        <img src={e.fileUrl} alt={e.title} style={{ width: "100%", maxHeight: 140, objectFit: "contain", borderRadius: 8, background: "var(--ld-hover)" }} />
       )}
       {e.content && (
         <span
           style={{
             fontSize: 13.5,
             lineHeight: 1.55,
-            color: "#3d4c45",
+            color: "var(--ld-text2)",
             display: "-webkit-box",
             WebkitLineClamp: 4,
             WebkitBoxOrient: "vertical",
@@ -174,7 +174,7 @@ function EntryCard({ entry: e, onEdit }: { entry: Entry; onEdit: () => void }) {
           Open file
         </a>
       )}
-      <div style={{ marginTop: "auto", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: "#5b6b64" }}>
+      <div style={{ marginTop: "auto", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: "var(--ld-muted)" }}>
         <span>{KIND_LABEL[e.kind] ?? "Fact"}</span>
         <span>{fmtDate(e.updatedAt || e.createdAt)}</span>
       </div>
@@ -395,7 +395,7 @@ function AddEditor({ onDone }: { onDone: () => void }) {
 
       {progress && <p className="ld-small ld-muted" style={{ margin: 0 }}>{progress}</p>}
       {localError && (
-        <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>
+        <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0 }}>
           {localError}
         </p>
       )}

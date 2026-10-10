@@ -193,7 +193,7 @@ function TopActions({ tab, roles, applicants, onTab }: { tab: string; roles: Rol
           </button>
         )}
       </div>
-      {error && <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0, textAlign: "right" }}>{error}</p>}
+      {error && <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0, textAlign: "right" }}>{error}</p>}
       <ErrorLine error={find.error} />
     </>
   );
@@ -572,7 +572,7 @@ function CandidateDetail({ p }: { p: Person }) {
         {must.map((m, i) => (
           <div key={i} className="ld-keep" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 90px", gap: 12, padding: "6px 0", borderBottom: "1px solid #eef2f0", fontSize: 14 }}>
             <span>{m.item}{m.kind === "nice" ? " (nice to have)" : ""}</span>
-            <span style={{ fontWeight: 700, color: m.met === "yes" ? "#155c3e" : m.met === "no" ? "#b42318" : "#5b6b64" }}>{m.met === "yes" ? "Yes" : m.met === "no" ? "No" : "Not said"}</span>
+            <span style={{ fontWeight: 700, color: m.met === "yes" ? "var(--ld-accent-dark)" : m.met === "no" ? "var(--ld-bad)" : "var(--ld-muted)" }}>{m.met === "yes" ? "Yes" : m.met === "no" ? "No" : "Not said"}</span>
           </div>
         ))}
         {p.fitReason && <KV label="Why">{p.fitReason}</KV>}
@@ -860,7 +860,7 @@ function HireCard({ p }: { p: Person }) {
       <div className="ld-between">
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontWeight: 800, fontSize: 17 }}>{[p.name, p.credentials].filter(Boolean).join(", ")}</span>
-          <span className="ld-body" style={{ color: "#3d4c45" }}>
+          <span className="ld-body" style={{ color: "var(--ld-text2)" }}>
             {[p.roleTitle, p.startDate && `Starts ${showDate(p.startDate)}`, `${done} of ${all.length} done`].filter(Boolean).join(" · ")}
           </span>
         </div>

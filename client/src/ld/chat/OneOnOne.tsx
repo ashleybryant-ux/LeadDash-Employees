@@ -226,7 +226,7 @@ export function VoiceBar({ o, emp, thinking }: { o: OneOnOne; emp: Emp; thinking
   if (!o.active && !o.ending && !o.endError) return null;
   if (!o.active) {
     return o.endError ? (
-      <span className="ld-small" role="alert" style={{ color: "#b42318" }}>
+      <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>
         The notes didn't save: {o.endError}
       </span>
     ) : (
@@ -287,7 +287,7 @@ export function VoiceBar({ o, emp, thinking }: { o: OneOnOne; emp: Emp; thinking
         </div>
       )}
       {o.micError && (
-        <span className="ld-small" role="alert" style={{ color: "#b42318", padding: "0 12px 10px" }}>
+        <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)", padding: "0 12px 10px" }}>
           {o.micError}
         </span>
       )}

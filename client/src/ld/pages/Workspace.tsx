@@ -204,13 +204,13 @@ export default function Workspace() {
             width: 64,
             height: 64,
             borderRadius: 14,
-            background: "#fff",
+            background: "var(--ld-surface)",
             border: "1px solid #e3e9e6",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             fontWeight: 800,
-            color: "#1b6b4a",
+            color: "var(--ld-accent)",
             overflow: "hidden",
             flexShrink: 0,
           }}
@@ -218,7 +218,7 @@ export default function Workspace() {
           {o.logoUrl ? <img src={o.logoUrl} alt={`${o.name} logo`} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : initials(o.name)}
         </div>
         <h1 className="ld-h1">{o.name}</h1>
-        <Link href="/handbook" className="ld-btn" style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none", color: "#14221c" }}>Handbook</Link>
+        <Link href="/handbook" className="ld-btn" style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none", color: "var(--ld-ink)" }}>Handbook</Link>
       </div>
 
       <UsageCard />
@@ -340,7 +340,7 @@ export default function Workspace() {
         )}
       </section>
       {logoError && (
-        <p role="alert" className="ld-small" style={{ color: "#b42318", margin: 0 }}>
+        <p role="alert" className="ld-small" style={{ color: "var(--ld-bad)", margin: 0 }}>
           {logoError}
         </p>
       )}

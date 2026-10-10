@@ -58,7 +58,7 @@ export default function BrainImport() {
 
   return (
     <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
-      <div className="ld-av-set" style={{ border: "1px solid #e3e9e6", borderRadius: 12, background: "#fff" }}>
+      <div className="ld-av-set" style={{ border: "1px solid #e3e9e6", borderRadius: 12, background: "var(--ld-surface)" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
           <span className="ld-lbl">Import from Claude or ChatGPT</span>
           {imp ? (
@@ -72,7 +72,7 @@ export default function BrainImport() {
                     <div style={{ width: `${Math.max(3, pct)}%` }} />
                   </div>
                 )}
-                <span className={imp.status === "failed" ? "ld-small" : "ld-small ld-muted"} style={imp.status === "failed" ? { color: "#b42318" } : undefined}>{status}</span>
+                <span className={imp.status === "failed" ? "ld-small" : "ld-small ld-muted"} style={imp.status === "failed" ? { color: "var(--ld-bad)" } : undefined}>{status}</span>
               </div>
               <span className="ld-strong">Saved to the Brain</span>
               <span>{imp.items.length} {imp.items.length === 1 ? "fact" : "facts"}</span>
@@ -117,7 +117,7 @@ export default function BrainImport() {
             <div key={f.id} className="ld-rw" style={{ gridTemplateColumns: COLS, alignItems: "start" }}>
               <span className="ld-strong" style={{ overflowWrap: "anywhere" }}>{f.topic}</span>
               <span style={{ lineHeight: 1.5 }}>{f.fact}</span>
-              <span className="ld-small" style={{ color: "#3d4c45" }}>{f.from}</span>
+              <span className="ld-small" style={{ color: "var(--ld-text2)" }}>{f.from}</span>
               <button type="button" className="ld-btn" disabled={remove.isPending} onClick={() => remove.mutate({ organizationId: currentOrgId, id: imp.id, knowledgeId: f.id })}>Remove</button>
             </div>
           ))}

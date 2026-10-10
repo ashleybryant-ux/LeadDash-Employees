@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { TenantProvider, useTenant } from "./contexts/TenantContext";
+import { useTheme } from "./ld/theme";
 import { useAuth } from "./_core/hooks/useAuth";
 import SignIn from "./pages/SignIn";
 import ChatPage from "./ld/ChatPage";
@@ -124,6 +125,7 @@ function Spinner() {
 /** Nothing inside the app loads until the person has signed in. */
 function Gate() {
   const { user, loading } = useAuth();
+  useTheme();
   if (loading) return <Spinner />;
   if (!user) return <SignIn />;
   return (

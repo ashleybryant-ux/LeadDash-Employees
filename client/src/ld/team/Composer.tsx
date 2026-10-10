@@ -258,7 +258,7 @@ export function Composer({ value, onChange, onSend, placeholder, who, disabled, 
           <button type="button" className="ld-btn p sm" disabled={disabled || busy} onClick={onSend}>{sendLabel}</button>
         </span>
       </div>
-      {note && <span className="ld-small" role="alert" style={{ color: "#b42318", padding: "0 10px 8px" }}>{note}</span>}
+      {note && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)", padding: "0 10px 8px" }}>{note}</span>}
     </div>
   );
 }

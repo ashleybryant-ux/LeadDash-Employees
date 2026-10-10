@@ -29,12 +29,12 @@ function StatusCard({ emp }: { emp: EmployeeRow }) {
           <span style={{ fontSize: 14 }}>Loading...</span>
         ) : !o.login ? (
           <span style={{ fontSize: 14, lineHeight: 1.5 }}>
-            Add the LeadDash platform on <Link href="/integrations" style={{ color: "#155c3e", fontWeight: 700 }}>Integrations</Link> under Website logins, locked to the LeadDash sub-account. Then {emp.name} can start.
+            Add the LeadDash platform on <Link href="/integrations" style={{ color: "var(--ld-accent-dark)", fontWeight: 700 }}>Integrations</Link> under Website logins, locked to the LeadDash sub-account. Then {emp.name} can start.
           </span>
         ) : (
           <>
             <span style={{ fontSize: 14 }}>{o.login.name} · {o.login.lockName} sub-account only</span>
-            <span className="ld-small" style={{ color: "#3d4c45" }}>
+            <span className="ld-small" style={{ color: "var(--ld-text2)" }}>
               {o.auditing ? `${emp.name} is reading your workflows now. Watch in Chat.` : o.auditedAt ? `Last audit ${fmtDate(o.auditedAt)}: ${o.workflows.length} workflows read. Audits only read; nothing changes until you press Fix.` : "No audit yet. Audits only read; nothing changes until you press Fix."}
             </span>
           </>
@@ -67,7 +67,7 @@ type Finding = {
 };
 
 function Steps({ lines }: { lines: string[] }) {
-  if (!lines.length) return <span style={{ fontSize: 14, color: "#5b6b64" }}>Not read.</span>;
+  if (!lines.length) return <span style={{ fontSize: 14, color: "var(--ld-muted)" }}>Not read.</span>;
   return (
     <div style={{ fontSize: 14, lineHeight: 1.7 }}>
       {lines.map((l, i) => (
@@ -85,7 +85,7 @@ function FindingRow({ f, open, onToggle }: { f: Finding; open: boolean; onToggle
   const dismiss = trpc.platform.dismiss.useMutation({ onSuccess: done });
   return (
     <>
-      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "#f4f8f6", borderBottom: 0 } : {}) }}>
+      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "var(--ld-hover)", borderBottom: 0 } : {}) }}>
         <b style={{ overflowWrap: "anywhere" }}>{f.workflow}</b>
         <span>{f.issue}</span>
         {f.status === "fixing" ? <span className="ld-pill amber" style={{ justifySelf: "start" }}>Fixing now</span> : <SevPill s={f.severity} />}
@@ -101,7 +101,7 @@ function FindingRow({ f, open, onToggle }: { f: Finding; open: boolean; onToggle
             <span className="ld-lbl">The fix</span>
             <span style={{ fontSize: 14, lineHeight: 1.6 }}>{f.fix}</span>
             <span className="ld-small">Zara saves the workflow after the change. It stays published.</span>
-            {f.note && f.status === "open" && <span className="ld-small" style={{ color: "#b42318" }}>Last try: {f.note}</span>}
+            {f.note && f.status === "open" && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>Last try: {f.note}</span>}
             <ErrorLine error={fix.error || dismiss.error} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -121,7 +121,7 @@ function FindingRow({ f, open, onToggle }: { f: Finding; open: boolean; onToggle
 function FixedRow({ f, open, onToggle }: { f: Finding; open: boolean; onToggle: () => void }) {
   return (
     <>
-      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "#f4f8f6", borderBottom: 0 } : {}) }}>
+      <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open ? { background: "var(--ld-hover)", borderBottom: 0 } : {}) }}>
         <b style={{ overflowWrap: "anywhere" }}>{f.workflow}</b>
         <span>{f.issue}</span>
         <span>{f.fixedAt ? fmtDate(f.fixedAt) : ""}</span>
@@ -204,7 +204,7 @@ export default function Workflows({ emp }: { emp: EmployeeRow }) {
             {all.length === 0 && <div className="ld-empty">No workflows read yet.</div>}
             {all.map((w, i) => (
               <React.Fragment key={`${w.name}-${i}`}>
-                <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open === `w${i}` ? { background: "#f4f8f6", borderBottom: 0 } : {}) }}>
+                <div className="ld-rw" style={{ gridTemplateColumns: COLS, ...(open === `w${i}` ? { background: "var(--ld-hover)", borderBottom: 0 } : {}) }}>
                   <b style={{ overflowWrap: "anywhere" }}>{w.name}</b>
                   <span>{w.error ? "Couldn't open it" : w.trigger || "Not read"}</span>
                   <span>{w.status || ""}</span>

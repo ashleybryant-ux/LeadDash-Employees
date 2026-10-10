@@ -11,7 +11,7 @@ import { ErrorLine } from "../ui";
  */
 
 export const SEV: Record<"fix_now" | "should_fix", { label: string; bg: string; fg: string }> = {
-  fix_now: { label: "Fix now", bg: "#fde8e8", fg: "#9b1c1c" },
+  fix_now: { label: "Fix now", bg: "var(--ld-bad-bg)", fg: "var(--ld-bad)" },
   should_fix: { label: "Should fix", bg: "#fdf0e3", fg: "#8a4510" },
 };
 
@@ -48,15 +48,15 @@ export function WebTaskCard({ id, empName }: { id: number; empName: string }) {
           {pill}
         </div>
         {t.screenshotUrl && (
-          <div style={{ border: "1px solid #cfd9d4", borderRadius: 10, overflow: "hidden", background: "#fff" }}>
-            <div style={{ display: "flex", alignItems: "center", padding: "8px 10px", background: "#eef2f0", borderBottom: "1px solid #dbe4df" }}>
-              <span style={{ flex: 1, background: "#fff", border: "1px solid #dbe4df", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "#3d4c45", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{shortUrl(t.lastUrl) || t.title}</span>
+          <div style={{ border: "1px solid #cfd9d4", borderRadius: 10, overflow: "hidden", background: "var(--ld-surface)" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "8px 10px", background: "var(--ld-line2)", borderBottom: "1px solid #dbe4df" }}>
+              <span style={{ flex: 1, background: "var(--ld-surface)", border: "1px solid #dbe4df", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "var(--ld-text2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{shortUrl(t.lastUrl) || t.title}</span>
             </div>
             <img src={t.screenshotUrl} alt={`The page ${empName} ended on`} style={{ display: "block", width: "100%", maxHeight: 260, objectFit: "cover", objectPosition: "top" }} />
           </div>
         )}
-        {steps && <span style={{ fontSize: 13, color: "#3d4c45", lineHeight: 1.6 }}>{steps}</span>}
-        {t.pending && <span style={{ fontSize: 14, color: "#3d4c45", lineHeight: 1.5 }}>Ready to press {t.pending}. Nothing was saved or sent yet.</span>}
+        {steps && <span style={{ fontSize: 13, color: "var(--ld-text2)", lineHeight: 1.6 }}>{steps}</span>}
+        {t.pending && <span style={{ fontSize: 14, color: "var(--ld-text2)", lineHeight: 1.5 }}>Ready to press {t.pending}. Nothing was saved or sent yet.</span>}
         <ErrorLine error={approve.error} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -114,7 +114,7 @@ export function FindingsCard() {
       ))}
       {open.length > 3 && (
         <div style={{ padding: "10px 16px" }}>
-          <Link href="/chats/platform/work" className="ld-small" style={{ color: "#155c3e", fontWeight: 700 }}>See all {open.length} on the Workflows tab</Link>
+          <Link href="/chats/platform/work" className="ld-small" style={{ color: "var(--ld-accent-dark)", fontWeight: 700 }}>See all {open.length} on the Workflows tab</Link>
         </div>
       )}
       {fix.error && <div style={{ padding: "0 16px 12px" }}><ErrorLine error={fix.error} /></div>}
@@ -138,7 +138,7 @@ export function PlatformPageCard({ id }: { id: number }) {
           <b>{p.title}</b>
           {pill}
         </div>
-        <span style={{ fontSize: 13, color: "#3d4c45" }}>{[`${p.funnel} funnel`, `/${p.path}`, p.version ? `from Jordan's version ${p.version}` : ""].filter(Boolean).join(" · ")}</span>
+        <span style={{ fontSize: 13, color: "var(--ld-text2)" }}>{[`${p.funnel} funnel`, `/${p.path}`, p.version ? `from Jordan's version ${p.version}` : ""].filter(Boolean).join(" · ")}</span>
         <ErrorLine error={publish.error} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

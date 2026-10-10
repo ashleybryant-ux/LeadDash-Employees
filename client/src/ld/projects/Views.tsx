@@ -18,7 +18,7 @@ export type ViewSettings = SavedView["settings"];
 export type Current = { kind: ViewKind; savedId: number | null };
 
 export const KINDS: { key: ViewKind; label: string; blurb: string; color: string }[] = [
-  { key: "list", label: "List", blurb: "Tasks grouped by status, person or priority", color: "#1b6b4a" },
+  { key: "list", label: "List", blurb: "Tasks grouped by status, person or priority", color: "var(--ld-accent)" },
   { key: "board", label: "Board", blurb: "Cards in columns you drag", color: "#2563eb" },
   { key: "calendar", label: "Calendar", blurb: "Tasks by due date", color: "#b45309" },
   { key: "gantt", label: "Gantt", blurb: "Bars, dependencies and the critical path", color: "#c2253c" },
@@ -32,7 +32,7 @@ const ITEMS: { key: ItemKey; label: string; blurb: string; color: string }[] = [
   { key: "doc", label: "Doc", blurb: "Write next to the tasks", color: "#2563eb" },
   { key: "whiteboard", label: "Whiteboard", blurb: "Sticky notes that become tasks", color: "#d97706" },
   { key: "form", label: "Form", blurb: "A public page that makes tasks", color: "#7c3aed" },
-  { key: "dash", label: "Dashboard", blurb: "Cards and charts", color: "#1b6b4a" },
+  { key: "dash", label: "Dashboard", blurb: "Cards and charts", color: "var(--ld-accent)" },
 ];
 
 /** The tabs every list starts with; the rest are added with + View. */

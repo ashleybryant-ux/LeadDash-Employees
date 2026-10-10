@@ -24,7 +24,7 @@ const hourLabel = (v: string) => HOURS.find((h) => h.v === v)?.label ?? v;
 
 const grid: React.CSSProperties = { padding: "18px 20px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24 };
 const col: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 8 };
-const small: React.CSSProperties = { fontSize: 12, color: "#5b6b64", lineHeight: 1.45 };
+const small: React.CSSProperties = { fontSize: 12, color: "var(--ld-muted)", lineHeight: 1.45 };
 
 export function Choice<T extends string>({ options, value, onChange }: { options: { key: T; label: string }[]; value: T; onChange: (v: T) => void }) {
   return (
@@ -243,7 +243,7 @@ export function LeadSetupCard({ emp, rule }: { emp: EmployeeRow; rule: Rule | un
             <span className="ld-lbl">Booking page</span>
             <a href={s.links.booking} target="_blank" rel="noreferrer noopener" className="ld-body" style={{ overflowWrap: "anywhere" }}>{s.links.booking}</a>
           </div>
-          {error && <span className="ld-small" style={{ color: "#b42318" }}>{error}</span>}
+          {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
         </div>
         <Buttons editing={editing} saving={saveSettings.isPending || saveRules.isPending} onEdit={() => { setD({ meetingMinutes: s.meetingMinutes, hoursFrom: s.hoursFrom, hoursTo: s.hoursTo, days: s.days, reply: replyMode }); setEditing(true); }} onSave={save} onCancel={() => setEditing(false)} />
       </div>

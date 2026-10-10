@@ -144,7 +144,7 @@ function Results({ p }: { p: PostRow }) {
       <span className="ld-lbl">Result</span>
       {st.key === "posting" && <span className="ld-body">Posting now. Videos can take a few minutes.</span>}
       {st.dispatch.map((d) => (
-        <span key={d.channel} className="ld-body" style={{ color: d.ok ? "#155c3e" : "#b42318" }}>
+        <span key={d.channel} className="ld-body" style={{ color: d.ok ? "var(--ld-accent-dark)" : "var(--ld-bad)" }}>
           {PLAT[d.channel as SocialChannel]?.name ?? d.channel}: {d.ok ? "posted" : d.error}
           {d.ok && d.url ? (
             <>
@@ -331,7 +331,7 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
   };
 
   const chip = (ev: Ev) => {
-    const cls = ev.kind === "s" ? { background: "#e6f2ec", color: "#155c3e" } : ev.kind === "p" ? { background: "#eef2f0", color: "#5b6b64" } : { background: "#fff", border: "1px dashed #d9a066", color: "#8a4510" };
+    const cls = ev.kind === "s" ? { background: "var(--ld-accent-bg)", color: "var(--ld-accent-dark)" } : ev.kind === "p" ? { background: "var(--ld-line2)", color: "var(--ld-muted)" } : { background: "var(--ld-surface)", border: "1px dashed #d9a066", color: "#8a4510" };
     const movable = ev.kind !== "p";
     return (
       <button
@@ -410,16 +410,16 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
       </div>
 
       {creating !== null && (
-        <div className="ld-card" style={{ padding: "6px 18px 20px 18px", background: "#f4f8f6", borderColor: "#1b6b4a" }}>
+        <div className="ld-card" style={{ padding: "6px 18px 20px 18px", background: "var(--ld-hover)", borderColor: "var(--ld-accent)" }}>
           <div style={{ fontWeight: 800, fontSize: 15, padding: "10px 0 8px" }}>New post</div>
           <PostPanel key={`new-${creating}`} item={null} preset={creating ? { date: creating } : undefined} onClose={() => setCreating(null)} onSaved={(row) => { setCreating(null); setSelected(row.id); }} />
         </div>
       )}
 
       <div className="ld-calwrap" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 250px", gap: 16, alignItems: "start" }}>
-        <div className="ld-cal ld-keep" style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", borderLeft: "1px solid #e3e9e6", borderTop: "1px solid #e3e9e6", background: "#fff" }}>
+        <div className="ld-cal ld-keep" style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", borderLeft: "1px solid #e3e9e6", borderTop: "1px solid #e3e9e6", background: "var(--ld-surface)" }}>
           {DOW.map((d) => (
-            <div key={d} style={{ fontSize: 12, fontWeight: 700, color: "#5b6b64", textTransform: "uppercase", letterSpacing: ".06em", padding: 8, borderRight: "1px solid #e3e9e6", borderBottom: "1px solid #e3e9e6", background: "#f8fafb" }}>{d}</div>
+            <div key={d} style={{ fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: ".06em", padding: 8, borderRight: "1px solid #e3e9e6", borderBottom: "1px solid #e3e9e6", background: "var(--ld-page)" }}>{d}</div>
           ))}
           {days.map((day) => {
             const key = day.y * 10000 + day.m * 100 + day.d;
@@ -442,9 +442,9 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
                   setSelected(null);
                   setCreating(dateText(day.y, day.m, day.d));
                 }}
-                style={{ minHeight: view === "week" ? 320 : 118, borderRight: "1px solid #e3e9e6", borderBottom: "1px solid #e3e9e6", padding: 6, display: "flex", flexDirection: "column", gap: 4, boxSizing: "border-box", minWidth: 0, background: dragOver === key ? "#e6f2ec" : past && !day.out ? "#fcfdfc" : "#fff" }}
+                style={{ minHeight: view === "week" ? 320 : 118, borderRight: "1px solid #e3e9e6", borderBottom: "1px solid #e3e9e6", padding: 6, display: "flex", flexDirection: "column", gap: 4, boxSizing: "border-box", minWidth: 0, background: dragOver === key ? "var(--ld-accent-bg)" : past && !day.out ? "#fcfdfc" : "#fff" }}
               >
-                <span style={{ fontSize: 12, fontWeight: 700, color: day.out ? "#b3c0ba" : "#3d4c45", ...(isToday ? { background: "#1b6b4a", color: "#fff", borderRadius: 999, width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" } : {}) }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: day.out ? "#b3c0ba" : "var(--ld-text2)", ...(isToday ? { background: "var(--ld-accent)", color: "#fff", borderRadius: 999, width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" } : {}) }}>
                   {view === "week" ? `${day.m}/${day.d}` : day.d}
                 </span>
                 {evs.map(chip)}
@@ -469,9 +469,9 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
                   setCreating(null);
                   setSelected(selected === p.id ? null : p.id);
                 }}
-                style={{ border: `1px solid ${selected === p.id ? "#1b6b4a" : "#e3e9e6"}`, borderRadius: 10, padding: 10, background: "#fff", display: "flex", flexDirection: "column", gap: 6, font: "inherit", textAlign: "left", cursor: "grab" }}
+                style={{ border: `1px solid ${selected === p.id ? "var(--ld-accent)" : "var(--ld-line)"}`, borderRadius: 10, padding: 10, background: "var(--ld-surface)", display: "flex", flexDirection: "column", gap: 6, font: "inherit", textAlign: "left", cursor: "grab" }}
               >
-                <span style={{ fontWeight: 700, fontSize: 13, color: "#14221c" }}>{titleOf(p)}</span>
+                <span style={{ fontWeight: 700, fontSize: 13, color: "var(--ld-ink)" }}>{titleOf(p)}</span>
                 <span style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
                   {postChannels(p).map((c) => (
                     <PlatIcon key={c} c={c} />
@@ -486,10 +486,10 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
       </div>
       <ErrorLine error={a.error} />
 
-      <div className="ld-row" style={{ gap: 14, fontSize: 12, color: "#5b6b64", flexWrap: "wrap" }}>
-        <span style={{ background: "#e6f2ec", color: "#155c3e", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Scheduled</span>
-        <span style={{ background: "#fff", border: "1px dashed #d9a066", color: "#8a4510", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Draft</span>
-        <span style={{ background: "#eef2f0", color: "#5b6b64", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Posted</span>
+      <div className="ld-row" style={{ gap: 14, fontSize: 12, color: "var(--ld-muted)", flexWrap: "wrap" }}>
+        <span style={{ background: "var(--ld-accent-bg)", color: "var(--ld-accent-dark)", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Scheduled</span>
+        <span style={{ background: "var(--ld-surface)", border: "1px dashed #d9a066", color: "#8a4510", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Draft</span>
+        <span style={{ background: "var(--ld-line2)", color: "var(--ld-muted)", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Posted</span>
         <span>Double-click a day to write a post for it.</span>
       </div>
 
@@ -499,7 +499,7 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
               shownSel.current = selected;
               el.scrollIntoView({ behavior: "smooth", block: "nearest" });
             }
-          }} className="ld-card" style={{ padding: "6px 18px 20px 18px", background: "#f4f8f6", borderColor: "#1b6b4a" }}>
+          }} className="ld-card" style={{ padding: "6px 18px 20px 18px", background: "var(--ld-hover)", borderColor: "var(--ld-accent)" }}>
           <div className="ld-between" style={{ padding: "10px 0 8px" }}>
             <span style={{ fontWeight: 800, fontSize: 15 }}>{titleOf(sel)}</span>
             <span className={`ld-pill ${postState(sel).cls}`}>{postState(sel).label}</span>

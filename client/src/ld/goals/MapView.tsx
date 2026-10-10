@@ -53,7 +53,7 @@ export function MapView({ c }: { c: GoalsCtx }) {
               const y1 = par.y + H + 20;
               const x2 = p.x + W / 2 + 20;
               const y2 = p.y + 20;
-              return <path key={p.g.goal.id} d={`M${x1} ${y1} C ${x1} ${y1 + 50}, ${x2} ${y2 - 50}, ${x2} ${y2}`} fill="none" stroke="#9aa8a2" strokeWidth="2" />;
+              return <path key={p.g.goal.id} d={`M${x1} ${y1} C ${x1} ${y1 + 50}, ${x2} ${y2 - 50}, ${x2} ${y2}`} fill="none" stroke="var(--ld-soft)" strokeWidth="2" />;
             })}
         </svg>
         {all.map((p) => (
@@ -74,7 +74,7 @@ export function MapView({ c }: { c: GoalsCtx }) {
           {all.map((p) => (
             <rect key={p.g.goal.id} x={p.x * scale + 4} y={p.y * scale + 4} width={Math.max(4, W * scale)} height={Math.max(3, H * scale)} rx="1.5" fill={p.g.goal.color} opacity=".55" />
           ))}
-          <rect x="1" y="1" width="148" height="88" rx="4" fill="none" stroke="#1b6b4a" />
+          <rect x="1" y="1" width="148" height="88" rx="4" fill="none" stroke="var(--ld-accent)" />
         </svg>
       </div>
       <div className="gp-zoom">

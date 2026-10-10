@@ -328,7 +328,7 @@ export function BudgetEditor({ c, onDone, onSaved }: { c: CampaignView; onDone: 
           </div>
         );
       })}
-      <div className="ad-bud t"><span>Total</span><span style={{ color: sum === 100 ? undefined : "#b42318" }}>{sum}%</span><span>{money(cents)}</span><span>{days ? money(Math.round(cents / days)) : ""}</span></div>
+      <div className="ad-bud t"><span>Total</span><span style={{ color: sum === 100 ? undefined : "var(--ld-bad)" }}>{sum}%</span><span>{money(cents)}</span><span>{days ? money(Math.round(cents / days)) : ""}</span></div>
       <div className="ld-small ld-muted" style={{ padding: "6px 14px 0" }}>Shares must add up to 100%. Type a share or a total and the other follows.</div>
       <div className="ld-row" style={{ padding: "10px 14px 14px", justifyContent: "flex-end" }}>
         <button type="button" className="ld-btn sm gp-auto" onClick={onDone}>Cancel</button>

@@ -44,7 +44,7 @@ export function ImportPage({ orgId, onDone }: { orgId: number; onDone: () => voi
           <p className="ld-small" style={{ margin: "8px 0 0" }}>
             {counts.folders ?? 0} folders, {counts.lists ?? 0} lists, {counts.tasks ?? 0} tasks, {counts.comments ?? 0} comments, {counts.files ?? 0} files, {counts.goals ?? 0} goals so far.
           </p>
-          {run.error && <p className="ld-small" style={{ color: "#b42318", margin: "6px 0 0" }}>{run.error}</p>}
+          {run.error && <p className="ld-small" style={{ color: "var(--ld-bad)", margin: "6px 0 0" }}>{run.error}</p>}
           {run.status === "running" && <p className="ld-small ld-muted" style={{ margin: "6px 0 0" }}>Attachments download one at a time, so a big export takes a few minutes. You can leave this page.</p>}
           {run.status === "done" && <button type="button" className="ld-btn" style={{ marginTop: 10 }} onClick={onDone}>See the lists</button>}
         </div>

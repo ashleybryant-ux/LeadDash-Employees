@@ -7,9 +7,9 @@ type Tab = "this" | "last" | "person";
 const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const hrs = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-const tile: React.CSSProperties = { border: "1px solid #e3e9e6", borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 4, background: "#fff", minWidth: 0 };
-const lbl: React.CSSProperties = { fontSize: 13, color: "#5b6b64", fontWeight: 600 };
-const num: React.CSSProperties = { fontSize: 28, fontWeight: 800, color: "#14221c", lineHeight: 1.1 };
+const tile: React.CSSProperties = { border: "1px solid #e3e9e6", borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 4, background: "var(--ld-surface)", minWidth: 0 };
+const lbl: React.CSSProperties = { fontSize: 13, color: "var(--ld-muted)", fontWeight: 600 };
+const num: React.CSSProperties = { fontSize: 28, fontWeight: 800, color: "var(--ld-ink)", lineHeight: 1.1 };
 const COLS = "40px minmax(0,1fr) 90px 70px 90px";
 
 /** Hours saved, tasks done and estimated AI cost for the workspace, by employee. */
@@ -58,7 +58,7 @@ export function UsageCard() {
               <div className="ld-empty">{`No work in ${u.month}.`}</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column" }}>
-                <div className="ld-usage-row ld-keep" style={{ display: "grid", gridTemplateColumns: COLS, gap: 12, padding: "0 0 6px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5b6b64" }}>
+                <div className="ld-usage-row ld-keep" style={{ display: "grid", gridTemplateColumns: COLS, gap: 12, padding: "0 0 6px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ld-muted)" }}>
                   <span />
                   <span>Employee</span>
                   <span style={{ textAlign: "right" }}>Hours</span>
@@ -122,7 +122,7 @@ function ByPerson() {
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column" }}>
-        <div className="ld-usage-row ld-keep" style={{ display: "grid", gridTemplateColumns: PCOLS, gap: 12, padding: "0 0 6px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5b6b64" }}>
+        <div className="ld-usage-row ld-keep" style={{ display: "grid", gridTemplateColumns: PCOLS, gap: 12, padding: "0 0 6px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ld-muted)" }}>
           <span />
           <span>Person</span>
           <span style={{ textAlign: "right" }}>AI cost</span>
@@ -131,13 +131,13 @@ function ByPerson() {
         </div>
         {r.rows.map((p) => {
           const pct = p.pct == null ? null : Math.min(100, p.pct);
-          const color = p.pct != null && p.pct >= 100 ? "#b42318" : p.pct != null && p.pct >= 80 ? "#e88a3a" : "#1b6b4a";
+          const color = p.pct != null && p.pct >= 100 ? "var(--ld-bad)" : p.pct != null && p.pct >= 80 ? "#e88a3a" : "var(--ld-accent)";
           return (
             <div key={p.userId} className="ld-usage-row ld-keep" style={{ display: "grid", gridTemplateColumns: PCOLS, gap: 12, alignItems: "center", padding: "8px 0", borderTop: "1px solid #eef2f0", fontSize: 14 }}>
               <PersonAvatar name={p.name} src={p.avatarUrl} size={36} />
               <b style={{ minWidth: 0, overflowWrap: "anywhere" }}>{p.name}</b>
               <span style={{ textAlign: "right", fontWeight: 700 }}>{money(p.cost)}{p.estimated ? "*" : ""}</span>
-              <span style={{ textAlign: "right", color: p.limit == null ? "#5b6b64" : undefined }}>{p.limit == null ? "No limit" : money(p.limit)}</span>
+              <span style={{ textAlign: "right", color: p.limit == null ? "var(--ld-muted)" : undefined }}>{p.limit == null ? "No limit" : money(p.limit)}</span>
               {pct == null ? (
                 <span />
               ) : (
@@ -145,7 +145,7 @@ function ByPerson() {
                   <span style={{ flex: 1, height: 6, borderRadius: 999, background: "#e8eeeb", overflow: "hidden" }}>
                     <span style={{ display: "block", width: `${pct}%`, height: "100%", background: color }} />
                   </span>
-                  <span style={{ fontSize: 12.5, width: 40, textAlign: "right", color: p.pct! >= 100 ? "#b42318" : undefined, fontWeight: p.pct! >= 100 ? 700 : 400 }}>{p.pct}%</span>
+                  <span style={{ fontSize: 12.5, width: 40, textAlign: "right", color: p.pct! >= 100 ? "var(--ld-bad)" : undefined, fontWeight: p.pct! >= 100 ? 700 : 400 }}>{p.pct}%</span>
                 </span>
               )}
             </div>
@@ -158,7 +158,7 @@ function ByPerson() {
             <span className="ld-small ld-muted" style={{ display: "block" }}>Daily searches, reports and meeting notes</span>
           </span>
           <span style={{ textAlign: "right", fontWeight: 700 }}>{money(r.scheduled)}</span>
-          <span style={{ textAlign: "right", color: "#5b6b64" }}>No limit</span>
+          <span style={{ textAlign: "right", color: "var(--ld-muted)" }}>No limit</span>
           <span />
         </div>
       </div>

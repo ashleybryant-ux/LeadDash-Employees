@@ -87,7 +87,7 @@ export function PressCampaignCard({ id }: { id: number }) {
         <b>{c.title}</b>
         <span>{c.plan.story}</span>
         <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.6, listStyle: "decimal" }}>
-          {c.angles.map((a, i) => <li key={i} style={{ color: a.use ? "#14221c" : "#5b6b64" }}>{a.text}{a.use ? " (using)" : ""}</li>)}
+          {c.angles.map((a, i) => <li key={i} style={{ color: a.use ? "var(--ld-ink)" : "var(--ld-muted)" }}>{a.text}{a.use ? " (using)" : ""}</li>)}
         </ol>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
