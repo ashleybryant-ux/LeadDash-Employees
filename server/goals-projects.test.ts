@@ -164,14 +164,16 @@ describe("Projects", () => {
     const list = await me.pj.saveList({ organizationId: orgId, name: "Founding Members", folderId: null });
     const jordan = (await db.getEmployeeByKind(orgId, "website"))!;
     const chat = await import("./employees/chat");
-    const doTask = vi.spyOn(chat, "doTask").mockResolvedValue({ action: "build_page", text: "Building the founding member page now.", cards: [], refs: [] } as any);
+    const doTask = vi.spyOn(chat, "doTask").mockResolvedValue({ action: "build_page", text: "Built the founding member page.", cards: [{ type: "page", id: 1, title: "Founding member offer", subtitle: "Draft 1", body: "Headline: Join the founding 12.", url: "https://leaddash.io/founding" }, { type: "choices", id: 2, title: "", options: ["Publish it"] }], refs: [] } as any);
     await me.pj.saveAutomation({ organizationId: orgId, listId: list.id, trigger: { on: "status", to: "complete" }, action: { do: "comment", value: "Send it to Caroline to paste in." }, active: true });
     const t = await me.pj.create({ organizationId: orgId, listId: list.id, name: "Founding member landing page", assignees: [{ type: "employee", id: jordan.id, name: jordan.name }] });
     await waitFor(() => db.work.comments.where(orgId, "taskId", t.id).some((c) => c.kind === "comment"));
     expect(doTask).toHaveBeenCalledTimes(1);
     expect(doTask.mock.calls[0][1]).toMatchObject({ title: "Founding member landing page", project: "Founding Members" });
     const d = await me.pj.task({ organizationId: orgId, id: t.id });
-    expect(d.comments.find((c) => c.kind === "comment")).toMatchObject({ authorName: jordan.name, body: "Building the founding member page now." });
+    // What it made is on the task itself: the words, then each card's title, body and link (quick-reply choices left out).
+    expect(d.comments.find((c) => c.kind === "comment")).toMatchObject({ authorName: jordan.name, body: "Built the founding member page.\n\nFounding member offer (Draft 1)\nHeadline: Join the founding 12.\nhttps://leaddash.io/founding" });
+    expect(d.comments.some((c) => c.kind === "activity" && c.body === `${jordan.name} started on it`)).toBe(true);
     expect(d.task.status).toBe("in progress"); // started
     await me.pj.update({ organizationId: orgId, id: t.id, patch: { status: "complete" } });
     expect(db.work.comments.where(orgId, "taskId", t.id).some((c) => c.body === "Send it to Caroline to paste in.")).toBe(true);

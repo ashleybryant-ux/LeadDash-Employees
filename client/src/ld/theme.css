@@ -800,15 +800,13 @@ select.gp-fb { max-width: 150px; text-overflow: ellipsis; }
 .ld a.gp-td:hover { background: #f8fbf9; }
 
 /* Projects: folder tree */
-.gp-ptree { width: 250px; flex-shrink: 0; background: #fff; border-right: 1px solid #e3e9e6; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; box-sizing: border-box; position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; }
+.gp-ptree { width: 250px; flex-shrink: 0; background: #fff; border-right: 1px solid #e3e9e6; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; box-sizing: border-box; position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; z-index: 25; }
 /* The rail: the workspace at the top (click it to switch), then the pages. It scrolls on a short screen instead of cutting off. */
 .ld-rail { height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .ld-rail::-webkit-scrollbar { display: none; }
-.ld-ws { width: 68px; border: 0; background: transparent; padding: 4px 2px 6px; margin-bottom: 6px; border-radius: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; color: #fff; flex-shrink: 0; font: inherit; }
-.ld-ws:hover { background: #1b2f2a; }
-.ld-wsname { display: flex; align-items: center; gap: 3px; max-width: 64px; font-size: 10.5px; font-weight: 700; line-height: 1.2; }
-.ld-wsname > span:first-child { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-align: center; }
-.ld-wsname > span:last-child { color: #a9c0b6; flex-shrink: 0; }
+.ld-wshead { display: flex; align-items: center; gap: 10px; border: 0; background: none; font: inherit; font-size: 16px; font-weight: 800; color: #14221c; cursor: pointer; padding: 4px 6px; margin: 0 0 10px; border-radius: 10px; min-width: 0; text-align: left; width: 100%; }
+.ld-wshead:hover { background: #f4f8f6; }
+.ld-wshead > .gp-ell { flex: 1; min-width: 0; }
 .gp-ptree .ph2 { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6b64; padding: 8px 8px 4px; display: flex; justify-content: space-between; align-items: center; }
 .gp-plus { border: 0; background: none; font: inherit; font-size: 16px; font-weight: 800; color: #5b6b64; cursor: pointer; padding: 0 4px; }
 .gp-tl { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 30px; border-radius: 7px; color: #3d4c45; justify-content: space-between; border: 0; background: none; font: inherit; font-size: 13px; text-align: left; cursor: pointer; width: 100%; text-decoration: none; min-width: 0; }
@@ -1174,8 +1172,8 @@ button.gp-ts:hover { background: #f8fbf9; }
 
 /* Projects sidebar, ClickUp style */
 .gp-ptree .gp-new { width: 100%; justify-content: center; margin: 0 0 10px; }
-.gp-ptree > span:first-child { display: flex; }
-.gp-ptree > span:first-child .gp-menu { min-width: 200px; }
+.gp-ptree > span:first-child, .gp-ptree > span:has(> .gp-new) { display: flex; }
+.gp-ptree > span:first-child .gp-menu, .gp-ptree > span:has(> .gp-new) .gp-menu { min-width: 200px; }
 .gp-tlr { display: flex; align-items: center; border-radius: 7px; }
 .gp-tlr:hover, .gp-tlr.on { background: #f4f8f6; }
 .gp-tlr.on { background: #e6f2ec; }

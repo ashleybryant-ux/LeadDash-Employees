@@ -778,12 +778,34 @@ async function assigned(orgId: number, t: PjTask, before: Assignee[], after: Ass
   await runAutomations(orgId, t, { on: "assigned" });
 }
 
-/** An employee works on a task it was given (or answers an @mention) with its own actions, and comments on the task. */
+/** What an employee made, worded for the task's comment: each card's title, what it says, and where it is. */
+export function workText(cards: { type: string; title: string; subtitle?: string; body?: string; url?: string | null }[]) {
+  const skip = new Set(["choices", "browser_live", "limit_note", "question", "onboarding_q", "layout_choice"]);
+  return cards
+    .filter((c) => !skip.has(c.type) && (c.title || c.body))
+    .map((c) => [c.title ? `${c.title}${c.subtitle ? ` (${c.subtitle})` : ""}` : "", c.body?.trim() ?? "", c.url ? c.url : ""].filter(Boolean).join("\n"))
+    .join("\n\n")
+    .slice(0, 9000);
+}
+
+/**
+ * An employee works on a task it was given (or answers an @mention) with its
+ * own actions, right away, and posts what it made on the task: the task's
+ * activity says it started, the comment holds the result (the draft, the
+ * report, the links), and the task moves to an active status.
+ */
 export async function askEmployee(orgId: number, t: PjTask, e: Owner, said: string) {
   try {
     const emp = await db.getEmployeeForOrg(e.id, orgId);
     if (!emp || emp.status === "paused") return;
     const list = db.work.lists.get(orgId, t.listId);
+    const by: Actor = { type: "employee", id: emp.id, name: emp.name };
+    activity(orgId, t.id, by, `${emp.name} started on it`);
+    if (list) {
+      const active = statusesOf(list).find((s) => s.type === "active");
+      const cur = db.work.tasks.get(orgId, t.id);
+      if (active && cur && statusesOf(list).find((s) => s.name === cur.status)?.type === "open") await updateTask(orgId, t.id, { status: active.name }, by);
+    }
     const { doTask } = await import("../employees/chat");
     const r = await doTask(emp, {
       title: t.name,
@@ -794,16 +816,23 @@ export async function askEmployee(orgId: number, t: PjTask, e: Owner, said: stri
       feedback: "",
       from: "Projects",
     });
-    const by: Actor = { type: "employee", id: emp.id, name: emp.name };
-    const text = r.action === "none" ? `I can't do this one with what I have${r.text ? `: ${r.text}` : "."}` : r.text || "Started on it. What I made is in my chat.";
+    const made = workText(r.cards);
+    const text = r.action === "none" ? `I can't do this one with what I have${r.text ? `: ${r.text}` : "."}` : [r.text || "Done. Here is what I made.", made].filter(Boolean).join("\n\n");
     await comment(orgId, t.id, text, by);
-    if (r.action !== "none" && list) {
-      const active = statusesOf(list).find((s) => s.type === "active");
+    if (r.action === "none" && list) {
+      // Back to open so a person picks it up.
+      const open = statusesOf(list).find((s) => s.type === "open");
       const cur = db.work.tasks.get(orgId, t.id);
-      if (active && cur && statusesOf(list).find((s) => s.name === cur.status)?.type === "open") await updateTask(orgId, t.id, { status: active.name }, by);
+      if (open && cur && statusesOf(list).find((s) => s.name === cur.status)?.type === "active") await updateTask(orgId, t.id, { status: open.name }, by);
     }
   } catch (err) {
     console.warn("[projects] employee task failed:", err instanceof Error ? err.message : err);
+    try {
+      const emp = await db.getEmployeeForOrg(e.id, orgId);
+      if (emp) await comment(orgId, t.id, `I hit a problem and couldn't finish this: ${err instanceof Error ? err.message : String(err)}`, { type: "employee", id: emp.id, name: emp.name });
+    } catch {
+      /* the task keeps going without the note */
+    }
   }
 }
 

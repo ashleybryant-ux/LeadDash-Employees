@@ -165,7 +165,7 @@ export type RailKey = "chats" | "calendar" | "goals" | "projects" | "huddle" | "
 export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
   const { user, logout } = useAuth();
-  const { chatOnly, currentOrg } = useTenant();
+  const { chatOnly } = useTenant();
   const railUnread = useUnreadElsewhere();
   const [switcher, setSwitcher] = React.useState(false);
   const [menu, setMenu] = React.useState(false);
@@ -209,17 +209,13 @@ export function Rail({ active }: { active: RailKey }) {
     >
       <button
         type="button"
-        className="ld-ws"
-        aria-label={`${currentOrg?.name ?? "Workspace"}. Switch workspace`}
+        aria-label="Switch workspace"
         aria-haspopup="menu"
         aria-expanded={switcher}
         onClick={() => setSwitcher((v) => !v)}
+        style={{ width: 44, height: 44, borderRadius: 11, background: "transparent", border: 0, padding: 0, cursor: "pointer", marginBottom: 12, flexShrink: 0 }}
       >
-        {currentOrg ? <OrgLogo name={currentOrg.name} src={currentOrg.logoUrl} size={40} /> : <img src="/brand/icon.png" alt="" width={40} height={40} style={{ display: "block", width: 40, height: 40, borderRadius: 10 }} />}
-        <span className="ld-wsname">
-          <span>{currentOrg?.name ?? "Workspace"}</span>
-          <span aria-hidden="true">▾</span>
-        </span>
+        <img src="/brand/icon.png" alt="LeadDash Employees" width={44} height={44} style={{ display: "block", width: 44, height: 44, borderRadius: 11 }} />
       </button>
       {item("chats", "Chats", "/chats", Icons.chats, railUnread.total)}
       {!chatOnly && item("calendar", "Calendar", "/calendar", Icons.calendar)}
@@ -281,6 +277,24 @@ export function useUnreadElsewhere() {
 }
 
 const badge: React.CSSProperties = { background: "#c2410c", color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "0 7px", lineHeight: "18px", flexShrink: 0 };
+
+/** The active workspace at the top of a white sidebar: logo, name and a caret; click it to switch workspaces. */
+export function WorkspaceHead({ popStyle }: { popStyle?: React.CSSProperties }) {
+  const { currentOrg } = useTenant();
+  const elsewhere = useUnreadElsewhere();
+  const [switcher, setSwitcher] = React.useState(false);
+  return (
+    <div style={{ position: "relative", display: "flex" }}>
+      <button type="button" className="ld-wshead" aria-haspopup="menu" aria-expanded={switcher} onClick={() => setSwitcher((v) => !v)} title={elsewhere.elsewhere ? `${elsewhere.elsewhere} unread in your other workspaces` : undefined}>
+        {currentOrg && <OrgLogo name={currentOrg.name} src={currentOrg.logoUrl} size={32} />}
+        <span className="gp-ell">{currentOrg?.name ?? "Choose a workspace"}</span>
+        {elsewhere.elsewhere > 0 && <span style={badge} aria-label={`${elsewhere.elsewhere} unread in other workspaces`}>{elsewhere.elsewhere}</span>}
+        {Icons.chevron}
+      </button>
+      {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 88, top: 52, zIndex: 95, ...popStyle }} />}
+    </div>
+  );
+}
 
 export function Switcher({ onClose, style, className }: { onClose: () => void; style?: React.CSSProperties; className?: string }) {
   const { organizations, currentOrgId, switchOrganization, refetchOrgs } = useTenant();

@@ -1,6 +1,6 @@
 import React from "react";
 import { trpc } from "@/lib/trpc";
-import { ErrorLine } from "../ui";
+import { ErrorLine, WorkspaceHead } from "../ui";
 import { Menu } from "../goals/shared";
 import type { Outputs } from "../types";
 import type { Where } from "../pages/Projects";
@@ -227,6 +227,7 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
           </div>
         ) : (
           <>
+            <WorkspaceHead />
             <Menu label="Create" align="left" button="+ New" buttonClass="ld-btn p gp-new">
               {(close) => (
                 <>
