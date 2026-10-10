@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { caller, makeUser, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
 import { healthOf, nextWeekday, suggestFor } from "./work/pjHome";
+import { todayYmd, zoneOf } from "./work/goals";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -13,12 +14,15 @@ async function listWith(slug: string) {
   return { ...ws, me, folder, list };
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-const plus = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+// Dates are in the workspace's own day, which can differ from the UTC day in the evening.
+let base = new Date().toISOString().slice(0, 10);
+const today = () => base;
+const plus = (n: number) => new Date(Date.parse(`${base}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 describe("Projects Home, needs attention, and many tasks at once", () => {
   it("shows what needs a person with Nora's fix, by when, the AI team, and each project's health", async () => {
     const { orgId, me, list, owner } = await listWith("pj-home");
+    base = todayYmd(await zoneOf(orgId));
     const ab = { type: "user" as const, id: owner.id, name: `Owner pj-home` };
     const a = await me.pj.create({ organizationId: orgId, listId: list.id, name: "Record webinar intro", dueDate: today(), assignees: [ab] });
     await me.pj.create({ organizationId: orgId, listId: list.id, name: "Reminder emails", dueDate: plus(2), assignees: [ab] });
