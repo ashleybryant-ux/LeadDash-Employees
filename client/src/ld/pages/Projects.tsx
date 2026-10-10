@@ -384,7 +384,11 @@ export default function Projects() {
               <div className="gp-hrow">
                 <span className="gp-ttl" style={{ fontSize: 18 }}>
                   <button type="button" className="ld-btn sm gp-auto gp-show-sm" onClick={() => setDrawer(true)} aria-label="Folders and lists">☰</button>
-                  {crumb && <span className="crumb" style={{ fontSize: 14, marginLeft: 0 }}>{crumb}</span>}
+                  {crumb && (where.scope === "list" && data?.list?.folderId ? (
+                    <button type="button" className="crumb gp-crumbbtn" style={{ fontSize: 14, marginLeft: 0 }} onClick={() => pick({ scope: "folder", folderId: data.list!.folderId!, tab: "overview" })}>{crumb}</button>
+                  ) : (
+                    <span className="crumb" style={{ fontSize: 14, marginLeft: 0 }}>{crumb}</span>
+                  ))}
                   {folderRow && <span style={{ background: folderRow.color, width: 12, height: 12, borderRadius: 3, display: "inline-block", flexShrink: 0 }} />}
                   {title}
                   {data?.list?.private && <span className="gp-chip" title={data.list.adminsOnly ? "Owners and admins only" : "Only the people it's shared with see it"}>🔒 {data.list.adminsOnly ? "Admins only" : "Private"}</span>}

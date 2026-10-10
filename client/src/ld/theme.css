@@ -905,6 +905,7 @@ select.gp-fb { max-width: 150px; text-overflow: ellipsis; }
 }
 @media (max-width: 760px) {
   .gp-ptree { display: none; }
+  .gp-tree-grip { display: none; }
   .gp-head, .gp-tool, .gp-canvas { padding-left: 16px; padding-right: 16px; }
   .gp-hide-sm { display: none; }
   .gp-cards { grid-template-columns: minmax(0, 1fr); }
@@ -1170,8 +1171,12 @@ button.gp-ts:hover { background: #f8fbf9; }
 .gp-tlr:hover, .gp-tlr.on { background: #f4f8f6; }
 .gp-tlr.on { background: #e6f2ec; }
 .gp-tlr .gp-tl:hover { background: none; }
-.gp-tlr .gp-dots, .gp-tf-acts { opacity: 0; transition: opacity 0.1s; }
+.gp-tlr .gp-dots, .gp-tf-acts { opacity: 0.45; transition: opacity 0.1s; }
 .gp-tlr:hover .gp-dots, .gp-tlr:focus-within .gp-dots, .gp-tf:hover .gp-tf-acts, .gp-tf:focus-within .gp-tf-acts { opacity: 1; }
+.gp-tree-grip { width: 6px; margin-left: -3px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; cursor: col-resize; z-index: 3; }
+.gp-tree-grip:hover, .gp-tree-grip:active { background: rgba(27, 107, 74, 0.25); }
+.gp-crumbbtn { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; color: inherit; }
+.gp-crumbbtn:hover { color: #1b6b4a; text-decoration: underline; }
 .gp-tf-acts { display: inline-flex; align-items: center; gap: 2px; }
 .gp-plus.sm { font-size: 15px; width: 24px; height: 24px; border-radius: 6px; padding: 0; }
 .gp-plus:hover { background: #eef3f1; color: #14221c; }
@@ -1182,7 +1187,7 @@ button.gp-ts:hover { background: #f8fbf9; }
 @media (hover: none) { .gp-tlr .gp-dots, .gp-tf-acts { opacity: 1; } }
 @media (max-width: 760px) {
   .gp-show-sm { display: inline-flex !important; margin-right: 8px; }
-  .gp-ptree.open { display: flex; position: fixed; left: 0; top: 0; bottom: 0; z-index: 60; width: 290px; height: 100vh; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2); }
+  .gp-ptree.open { display: flex; position: fixed; left: 0; top: 0; bottom: 0; z-index: 60; width: 290px !important; height: 100vh; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2); }
   .gp-drawer-bg { display: block; position: fixed; inset: 0; z-index: 59; background: rgba(15, 25, 20, 0.35); }
 }
 @media (max-width: 760px) {

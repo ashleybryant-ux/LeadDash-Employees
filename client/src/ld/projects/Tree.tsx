@@ -37,6 +37,30 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
   }, [ask]); // eslint-disable-line react-hooks/exhaustive-deps
   const [shut, setShut] = React.useState<Set<number>>(new Set());
   const [showArchived, setShowArchived] = React.useState(false);
+  // The sidebar's width: drag its right edge; the choice is remembered on this device.
+  const [width, setWidth] = React.useState(() => {
+    try {
+      const w = Number(localStorage.getItem("ld.pj.tree"));
+      return w >= 180 && w <= 480 ? w : 250;
+    } catch {
+      return 250;
+    }
+  });
+  const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const w0 = width;
+    const move = (ev: PointerEvent) => setWidth(Math.max(180, Math.min(480, w0 + ev.clientX - x0)));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setWidth((w) => { try { localStorage.setItem("ld.pj.tree", String(w)); } catch { /* ignore */ } return w; });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  const [moving, setMoving] = React.useState<{ id: number; name: string; folderId: number | null } | null>(null);
+  const moveList = trpc.pj.saveList.useMutation({ onSuccess: async () => { setMoving(null); await refresh(); } });
   const guest = !!tree?.guest;
   const archivedQ = trpc.pj.archived.useQuery({ organizationId: orgId }, { enabled: showArchived && !guest });
   const archiveList = trpc.pj.archiveList.useMutation({ onSuccess: async () => { await refresh(); void archivedQ.refetch(); } });
@@ -94,6 +118,7 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
             {(close) => (
               <>
                 <button type="button" role="menuitem" onClick={() => { setForm({ kind: "list", id: l.id, folderId, name: l.name, color: "" }); close(); }}>Rename</button>
+                <button type="button" role="menuitem" onClick={() => { setMoving({ id: l.id, name: l.name, folderId }); close(); }}>Move to folder</button>
                 <button type="button" role="menuitem" onClick={() => { archiveList.mutate({ organizationId: orgId, id: l.id, on: true }); if (where.scope === "list" && where.listId === l.id) onPick({ scope: "everything" }); close(); }}>Archive</button>
                 <button type="button" role="menuitem" className="danger" onClick={() => { if (window.confirm(`Delete the ${l.name} list and its tasks?`)) removeList.mutate({ organizationId: orgId, id: l.id }); close(); }}>Delete list</button>
               </>
@@ -101,6 +126,21 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
           </Menu>
         )}
       </div>
+      {moving?.id === l.id && (
+        <div className="gp-tf-form">
+          <select className="ld-in xs" aria-label="Folder" value={moving.folderId ?? ""} onChange={(e) => setMoving({ ...moving, folderId: e.target.value ? Number(e.target.value) : null })}>
+            <option value="">Not in a folder</option>
+            {(tree?.folders ?? []).map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+          <span className="ld-row">
+            <button type="button" className="ld-btn sm" onClick={() => setMoving(null)}>Cancel</button>
+            <button type="button" className="ld-btn p sm" disabled={moveList.isPending} onClick={() => moveList.mutate({ organizationId: orgId, id: l.id, name: l.name, folderId: moving.folderId })}>Move</button>
+          </span>
+          <ErrorLine error={moveList.error} />
+        </div>
+      )}
       {(l.items ?? []).map((i) => itemRow(i, true))}
       </div>
     );
@@ -125,7 +165,7 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
   return (
     <>
       {drawer && <div className="gp-drawer-bg" onClick={onCloseDrawer} aria-hidden="true" />}
-      <aside className={`gp-ptree ${drawer ? "open" : ""}`} aria-label="Folders and lists">
+      <aside className={`gp-ptree ${drawer ? "open" : ""}`} aria-label="Folders and lists" style={{ width }}>
         {guest ? (
           <div className="ph2">
             <span>Shared with you</span>
@@ -266,6 +306,7 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
         )}
         <ErrorLine error={removeFolder.error || removeList.error || archiveList.error || archiveFolder.error} />
       </aside>
+      <div className="gp-tree-grip" role="separator" aria-orientation="vertical" aria-label="Drag to resize the sidebar" title="Drag to resize" onPointerDown={startDrag} />
     </>
   );
 }
