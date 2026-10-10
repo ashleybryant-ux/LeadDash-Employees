@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { evalFormula } from "@shared/formula";
 import * as db from "../db";
-import type { PjTask } from "../../drizzle/schema";
+import type { PjDashboard, PjTask } from "../../drizzle/schema";
 import { owners, todayYmd, zoneOf, addDays, sundayOf } from "./goals";
 import { fieldsOf, parse, statusesOf, type Assignee } from "./projects";
 import { visibleLists, type Viewer } from "./pjAccess";
@@ -24,17 +24,84 @@ export type Card = {
   size?: 1 | 2 | 3;
 };
 
-export function dashboards(orgId: number) {
-  return db.work.dashboards
-    .all(orgId)
-    .sort((a, b) => a.sort - b.sort || a.id - b.id)
-    .map((d) => ({ id: d.id, name: d.name, cards: parse<Card[]>(d.cards, []) }));
+type Loc = { kind: "everything" | "folder" | "list"; id?: number };
+const isAdmin = (v: Viewer) => v.kind === "member" && (v.role === "owner" || v.role === "admin");
+const uidOf = (v: Viewer) => (v.kind === "member" || v.kind === "guest" ? v.userId : 0);
+
+/** Who may open a dashboard: everyone unless it is private, then its owner, admins and the people it was shared with. */
+export function canSee(v: Viewer, d: PjDashboard) {
+  if (!d.private) return true;
+  if (isAdmin(v)) return true;
+  const uid = uidOf(v);
+  return d.ownerUserId === uid || parse<number[]>(d.sharedWith, []).includes(uid);
+}
+/** Who may change or delete it: its owner and admins (a dashboard nobody owns is everyone's). */
+export function canEdit(v: Viewer, d: PjDashboard) {
+  if (isAdmin(v)) return true;
+  return !d.ownerUserId || d.ownerUserId === uidOf(v);
 }
 
-export function saveDashboard(orgId: number, input: { id?: number; name: string; cards?: Card[] }) {
-  const name = input.name.trim().slice(0, 120);
-  if (!name) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the dashboard." });
-  const cards = input.cards?.slice(0, 40).map((c, i) => ({
+/** Where a dashboard mostly looks: the one list or folder its cards share, or everything. */
+function locationOf(cards: Card[]): Loc {
+  const scopes = cards.filter((c) => c.scope.kind === "list" || c.scope.kind === "folder").map((c) => `${c.scope.kind}:${c.scope.id}`);
+  const uniq = Array.from(new Set(scopes));
+  if (uniq.length === 1 && scopes.length >= cards.length / 2) {
+    const [kind, id] = uniq[0].split(":");
+    return { kind: kind as "list" | "folder", id: Number(id) };
+  }
+  return { kind: "everything" };
+}
+
+export const TEMPLATES = ["simple", "ai", "project"] as const;
+export type Template = (typeof TEMPLATES)[number];
+
+/** The hub: every dashboard this person can open, with who owns it, where it looks, when they last opened it, and who it is shared with. */
+export async function dashboards(orgId: number, v: Viewer) {
+  const uid = uidOf(v);
+  const members = await db.listMembers(orgId);
+  const lists = new Map(db.work.lists.all(orgId).map((l) => [l.id, l.name]));
+  const folders = new Map(db.work.folders.all(orgId).map((f) => [f.id, f.name]));
+  const stars = new Set(db.work.stars.where(orgId, "userId", uid).filter((s) => s.kind === "dash").map((s) => s.itemId));
+  const person = (id: number | null) => {
+    const m = id ? members.find((x) => x.userId === id) : null;
+    return m ? { id: m.userId, name: m.name || m.email, avatarUrl: m.avatarUrl ?? null } : null;
+  };
+  const rows = db.work.dashboards
+    .all(orgId)
+    .filter((d) => canSee(v, d))
+    .sort((a, b) => a.sort - b.sort || a.id - b.id)
+    .map((d) => {
+      const cards = parse<Card[]>(d.cards, []);
+      const loc = (parse<Loc | null>(d.location, null) ?? locationOf(cards)) as Loc;
+      const locName = loc.kind === "list" ? lists.get(loc.id ?? 0) ?? "A list" : loc.kind === "folder" ? folders.get(loc.id ?? 0) ?? "A folder" : "Everything";
+      const seen = parse<Record<string, string>>(d.seen, {});
+      const shared = parse<number[]>(d.sharedWith, []).map(person).filter((p): p is NonNullable<typeof p> => !!p);
+      const owner = person(d.ownerUserId) ?? (d.ownerName ? { id: 0, name: d.ownerName, avatarUrl: null } : null);
+      return {
+        id: d.id,
+        name: d.name,
+        cards,
+        owner,
+        mine: !!d.ownerUserId && d.ownerUserId === uid,
+        private: d.private,
+        sharedWithMe: !!uid && d.ownerUserId !== uid && parse<number[]>(d.sharedWith, []).includes(uid),
+        shared,
+        starred: stars.has(d.id),
+        location: { ...loc, name: locName },
+        lastViewed: seen[String(uid)] ?? null,
+        updatedAt: d.updatedAt && new Date(d.updatedAt).getTime() > 0 ? new Date(d.updatedAt).toISOString() : new Date(d.createdAt).toISOString(),
+        canEdit: canEdit(v, d),
+      };
+    });
+  return {
+    dashboards: rows,
+    counts: { all: rows.length, mine: rows.filter((r) => r.mine).length, shared: rows.filter((r) => r.sharedWithMe).length, private: rows.filter((r) => r.private).length },
+    people: members.filter((m) => m.role !== "reviewer" && m.role !== "chat").map((m) => ({ id: m.userId, name: m.name || m.email, avatarUrl: m.avatarUrl ?? null })),
+  };
+}
+
+function cleanCards(cards: Card[]) {
+  return cards.slice(0, 40).map((c, i) => ({
     id: String(c.id || `c${i}`).slice(0, 40),
     type: (CARD_TYPES as readonly string[]).includes(c.type) ? c.type : "count",
     title: c.title.trim().slice(0, 80) || "Card",
@@ -42,32 +109,108 @@ export function saveDashboard(orgId: number, input: { id?: number; name: string;
     ...(c.options ? { options: c.options } : {}),
     size: ([1, 2, 3] as const).includes(c.size as 1) ? c.size : 1,
   }));
-  if (input.id) {
-    if (!db.work.dashboards.get(orgId, input.id)) throw new TRPCError({ code: "NOT_FOUND", message: "That dashboard isn't here anymore." });
-    return db.work.dashboards.update(orgId, input.id, { name, ...(cards ? { cards: JSON.stringify(cards) } : {}) })!;
-  }
-  return db.work.dashboards.insert({ organizationId: orgId, name, cards: JSON.stringify(cards ?? defaultCards()), sort: db.work.dashboards.all(orgId).length });
-}
-export function removeDashboard(orgId: number, id: number) {
-  db.work.dashboards.remove(orgId, id);
 }
 
-/** A new dashboard starts with the cards most people want. */
-function defaultCards(): Card[] {
+export function saveDashboard(orgId: number, v: Viewer, input: { id?: number; name: string; cards?: Card[]; template?: Template; location?: Loc | null }, by: { id: number; name: string }) {
+  const name = input.name.trim().slice(0, 120);
+  if (!name) throw new TRPCError({ code: "BAD_REQUEST", message: "Name the dashboard." });
+  const cards = input.cards ? cleanCards(input.cards) : undefined;
+  if (input.id) {
+    const have = db.work.dashboards.get(orgId, input.id);
+    if (!have || !canSee(v, have)) throw new TRPCError({ code: "NOT_FOUND", message: "That dashboard isn't here anymore." });
+    if (!canEdit(v, have)) throw new TRPCError({ code: "FORBIDDEN", message: "Only the person who made this dashboard, or an admin, can change it." });
+    return db.work.dashboards.update(orgId, input.id, { name, ...(cards ? { cards: JSON.stringify(cards) } : {}), ...(input.location !== undefined ? { location: JSON.stringify(input.location) } : {}), updatedAt: new Date() })!;
+  }
+  const loc = input.location ?? null;
+  const starter = cards ?? templateCards(input.template ?? "simple", loc);
+  return db.work.dashboards.insert({ organizationId: orgId, name, cards: JSON.stringify(starter), sort: db.work.dashboards.all(orgId).length, ownerUserId: by.id, ownerName: by.name, private: false, sharedWith: "[]", seen: "{}", location: JSON.stringify(loc ?? {}), updatedAt: new Date() });
+}
+export function removeDashboard(orgId: number, v: Viewer, id: number) {
+  const have = db.work.dashboards.get(orgId, id);
+  if (!have || !canSee(v, have)) throw new TRPCError({ code: "NOT_FOUND", message: "That dashboard isn't here anymore." });
+  if (!canEdit(v, have)) throw new TRPCError({ code: "FORBIDDEN", message: "Only the person who made this dashboard, or an admin, can delete it." });
+  db.work.dashboards.remove(orgId, id);
+  for (const s of db.work.stars.all(orgId).filter((s) => s.kind === "dash" && s.itemId === id)) db.work.stars.remove(orgId, s.id);
+}
+
+/** A copy of a dashboard, owned by whoever copied it. */
+export function duplicateDashboard(orgId: number, v: Viewer, id: number, by: { id: number; name: string }) {
+  const have = db.work.dashboards.get(orgId, id);
+  if (!have || !canSee(v, have)) throw new TRPCError({ code: "NOT_FOUND", message: "That dashboard isn't here anymore." });
+  return db.work.dashboards.insert({ organizationId: orgId, name: `${have.name} (copy)`.slice(0, 120), cards: have.cards, sort: db.work.dashboards.all(orgId).length, ownerUserId: by.id, ownerName: by.name, private: have.private, sharedWith: "[]", seen: "{}", location: have.location, updatedAt: new Date() });
+}
+
+/** Private (only the owner, admins and the people below), and who it is shared with. */
+export function setDashboardSharing(orgId: number, v: Viewer, input: { id: number; private?: boolean; add?: number[]; remove?: number[] }) {
+  const have = db.work.dashboards.get(orgId, input.id);
+  if (!have || !canSee(v, have)) throw new TRPCError({ code: "NOT_FOUND", message: "That dashboard isn't here anymore." });
+  if (!canEdit(v, have)) throw new TRPCError({ code: "FORBIDDEN", message: "Only the person who made this dashboard, or an admin, can share it." });
+  let shared = parse<number[]>(have.sharedWith, []);
+  for (const id of input.add ?? []) if (!shared.includes(id) && id !== have.ownerUserId) shared.push(id);
+  if (input.remove?.length) shared = shared.filter((id) => !input.remove!.includes(id));
+  return db.work.dashboards.update(orgId, have.id, { ...(input.private !== undefined ? { private: input.private } : {}), sharedWith: JSON.stringify(shared) })!;
+}
+
+/** Remembers that this person opened the dashboard now (Last viewed on the hub). */
+export function markSeen(orgId: number, v: Viewer, id: number) {
+  const have = db.work.dashboards.get(orgId, id);
+  const uid = uidOf(v);
+  if (!have || !uid) return;
+  const seen = parse<Record<string, string>>(have.seen, {});
+  seen[String(uid)] = new Date().toISOString();
+  db.work.dashboards.update(orgId, have.id, { seen: JSON.stringify(seen) });
+}
+
+/** Favorite: the dashboard shows under Favorites in the sidebar. */
+export function starDashboard(orgId: number, v: Viewer, id: number, on: boolean) {
+  const uid = uidOf(v);
+  const have = db.work.dashboards.get(orgId, id);
+  if (!have || !canSee(v, have) || !uid) throw new TRPCError({ code: "NOT_FOUND", message: "That dashboard isn't here anymore." });
+  const star = db.work.stars.where(orgId, "userId", uid).find((s) => s.kind === "dash" && s.itemId === id);
+  if (on && !star) db.work.stars.insert({ organizationId: orgId, userId: uid, kind: "dash", itemId: id });
+  if (!on && star) db.work.stars.remove(orgId, star.id);
+  return { on };
+}
+
+/** The cards a template starts with. Simple: the week at a glance. AI team center: what each employee did. Project management: progress, overdue, burndown, workload. */
+export function templateCards(t: Template, loc: Loc | null): Card[] {
+  const scope: Card["scope"] = loc && loc.kind !== "everything" && loc.id ? { kind: loc.kind, id: loc.id } : { kind: "everything" };
+  if (t === "ai")
+    return [
+      { id: "c1", type: "count", title: "Done this week", scope, options: { which: "done" }, size: 1 },
+      { id: "c2", type: "person", title: "Open tasks by person", scope, size: 1 },
+      { id: "c3", type: "time", title: "Time tracked", scope, size: 1 },
+      { id: "c4", type: "workload", title: "Workload this week", scope, size: 1 },
+      { id: "c5", type: "overdue", title: "Overdue by person", scope, size: 1 },
+      { id: "c6", type: "tasks", title: "Due this week", scope, size: 1 },
+      { id: "c7", type: "trend", title: "Done vs. added", scope, size: 3 },
+    ];
+  if (t === "project")
+    return [
+      { id: "c1", type: "count", title: "Open tasks", scope, options: { which: "open" }, size: 1 },
+      { id: "c2", type: "count", title: "Overdue", scope, options: { which: "overdue" }, size: 1 },
+      { id: "c3", type: "count", title: "Done this week", scope, options: { which: "done" }, size: 1 },
+      { id: "c4", type: "status", title: "Tasks by status", scope, size: 1 },
+      { id: "c5", type: "burndown", title: "Burndown", scope, size: 2 },
+      { id: "c6", type: "workload", title: "Workload this week", scope, size: 1 },
+      { id: "c7", type: "overdue", title: "Overdue by person", scope, size: 1 },
+      { id: "c8", type: "trend", title: "Done vs. added", scope, size: 2 },
+    ];
   return [
-    { id: "c1", type: "count", title: "Open tasks", scope: { kind: "everything" }, options: { which: "open" }, size: 1 },
-    { id: "c2", type: "count", title: "Done this week", scope: { kind: "everything" }, options: { which: "done" }, size: 1 },
-    { id: "c3", type: "time", title: "Time tracked", scope: { kind: "everything" }, size: 1 },
-    { id: "c4", type: "overdue", title: "Overdue by person", scope: { kind: "everything" }, size: 1 },
-    { id: "c5", type: "workload", title: "Workload this week", scope: { kind: "everything" }, size: 1 },
+    { id: "c1", type: "count", title: "Open tasks", scope, options: { which: "open" }, size: 1 },
+    { id: "c2", type: "count", title: "Done this week", scope, options: { which: "done" }, size: 1 },
+    { id: "c3", type: "time", title: "Time tracked", scope, size: 1 },
+    { id: "c4", type: "overdue", title: "Overdue by person", scope, size: 1 },
+    { id: "c5", type: "workload", title: "Workload this week", scope, size: 1 },
     { id: "c6", type: "tasks", title: "Due this week", scope: { kind: "me" }, size: 1 },
-    { id: "c7", type: "trend", title: "Done vs. added", scope: { kind: "everything" }, size: 2 },
+    { id: "c7", type: "trend", title: "Done vs. added", scope, size: 2 },
   ];
 }
 
 export async function data(orgId: number, v: Viewer, id: number, me: Assignee) {
   const d = db.work.dashboards.get(orgId, id);
-  if (!d) throw new TRPCError({ code: "NOT_FOUND", message: "That dashboard isn't here anymore." });
+  if (!d || !canSee(v, d)) throw new TRPCError({ code: "NOT_FOUND", message: "That dashboard isn't here anymore." });
+  markSeen(orgId, v, id);
   const tz = await zoneOf(orgId);
   const today = todayYmd(tz);
   const week = sundayOf(today);
@@ -168,7 +311,7 @@ export async function data(orgId: number, v: Viewer, id: number, me: Assignee) {
       return { ...base, number: Math.round(total * 100) / 100, money, sub: fieldName ? `Total of ${fieldName}` : "Pick a field" };
     })
   );
-  return { id: d.id, name: d.name, cards, today };
+  return { id: d.id, name: d.name, cards, today, canEdit: canEdit(v, d), private: d.private, starred: !!db.work.stars.where(orgId, "userId", uidOf(v)).find((s) => s.kind === "dash" && s.itemId === d.id) };
 }
 
 const fmt = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} m` : ""}` : `${m} m`);

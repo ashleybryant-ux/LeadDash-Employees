@@ -4,11 +4,15 @@ import { ErrorLine } from "../ui";
 import { Menu } from "../goals/shared";
 import type { Outputs } from "../types";
 import type { Where } from "../pages/Projects";
+import { useLocation } from "wouter";
+import { NAV, navIcon, navLabel, type NavKey } from "./Sidebar";
 
 /**
  * The sidebar, laid out like ClickUp's: a "+ New" button (task, folder, list,
- * doc, whiteboard, form), My tasks, Everything, Dashboards, Timesheets and
- * Templates, then each folder with its lists, docs, whiteboards and forms.
+ * doc, whiteboard, form), the items each person chose to show (Home, My tasks,
+ * Everything, Docs, Portfolios, Dashboards to start) with the rest under More
+ * (Customize sidebar is there too), Favorites, then each folder with its
+ * lists, docs, whiteboards and forms.
  * Each folder has a + for a new list and a ··· menu (Archive among them); each
  * list has a ··· menu. Archived folders and lists sit in an Archived section
  * at the bottom and open read only. On a phone it opens as a drawer. A guest
@@ -23,7 +27,7 @@ const NOUN: Record<Kind, string> = { folder: "Folder", list: "List", doc: "Doc",
 /** The page can ask the tree to open a form: a new folder, a new list (in a folder), or editing a folder. */
 export type Ask = { kind: "folder" | "list"; n: number; folderId?: number | null; id?: number } | null;
 
-export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, ask, drawer, onCloseDrawer }: { orgId: number; tree: Tree | undefined; where: Where; onPick: (w: Where) => void; refresh: () => Promise<unknown>; onNewTask: () => void; onHome?: () => void; ask: Ask; drawer: boolean; onCloseDrawer: () => void }) {
+export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTask, onHome, ask, drawer, onCloseDrawer }: { orgId: number; tree: Tree | undefined; where: Where; onPick: (w: Where) => void; onPickView?: (w: Where, kind: string, savedId: number | null) => void; refresh: () => Promise<unknown>; onNewTask: () => void; onHome?: () => void; ask: Ask; drawer: boolean; onCloseDrawer: () => void }) {
   const [form, setForm] = React.useState<{ kind: Kind; id?: number; folderId?: number | null; name: string; color: string } | null>(null);
   // The page can ask for a new folder or list (from the empty state).
   React.useEffect(() => {
@@ -60,6 +64,31 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
     window.addEventListener("pointerup", up);
   };
   const [moving, setMoving] = React.useState<{ id: number; name: string; folderId: number | null } | null>(null);
+  const [, go] = useLocation();
+  const navQ = trpc.pj.nav.useQuery({ organizationId: orgId }, { enabled: orgId > 0 && !tree?.guest });
+  const favQ = trpc.pj.favorites.useQuery({ organizationId: orgId }, { enabled: orgId > 0 && !tree?.guest });
+  const [more, setMore] = React.useState(false);
+  const shownNav = (navQ.data?.shown ?? ["home", "mine", "everything", "docs", "portfolios", "dash"]) as NavKey[];
+  const moreNav = (navQ.data?.more ?? NAV.map((n) => n.key).filter((k) => !shownNav.includes(k))) as NavKey[];
+  const navWhere = (k: NavKey): Where | null =>
+    k === "home" ? { scope: "home" } : k === "mine" ? { scope: "mine" } : k === "everything" ? { scope: "everything" } : k === "docs" ? { scope: "docs" } : k === "portfolios" ? { scope: "portfolios" } : k === "dash" ? { scope: "dash" } : k === "time" ? { scope: "time" } : k === "templates" ? { scope: "templates" } : k === "boards" ? { scope: "docs", tab: "boards" } : k === "forms" ? { scope: "docs", tab: "forms" } : k === "import" ? { scope: "import" } : null;
+  const navOn = (k: NavKey) =>
+    k === "home" ? where.scope === "home" : k === "mine" ? where.scope === "mine" : k === "everything" ? where.scope === "everything" : k === "docs" ? where.scope === "docs" && !where.tab : k === "portfolios" ? where.scope === "portfolios" || where.scope === "portfolio" : k === "dash" ? where.scope === "dash" : k === "time" ? where.scope === "time" : k === "templates" ? where.scope === "templates" : k === "boards" ? where.scope === "docs" && where.tab === "boards" : k === "forms" ? where.scope === "docs" && where.tab === "forms" : k === "import" ? where.scope === "import" : false;
+  const goNav = (k: NavKey) => {
+    setMore(false);
+    if (k === "goals") { go("/goals"); return; }
+    if (k === "home" && onHome) { onHome(); onCloseDrawer(); return; }
+    const w = navWhere(k);
+    if (w) pickAnd(w);
+  };
+  const navBtn = (k: NavKey, inMore = false) => (
+    <button key={k} type="button" className={`gp-tl top ${navOn(k) ? "on" : ""}`} style={inMore ? { paddingLeft: 8 } : undefined} onClick={() => goNav(k)}>
+      <span><span className="gp-nic" aria-hidden="true">{navIcon(k)}</span>{navLabel(k)}</span>
+      {k === "mine" && (tree?.mine ?? 0) > 0 && <span className="n">{tree?.mine}</span>}
+    </button>
+  );
+  const favWhere = (f: NonNullable<typeof favQ.data>[number]): Where =>
+    f.kind === "dash" ? { scope: "dash", id: f.id } : f.kind === "doc" ? { scope: "doc", id: f.id } : f.kind === "board" ? { scope: "board", id: f.id } : f.kind === "form" ? { scope: "form", id: f.id } : f.listId ? { scope: "list", listId: f.listId } : f.folderId ? { scope: "folder", folderId: f.folderId } : { scope: "everything" };
   const moveList = trpc.pj.saveList.useMutation({ onSuccess: async () => { setMoving(null); await refresh(); } });
   const guest = !!tree?.guest;
   const archivedQ = trpc.pj.archived.useQuery({ organizationId: orgId }, { enabled: showArchived && !guest });
@@ -181,33 +210,36 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
                 </>
               )}
             </Menu>
-            {onHome && (
-              <button type="button" className={`gp-tl top ${where.scope === "home" ? "on" : ""}`} onClick={() => { onHome(); onCloseDrawer(); }}>
-                <span>⌂ Home</span>
+            {shownNav.map((k) => navBtn(k))}
+            <div className="gp-more">
+              <button type="button" className={`gp-tl top ${more ? "on" : ""}`} aria-expanded={more} onClick={() => setMore((v) => !v)}>
+                <span><span className="gp-nic" aria-hidden="true">···</span>More</span>
               </button>
+              {more && (
+                <div className="gp-morebox" role="menu">
+                  {moreNav.map((k) => navBtn(k, true))}
+                  <div className="gp-csep" style={{ margin: "4px 0" }} />
+                  <button type="button" className={`gp-tl top ${where.scope === "sidebar" ? "on" : ""}`} onClick={() => { setMore(false); pickAnd({ scope: "sidebar" }); }}>
+                    <span><span className="gp-nic" aria-hidden="true">⚙</span>Customize sidebar</span>
+                  </button>
+                </div>
+              )}
+            </div>
+            {(favQ.data?.length ?? 0) > 0 && (
+              <>
+                <div className="ph2" style={{ marginTop: 10 }}><span>Favorites</span></div>
+                {favQ.data!.map((f) => {
+                  const w = favWhere(f);
+                  const isOn = f.kind === "view" ? false : on(w);
+                  return (
+                    <button key={`${f.kind}${f.id}`} type="button" className={`gp-tl top ${isOn ? "on" : ""}`} title={`${f.name} · ${f.note}`} onClick={() => { if (f.kind === "view" && f.viewKind) onPickView?.(w, f.viewKind, f.savedId ?? null); else pickAnd(w); onCloseDrawer(); }}>
+                      <span className="gp-ell"><span className="gp-nic" aria-hidden="true">★</span>{f.name}</span>
+                      <span className="n gp-ell" style={{ maxWidth: 90 }}>{f.note}</span>
+                    </button>
+                  );
+                })}
+              </>
             )}
-            <button type="button" className={`gp-tl top ${where.scope === "mine" ? "on" : ""}`} onClick={() => pickAnd({ scope: "mine" })}>
-              <span>☆ My tasks</span>
-              {(tree?.mine ?? 0) > 0 && <span className="n">{tree?.mine}</span>}
-            </button>
-            <button type="button" className={`gp-tl top ${where.scope === "everything" ? "on" : ""}`} onClick={() => pickAnd({ scope: "everything" })}>
-              <span>▤ Everything</span>
-            </button>
-            <button type="button" className={`gp-tl top ${where.scope === "docs" ? "on" : ""}`} onClick={() => pickAnd({ scope: "docs" })}>
-              <span>📄 Docs</span>
-            </button>
-            <button type="button" className={`gp-tl top ${where.scope === "portfolios" || where.scope === "portfolio" ? "on" : ""}`} onClick={() => pickAnd({ scope: "portfolios" })}>
-              <span>▦ Portfolios</span>
-            </button>
-            <button type="button" className={`gp-tl top ${where.scope === "dash" ? "on" : ""}`} onClick={() => pickAnd({ scope: "dash" })}>
-              <span>▥ Dashboards</span>
-            </button>
-            <button type="button" className={`gp-tl top ${where.scope === "time" ? "on" : ""}`} onClick={() => pickAnd({ scope: "time" })}>
-              <span>◷ Timesheets</span>
-            </button>
-            <button type="button" className={`gp-tl top ${where.scope === "templates" ? "on" : ""}`} onClick={() => pickAnd({ scope: "templates" })}>
-              <span>❏ Templates</span>
-            </button>
             <div className="ph2" style={{ marginTop: 10 }}>
               <span>Folders</span>
               <button type="button" className="gp-plus" aria-label="New folder" title="New folder" onClick={() => setForm({ kind: "folder", name: "", color: COLORS[(tree?.folders.length ?? 0) % COLORS.length] })}>+</button>
@@ -300,9 +332,6 @@ export function Tree({ orgId, tree, where, onPick, refresh, onNewTask, onHome, a
               ))}
             {showArchived && archivedQ.data && !archivedQ.data.folders.length && !archivedQ.data.lists.length && <span className="ld-small ld-muted" style={{ padding: "4px 10px" }}>Nothing archived.</span>}
           </>
-        )}
-        {!guest && (
-          <button type="button" className={`gp-tl add ${where.scope === "import" ? "on" : ""}`} style={{ marginTop: 10 }} onClick={() => pickAnd({ scope: "import" })}>⇩ Import from ClickUp</button>
         )}
         <ErrorLine error={removeFolder.error || removeList.error || archiveList.error || archiveFolder.error} />
       </aside>

@@ -3063,7 +3063,7 @@ export const pjStars = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
     userId: integer("userId").notNull(),
-    kind: text("kind", { enum: ["doc", "board", "form"] }).notNull(),
+    kind: text("kind", { enum: ["doc", "board", "form", "view", "dash"] }).notNull(),
     itemId: integer("itemId").notNull(),
     createdAt: createdAt(),
   },
@@ -3211,7 +3211,12 @@ export const pjFormAnswers = sqliteTable(
 );
 export type PjFormAnswer = typeof pjFormAnswers.$inferSelect;
 
-/** A Projects dashboard. cards: JSON [{id, type, title, scope, size, options}]. */
+/**
+ * A Projects dashboard. cards: JSON [{id, type, title, scope, size, options}].
+ * Its owner made it; private ones are seen by the owner, admins and the user
+ * ids in sharedWith (JSON). seen: JSON {userId: ISO date} of who opened it
+ * last. location: JSON {kind, id} of what it is mostly about.
+ */
 export const pjDashboards = sqliteTable(
   "pj_dashboards",
   {
@@ -3220,11 +3225,33 @@ export const pjDashboards = sqliteTable(
     name: text("name").notNull(),
     cards: text("cards").notNull().default("[]"),
     sort: integer("sort").notNull().default(0),
+    ownerUserId: integer("ownerUserId"),
+    ownerName: text("ownerName").notNull().default(""),
+    private: integer("private", { mode: "boolean" }).notNull().default(false),
+    sharedWith: text("sharedWith").notNull().default("[]"),
+    seen: text("seen").notNull().default("{}"),
+    location: text("location").notNull().default("{}"),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (t) => [index("pj_dashboards_org_idx").on(t.organizationId)]
 );
 export type PjDashboard = typeof pjDashboards.$inferSelect;
+
+/** Per-person Projects choices: autosave on a view, which sidebar items show and in what order. value is JSON. */
+export const pjPrefs = sqliteTable(
+  "pj_prefs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    userId: integer("userId").notNull(),
+    key: text("key").notNull(),
+    value: text("value").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("pj_prefs_org_idx").on(t.organizationId, t.userId)]
+);
+export type PjPref = typeof pjPrefs.$inferSelect;
 
 /**
  * Who a list is shared with and how: kind user (a teammate), employee, or guest
@@ -3267,6 +3294,10 @@ export const pjViews = sqliteTable(
     settings: text("settings").notNull().default("{}"),
     userId: integer("userId"),
     pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+    /** Only owners, admins and whoever made it can change a protected view's settings. */
+    protected: integer("protected", { mode: "boolean" }).notNull().default(false),
+    /** The tab a list or folder opens on. */
+    isDefault: integer("isDefault", { mode: "boolean" }).notNull().default(false),
     sort: integer("sort").notNull().default(0),
     createdBy: text("createdBy").notNull().default(""),
     createdAt: createdAt(),

@@ -358,6 +358,13 @@
       "when": 1791586240611,
       "tag": "0050_projects_private_docs_archive_portfolios",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1791592818081,
+      "tag": "0051_projects_view_settings_dashboards_hub",
+      "breakpoints": true
     }
   ]
 }

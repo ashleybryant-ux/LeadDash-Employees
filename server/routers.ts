@@ -258,7 +258,24 @@ const actionZ = z.object({
   to: z.string().max(200).optional(),
 });
 const viewKindZ = z.enum(["list", "board", "calendar", "gantt", "table", "workload", "timeline", "mindmap"]);
-const viewSettingsZ = z.object({ group: z.enum(["status", "priority", "assignee", "project", "none"]).optional(), who: z.string().max(160).optional(), priority: z.string().max(20).optional(), closed: z.boolean().optional(), q: z.string().max(120).optional(), columns: z.array(z.string().max(60)).max(40).optional(), sort: z.string().max(40).optional() });
+const viewSettingsZ = z.object({
+  group: z.string().max(60).optional(),
+  dir: z.enum(["asc", "desc"]).optional(),
+  who: z.string().max(160).optional(),
+  priority: z.string().max(20).optional(),
+  closed: z.boolean().optional(),
+  q: z.string().max(120).optional(),
+  columns: z.array(z.string().max(60)).max(40).optional(),
+  sort: z.string().max(40).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
+  subtasks: z.enum(["collapsed", "expanded", "separate"]).optional(),
+  showEmpty: z.boolean().optional(),
+  wrap: z.boolean().optional(),
+  locations: z.boolean().optional(),
+  parentNames: z.boolean().optional(),
+  estimates: z.boolean().optional(),
+});
+const viewTargetZ = orgInput.extend({ listId: z.number().int().nullable().optional(), folderId: z.number().int().nullable().optional() });
 const blockZ = z.object({ id: z.string().max(40), type: z.string().max(20), text: z.string().max(8000), done: z.boolean().optional(), rows: z.array(z.array(z.string().max(500)).max(10)).max(30).optional(), url: z.string().max(600).optional(), taskId: z.number().int().optional() });
 const itemZ = z.object({ id: z.string().max(40), kind: z.string().max(10), x: z.number(), y: z.number(), w: z.number(), h: z.number(), color: z.string().max(9).optional(), text: z.string().max(2000).optional(), from: z.string().max(40).optional(), to: z.string().max(40).optional(), taskId: z.number().int().optional(), path: z.string().max(20000).optional(), z: z.number().optional() });
 const questionZ = z.object({ id: z.string().max(40), label: z.string().max(200), type: z.enum(["text", "longtext", "email", "phone", "number", "dropdown", "labels", "date", "files"]), required: z.boolean(), options: z.array(z.string().max(80)).max(40).optional(), mapTo: z.string().max(80) });
@@ -2027,6 +2044,40 @@ export const appRouter = router({
       (await import("./work/pjViews")).removeBuiltin(input.organizationId, v, input, input.kind);
       return { ok: true };
     }),
+    // Customize view: Protect, Set as default, Pin, Private, Autosave for me, Favorite, Export
+    setViewFlags: protectedProcedure.input(viewTargetZ.extend({ kind: viewKindZ, savedId: z.number().int().nullable().optional(), protected: z.boolean().optional(), isDefault: z.boolean().optional(), pinned: z.boolean().optional(), private: z.boolean().optional() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      const { organizationId, listId, folderId, ...rest } = input;
+      (await import("./work/pjViews")).setViewFlags(organizationId, v, { listId, folderId }, rest);
+      return { ok: true };
+    }),
+    setAutosave: protectedProcedure.input(viewTargetZ.extend({ kind: viewKindZ, savedId: z.number().int().nullable().optional(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjViews")).setAutosave(input.organizationId, v, input, input.kind, input.savedId, input.on);
+    }),
+    starView: protectedProcedure.input(viewTargetZ.extend({ kind: viewKindZ, savedId: z.number().int().nullable().optional(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjViews")).starView(input.organizationId, v, input, input.kind, input.savedId, input.on);
+    }),
+    favorites: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjViews")).favorites(input.organizationId, v);
+    }),
+    exportView: protectedProcedure.input(orgInput.extend({ name: z.string().max(120), format: z.enum(["csv", "xlsx"]), headers: z.array(z.string().max(120)).max(60), rows: z.array(z.array(z.string().max(2000)).max(60)).max(5000) })).mutation(async ({ ctx, input }) => {
+      await pjViewer(ctx, input.organizationId);
+      const ex = await import("./work/pjExport");
+      if (input.format === "csv") return { base64: Buffer.from("\ufeff" + ex.csvOf(input.headers, input.rows), "utf8").toString("base64"), mime: "text/csv", ext: "csv" };
+      return { base64: await ex.xlsxOf(input.name, input.headers, input.rows), mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ext: "xlsx" };
+    }),
+    // Customize sidebar
+    nav: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjNav")).nav(input.organizationId, v);
+    }),
+    setNav: protectedProcedure.input(orgInput.extend({ shown: z.array(z.string().max(20)).max(20) })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjNav")).setNav(input.organizationId, v, input.shown);
+    }),
     // Portfolios and status updates
     portfolios: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);
@@ -2510,17 +2561,37 @@ export const appRouter = router({
     // Dashboards
     dashboards: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return (await import("./work/pjDash")).dashboards(input.organizationId);
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjDash")).dashboards(input.organizationId, v);
     }),
-    saveDashboard: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), name: z.string().max(120), cards: z.array(cardZ).max(40).optional() })).mutation(async ({ ctx, input }) => {
+    saveDashboard: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), name: z.string().max(120), cards: z.array(cardZ).max(40).optional(), template: z.enum(["simple", "ai", "project"]).optional(), location: z.object({ kind: z.enum(["everything", "folder", "list"]), id: z.number().int().optional() }).nullable().optional() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
+      const v = await pjViewer(ctx, input.organizationId);
       const { organizationId, ...rest } = input;
-      return (await import("./work/pjDash")).saveDashboard(organizationId, rest);
+      return (await import("./work/pjDash")).saveDashboard(organizationId, v, rest, { id: ctx.user.id, name: personName(ctx.user) });
     }),
     removeDashboard: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
-      (await import("./work/pjDash")).removeDashboard(input.organizationId, input.id);
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDash")).removeDashboard(input.organizationId, v, input.id);
       return { ok: true };
+    }),
+    duplicateDashboard: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjDash")).duplicateDashboard(input.organizationId, v, input.id, { id: ctx.user.id, name: personName(ctx.user) });
+    }),
+    setDashboardSharing: protectedProcedure.input(orgInput.extend({ id: z.number().int(), private: z.boolean().optional(), add: z.array(z.number().int()).max(50).optional(), remove: z.array(z.number().int()).max(50).optional() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const v = await pjViewer(ctx, input.organizationId);
+      const { organizationId, ...rest } = input;
+      (await import("./work/pjDash")).setDashboardSharing(organizationId, v, rest);
+      return { ok: true };
+    }),
+    starDashboard: protectedProcedure.input(orgInput.extend({ id: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const v = await pjViewer(ctx, input.organizationId);
+      return (await import("./work/pjDash")).starDashboard(input.organizationId, v, input.id, input.on);
     }),
     dashboardData: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

@@ -17,8 +17,12 @@ import { docLevel, starsOf } from "./pjDocShare";
 
 export const VIEW_KINDS = ["list", "board", "calendar", "gantt", "table", "workload", "timeline", "mindmap"] as const;
 export type ViewKind = (typeof VIEW_KINDS)[number];
+export const GROUPS = ["status", "priority", "assignee", "project", "tags", "due", "none"] as const;
 export type ViewSettings = {
-  group?: "status" | "priority" | "assignee" | "project" | "none";
+  /** status, priority, assignee, project, tags, due, none, or f:<field id> for a dropdown or labels field. */
+  group?: string;
+  /** Which way the groups run. */
+  dir?: "asc" | "desc";
   who?: string;
   priority?: string;
   closed?: boolean;
@@ -26,6 +30,15 @@ export type ViewSettings = {
   /** Column keys: assignee, due, start, priority, status, estimate, tracked, tags, goal, list, or f:<field id>. */
   columns?: string[];
   sort?: string;
+  sortDir?: "asc" | "desc";
+  /** Subtasks collapsed under their parent, expanded below it, or separate rows of their own. */
+  subtasks?: "collapsed" | "expanded" | "separate";
+  /** View options, the way ClickUp's Customize panel has them. */
+  showEmpty?: boolean;
+  wrap?: boolean;
+  locations?: boolean;
+  parentNames?: boolean;
+  estimates?: boolean;
 };
 export type Target = { listId?: number | null; folderId?: number | null };
 
@@ -40,12 +53,16 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
 
 export function cleanSettings(s: ViewSettings, fields: FieldDef[]): ViewSettings {
   const out: ViewSettings = {};
-  if (s.group && ["status", "priority", "assignee", "project", "none"].includes(s.group)) out.group = s.group;
+  if (s.group && ((GROUPS as readonly string[]).includes(s.group) || (s.group.startsWith("f:") && fields.some((f) => `f:${f.id}` === s.group)))) out.group = s.group;
+  if (s.dir === "desc") out.dir = "desc";
   if (s.who) out.who = String(s.who).slice(0, 160);
   if (s.priority) out.priority = String(s.priority).slice(0, 20);
   if (s.closed) out.closed = true;
   if (s.q) out.q = String(s.q).slice(0, 120);
   if (s.sort) out.sort = String(s.sort).slice(0, 40);
+  if (s.sortDir === "desc") out.sortDir = "desc";
+  if (s.subtasks === "expanded" || s.subtasks === "separate") out.subtasks = s.subtasks;
+  for (const k of ["showEmpty", "wrap", "locations", "parentNames", "estimates"] as const) if (s[k]) out[k] = true;
   if (Array.isArray(s.columns)) out.columns = s.columns.map(String).filter((k) => COLUMN_KEYS.includes(k) || (k.startsWith("f:") && fields.some((f) => `f:${f.id}` === k))).slice(0, 40);
   return out;
 }
@@ -70,19 +87,50 @@ function where(orgId: number, v: Viewer, t: Target) {
 }
 
 const me = (v: Viewer) => (v.kind === "member" || v.kind === "guest" ? v.userId : null);
+const isAdmin = (v: Viewer) => v.kind === "member" && (v.role === "owner" || v.role === "admin");
+const sameTarget = (r: { listId: number | null; folderId: number | null }, w: { listId: number | null; folderId: number | null }) => (r.listId ?? null) === w.listId && (r.folderId ?? null) === w.folderId;
+/** The key a person's autosave choice is kept under: the target, the kind and the saved view (0 for a built-in tab). */
+export const autosaveKey = (t: Target, kind: string, savedId: number | null | undefined) => `autosave:${t.listId ?? 0}:${t.folderId ?? 0}:${kind}:${savedId ?? 0}`;
 
 /** The views on a list, a folder, or Everything (both null): the built-in tabs' settings and the saved views this person can see. */
 export function views(orgId: number, v: Viewer, t: Target) {
   const w = where(orgId, v, t);
-  const rows = db.work.views.all(orgId).filter((r) => (r.listId ?? null) === w.listId && (r.folderId ?? null) === w.folderId);
+  const rows = db.work.views.all(orgId).filter((r) => sameTarget(r, w));
   const uid = me(v);
   const builtin: Record<string, ViewSettings> = {};
-  for (const r of rows.filter((r) => !r.name)) builtin[r.kind] = parse<ViewSettings>(r.settings, {});
+  const flags: Record<string, { id: number; protected: boolean; isDefault: boolean }> = {};
+  for (const r of rows.filter((r) => !r.name)) {
+    builtin[r.kind] = parse<ViewSettings>(r.settings, {});
+    flags[r.kind] = { id: r.id, protected: r.protected, isDefault: r.isDefault };
+  }
   const saved = rows
     .filter((r) => r.name && (!r.userId || r.userId === uid))
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.sort - b.sort || a.id - b.id)
-    .map((r) => ({ id: r.id, name: r.name, kind: r.kind as ViewKind, settings: parse<ViewSettings>(r.settings, {}), pinned: r.pinned, private: !!r.userId, mine: r.userId === uid || !r.userId, createdBy: r.createdBy }));
-  return { builtin, saved, level: w.level, tabs: VIEW_KINDS.filter((k) => DEFAULT_TABS.includes(k) || k in builtin) };
+    .map((r) => ({ id: r.id, name: r.name, kind: r.kind as ViewKind, settings: parse<ViewSettings>(r.settings, {}), pinned: r.pinned, private: !!r.userId, mine: r.userId === uid || !r.userId, createdBy: r.createdBy, protected: r.protected, isDefault: r.isDefault }));
+  const def = rows.find((r) => r.isDefault && (!r.userId || r.userId === uid));
+  const starred = uid ? new Set(db.work.stars.where(orgId, "userId", uid).filter((s) => s.kind === "view").map((s) => s.itemId)) : new Set<number>();
+  const autosave: Record<string, boolean> = {};
+  if (uid) for (const p of db.work.prefs.where(orgId, "userId", uid)) if (p.key.startsWith("autosave:") && p.value === "1") autosave[p.key] = true;
+  return {
+    builtin,
+    flags,
+    saved,
+    level: w.level,
+    tabs: VIEW_KINDS.filter((k) => DEFAULT_TABS.includes(k) || k in builtin),
+    /** The tab this list or folder opens on. */
+    defaultView: def ? { kind: def.kind as ViewKind, savedId: def.name ? def.id : null } : null,
+    /** View row ids this person starred. */
+    starred: Array.from(starred),
+    autosave,
+    canProtect: isAdmin(v),
+  };
+}
+
+/** Whether this person may change a view's settings: a protected view takes an owner, an admin, or the person whose private view it is. */
+function mayChange(v: Viewer, row: { protected: boolean; userId: number | null } | null | undefined) {
+  if (!row || !row.protected) return true;
+  if (isAdmin(v)) return true;
+  return !!row.userId && row.userId === me(v);
 }
 
 /** Saves the built-in tab's settings (columns, grouping) for everyone who opens it. */
@@ -90,9 +138,101 @@ export function setBuiltin(orgId: number, v: Viewer, t: Target, kind: ViewKind, 
   const w = where(orgId, v, t);
   if (w.level === "view" || w.level === "comment") throw new TRPCError({ code: "FORBIDDEN", message: "You can look at this list but not change its views." });
   const clean = cleanSettings(settings, w.fields);
-  const have = db.work.views.all(orgId).find((r) => !r.name && r.kind === kind && (r.listId ?? null) === w.listId && (r.folderId ?? null) === w.folderId);
+  const have = db.work.views.all(orgId).find((r) => !r.name && r.kind === kind && sameTarget(r, w));
+  if (have && !mayChange(v, have)) throw new TRPCError({ code: "FORBIDDEN", message: "This view is protected. An owner or admin can change it." });
   if (have) return db.work.views.update(orgId, have.id, { settings: JSON.stringify(clean) });
   return db.work.views.insert({ organizationId: orgId, listId: w.listId, folderId: w.folderId, name: "", kind, settings: JSON.stringify(clean), userId: null, pinned: false, sort: 0, createdBy: "" });
+}
+
+/** The built-in tab's row, made if it isn't there yet (flags and stars hang off it). */
+function builtinRow(orgId: number, w: { listId: number | null; folderId: number | null }, kind: ViewKind) {
+  const have = db.work.views.all(orgId).find((r) => !r.name && r.kind === kind && sameTarget(r, w));
+  return have ?? db.work.views.insert({ organizationId: orgId, listId: w.listId, folderId: w.folderId, name: "", kind, settings: "{}", userId: null, pinned: false, sort: 0, createdBy: "" });
+}
+
+/** Protect, Set as default, Pin and Private on a built-in tab or a saved view. */
+export function setViewFlags(orgId: number, v: Viewer, t: Target, input: { kind: ViewKind; savedId?: number | null; protected?: boolean; isDefault?: boolean; pinned?: boolean; private?: boolean }) {
+  const w = where(orgId, v, t);
+  const row = input.savedId ? db.work.views.get(orgId, input.savedId) : builtinRow(orgId, w, input.kind);
+  if (!row || !sameTarget(row, w)) throw new TRPCError({ code: "NOT_FOUND", message: "That view is gone." });
+  if (row.userId && row.userId !== me(v)) throw new TRPCError({ code: "FORBIDDEN", message: "That view is someone else's." });
+  const patch: Partial<typeof row> = {};
+  if (input.protected !== undefined) {
+    if (!isAdmin(v)) throw new TRPCError({ code: "FORBIDDEN", message: "Only an owner or admin can protect a view." });
+    patch.protected = input.protected;
+  }
+  if (input.isDefault !== undefined) {
+    if (w.level === "view" || w.level === "comment") throw new TRPCError({ code: "FORBIDDEN", message: "You can look at this list but not change its views." });
+    if (input.isDefault) for (const r of db.work.views.all(orgId).filter((r) => r.isDefault && sameTarget(r, w) && r.id !== row.id)) db.work.views.update(orgId, r.id, { isDefault: false });
+    patch.isDefault = input.isDefault;
+  }
+  if (input.pinned !== undefined) {
+    if (!row.name) throw new TRPCError({ code: "BAD_REQUEST", message: "A built-in tab can't be pinned; save it as a view first." });
+    patch.pinned = input.pinned;
+  }
+  if (input.private !== undefined) {
+    if (!row.name) throw new TRPCError({ code: "BAD_REQUEST", message: "A built-in tab can't be private; save it as a view first." });
+    if (!input.private && (w.level === "view" || w.level === "comment")) throw new TRPCError({ code: "FORBIDDEN", message: "You can make a view only you see, but not one for everyone." });
+    patch.userId = input.private ? me(v) : null;
+  }
+  return db.work.views.update(orgId, row.id, patch)!;
+}
+
+/** Autosave for me: changes to filters, grouping and sort save to the view as I make them. */
+export function setAutosave(orgId: number, v: Viewer, t: Target, kind: ViewKind, savedId: number | null | undefined, on: boolean) {
+  const uid = me(v);
+  if (!uid) throw new TRPCError({ code: "FORBIDDEN", message: "Sign in to keep that." });
+  where(orgId, v, t);
+  const key = autosaveKey(t, kind, savedId);
+  const have = db.work.prefs.where(orgId, "userId", uid).find((p) => p.key === key);
+  if (have) db.work.prefs.update(orgId, have.id, { value: on ? "1" : "0" });
+  else db.work.prefs.insert({ organizationId: orgId, userId: uid, key, value: on ? "1" : "0" });
+  return { key, on };
+}
+
+/** Favorite: the view shows under Favorites in the sidebar. */
+export function starView(orgId: number, v: Viewer, t: Target, kind: ViewKind, savedId: number | null | undefined, on: boolean) {
+  const uid = me(v);
+  if (!uid) throw new TRPCError({ code: "FORBIDDEN", message: "Sign in to keep that." });
+  const w = where(orgId, v, t);
+  const row = savedId ? db.work.views.get(orgId, savedId) : builtinRow(orgId, w, kind);
+  if (!row || !sameTarget(row, w)) throw new TRPCError({ code: "NOT_FOUND", message: "That view is gone." });
+  const have = db.work.stars.where(orgId, "userId", uid).find((s) => s.kind === "view" && s.itemId === row.id);
+  if (on && !have) db.work.stars.insert({ organizationId: orgId, userId: uid, kind: "view", itemId: row.id });
+  if (!on && have) db.work.stars.remove(orgId, have.id);
+  return { viewId: row.id, on };
+}
+
+/** Everything this person starred, for the sidebar: views, dashboards, docs, whiteboards and forms. */
+export function favorites(orgId: number, v: Viewer) {
+  const uid = me(v);
+  if (!uid || v.kind !== "member") return [] as { kind: "view" | "dash" | "doc" | "board" | "form"; id: number; name: string; note: string; listId?: number | null; folderId?: number | null; viewKind?: ViewKind; savedId?: number | null }[];
+  const lists = new Map(db.work.lists.all(orgId).map((l) => [l.id, l.name]));
+  const folders = new Map(db.work.folders.all(orgId).map((f) => [f.id, f.name]));
+  const out: { kind: "view" | "dash" | "doc" | "board" | "form"; id: number; name: string; note: string; listId?: number | null; folderId?: number | null; viewKind?: ViewKind; savedId?: number | null }[] = [];
+  const kindName: Record<string, string> = { list: "List", board: "Board", calendar: "Calendar", gantt: "Gantt", table: "Table", workload: "Workload", timeline: "Timeline", mindmap: "Mind map" };
+  for (const s of db.work.stars.where(orgId, "userId", uid)) {
+    if (s.kind === "view") {
+      const r = db.work.views.get(orgId, s.itemId);
+      if (!r || (r.userId && r.userId !== uid)) continue;
+      const place = r.listId ? lists.get(r.listId) : r.folderId ? folders.get(r.folderId) : "Everything";
+      if (place === undefined) continue;
+      out.push({ kind: "view", id: r.id, name: r.name || kindName[r.kind] || r.kind, note: place, listId: r.listId ?? null, folderId: r.folderId ?? null, viewKind: r.kind as ViewKind, savedId: r.name ? r.id : null });
+    } else if (s.kind === "dash") {
+      const d = db.work.dashboards.get(orgId, s.itemId);
+      if (d) out.push({ kind: "dash", id: d.id, name: d.name, note: "Dashboard" });
+    } else if (s.kind === "doc") {
+      const d = db.work.docs.get(orgId, s.itemId);
+      if (d && !d.archivedAt && docLevel(orgId, v, d)) out.push({ kind: "doc", id: d.id, name: d.title, note: "Doc" });
+    } else if (s.kind === "board") {
+      const b = db.work.boards.get(orgId, s.itemId);
+      if (b) out.push({ kind: "board", id: b.id, name: b.title, note: "Whiteboard" });
+    } else if (s.kind === "form") {
+      const f = db.work.forms.get(orgId, s.itemId);
+      if (f) out.push({ kind: "form", id: f.id, name: f.title, note: "Form" });
+    }
+  }
+  return out;
 }
 
 /** Takes a built-in tab off a list or folder (its columns and grouping go with it). The List, Board and Calendar tabs stay. */
@@ -100,7 +240,10 @@ export function removeBuiltin(orgId: number, v: Viewer, t: Target, kind: ViewKin
   const w = where(orgId, v, t);
   if (w.level === "view" || w.level === "comment") throw new TRPCError({ code: "FORBIDDEN", message: "You can look at this list but not change its views." });
   if (DEFAULT_TABS.includes(kind)) throw new TRPCError({ code: "BAD_REQUEST", message: "The List, Board and Calendar tabs stay." });
-  for (const r of db.work.views.all(orgId).filter((r) => !r.name && r.kind === kind && (r.listId ?? null) === w.listId && (r.folderId ?? null) === w.folderId)) db.work.views.remove(orgId, r.id);
+  for (const r of db.work.views.all(orgId).filter((r) => !r.name && r.kind === kind && sameTarget(r, w))) {
+    if (!mayChange(v, r)) throw new TRPCError({ code: "FORBIDDEN", message: "This view is protected. An owner or admin can remove it." });
+    db.work.views.remove(orgId, r.id);
+  }
 }
 
 export function saveView(orgId: number, v: Viewer, input: { id?: number; listId?: number | null; folderId?: number | null; name: string; kind: ViewKind; settings: ViewSettings; private: boolean; pinned: boolean }, by: string) {
@@ -116,6 +259,7 @@ export function saveView(orgId: number, v: Viewer, input: { id?: number; listId?
     const have = db.work.views.get(orgId, input.id);
     if (!have || !have.name) throw new TRPCError({ code: "NOT_FOUND", message: "That view is gone." });
     if (have.userId && have.userId !== uid) throw new TRPCError({ code: "FORBIDDEN", message: "That view is someone else's." });
+    if (!mayChange(v, have)) throw new TRPCError({ code: "FORBIDDEN", message: "This view is protected. An owner or admin can change it." });
     return db.work.views.update(orgId, have.id, row)!;
   }
   return db.work.views.insert({ organizationId: orgId, listId: w.listId, folderId: w.folderId, ...row, sort: db.work.views.all(orgId).length, createdBy: by });

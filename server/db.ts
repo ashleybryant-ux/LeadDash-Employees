@@ -2554,7 +2554,7 @@ export const team = {
 // ==========================================
 
 /** Insert, read, change and remove rows of one workspace-owned table, always filtered by workspace. */
-function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports | typeof schema.pjLinks | typeof schema.pjTime | typeof schema.pjTemplates | typeof schema.pjDocs | typeof schema.pjDocComments | typeof schema.pjBoards | typeof schema.pjForms | typeof schema.pjFormAnswers | typeof schema.pjDashboards | typeof schema.pjShares | typeof schema.pjSettings | typeof schema.pjViews | typeof schema.pjDocShares | typeof schema.pjStars | typeof schema.pjPortfolios | typeof schema.pjPortfolioItems | typeof schema.pjStatusUpdates>(t: T) {
+function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports | typeof schema.pjLinks | typeof schema.pjTime | typeof schema.pjTemplates | typeof schema.pjDocs | typeof schema.pjDocComments | typeof schema.pjBoards | typeof schema.pjForms | typeof schema.pjFormAnswers | typeof schema.pjDashboards | typeof schema.pjShares | typeof schema.pjSettings | typeof schema.pjViews | typeof schema.pjDocShares | typeof schema.pjStars | typeof schema.pjPrefs | typeof schema.pjPortfolios | typeof schema.pjPortfolioItems | typeof schema.pjStatusUpdates>(t: T) {
   type Row = T["$inferSelect"];
   type Ins = T["$inferInsert"];
   const tt = t as any;
@@ -2641,6 +2641,7 @@ export const work = {
   views: crud(schema.pjViews),
   docShares: crud(schema.pjDocShares),
   stars: crud(schema.pjStars),
+  prefs: crud(schema.pjPrefs),
   portfolios: crud(schema.pjPortfolios),
   portfolioItems: crud(schema.pjPortfolioItems),
   statusUpdates: crud(schema.pjStatusUpdates),

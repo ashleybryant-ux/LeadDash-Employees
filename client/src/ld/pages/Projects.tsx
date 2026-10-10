@@ -6,7 +6,7 @@ import { BottomNav, ErrorLine, Rail } from "../ui";
 import { Menu } from "../goals/shared";
 import type { Outputs } from "../types";
 import { Tree, type Ask } from "../projects/Tree";
-import { ListView, TableView } from "../projects/ListView";
+import { groupsOf, ListView, TableView } from "../projects/ListView";
 import { BoardView } from "../projects/BoardView";
 import { CalendarView, GanttView } from "../projects/TimeViews";
 import { MindMapView, TimelineView, WorkloadView } from "../projects/MoreViews";
@@ -31,6 +31,8 @@ import { HomePage } from "../projects/Home";
 import { BulkBar } from "../projects/Bulk";
 import { PortfolioPage, PortfoliosPage } from "../projects/Portfolios";
 import { StatusPill, StatusUpdate } from "../projects/StatusUpdate";
+import { Customize, exportRows, GroupPop, groupLabel, SORT_CHOICES, SortPop, useExport, type Flags } from "../projects/Customize";
+import { SidebarPage } from "../projects/Sidebar";
 
 /**
  * Projects, in place of ClickUp: Home (what needs a person, the work by when,
@@ -57,7 +59,7 @@ export type Where =
   | { scope: "everything" }
   | { scope: "mine" }
   | { scope: "import" }
-  | { scope: "docs" }
+  | { scope: "docs"; tab?: "boards" | "forms" }
   | { scope: "doc"; id: number }
   | { scope: "board"; id: number }
   | { scope: "form"; id: number }
@@ -65,15 +67,24 @@ export type Where =
   | { scope: "time" }
   | { scope: "templates" }
   | { scope: "portfolios" }
-  | { scope: "portfolio"; id: number };
+  | { scope: "portfolio"; id: number }
+  | { scope: "sidebar" };
 export type PjCtx = {
   orgId: number;
   data: ViewOut;
   tasks: TaskRow[];
   open: (id: number) => void;
   refresh: () => Promise<unknown>;
-  group: "status" | "priority" | "assignee" | "project" | "none";
+  /** status, priority, assignee, project, tags, due, none, or f:<field id>. */
+  group: string;
+  dir: "asc" | "desc";
   sort: "manual" | "due" | "priority" | "name";
+  sortDir: "asc" | "desc";
+  /** Subtasks collapsed under the parent, expanded below it, or rows of their own. */
+  subtaskMode: "collapsed" | "expanded" | "separate";
+  subtasks: TaskRow[];
+  /** View options from Customize view. */
+  opts: { showEmpty?: boolean; wrap?: boolean; locations?: boolean; parentNames?: boolean; estimates?: boolean };
   listId: number | null;
   /** What I can do here: view, comment, edit or full. */
   level: "view" | "comment" | "edit" | "full";
@@ -93,8 +104,8 @@ export type PjCtx = {
   portfolioId?: number | null;
 };
 
-const PAGES = ["doc", "board", "form", "dash", "time", "templates", "docs", "portfolios", "portfolio"] as const;
-function readUrl(): { where: Where; view: View; savedId: number | null; task: number | null } {
+const PAGES = ["doc", "board", "form", "dash", "time", "templates", "docs", "portfolios", "portfolio", "sidebar"] as const;
+function readUrl(): { where: Where; view: View; savedId: number | null; task: number | null; hadView: boolean } {
   const p = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const list = Number(p.get("list"));
   const folder = Number(p.get("folder"));
@@ -107,7 +118,9 @@ function readUrl(): { where: Where; view: View; savedId: number | null; task: nu
       ? { scope: page, id: id ?? 0 }
       : page === "dash"
         ? { scope: "dash", id }
-        : page === "time" || page === "templates" || page === "docs" || page === "portfolios"
+        : page === "docs"
+          ? { scope: "docs", tab: p.get("tab") === "boards" || p.get("tab") === "forms" ? (p.get("tab") as "boards" | "forms") : undefined }
+        : page === "time" || page === "templates" || page === "portfolios" || page === "sidebar"
           ? { scope: page }
           : list
             ? { scope: "list", listId: list }
@@ -118,7 +131,7 @@ function readUrl(): { where: Where; view: View; savedId: number | null; task: nu
                 : p.get("scope") === "everything" || p.get("view") || p.get("saved") || p.get("task")
                   ? { scope: "everything" }
                   : { scope: "home" };
-  return { where, view, savedId: Number(p.get("saved")) || null, task: Number(p.get("task")) || null };
+  return { where, view, savedId: Number(p.get("saved")) || null, task: Number(p.get("task")) || null, hadView: !!p.get("view") || !!p.get("saved") };
 }
 
 export default function Projects() {
@@ -130,7 +143,15 @@ export default function Projects() {
   const [cur, setCur] = React.useState<Current>({ kind: first.view, savedId: first.savedId });
   const [taskId, setTaskId] = React.useState<number | null>(first.task);
   const [group, setGroup] = React.useState<PjCtx["group"]>("status");
+  const [dir, setDir] = React.useState<PjCtx["dir"]>("asc");
   const [sort, setSort] = React.useState<PjCtx["sort"]>("manual");
+  const [sortDir, setSortDir] = React.useState<PjCtx["sortDir"]>("asc");
+  const [subtaskMode, setSubtaskMode] = React.useState<PjCtx["subtaskMode"]>("collapsed");
+  const [opts, setOpts] = React.useState<PjCtx["opts"]>({});
+  const [pop, setPop] = React.useState<"" | "group" | "sort">("");
+  // Opening a list or folder lands on its default view unless the link named one.
+  const [wantDefault, setWantDefault] = React.useState(!first.hadView);
+  const [edited, setEdited] = React.useState(false);
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [lastPick, setLastPick] = React.useState<number | null>(null);
   const [taskFull, setTaskFull] = React.useState(false);
@@ -141,7 +162,7 @@ export default function Projects() {
   const [closed, setClosed] = React.useState(false);
   const [q, setQ] = React.useState("");
   const [columnsLocal, setColumnsLocal] = React.useState<ColKey[] | null>(null);
-  const [panel, setPanel] = React.useState<"" | "automations" | "settings" | "share" | "saveList" | "fromTemplate" | "addView">("");
+  const [panel, setPanel] = React.useState<"" | "automations" | "settings" | "share" | "saveList" | "fromTemplate" | "addView" | "customize">("");
   const [editView, setEditView] = React.useState<SavedView | null>(null);
   const [saveTask, setSaveTask] = React.useState<number | null>(null);
   const [statusFor, setStatusFor] = React.useState<number | null>(null);
@@ -171,6 +192,10 @@ export default function Projects() {
   const target = { listId: where.scope === "list" ? where.listId : null, folderId };
   const views = trpc.pj.views.useQuery({ organizationId: currentOrgId, ...target }, { enabled: currentOrgId > 0 && (isList || overview) && !guest });
   const setBuiltin = trpc.pj.setBuiltinView.useMutation({ onSuccess: () => utils.pj.views.invalidate() });
+  const setFlags = trpc.pj.setViewFlags.useMutation({ onSuccess: () => utils.pj.views.invalidate() });
+  const setAutosave = trpc.pj.setAutosave.useMutation({ onSuccess: () => utils.pj.views.invalidate() });
+  const starView = trpc.pj.starView.useMutation({ onSuccess: () => { void utils.pj.views.invalidate(); void utils.pj.favorites.invalidate(); } });
+  const exporter = useExport(currentOrgId);
   const removeView = trpc.pj.removeView.useMutation({ onSuccess: () => { void utils.pj.views.invalidate(); setCur((c) => ({ kind: c.kind, savedId: null })); } });
   const saveViewMut = trpc.pj.saveView.useMutation({ onSuccess: () => utils.pj.views.invalidate() });
   React.useEffect(() => {
@@ -185,6 +210,7 @@ export default function Projects() {
     if ((PAGES as readonly string[]).includes(where.scope)) {
       p.set("page", where.scope);
       if ("id" in where && where.id) p.set("id", String(where.id));
+      if (where.scope === "docs" && where.tab) p.set("tab", where.tab);
     }
     if (isList && (view !== "list" || cur.savedId)) p.set("view", view);
     if (isList && cur.savedId) p.set("saved", String(cur.savedId));
@@ -204,14 +230,26 @@ export default function Projects() {
   React.useEffect(() => {
     const s: ViewSettings | undefined = saved ? saved.settings : views.data?.builtin[view];
     setGroup(s?.group ?? (where.scope === "list" ? "status" : "project"));
+    setDir(s?.dir ?? "asc");
     setSort((s?.sort as PjCtx["sort"]) ?? "manual");
+    setSortDir(s?.sortDir ?? "asc");
+    setSubtaskMode(s?.subtasks ?? "collapsed");
+    setOpts({ showEmpty: s?.showEmpty, wrap: s?.wrap, locations: s?.locations, parentNames: s?.parentNames, estimates: s?.estimates });
     setWho(s?.who ?? "");
     setPriority(s?.priority ?? "");
     setClosed(!!s?.closed);
     setQ(s?.q ?? "");
     setColumnsLocal(null);
     setSelected(new Set());
+    setEdited(false);
   }, [cur.savedId, cur.kind, where.scope, target.listId, target.folderId, views.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The default view of a list or folder, once its views load.
+  React.useEffect(() => {
+    if (!wantDefault || !views.data || !isList) return;
+    setWantDefault(false);
+    const d = views.data.defaultView;
+    if (d && (d.kind !== cur.kind || (d.savedId ?? null) !== cur.savedId)) setCur({ kind: d.kind as ViewKind, savedId: d.savedId ?? null });
+  }, [wantDefault, views.data, isList]); // eslint-disable-line react-hooks/exhaustive-deps
   // Wide screens open a task beside the list; narrow ones over it.
   React.useEffect(() => {
     const mq = window.matchMedia("(min-width: 1101px)");
@@ -225,17 +263,56 @@ export default function Projects() {
   const tasks = React.useMemo(() => {
     if (!data) return [];
     const words = q.trim().toLowerCase();
-    return data.tasks.filter(
+    const base = subtaskMode === "separate" ? [...data.tasks, ...data.subtasks] : data.tasks;
+    return base.filter(
       (t) =>
         (!words || t.name.toLowerCase().includes(words)) &&
         (!who || (who === "me" ? t.assignees.some((a) => a.type === "user" && a.id === meQ.data?.userId) : t.assignees.some((a) => `${a.type}:${a.id}:${a.name}` === who))) &&
         (!priority || (t.priority ?? "none") === priority)
     );
-  }, [data, q, who, priority, meQ.data?.userId]);
+  }, [data, q, who, priority, meQ.data?.userId, subtaskMode]);
   const level = data?.list?.level ?? data?.folder?.level ?? (guest ? "view" : "edit");
   const pickedColumns = columnsLocal ?? (saved ? saved.settings.columns : views.data?.builtin[view]?.columns);
   const columns: ColKey[] = pickedColumns ?? DEFAULT_COLUMNS[view === "table" ? "table" : "list"];
-  const settingsNow: ViewSettings = { group, sort: sort === "manual" ? undefined : sort, who: who || undefined, priority: priority || undefined, closed: closed || undefined, q: q || undefined, columns };
+  const settingsNow: ViewSettings = { group, dir: dir === "desc" ? "desc" : undefined, sort: sort === "manual" ? undefined : sort, sortDir: sortDir === "desc" ? "desc" : undefined, subtasks: subtaskMode === "collapsed" ? undefined : subtaskMode, who: who || undefined, priority: priority || undefined, closed: closed || undefined, q: q || undefined, columns: pickedColumns, ...Object.fromEntries(Object.entries(opts).filter(([, v]) => v)) };
+  // Customize view: one place to change any setting; flags live on the view row.
+  const patchSettings = (p: Partial<ViewSettings>) => {
+    setEdited(true);
+    if (p.group !== undefined) setGroup(p.group ?? "status");
+    if (p.dir !== undefined) setDir(p.dir ?? "asc");
+    if ("sort" in p) setSort((p.sort as PjCtx["sort"]) ?? "manual");
+    if (p.sortDir !== undefined) setSortDir(p.sortDir ?? "asc");
+    if ("subtasks" in p) setSubtaskMode(p.subtasks ?? "collapsed");
+    if ("who" in p) setWho(p.who ?? "");
+    if ("priority" in p) setPriority(p.priority ?? "");
+    if ("closed" in p) setClosed(!!p.closed);
+    if ("q" in p) setQ(p.q ?? "");
+    const o: Partial<PjCtx["opts"]> = {};
+    for (const k of ["showEmpty", "wrap", "locations", "parentNames", "estimates"] as const) if (k in p) o[k] = !!p[k];
+    if (Object.keys(o).length) setOpts((x) => ({ ...x, ...o }));
+  };
+  const builtinFlags = views.data?.flags[view];
+  const autosaveKey = `autosave:${target.listId ?? 0}:${target.folderId ?? 0}:${view}:${cur.savedId ?? 0}`;
+  const flags: Flags = {
+    protected: saved ? saved.protected : !!builtinFlags?.protected,
+    isDefault: saved ? saved.isDefault : !!builtinFlags?.isDefault,
+    pinned: !!saved?.pinned,
+    private: !!saved?.private,
+    starred: !!views.data?.starred.includes(saved ? saved.id : builtinFlags?.id ?? -1),
+    autosave: !!views.data?.autosave[autosaveKey],
+  };
+  const lockedView = flags.protected && !views.data?.canProtect && !(saved?.private && saved.mine);
+  const saveSettingsNow = (settings: ViewSettings) => {
+    if (guest || lockedView) return;
+    if (saved) { if (saved.mine) saveViewMut.mutate({ organizationId: currentOrgId, id: saved.id, ...target, name: saved.name, kind: saved.kind, settings, private: saved.private, pinned: saved.pinned }); }
+    else if (level === "edit" || level === "full") setBuiltin.mutate({ organizationId: currentOrgId, ...target, kind: view, settings });
+  };
+  // Autosave for me: each change saves to the view a moment later.
+  React.useEffect(() => {
+    if (!flags.autosave || !edited || !isList) return;
+    const h = setTimeout(() => saveSettingsNow(settingsNow), 600);
+    return () => clearTimeout(h);
+  }, [JSON.stringify(settingsNow), flags.autosave, edited]); // eslint-disable-line react-hooks/exhaustive-deps
   const setColumns = (cols: ColKey[]) => {
     setColumnsLocal(cols);
     if (guest) return;
@@ -260,7 +337,7 @@ export default function Projects() {
   const clearSelected = () => setSelected(new Set());
   const openTask = (id: number) => { setTaskId(id); setTaskFull(false); };
   const beside = !!taskId && wide && !taskFull && isList;
-  const ctx: PjCtx | null = data ? { orgId: currentOrgId, data, tasks, open: openTask, refresh, group, sort, listId: where.scope === "list" ? where.listId : null, level, columns, setColumns, autoColumns: !pickedColumns, selected, toggle, clearSelected, compact: beside, openId: taskId } : null;
+  const ctx: PjCtx | null = data ? { orgId: currentOrgId, data, tasks, open: openTask, refresh, group, dir, sort, sortDir, subtaskMode, subtasks: data.subtasks, opts, listId: where.scope === "list" ? where.listId : null, level, columns, setColumns, autoColumns: !pickedColumns, selected, toggle, clearSelected, compact: beside, openId: taskId } : null;
   const folderRow = folderId ? tree.data?.folders.find((f) => f.id === folderId) : null;
   const title = where.scope === "list" ? data?.list?.name ?? "" : where.scope === "mine" ? "My tasks" : where.scope === "home" ? "Home" : where.scope === "import" ? "Import from ClickUp" : isFolder ? folderRow?.name ?? data?.folder?.name ?? "" : "Everything";
   const crumb = where.scope === "list" && data?.list?.folderName ? `${data.list.folderName} /` : isFolder ? `${currentOrg?.name ?? ""} /` : "";
@@ -269,6 +346,9 @@ export default function Projects() {
     setWhere(w);
     setTaskId(null);
     setSelected(new Set());
+    setPop("");
+    if (panel === "customize") setPanel("");
+    if (w.scope === "list" || w.scope === "folder" || w.scope === "everything") setWantDefault(true);
     if (w.scope !== "list" && w.scope !== "folder" && w.scope !== "everything") setCur({ kind: "list", savedId: null });
     else if (cur.savedId || !(views.data?.tabs ?? DEFAULT_TABS).includes(cur.kind)) setCur({ kind: "list", savedId: null });
   };
@@ -349,6 +429,7 @@ export default function Projects() {
         tree={tree.data}
         where={where}
         onPick={pick}
+        onPickView={(w, kind, savedId) => { pick(w); setWantDefault(false); setCur({ kind: kind as ViewKind, savedId }); }}
         refresh={refresh}
         ask={ask}
         drawer={drawer}
@@ -442,33 +523,28 @@ export default function Projects() {
             {isList && (
               <div className="gp-tool">
                 <span className="gp-tool-l">
-                  {view === "list" && (
-                    <select className="gp-fb sel" aria-label="Group" value={group} onChange={(e) => setGroup(e.target.value as PjCtx["group"])}>
-                      {where.scope !== "list" && <option value="project">Group: Project</option>}
-                      <option value="status">Group: Status</option>
-                      <option value="priority">Group: Priority</option>
-                      <option value="assignee">Group: Assignee</option>
-                      <option value="none">Group: None</option>
-                    </select>
+                  {(view === "list" || view === "board") && (
+                    <span className="gp-qcell">
+                      <button type="button" className={`gp-fb sel ${pop === "group" ? "on" : ""}`} aria-expanded={pop === "group"} aria-haspopup="menu" onClick={() => setPop(pop === "group" ? "" : "group")}>Group: {groupLabel(group, data?.fields ?? [])} ▾</button>
+                      {pop === "group" && ctx && <GroupPop c={ctx} group={group} dir={dir} many={where.scope !== "list"} onGroup={(g) => { patchSettings({ group: g }); setPop(""); }} onDir={(d) => patchSettings({ dir: d })} onClose={() => setPop("")} />}
+                    </span>
                   )}
                   {(view === "list" || view === "table") && (
-                    <select className="gp-fb" aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as PjCtx["sort"])}>
-                      <option value="manual">Sort: Manual</option>
-                      <option value="due">Sort: Due date</option>
-                      <option value="priority">Sort: Priority</option>
-                      <option value="name">Sort: Name</option>
-                    </select>
+                    <span className="gp-qcell">
+                      <button type="button" className="gp-fb" aria-expanded={pop === "sort"} aria-haspopup="menu" onClick={() => setPop(pop === "sort" ? "" : "sort")}>Sort: {SORT_CHOICES.find((x) => x.key === sort)?.label}{sort !== "manual" && sortDir === "desc" ? " ↓" : ""} ▾</button>
+                      {pop === "sort" && <SortPop sort={sort} dir={sortDir} onSort={(x) => { patchSettings({ sort: x }); setPop(""); }} onDir={(d) => patchSettings({ sortDir: d })} onClose={() => setPop("")} />}
+                    </span>
                   )}
                   {view !== "workload" && (
                     <>
-                      <select className="gp-fb" aria-label="Assignee" value={who} onChange={(e) => setWho(e.target.value)}>
+                      <select className="gp-fb" aria-label="Assignee" value={who} onChange={(e) => patchSettings({ who: e.target.value || undefined })}>
                         <option value="">Anyone</option>
                         {!guest && <option value="me">Me</option>}
                         {assignees.map((a) => (
                           <option key={`${a.type}:${a.id}:${a.name}`} value={`${a.type}:${a.id}:${a.name}`}>{a.name}</option>
                         ))}
                       </select>
-                      <select className="gp-fb" aria-label="Priority" value={priority} onChange={(e) => setPriority(e.target.value)}>
+                      <select className="gp-fb" aria-label="Priority" value={priority} onChange={(e) => patchSettings({ priority: e.target.value || undefined })}>
                         <option value="">Any priority</option>
                         <option value="urgent">Urgent</option>
                         <option value="high">High</option>
@@ -476,9 +552,9 @@ export default function Projects() {
                         <option value="low">Low</option>
                         <option value="none">No priority</option>
                       </select>
-                      <button type="button" className={`gp-fb ${closed ? "sel" : ""}`} aria-pressed={closed} onClick={() => setClosed(!closed)}>{closed ? "Hide done" : "Show done"}</button>
-                      {saved && saved.mine && (
-                        <button type="button" className="gp-fb" onClick={() => saveViewMut.mutate({ organizationId: currentOrgId, id: saved.id, ...target, name: saved.name, kind: saved.kind, settings: settingsNow, private: saved.private, pinned: saved.pinned })} disabled={saveViewMut.isPending}>
+                      <button type="button" className={`gp-fb ${closed ? "sel" : ""}`} aria-pressed={closed} onClick={() => patchSettings({ closed: !closed })}>{closed ? "Hide done" : "Show done"}</button>
+                      {saved && saved.mine && edited && !flags.autosave && (
+                        <button type="button" className="gp-fb" onClick={() => saveSettingsNow(settingsNow)} disabled={saveViewMut.isPending}>
                           Save to this view
                         </button>
                       )}
@@ -487,12 +563,13 @@ export default function Projects() {
                 </span>
                 <span className="gp-tool-r">
                   <RunningTimer orgId={currentOrgId} onOpen={setTaskId} />
-                  {view !== "workload" && <input ref={searchRef} className="gp-srch" placeholder="Search tasks  /" aria-label="Search tasks" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Escape" && (e.target as HTMLInputElement).blur()} />}
+                  {view !== "workload" && <input ref={searchRef} className="gp-srch" placeholder="Search tasks  /" aria-label="Search tasks" value={q} onChange={(e) => patchSettings({ q: e.target.value || undefined })} onKeyDown={(e) => e.key === "Escape" && (e.target as HTMLInputElement).blur()} />}
+                  {!guest && <button type="button" className={`gp-fb ${panel === "customize" ? "sel" : ""}`} aria-pressed={panel === "customize"} onClick={() => setPanel(panel === "customize" ? "" : "customize")}>Customize</button>}
                   {ctx && (level === "edit" || level === "full" || where.scope !== "list") && <NewTask c={ctx} guest={guest} open={adding} setOpen={setAdding} onTemplate={() => setPanel("fromTemplate")} />}
                 </span>
               </div>
             )}
-            <div className={`gp-canvas ${beside ? "with-task" : ""}`}>
+            <div className={`gp-canvas ${beside ? "with-task" : ""} ${panel === "customize" && isList ? "with-custom" : ""}`}>
               <ErrorLine error={v.error || tree.error || views.error} />
               {where.scope === "import" ? (
                 <ImportPage orgId={currentOrgId} onDone={() => { void refresh(); setWhere({ scope: "everything" }); }} />
@@ -531,10 +608,38 @@ export default function Projects() {
                 </div>
               )}
               {beside && taskId && <TaskModal mode="panel" orgId={currentOrgId} id={taskId} onClose={() => { setTaskId(null); void refresh(); }} onOpen={openTask} onFull={() => setTaskFull(true)} onEditFields={ctx?.data.list ? () => { setTaskId(null); setPanel("settings"); } : undefined} onSaveTemplate={guest ? undefined : (id) => setSaveTask(id)} />}
+              {panel === "customize" && isList && ctx && (
+                <Customize
+                  c={ctx}
+                  view={view}
+                  saved={saved}
+                  views={views.data}
+                  listName={where.scope === "everything" ? "Everything" : title}
+                  settings={{ ...settingsNow, closed }}
+                  patch={patchSettings}
+                  flags={flags}
+                  onFlag={(p) => setFlags.mutate({ organizationId: currentOrgId, ...target, kind: view, savedId: cur.savedId, ...p })}
+                  onAutosave={(on) => { setAutosave.mutate({ organizationId: currentOrgId, ...target, kind: view, savedId: cur.savedId, on }); if (on && edited) saveSettingsNow(settingsNow); }}
+                  onStar={(on) => starView.mutate({ organizationId: currentOrgId, ...target, kind: view, savedId: cur.savedId, on })}
+                  onCopyLink={() => void navigator.clipboard?.writeText(window.location.href)}
+                  onExport={(format) => { const ex = exportRows(ctx, ctx.columns, view === "table" || view === "list" ? sortTasksForExport(ctx) : ctx.tasks); exporter.run(`${title || "Tasks"} ${saved ? saved.name : view}`, format, ex.headers, ex.rows); }}
+                  onShare={() => setPanel("share")}
+                  onTemplates={() => pick({ scope: "templates" })}
+                  onSaveTemplate={() => setPanel("saveList")}
+                  onSaveAs={() => { if (saved) { setEditView(saved); setPanel("addView"); } }}
+                  onSaveNow={() => saveSettingsNow(settingsNow)}
+                  canChange={!lockedView && (saved ? saved.mine : level === "edit" || level === "full")}
+                  canShare={level === "edit" || level === "full"}
+                  isList={where.scope === "list"}
+                  onClose={() => setPanel("")}
+                  busy={exporter.busy || setFlags.isPending || saveViewMut.isPending || setBuiltin.isPending}
+                  error={exporter.error || setFlags.error || setAutosave.error || starView.error || saveViewMut.error || setBuiltin.error}
+                />
+              )}
             </div>
           </>
         ) : where.scope === "docs" ? (
-          <DocsHub orgId={currentOrgId} onPick={pick} refresh={refresh} />
+          <DocsHub orgId={currentOrgId} onPick={pick} refresh={refresh} start={where.tab} />
         ) : where.scope === "doc" ? (
           <DocPage orgId={currentOrgId} id={where.id} onPick={pick} onOpenTask={setTaskId} refresh={refresh} />
         ) : where.scope === "board" ? (
@@ -549,6 +654,8 @@ export default function Projects() {
           <PortfoliosPage orgId={currentOrgId} onPick={pick} />
         ) : where.scope === "portfolio" ? (
           <PortfolioPage orgId={currentOrgId} id={where.id} onPick={pick} onOpenTask={(id) => { setTaskId(id); setTaskFull(true); }} />
+        ) : where.scope === "sidebar" ? (
+          <SidebarPage orgId={currentOrgId} onDone={() => pick({ scope: "home" })} />
         ) : (
           <TemplatesPage orgId={currentOrgId} onPick={pick} onOpenTask={setTaskId} refresh={refresh} />
         )}
@@ -565,6 +672,11 @@ export default function Projects() {
       {!guest && <BottomNav active="projects" />}
     </div>
   );
+}
+
+/** The rows in the order the list shows them, for Export view. */
+function sortTasksForExport(c: PjCtx) {
+  return groupsOf(c).flatMap((g) => g.tasks).filter((t, i, a) => a.findIndex((x) => x.id === t.id) === i);
 }
 
 const fmtArchived = (d: Date | string | null | undefined) => (d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");

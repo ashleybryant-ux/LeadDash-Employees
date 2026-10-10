@@ -19,9 +19,10 @@ const TABS: [Tab, string][] = [["all", "All"], ["mine", "Mine"], ["shared", "Sha
 const ICON = { doc: "D", board: "W", form: "F" } as const;
 const fmtAt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
 
-export function DocsHub({ orgId, onPick, refresh }: { orgId: number; onPick: (w: Where) => void; refresh: () => Promise<unknown> }) {
+export function DocsHub({ orgId, onPick, refresh, start }: { orgId: number; onPick: (w: Where) => void; refresh: () => Promise<unknown>; start?: "boards" | "forms" }) {
   const [q, setQ] = React.useState("");
-  const [tab, setTab] = React.useState<Tab>("all");
+  const [tab, setTab] = React.useState<Tab>(start ?? "all");
+  React.useEffect(() => { if (start) setTab(start); }, [start]);
   const [folder, setFolder] = React.useState<number | "">("");
   const [tag, setTag] = React.useState("");
   const [sort, setSort] = React.useState<"updated" | "name">("updated");
