@@ -386,6 +386,13 @@
       "when": 1791635696027,
       "tag": "0054_press_list_goal",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1791637767480,
+      "tag": "0055_org_setup",
+      "breakpoints": true
     }
   ]
 }

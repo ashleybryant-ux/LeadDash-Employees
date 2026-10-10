@@ -4,6 +4,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine } from "../ui";
 import { WebsiteRead } from "./WebsiteRead";
+import { DictateButton, appendText } from "../Dictate";
 import type { Outputs } from "../types";
 
 export type View = Outputs["onboarding"]["get"]["interview"];
@@ -133,7 +134,13 @@ export function Field({ emp, view, q, value, onChange, examples, onExamples }: {
   if (q.type === "multi") return <Chips options={q.options ?? []} value={value} multi onChange={onChange} />;
   if (q.type === "samples") return <Samples emp={emp} view={view} value={value} onChange={onChange} />;
   if (q.type === "examples") return <Examples value={examples} onChange={onExamples} />;
-  return <input className="ld-in" aria-label={q.label} value={String(value ?? "")} maxLength={800} placeholder={q.placeholder} onChange={(e) => onChange(e.target.value)} />;
+  // Typed or dictated: each spoken sentence is added to the answer.
+  return (
+    <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <textarea className="ld-ta" rows={2} aria-label={q.label} value={String(value ?? "")} maxLength={800} placeholder={q.placeholder} onChange={(e) => onChange(e.target.value)} />
+      <DictateButton small onText={(t) => onChange(appendText(String(value ?? ""), t).slice(0, 800))} />
+    </span>
+  );
 }
 
 function QRow({ label, note, children }: { label: string; note?: string; children: React.ReactNode }) {

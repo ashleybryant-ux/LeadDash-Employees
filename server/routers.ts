@@ -4781,6 +4781,30 @@ export const appRouter = router({
     }),
   }),
 
+  /** Set up your team, once: the business, who starts first, say hello. */
+  setup: router({
+    get: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/setup")).setupView(input.organizationId);
+    }),
+    saveBusiness: protectedProcedure
+      .input(orgInput.extend({ website: z.string().trim().max(300), description: z.string().trim().max(2000), audience: z.string().trim().max(2000), bookingLink: z.string().trim().max(600), brandColors: z.string().trim().max(300), tone: z.string().trim().max(300) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        const { organizationId, ...rest } = input;
+        return (await import("./employees/setup")).saveBusiness(organizationId, rest);
+      }),
+    pickTeam: protectedProcedure.input(orgInput.extend({ employeeIds: z.array(z.number().int()).max(50) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      return (await import("./employees/setup")).pickTeam(input.organizationId, input.employeeIds);
+    }),
+    finish: protectedProcedure.input(orgInput.extend({ skipped: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: input.skipped ? "Skipped team setup" : "Finished team setup", details: "" });
+      return (await import("./employees/setup")).finishSetup(input.organizationId, personName(ctx.user), input.skipped);
+    }),
+  }),
+
   onboarding: router({
     get: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
@@ -4824,6 +4848,30 @@ export const appRouter = router({
         const emp = await empFor(ctx, input.organizationId, input.employeeId);
         const saved = await interview.savePart(emp, input.section, input.answers, input.advance);
         if (interview.readState(saved).done && !interview.readState(emp).done) await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Onboarded employee", details: emp.name });
+        return interview.interviewView(saved);
+      }),
+    /** "How I will work": the employee drafts its own onboarding from the Brain. */
+    draftPlan: protectedProcedure.input(orgInput.extend({ employeeId: z.number() })).mutation(async ({ ctx, input }) => {
+      const emp = await empFor(ctx, input.organizationId, input.employeeId);
+      await interview.draftPlan(emp);
+      return interview.interviewView((await db.getEmployeeForOrg(emp.id, emp.organizationId))!);
+    }),
+    /** Looks right (with any lines the owner changed): the plan becomes the answers and the employee starts working from it. */
+    acceptPlan: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number(), changes: z.record(z.string(), z.union([z.string().max(800), z.array(z.string().max(100)).max(12)])).default({}) }))
+      .mutation(async ({ ctx, input }) => {
+        const emp = await empFor(ctx, input.organizationId, input.employeeId);
+        const saved = await interview.acceptPlan(emp, input.changes);
+        // The first assignment, so the employee reports on its own from day one.
+        const tasks = (await db.listScheduledTasks(input.organizationId)).filter((t) => t.employeeId === emp.id);
+        const tpl = TEMPLATES[emp.kind]?.[0];
+        if (!tasks.length && tpl) {
+          const org = await db.getOrganizationById(input.organizationId);
+          const rule = { repeat: tpl.repeat, time: tpl.time, weekday: tpl.weekday ?? null, monthDay: null, onDate: null };
+          const next = nextRun(rule, org?.timezone || "America/Chicago");
+          if (next) await db.createScheduledTask({ organizationId: input.organizationId, createdBy: personName(ctx.user), employeeId: emp.id, title: tpl.title, instructions: tpl.instructions, ...rule, enabled: true, nextRunAt: next, notify: "push" });
+        }
+        if (!interview.readState(emp).done) await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Approved how an employee will work", details: emp.name });
         return interview.interviewView(saved);
       }),
     /** The Brain part: facts saved to the workspace or the Brain for every employee. */

@@ -1099,6 +1099,11 @@ export function setMemberAiLimit(organizationId: number, userId: number, mode: "
     .run();
 }
 
+/** True once anyone in the workspace has written to an employee (the workspace is in use). */
+export function hasAnyChat(orgId: number) {
+  return Boolean(getDb().select({ id: chatMessages.id }).from(chatMessages).where(and(eq(chatMessages.organizationId, orgId), eq(chatMessages.role, "user"))).limit(1).get());
+}
+
 export async function createChatMessage(msg: InsertChatMessage) {
   // What an employee says never names the providers behind the app.
   const clean = msg.role === "employee" && typeof msg.content === "string" ? { ...msg, content: hideProviders(msg.content) } : msg;

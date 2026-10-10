@@ -2077,3 +2077,33 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 /* Appearance switch in the account menu */
 .ld-themepick { height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--ld-line4); background: var(--ld-surface); font: inherit; font-size: 12px; font-weight: 700; color: var(--ld-muted); cursor: pointer; }
 .ld-themepick.on { background: var(--ld-accent-bg); border-color: var(--ld-accent-line); color: var(--ld-accent-dark); }
+
+/* Set up your team */
+.ld-setup { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
+.ld-setup-step { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 9px; border: 0; background: none; font: inherit; font-weight: 700; color: var(--ld-muted); text-align: left; cursor: pointer; width: 100%; }
+.ld-setup-step.on { background: var(--ld-accent-bg); color: var(--ld-ink); }
+.ld-setup-step.done { color: var(--ld-ink); }
+.ld-setup-step i { width: 24px; height: 24px; border-radius: 50%; background: var(--ld-line2); color: var(--ld-muted); display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 12px; font-weight: 800; flex-shrink: 0; }
+.ld-setup-step.on i { background: var(--ld-ink); color: var(--ld-surface); }
+.ld-setup-step.done i { background: var(--ld-accent); color: #fff; }
+.ld-setup-step small { display: block; font-weight: 600; font-size: 12px; color: var(--ld-soft); }
+.ld-setup-emps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ld-setup-emp { border: 1px solid var(--ld-line); border-radius: 10px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; background: var(--ld-surface); font: inherit; text-align: left; cursor: pointer; color: var(--ld-ink); }
+.ld-setup-emp.on { border-color: var(--ld-accent); background: var(--ld-accent-bg); }
+.ld-setup-emp b { display: block; font-size: 14px; }
+.ld-setup-emp .r { color: var(--ld-accent); font-weight: 700; font-size: 12.5px; display: block; margin-bottom: 3px; }
+.ld-setup-emp .w { color: var(--ld-muted); font-size: 12.5px; line-height: 1.4; display: block; }
+.ld-setup-emp i { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--ld-line4); flex-shrink: 0; background: var(--ld-surface); font-style: normal; font-size: 12px; font-weight: 800; color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+.ld-setup-emp.on i { background: var(--ld-accent); border-color: var(--ld-accent); }
+.ld-plan { display: grid; grid-template-columns: 170px minmax(0, 1fr); }
+.ld-plan > div { padding: 11px 0; border-bottom: 1px solid var(--ld-line2); font-size: 14px; display: flex; align-items: center; min-width: 0; }
+.ld-plan > div.k { font-weight: 800; align-items: flex-start; padding-top: 12px; }
+.ld-plan > div:nth-last-child(-n + 2) { border-bottom: 0; }
+.ld-plan .guess { display: inline-block; font-size: 11px; font-weight: 800; border-radius: 999px; padding: 3px 9px; background: var(--ld-warn-bg); color: #8a4510; margin-left: 10px; white-space: nowrap; }
+.ld-plan-sec { grid-column: 1 / -1; font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ld-muted); padding: 14px 0 2px !important; border-bottom: 0 !important; }
+@media (max-width: 900px) {
+  .ld-setup { grid-template-columns: minmax(0, 1fr); }
+  .ld-setup-emps { grid-template-columns: minmax(0, 1fr); }
+  .ld-plan { grid-template-columns: minmax(0, 1fr); }
+  .ld-plan > div.k { padding-bottom: 0; border-bottom: 0; }
+}

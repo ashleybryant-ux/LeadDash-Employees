@@ -74,13 +74,18 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
   const tab = (params.appId ? "work" : params.tab === "work" || params.tab === "guidelines" || params.tab === "knowledge" || params.tab === "onboarding" ? params.tab : "chat") as "chat" | "work" | "knowledge" | "onboarding" | "guidelines";
 
   const mobile = useIsMobile();
-  const { chatOnly } = useTenant();
+  const { chatOnly, currentOrg, currentOrgId } = useTenant();
+  // A workspace nobody has used yet opens on Set up your team (owners and admins only).
+  const fresh = !!currentOrg && !currentOrg.setupAt && !currentOrg.guest && (currentOrg.role === "owner" || currentOrg.role === "admin" || !currentOrg.role);
+  const setup = trpc.setup.get.useQuery({ organizationId: currentOrgId }, { enabled: fresh && currentOrgId > 0 });
   // On a phone, /chats is the list of employees; on a computer it opens the first chat.
   const listOnly = !params.kind && !params.id && mobile;
   // Team chat only people open the general channel.
   if (chatOnly && !listOnly) return <Redirect to="/chats/team/everyone" />;
+  if (fresh && setup.data && !setup.data.done && !setup.data.inUse) return <Redirect to="/setup" />;
   if (!params.kind && !params.id && list.length > 0 && !listOnly) {
-    const first = list.find((e) => e.kind === "grants") ?? list[0];
+    // The first employee that is working; a workspace fresh from setup has most of them paused.
+    const first = list.find((e) => e.kind === "grants" && e.status !== "paused") ?? list.find((e) => e.status !== "paused") ?? list[0];
     return <Redirect to={first.kind === "custom" ? `/chats/e/${first.id}` : `/chats/${first.kind}`} />;
   }
 

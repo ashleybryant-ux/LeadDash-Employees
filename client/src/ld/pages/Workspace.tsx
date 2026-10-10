@@ -260,6 +260,7 @@ export default function Workspace() {
         {editing !== "basic" && !reading && (
           <div style={{ padding: "0 18px 16px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <button type="button" className="ld-btn" style={{ width: 150 }} onClick={() => setReading(true)}>Read my website</button>
+            <Link href="/setup" className="ld-btn" style={{ width: 128 }}>Team setup</Link>
             <span className="ld-small ld-muted">The team reads your site and fills in what you do, who you serve, services, booking link and more. You pick what to keep.</span>
           </div>
         )}

@@ -30,6 +30,7 @@ import Handbook from "./ld/pages/Handbook";
 import SopPage from "./ld/sops/SopPage";
 import BaseInstructions from "./ld/pages/BaseInstructions";
 import Welcome from "./ld/pages/Welcome";
+import Setup from "./ld/pages/Setup";
 import { Rail, Switcher } from "./ld/ui";
 import Notices from "./ld/Notices";
 import "./ld/theme.css";
@@ -109,6 +110,7 @@ function Router() {
       <Route path="/handbook/sop/:id" component={SopPage} />
       <Route path="/base" component={BaseInstructions} />
       <Route path="/welcome" component={Welcome} />
+      <Route path="/setup" component={Setup} />
       <Route>{() => <Redirect to="/chats" />}</Route>
     </Switch>
   );

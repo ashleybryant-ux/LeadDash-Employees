@@ -7,7 +7,8 @@ import { fmtDate } from "./meta";
 import type { Outputs } from "./types";
 import { LeadSetupCard, SellsCard, WorksOnOwnCard, LinkedInStepCard } from "./sales/OnboardingCards";
 import { ProjectsCard, MeetingsCard, NotetakerCard } from "./lead/OnboardingCards";
-import { InterviewPanel } from "./onboarding/Interview";
+import { OnboardingTop } from "./onboarding/WorkPlan";
+import { DictateButton, appendText } from "./Dictate";
 
 type Data = Outputs["onboarding"]["get"];
 type Assignment = Data["assignments"][number];
@@ -54,7 +55,7 @@ export default function Onboarding({ emp }: { emp: EmployeeRow }) {
   const d = q.data;
   return (
     <main className="ld-main" style={{ padding: "28px 36px", maxWidth: 1180 }}>
-      <InterviewPanel emp={emp} view={d.interview} />
+      <OnboardingTop emp={emp} view={d.interview} />
       {emp.kind === "prospecting" && <SellsCard />}
       {emp.kind === "outreach" && <LinkedInStepCard emp={emp} />}
       {emp.kind === "projects" && <ProjectsCard emp={emp} />}
@@ -62,13 +63,13 @@ export default function Onboarding({ emp }: { emp: EmployeeRow }) {
       {emp.kind === "inbox" && <NotetakerCard emp={emp} />}
       {emp.kind === "leads" && <LeadSetupCard emp={emp} rule={d.rules.find((r) => r.key === "reply")} />}
       <WorksOnOwnCard emp={emp} rules={emp.kind === "leads" ? d.rules.filter((r) => r.key !== "reply") : d.rules} alwaysAsks={d.alwaysAsks} firstN={d.firstN} />
-      <DayCard emp={emp} items={d.dayToDay} />
+      <DayCard emp={emp} items={d.dayToDay} done={d.interview.state.done} />
       <AssignmentsCard emp={emp} list={d.assignments} templates={d.templates} />
     </main>
   );
 }
 
-function DayCard({ emp, items }: { emp: EmployeeRow; items: { when: string; what: string }[] }) {
+function DayCard({ emp, items, done }: { emp: EmployeeRow; items: { when: string; what: string }[]; done: boolean }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const rewrite = trpc.onboarding.rewriteDay.useMutation({ onSuccess: () => utils.onboarding.get.invalidate() });
@@ -81,7 +82,7 @@ function DayCard({ emp, items }: { emp: EmployeeRow; items: { when: string; what
         </button>
       </div>
       <div style={{ padding: "6px 18px 12px 18px" }}>
-        {items.length === 0 && <div className="ld-body ld-muted" style={{ padding: "8px 0" }}>Finish onboarding above and {emp.name} will write this.</div>}
+        {items.length === 0 && <div className="ld-body ld-muted" style={{ padding: "8px 0" }}>{done ? `Press Rewrite and ${emp.name} writes a typical day from the plan above.` : `Approve the plan above and ${emp.name} will write this.`}</div>}
         {items.map((it, i) => (
           <div key={i} className="ld-dayrow" style={{ display: "grid", gridTemplateColumns: "150px minmax(0,1fr)", gap: 12, padding: "9px 0", borderBottom: i === items.length - 1 ? 0 : "1px solid #eef2f0", fontSize: 14, lineHeight: 1.5 }}>
             <span className="ld-strong">{it.when}</span>
@@ -224,7 +225,10 @@ function AssignmentEditor({ emp, templates, task, onDone }: { emp: EmployeeRow; 
               e.target.style.height = `${Math.max(84, e.target.scrollHeight)}px`;
             }}
           />
-          <span className="ld-small ld-muted">Write it the way you would tell a staff member. {emp.name} already knows your business from the Brain.</span>
+          <span className="ld-row" style={{ gap: 10, flexWrap: "wrap" }}>
+            <DictateButton small onText={(t) => { setWhat((w) => appendText(w, t)); setTpl(null); }} />
+            <span className="ld-small ld-muted">Write it the way you would tell a staff member, or dictate it. {emp.name} already knows your business from the Brain.</span>
+          </span>
         </div>
         <div className="ld-field">
           <span className="ld-lbl">Repeats</span>

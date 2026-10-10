@@ -39,7 +39,10 @@ export type InterviewState = {
   examples?: Example[];
   followups?: Followup[];
   followupsAsked?: boolean;
+  /** "How I will work": answers the employee drafted from the Brain, for the owner to approve instead of the full interview. */
+  plan?: Plan;
 };
+export type Plan = { answers: Record<string, Answer>; guesses: string[]; at: string };
 
 export type GSource = "interview" | "chat" | "learned" | "you" | "settled";
 export type GItem = { id: string; text: string; source: GSource; at: string; note?: string };
@@ -59,7 +62,7 @@ const nowIso = () => new Date().toISOString();
 
 export function readState(emp: Pick<AIEmployee, "interview">): InterviewState {
   const s = parse<Partial<InterviewState>>(emp.interview, {});
-  return { step: Number.isInteger(s.step) ? Math.max(0, s.step!) : 0, done: !!s.done, doneAt: s.doneAt, welcomedAt: s.welcomedAt, remindAt: s.remindAt, samples: Array.isArray(s.samples) ? s.samples : undefined, examples: Array.isArray(s.examples) ? s.examples : [], followups: Array.isArray(s.followups) ? s.followups : [], followupsAsked: !!s.followupsAsked };
+  return { step: Number.isInteger(s.step) ? Math.max(0, s.step!) : 0, done: !!s.done, doneAt: s.doneAt, welcomedAt: s.welcomedAt, remindAt: s.remindAt, samples: Array.isArray(s.samples) ? s.samples : undefined, examples: Array.isArray(s.examples) ? s.examples : [], followups: Array.isArray(s.followups) ? s.followups : [], followupsAsked: !!s.followupsAsked, plan: s.plan && typeof s.plan === "object" && s.plan.answers ? s.plan : undefined };
 }
 
 export function readAnswers(emp: Pick<AIEmployee, "onboarding">): Record<string, Answer> {
@@ -337,7 +340,94 @@ export async function interviewView(emp: AIEmployee) {
     guides: def.guides,
     tryIt: def.tryIt,
     total: def.sections.length,
+    plan: planView(emp),
   };
+}
+
+
+// ==========================================
+// "How I will work": the plan drafted from the Brain
+// ==========================================
+
+/** The questions a plan answers: everything but voice samples and pasted examples. */
+export function planQuestions(kind: EmployeeKind) {
+  return allQuestions(kind).filter((q) => q.type === "text" || q.type === "choice" || q.type === "multi");
+}
+
+/**
+ * The employee answers its own interview from the Brain, the website facts and
+ * what its job usually looks like, and says which answers are guesses. The
+ * owner reads one card and presses Looks right, or changes a line.
+ */
+export async function draftPlan(emp: AIEmployee): Promise<Plan> {
+  const brain = await loadBrain(emp.organizationId);
+  const orgName = brain.org?.name ?? "the business";
+  const qs = planQuestions(emp.kind);
+  const existing = readAnswers(emp);
+  const out = await generateJson<{ answers: { key: string; value: string; values: string[]; guess: boolean }[] }>({
+    system: `You are ${emp.name}, the new ${emp.roleTitle} at ${orgName}, filling in your own onboarding from what the company already wrote down, so the owner only has to check it. ${BASE_RULES}
+Rules:
+- Answer every question. For a choice question pick one of its options exactly; for a multi question pick one to three of its options exactly (in values); for a text question write one or two plain sentences in the owner's voice, specific to ${orgName}.
+- Use the Brain first. Where the Brain does not say, answer the way a careful new hire in this job would for a business like this, and mark it guess: true. Never invent a number, a name, a price or a client.
+- No em dashes. American English.`,
+    prompt: `Questions (key, type, label, options):
+${qs.map((q) => `- ${q.key} (${q.type}): ${q.label}${q.options ? ` Options: ${q.options.join(" | ")}` : ""}${q.placeholder ? ` (for example: ${q.placeholder})` : ""}${filled(existing[q.key]) ? ` The owner already said: ${Array.isArray(existing[q.key]) ? (existing[q.key] as string[]).join(", ") : existing[q.key]}` : ""}`).join("\n")}
+
+# Brain
+${brain.text.slice(0, 14_000)}`,
+    schemaName: "work_plan",
+    schema: { type: "object", additionalProperties: false, required: ["answers"], properties: { answers: { type: "array", items: { type: "object", additionalProperties: false, required: ["key", "value", "values", "guess"], properties: { key: { type: "string" }, value: { type: "string" }, values: { type: "array", items: { type: "string" } }, guess: { type: "boolean" } } } } } } as JsonSchema,
+    maxTokens: 3500,
+  });
+  const answers: Record<string, Answer> = {};
+  const guesses: string[] = [];
+  for (const q of qs) {
+    const a = (out.answers ?? []).find((x) => x.key === q.key);
+    if (!a) continue;
+    const v = cleanAnswer(q, q.type === "multi" ? (a.values?.length ? a.values : a.value ? [a.value] : []) : a.value);
+    if (v === undefined || !filled(v)) continue;
+    answers[q.key] = v;
+    if (a.guess && !filled(existing[q.key])) guesses.push(q.key);
+  }
+  const plan: Plan = { answers, guesses, at: nowIso() };
+  await saveState(emp, { plan });
+  return plan;
+}
+
+/** The plan as rows for the Onboarding tab: label, answer, section, whether it was a guess. */
+export function planView(emp: AIEmployee) {
+  const st = readState(emp);
+  if (!st.plan) return null;
+  const def = INTERVIEWS[emp.kind];
+  const rows: { key: string; label: string; short: string; section: string; type: IQuestion["type"]; options: string[]; value: Answer; guess: boolean }[] = [];
+  for (const s of def.sections) {
+    for (const q of s.questions) {
+      if (!(q.key in st.plan.answers)) continue;
+      rows.push({ key: q.key, label: q.label, short: q.short ?? q.label, section: s.title, type: q.type, options: q.options ?? [], value: st.plan.answers[q.key], guess: st.plan.guesses.includes(q.key) });
+    }
+  }
+  return { rows, at: st.plan.at };
+}
+
+/**
+ * Looks right: the plan's answers (with the owner's changes) become the
+ * interview answers, every part counts as done, and the first assignment is
+ * made. The employee starts working from this.
+ */
+export async function acceptPlan(emp: AIEmployee, changes: Record<string, unknown> = {}) {
+  const st = readState(emp);
+  if (!st.plan) throw new TRPCError({ code: "BAD_REQUEST", message: "There is no plan to approve yet." });
+  const answers = readAnswers(emp);
+  for (const q of planQuestions(emp.kind)) {
+    const raw = q.key in changes ? changes[q.key] : st.plan.answers[q.key];
+    if (raw === undefined) continue;
+    const v = cleanAnswer(q, raw);
+    if (v !== undefined && filled(v)) answers[q.key] = v;
+  }
+  let next = await db.updateEmployee(emp.id, emp.organizationId, { onboarding: JSON.stringify(answers) });
+  next = await saveState(next!, { step: stepCount(emp.kind), plan: { ...st.plan, answers: Object.fromEntries(Object.entries(answers).filter(([k]) => k in st.plan!.answers)) } });
+  if (!readState(next!).done) next = await finish(next!);
+  return refreshGuidelines(next!);
 }
 
 // ==========================================
@@ -347,7 +437,7 @@ export async function interviewView(emp: AIEmployee) {
 async function ownerFirst(orgId: number) {
   const members = await db.listMembers(orgId);
   const owner = members.find((m) => m.role === "owner") ?? members[0];
-  return (owner?.name || "").trim().split(" ")[0] || "there";
+  return (owner?.name || "").trim().replace(/^(dr|mr|mrs|ms|prof)\.?\s+/i, "").split(" ")[0] || "there";
 }
 
 const HELLO: Record<EmployeeKind, string> = {

@@ -116,6 +116,8 @@ export const organizations = sqliteTable("organizations", {
   aiLimits: text("aiLimits"),
   /** The LeadDash EHR practice this workspace came from (its location id), when it was opened from the EHR; the sign-in door finds the workspace by it. */
   ehrLocationId: text("ehrLocationId"),
+  /** When the owner finished (or skipped) the one-time team setup. */
+  setupAt: integer("setupAt", { mode: "timestamp" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

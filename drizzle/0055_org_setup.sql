@@ -1,0 +1,1 @@
+ALTER TABLE `organizations` ADD `setupAt` integer;

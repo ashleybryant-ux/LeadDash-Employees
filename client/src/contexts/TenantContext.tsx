@@ -20,6 +20,7 @@ export interface Organization {
   entity?: string | null;
   brandColors?: string | null;
   fonts?: string | null;
+  setupAt?: Date | string | null;
   createdAt: Date;
   updatedAt: Date;
   /** Only a guest on shared Projects lists here. */
