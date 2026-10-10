@@ -5,6 +5,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AVATAR_FILES, KIND_META, KIND_ORDER, fmtWhen, initials, type Kind, DEPARTMENT_ORDER, worksWithClientInfo } from "./meta";
 import { Menu } from "./goals/shared";
+import { applyTheme, useTheme, type Theme } from "./theme";
 import { NewChannel } from "./team/NewChannel";
 
 // ==========================================
@@ -205,7 +206,7 @@ export function Rail({ active }: { active: RailKey }) {
     <nav
       aria-label="Main"
       className="ld-rail"
-      style={{ width: 76, flexShrink: 0, boxSizing: "border-box", background: "#12211d", display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 0", gap: 6, position: "sticky", top: 0, zIndex: 20 }}
+      style={{ width: 76, flexShrink: 0, boxSizing: "border-box", background: "#12211d", display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 0", gap: 6, position: "sticky", top: 0, zIndex: 40 }}
     >
       <button
         type="button"
@@ -238,9 +239,10 @@ export function Rail({ active }: { active: RailKey }) {
           <PersonAvatar name={user?.name || user?.email || "?"} src={user?.avatarUrl} size={36} />
         </button>
         {menu && (
-          <div className="ld-card" style={{ position: "absolute", left: 60, bottom: 0, width: 240, padding: 12, display: "flex", flexDirection: "column", gap: 8, boxShadow: "0 12px 32px rgba(18,33,29,0.14)" }}>
+          <div className="ld-card" style={{ position: "fixed", left: 84, bottom: 16, width: 260, padding: 12, display: "flex", flexDirection: "column", gap: 8, boxShadow: "0 12px 32px var(--ld-shadow)", zIndex: 5 }}>
             <span className="ld-strong">{user?.name || "Signed in"}</span>
             <span className="ld-small ld-muted">{user?.email}</span>
+            <ThemePick />
             <Link href="/account" className="ld-btn" style={{ width: "100%" }} onClick={() => setMenu(false)}>
               My account
             </Link>
@@ -250,8 +252,26 @@ export function Rail({ active }: { active: RailKey }) {
           </div>
         )}
       </div>
-      {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 84, top: 12 }} />}
+      {switcher && <Switcher onClose={() => setSwitcher(false)} className="ld-switcher-pop" style={{ position: "fixed", left: 84, top: 12, zIndex: 95 }} />}
     </nav>
+  );
+}
+
+/** Light, Dark or Device, right in the account menu; the same choice My account keeps. */
+function ThemePick() {
+  const utils = trpc.useUtils();
+  const theme = useTheme();
+  const set = trpc.auth.setTheme.useMutation({ onSuccess: () => utils.auth.me.invalidate() });
+  const opt = (t: Theme, label: string) => (
+    <button key={t} type="button" className={`ld-themepick ${theme === t ? "on" : ""}`} aria-pressed={theme === t} onClick={() => { applyTheme(t); set.mutate({ theme: t }); }}>{label}</button>
+  );
+  return (
+    <span className="ld-row" style={{ gap: 6 }} role="group" aria-label="Appearance">
+      <span className="ld-small ld-muted" style={{ marginRight: 2 }}>Look</span>
+      {opt("light", "Light")}
+      {opt("dark", "Dark")}
+      {opt("system", "Device")}
+    </span>
   );
 }
 

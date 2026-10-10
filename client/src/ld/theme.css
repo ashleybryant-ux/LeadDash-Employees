@@ -2014,3 +2014,7 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 .gp-dcal-day { border: 1px solid var(--ld-line2); border-radius: 8px; padding: 6px; min-height: 90px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; min-width: 0; }
 .gp-dcal-day b { font-size: 11px; color: var(--ld-muted); }
 .gp-dcal-t { border: 0; background: var(--ld-accent-bg); color: var(--ld-accent-dark); border-radius: 5px; padding: 3px 6px; font: inherit; font-size: 11.5px; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Appearance switch in the account menu */
+.ld-themepick { height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--ld-line4); background: var(--ld-surface); font: inherit; font-size: 12px; font-weight: 700; color: var(--ld-muted); cursor: pointer; }
+.ld-themepick.on { background: var(--ld-accent-bg); border-color: var(--ld-accent-line); color: var(--ld-accent-dark); }
