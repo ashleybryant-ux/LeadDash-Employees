@@ -5,7 +5,8 @@ import * as pj from "./work/projects";
 import { tickOrg } from "./work/pjTicks";
 import { evalFormula } from "@shared/formula";
 import { submit } from "./work/pjForms";
-import { cleanBlocks } from "./work/pjDocs";
+import { blocksFromHtml, cleanBlocks, htmlFromBlocks, sanitizeHtml } from "./work/pjDocs";
+import * as llm from "./_core/llm";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -153,6 +154,67 @@ describe("Projects, more like ClickUp", () => {
     const tt = await me.pj.saveTemplate({ organizationId: orgId, kind: "task", sourceId: t.id, name: "", description: "" });
     const one = await me.pj.useTemplate({ organizationId: orgId, id: tt.id, listId: list.id, startDate: "2026-12-01" });
     expect(db.work.tasks.get(orgId, one.id)).toMatchObject({ name: "Welcome email", startDate: "2026-12-01", dueDate: "2026-12-03" });
+  });
+
+  it("keeps a doc as a page: safe HTML in, blocks derived, checklist ticks from the read view, older docs get a page, Nora writes into it", async () => {
+    const { orgId, me, list, folder } = await listWith("pj-doc-page");
+    const task = await me.pj.create({ organizationId: orgId, listId: list.id, name: "Landing page final check" });
+    // Scripts, handlers, unknown tags and unsafe links go; document tags, task items, mentions, tables and pictures stay.
+    const page = sanitizeHtml(
+      `<h2 style="text-align: center; position: fixed">Email 1</h2><script>alert(1)</script><p onclick="x()">Hi <strong>there</strong> <a href="javascript:alert(1)">bad</a> <a href="https://leaddash.io">good</a> <span style="color: #b4261f; font-size: 18px">red</span> <mark data-color="#fff3a3" style="background-color: #fff3a3">note</mark></p>` +
+        `<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span></span></label><div><p>Links tested</p></div></li><li data-type="taskItem" data-checked="true"><label><input type="checkbox" checked="checked"><span></span></label><div><p>Proofread</p></div></li></ul>` +
+        `<p>Close with the <span data-type="mention" data-id="${task.id}" data-label="Landing page final check">@Landing page final check</span> link</p>` +
+        `<table><tbody><tr><th colspan="1"><p>Email</p></th><th><p>Send</p></th></tr><tr><td><p>1, confirmation</p></td><td><p>Nov 7, 2026</p></td></tr></tbody></table><img src="javascript:alert(1)"><img src="/files/pic.png" alt="Pic"><iframe src="https://x"></iframe><custom>loose words</custom><ul><li><p>See <span data-type="mention" data-id="${task.id}" data-label="Landing page final check">@Landing page final check</span></p></li></ul>`
+    );
+    expect(page).not.toMatch(/script|onclick|iframe|javascript:|position/);
+    expect(page).toContain('<h2 style="text-align: center">Email 1</h2>');
+    expect(page).toContain('<a href="https://leaddash.io" target="_blank" rel="noopener noreferrer">good</a>');
+    expect(page).toContain('<a target="_blank" rel="noopener noreferrer">bad</a>');
+    expect(page).toContain('<span style="color: #b4261f; font-size: 18px">red</span>');
+    expect(page).toContain('<li data-type="taskItem" data-checked="true"><label><input type="checkbox" checked="checked"><span></span></label>');
+    expect(page).toContain(`<span data-type="mention" data-id="${task.id}" data-label="Landing page final check" class="gp-mention">@Landing page final check</span>`);
+    expect(page).toContain('<th colspan="1"><p>Email</p></th>');
+    expect(page).toContain('<img src="/files/pic.png" alt="Pic">');
+    expect(page).not.toContain("javascript");
+    expect(page).toContain("loose words");
+    const blocks = blocksFromHtml(page);
+    expect(blocks.map((b) => b.type)).toEqual(["h2", "p", "check", "check", "p", "task", "table", "image", "p", "bullet", "task"]);
+    expect(blocks[2]).toMatchObject({ id: "k0", type: "check", text: "Links tested", done: false });
+    expect(blocks[3]).toMatchObject({ id: "k1", done: true });
+    expect(blocks[5]).toMatchObject({ type: "task", taskId: task.id });
+    expect(blocks[6].rows).toEqual([["Email", "Send"], ["1, confirmation", "Nov 7, 2026"]]);
+    // Saving the page keeps it and the blocks it means; the task mention links the task; search finds the words.
+    const doc = await me.pj.saveDoc({ organizationId: orgId, folderId: folder.id, title: "Emails for webinar", html: page });
+    let d = await me.pj.doc({ organizationId: orgId, id: doc.id });
+    expect(d.doc.html).toBe(page);
+    expect(d.doc.blocks.map((b) => b.type)).toEqual(blocks.map((b) => b.type));
+    expect(d.linked.map((t) => t.id)).toEqual([task.id]);
+    expect((await me.pj.allDocs({ organizationId: orgId, q: "confirmation" })).docs.map((x) => x.id)).toEqual([doc.id]);
+    // Ticking the first checklist line from the read view changes the page and the blocks.
+    await me.pj.toggleDocCheck({ organizationId: orgId, id: doc.id, blockId: "k0", done: true });
+    d = await me.pj.doc({ organizationId: orgId, id: doc.id });
+    expect(d.doc.html).toContain('<li data-type="taskItem" data-checked="true"><label><input type="checkbox" checked="checked"><span></span></label><div><p>Links tested</p>');
+    expect(d.doc.blocks.filter((b) => b.type === "check").map((b) => b.done)).toEqual([true, true]);
+    // A doc written as blocks before the page editor opens as a page.
+    const old = await me.pj.saveDoc({ organizationId: orgId, folderId: folder.id, title: "Old FAQ", blocks: [{ id: "a", type: "h1", text: "Founding **member** FAQ" }, { id: "b", type: "bullet", text: "One" }, { id: "c", type: "bullet", text: "Two [link](https://leaddash.io)" }, { id: "d", type: "check", text: "Done", done: true }, { id: "e", type: "task", text: "", taskId: task.id }] });
+    db.work.docs.update(orgId, old.id, { html: "" });
+    const o = await me.pj.doc({ organizationId: orgId, id: old.id });
+    expect(o.doc.html).toBe(htmlFromBlocks(o.doc.blocks, [{ id: task.id, name: task.name }]));
+    expect(o.doc.html).toContain("<h1>Founding <strong>member</strong> FAQ</h1><ul><li><p>One</p></li><li><p>Two <a href=\"https://leaddash.io\" target=\"_blank\" rel=\"noopener noreferrer\">link</a></p></li></ul>");
+    expect(o.doc.html).toContain(`data-id="${task.id}"`);
+    // The public link shows the page.
+    const { link } = await me.pj.setDocLink({ organizationId: orgId, id: doc.id, on: true });
+    expect(db.docByShareToken(link!.split("/d/")[1])?.html).toContain("Links tested");
+    // A template made from the doc carries the page.
+    const tpl = await me.pj.saveTemplate({ organizationId: orgId, kind: "doc", sourceId: doc.id, name: "Webinar emails", description: "" });
+    const made = await me.pj.useTemplate({ organizationId: orgId, id: tpl.id, name: "Emails for the next webinar", folderId: folder.id });
+    expect((await me.pj.doc({ organizationId: orgId, id: made.id })).doc.html).toContain("Links tested");
+    // Nora writes a piece from the page's own words, with no em dashes.
+    const gen = vi.spyOn(llm, "generateText").mockResolvedValue("## Email 3\n\nSee you at noon \u2014 bring one number.\n\n- Links tested\n- Proofread");
+    const r = await me.pj.docAsk({ organizationId: orgId, id: doc.id, prompt: "Write the third email" });
+    expect(r.text).toBe("## Email 3\n\nSee you at noon, bring one number.\n\n- Links tested\n- Proofread");
+    expect(gen.mock.calls[0][0].prompt).toContain("1, confirmation | Nov 7, 2026");
+    expect(gen.mock.calls[0][0].prompt).toContain("[x] Links tested");
   });
 
   it("keeps docs as safe blocks, makes tasks from selected words, and turns whiteboard notes into tasks", async () => {

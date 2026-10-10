@@ -1,0 +1,1 @@
+ALTER TABLE `pj_docs` ADD `html` text DEFAULT '' NOT NULL;

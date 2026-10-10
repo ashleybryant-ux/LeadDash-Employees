@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import type { PjTask } from "../../drizzle/schema";
+import { pageOf } from "./pjDocs";
 import { createTask, parse, saveList, statusesOf, addDaysYmd, daysBetween, type Actor, type Assignee, type CheckItem, type FieldDef, type Repeat } from "./projects";
 
 /**
@@ -98,7 +99,7 @@ export function saveDocTemplate(orgId: number, docId: number, input: { name: str
   const d = db.work.docs.get(orgId, docId);
   if (!d) throw new TRPCError({ code: "NOT_FOUND", message: "That doc isn't in this workspace." });
   const folder = d.folderId ? db.work.folders.get(orgId, d.folderId) : null;
-  return db.work.templates.insert({ organizationId: orgId, kind: "doc", name: (input.name.trim() || d.title).slice(0, 120), description: input.description.slice(0, 500), folderName: folder?.name ?? "", data: JSON.stringify({ doc: { title: d.title, blocks: parse<unknown[]>(d.blocks, []) } }), createdBy: by });
+  return db.work.templates.insert({ organizationId: orgId, kind: "doc", name: (input.name.trim() || d.title).slice(0, 120), description: input.description.slice(0, 500), folderName: folder?.name ?? "", data: JSON.stringify({ doc: { title: d.title, blocks: parse<unknown[]>(d.blocks, []), html: pageOf(orgId, d) } }), createdBy: by });
 }
 
 export function updateTemplate(orgId: number, id: number, input: { name: string; description: string }) {
@@ -167,6 +168,6 @@ export async function useListTemplate(orgId: number, id: number, input: { name: 
 export function useDocTemplate(orgId: number, id: number, input: { title: string; folderId: number | null }, by: string) {
   const tp = db.work.templates.get(orgId, id);
   if (!tp || tp.kind !== "doc") throw new TRPCError({ code: "NOT_FOUND", message: "That template isn't here anymore." });
-  const d = parse<{ doc: { title: string; blocks: unknown[] } }>(tp.data, { doc: { title: "", blocks: [] } }).doc;
-  return db.work.docs.insert({ organizationId: orgId, folderId: input.folderId, title: (input.title.trim() || d.title).slice(0, 200), blocks: JSON.stringify(d.blocks), editedBy: by });
+  const d = parse<{ doc: { title: string; blocks: unknown[]; html?: string } }>(tp.data, { doc: { title: "", blocks: [] } }).doc;
+  return db.work.docs.insert({ organizationId: orgId, folderId: input.folderId, title: (input.title.trim() || d.title).slice(0, 200), blocks: JSON.stringify(d.blocks), html: d.html ?? "", editedBy: by });
 }

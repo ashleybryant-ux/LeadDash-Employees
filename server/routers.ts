@@ -2452,7 +2452,7 @@ export const appRouter = router({
       const { level } = (await import("./work/pjDocShare")).mustDocLevel(input.organizationId, v, input.id, "view");
       return { ...(await import("./work/pjDocs")).doc(input.organizationId, input.id), level };
     }),
-    saveDoc: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), folderId: z.number().int().nullable().optional(), listId: z.number().int().nullable().optional(), parentId: z.number().int().nullable().optional(), title: z.string().max(200), blocks: z.array(blockZ).max(600).optional() })).mutation(async ({ ctx, input }) => {
+    saveDoc: protectedProcedure.input(orgInput.extend({ id: z.number().int().optional(), folderId: z.number().int().nullable().optional(), listId: z.number().int().nullable().optional(), parentId: z.number().int().nullable().optional(), title: z.string().max(200), blocks: z.array(blockZ).max(600).optional(), html: z.string().max(400_000).optional() })).mutation(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);
       const ds = await import("./work/pjDocShare");
       if (input.id) ds.mustDocLevel(input.organizationId, v, input.id, "edit");
@@ -2466,6 +2466,11 @@ export const appRouter = router({
       (await import("./work/pjDocShare")).mustOwnDoc(input.organizationId, v, input.id);
       (await import("./work/pjDocs")).removeDoc(input.organizationId, input.id);
       return { ok: true };
+    }),
+    docAsk: protectedProcedure.input(orgInput.extend({ id: z.number().int(), prompt: z.string().max(2000), selection: z.string().max(4000).optional() })).mutation(async ({ ctx, input }) => {
+      const v = await pjViewer(ctx, input.organizationId);
+      (await import("./work/pjDocShare")).mustDocLevel(input.organizationId, v, input.id, "edit");
+      return (await import("./work/pjDocs")).askForDoc(input.organizationId, input.id, input);
     }),
     toggleDocCheck: protectedProcedure.input(orgInput.extend({ id: z.number().int(), blockId: z.string().max(40), done: z.boolean() })).mutation(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);

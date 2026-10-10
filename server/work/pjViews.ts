@@ -340,9 +340,9 @@ export function overview(orgId: number, v: Viewer, folderId: number) {
 // Docs page
 // ==========================================
 
-type Block = { type: string; text?: string; cells?: string[][]; items?: { text: string }[] };
+type Block = { type: string; text?: string; rows?: string[][] };
 function blockText(blocks: Block[]) {
-  return blocks.map((b) => [b.text ?? "", ...(b.cells ?? []).flat(), ...(b.items ?? []).map((i) => i.text)].join(" ")).join("\n").toLowerCase();
+  return blocks.map((b) => [b.text ?? "", ...(b.rows ?? []).flat()].join(" ")).join("\n").toLowerCase();
 }
 
 /** Every doc, whiteboard and form the person can see, with where it lives; `q` searches titles and the text inside docs. */

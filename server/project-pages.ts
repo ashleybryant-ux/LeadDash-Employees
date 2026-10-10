@@ -8,7 +8,7 @@ import type { Express, Request, Response } from "express";
 import * as db from "./db";
 import { parse, statusesOf, type Assignee } from "./work/projects";
 import { publicForm, submit, type Question } from "./work/pjForms";
-import type { Block } from "./work/pjDocs";
+import { pageOf, type Block } from "./work/pjDocs";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -38,7 +38,8 @@ button[disabled]{opacity:.6}.err{color:#b42318;font-weight:600;font-size:14px}.m
 table{width:100%;border-collapse:collapse;background:#fff;font-size:14px}th{font-size:11px;font-weight:800;color:#5b6b64;text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:10px 12px;border-bottom:1px solid #e3e9e6;background:#fafbfb}
 td{padding:10px 12px;border-bottom:1px solid #eef2f0;vertical-align:top}.st{display:inline-block;color:#fff;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
 .wide{max-width:1000px}.tbl{border:1px solid #e3e9e6;border-radius:14px;overflow:auto}
-.doc{max-width:760px}.doc h2{font-size:22px;margin:22px 0 6px}.doc h3{font-size:17px;margin:18px 0 4px}.doc p{margin:0 0 10px;font-size:16px;line-height:1.65;color:#14221c}.doc .li{margin:0 0 4px 8px}.doc blockquote{margin:10px 0;padding:6px 14px;border-left:3px solid #1b6b4a;color:#3d4c45}.doc hr{border:0;border-top:1px solid #e3e9e6;margin:18px 0}.doc img{max-width:100%;border-radius:10px;margin:8px 0}.doc .ck{display:flex;gap:8px;align-items:flex-start;margin:0 0 4px}.doc table{margin:10px 0;border:1px solid #e3e9e6}`;
+.doc{max-width:760px}.doc h2{font-size:22px;margin:22px 0 6px}.doc h3{font-size:17px;margin:18px 0 4px}.doc p{margin:0 0 10px;font-size:16px;line-height:1.65;color:#14221c}.doc .li{margin:0 0 4px 8px}.doc blockquote{margin:10px 0;padding:6px 14px;border-left:3px solid #1b6b4a;color:#3d4c45}.doc hr{border:0;border-top:1px solid #e3e9e6;margin:18px 0}.doc img{max-width:100%;border-radius:10px;margin:8px 0}.doc .ck{display:flex;gap:8px;align-items:flex-start;margin:0 0 4px}.doc table{margin:10px 0;border:1px solid #e3e9e6}
+.page h1{font-size:28px;margin:18px 0 8px}.page h2{font-size:22px;margin:22px 0 6px}.page h3{font-size:17px;margin:18px 0 4px}.page ul,.page ol{margin:0 0 10px;padding-left:26px}.page li p{margin:0 0 4px}.page ul[data-type="taskList"]{list-style:none;padding-left:4px}.page li[data-type="taskItem"]{display:flex;gap:8px;align-items:flex-start}.page li[data-type="taskItem"] input{margin-top:5px;accent-color:#1b6b4a;pointer-events:none}.page li[data-type="taskItem"][data-checked="true"] div{text-decoration:line-through;color:#5b6b64}.page table{border-collapse:collapse;width:100%}.page td,.page th{border:1px solid #e3e9e6;padding:6px 10px;text-align:left;vertical-align:top}.page th{background:#f3f6f4}.page td p,.page th p{margin:0}.page pre{background:#f3f6f4;border-radius:8px;padding:10px 12px;overflow-x:auto;font-size:14px}.page code{font-family:ui-monospace,Menlo,monospace;font-size:14px}.page .gp-mention{background:#e6f1ec;color:#1b6b4a;border-radius:6px;padding:1px 6px;font-weight:700}.page a{color:#1d4fb8}`;
 
 function shell(title: string, body: string, wide = false) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)}</title>
@@ -126,7 +127,9 @@ ${f.questions.map(field).join("\n")}
       })
       .join("");
     const pages = db.work.docs.where(d.organizationId, "parentId", d.id).sort((a, b) => a.sort - b.sort || a.id - b.id);
-    res.send(shell(d.title, `<div class="card doc"><div><h1>${esc(d.title)}</h1><p class="muted">${esc(org?.name ?? "")} · View only</p></div><div>${body}</div>${pages.length ? `<p class="muted">Pages in this doc: ${pages.map((p) => esc(p.title)).join(", ")}</p>` : ""}</div>`, true));
+    // Docs written on the page editor show their page; older ones show their blocks.
+    const page = d.html ? `<div class="page">${pageOf(d.organizationId, d)}</div>` : `<div>${body}</div>`;
+    res.send(shell(d.title, `<div class="card doc"><div><h1>${esc(d.title)}</h1><p class="muted">${esc(org?.name ?? "")} · View only</p></div>${page}${pages.length ? `<p class="muted">Pages in this doc: ${pages.map((p) => esc(p.title)).join(", ")}</p>` : ""}</div>`, true));
   });
 
   app.get("/share/:token", async (req, res) => {

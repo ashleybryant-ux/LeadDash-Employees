@@ -3022,6 +3022,8 @@ export const pjDocs = sqliteTable(
     title: text("title").notNull(),
     tags: text("tags").notNull().default("[]"),
     blocks: text("blocks").notNull().default("[]"),
+    /** The page as written in the editor (sanitized HTML); blocks are derived from it for search, the AI team and the public page. */
+    html: text("html").notNull().default(""),
     taskIds: text("taskIds").notNull().default("[]"),
     editedBy: text("editedBy").notNull().default(""),
     sort: integer("sort").notNull().default(0),
