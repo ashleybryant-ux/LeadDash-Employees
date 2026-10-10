@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+afterEach(() => vi.restoreAllMocks());
 import { caller, makeUser, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
 import JSZip from "jszip";
@@ -123,6 +125,53 @@ describe("Customize view, the Dashboards hub and the sidebar", () => {
     // Again: nothing doubles up.
     await me.pj.addFolderToPortfolio({ organizationId: orgId, portfolioId: p.id, folderId: folder.id });
     expect((await me.pj.portfolio({ organizationId: orgId, id: p.id })).rows).toHaveLength(2);
+  });
+
+  it("works out the library cards: charts over any split, tables, embeds, notes, and an AI card Nora writes and keeps", async () => {
+    const { orgId, me, list, folder } = await setup("pj-cards");
+    const a = await me.pj.create({ organizationId: orgId, listId: list.id, name: "Write the slides", dueDate: "2020-01-01" });
+    await me.pj.update({ organizationId: orgId, id: a.id, patch: { priority: "high", tags: ["milestone"] } });
+    const b = await me.pj.create({ organizationId: orgId, listId: list.id, name: "Book the room" });
+    await me.pj.update({ organizationId: orgId, id: b.id, patch: { status: "in progress", priority: "urgent" } });
+    await me.pj.addTime({ organizationId: orgId, taskId: a.id, day: new Date().toISOString().slice(0, 10), minutes: 90, note: "", billable: true });
+    const d = await me.pj.saveDashboard({ organizationId: orgId, name: "Cards", cards: [
+      { id: "pie", type: "chart", title: "By priority", scope: { kind: "list", id: list.id }, options: { chart: "pie", by: "priority", which: "open" } },
+      { id: "num", type: "chart", title: "Urgent", scope: { kind: "folder", id: folder.id }, options: { chart: "number", which: "urgent" } },
+      { id: "time", type: "chart", title: "Time by assignee", scope: { kind: "everything" }, options: { chart: "bar", measure: "time", by: "status", period: "week" } },
+      { id: "line", type: "chart", title: "Over time", scope: { kind: "everything" }, options: { chart: "line", by: "status", period: "month" } },
+      { id: "t1", type: "table", title: "Overdue", scope: { kind: "everything" }, options: { table: "overdue" } },
+      { id: "t2", type: "table", title: "Milestones", scope: { kind: "everything" }, options: { table: "milestones" } },
+      { id: "t3", type: "table", title: "Portfolio", scope: { kind: "everything" }, options: { table: "portfolio" } },
+      { id: "t4", type: "table", title: "Timesheet", scope: { kind: "everything" }, options: { table: "timesheet" } },
+      { id: "yt", type: "embed", title: "Video", scope: { kind: "everything" }, options: { embed: "youtube", url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" } },
+      { id: "cal", type: "embed", title: "Week", scope: { kind: "everything" }, options: { embed: "calendar" } },
+      { id: "n", type: "notes", title: "Notes", scope: { kind: "everything" }, options: { text: "Call the venue Monday." } },
+      { id: "ai", type: "ai", title: "Summary", scope: { kind: "list", id: list.id }, options: { ai: "summary" } },
+    ] });
+    const llm = await import("./_core/llm");
+    const gen = vi.spyOn(llm, "generateText").mockResolvedValue("One task is overdue: Write the slides. Book the room is in progress.");
+    const out = await me.pj.dashboardData({ organizationId: orgId, id: d.id });
+    const card = (id: string) => out.cards.find((c) => c.id === id) as Record<string, unknown>;
+    expect((card("pie").series as { label: string; value: number }[]).map((s) => [s.label, s.value])).toEqual([["Urgent", 1], ["High", 1]]);
+    expect(card("num")).toMatchObject({ total: 1, unit: "tasks" });
+    expect((card("time").series as { label: string; value: number }[])).toEqual([{ label: "to do", value: 90, color: expect.any(String) }]);
+    expect((card("line").weeks as string[]).length).toBe(5);
+    expect((card("t1").rows as { cells: string[] }[]).map((r) => r.cells[0])).toEqual(["Write the slides"]);
+    expect((card("t2").rows as { cells: string[] }[]).map((r) => r.cells[0])).toEqual(["Write the slides"]);
+    expect((card("t3").rows as { cells: string[] }[]).find((r) => r.cells[0] === list.name)?.cells.slice(2)).toEqual(["No status", "0 of 2", "0%"]);
+    expect((card("t4").columns as string[]).length).toBe(9);
+    expect(card("yt").frame).toBe("https://www.youtube.com/embed/dQw4w9WgXcQ");
+    expect((card("cal").days as string[]).length).toBe(7);
+    expect(card("n").text).toBe("Call the venue Monday.");
+    expect(card("ai")).toMatchObject({ kind: "summary", text: "One task is overdue: Write the slides. Book the room is in progress.", stale: false });
+    expect(gen).toHaveBeenCalledTimes(1);
+    expect(gen.mock.calls[0][0].prompt).toContain("Write the slides");
+    // Opening it again reads the kept words; Refresh writes them again.
+    await me.pj.dashboardData({ organizationId: orgId, id: d.id });
+    expect(gen).toHaveBeenCalledTimes(1);
+    gen.mockResolvedValue("Fresh words.");
+    expect(await me.pj.refreshCard({ organizationId: orgId, id: d.id, cardId: "ai" })).toMatchObject({ text: "Fresh words." });
+    expect(gen).toHaveBeenCalledTimes(2);
   });
 
   it("lets each person pick the sidebar items that show; the rest sit under More", async () => {

@@ -6,21 +6,22 @@ import { owners, todayYmd, zoneOf, addDays, sundayOf } from "./goals";
 import { fieldsOf, parse, statusesOf, type Assignee } from "./projects";
 import { visibleLists, type Viewer } from "./pjAccess";
 import { workload } from "./pjTime";
+import { ai as aiCard, chart as chartCard, contextFor, embed as embedCard, pickWhich, table as tableCard, type CardOptions } from "./pjCards";
 
 /**
  * Projects dashboards: cards over any list, folder, everything, or just me.
  * Each card's numbers are worked out here from the tasks and tracked time.
  */
 
-export const CARD_TYPES = ["count", "status", "person", "overdue", "time", "workload", "trend", "burndown", "tasks", "goal", "doc", "fieldsum"] as const;
+export const CARD_TYPES = ["count", "status", "person", "overdue", "time", "workload", "trend", "burndown", "tasks", "goal", "doc", "fieldsum", "chart", "ai", "notes", "embed", "table"] as const;
 export type Card = {
   id: string;
   type: (typeof CARD_TYPES)[number];
   title: string;
   /** everything, a folder, a list, or my tasks. */
   scope: { kind: "everything" | "folder" | "list" | "me"; id?: number };
-  /** count: open, overdue, done this week or all; fieldsum: the field id; goal: goal id; doc: doc id. */
-  options?: { which?: "open" | "overdue" | "done" | "all"; field?: string; goalId?: number; docId?: number };
+  /** count: which tasks; fieldsum: the field id; goal: goal id; doc: doc id; the library cards keep their own choices here too (pjCards). */
+  options?: CardOptions;
   size?: 1 | 2 | 3;
 };
 
@@ -207,7 +208,7 @@ export function templateCards(t: Template, loc: Loc | null): Card[] {
   ];
 }
 
-export async function data(orgId: number, v: Viewer, id: number, me: Assignee) {
+export async function data(orgId: number, v: Viewer, id: number, me: Assignee, refreshId?: string) {
   const d = db.work.dashboards.get(orgId, id);
   if (!d || !canSee(v, d)) throw new TRPCError({ code: "NOT_FOUND", message: "That dashboard isn't here anymore." });
   markSeen(orgId, v, id);
@@ -229,13 +230,20 @@ export async function data(orgId: number, v: Viewer, id: number, me: Assignee) {
   };
   const scopeName = (c: Card) => (c.scope.kind === "list" ? lists.find((l) => l.id === c.scope.id)?.name ?? "A list" : c.scope.kind === "folder" ? folders.find((f) => f.id === c.scope.id)?.name ?? "A folder" : c.scope.kind === "me" ? "Me" : "Everything");
   const overdue = (t: PjTask) => !t.closedAt && !!t.dueDate && t.dueDate < today;
+  const ctxBase = await contextFor(orgId, v, d.id, lists.map((l) => ({ id: l.id, name: l.name, folderId: l.folderId, statuses: l.statuses })), all);
   const cards = await Promise.all(
     parse<Card[]>(d.cards, []).map(async (c) => {
       const ts = scoped(c).filter((t) => !t.parentId);
       const base = { ...c, scopeName: scopeName(c) };
+      const ctx = { ...ctxBase, tasks: ts, scopeName: scopeName(c) };
+      if (c.type === "chart") return { ...base, ...chartCard(ctx, c) };
+      if (c.type === "table") return { ...base, ...(await tableCard(ctx, c)) };
+      if (c.type === "embed") return { ...base, ...embedCard(ctx, c) };
+      if (c.type === "ai") return { ...base, ...(await aiCard(ctx, c, refreshId === c.id)) };
+      if (c.type === "notes") return { ...base, text: c.options?.text ?? "" };
       if (c.type === "count") {
         const which = c.options?.which ?? "open";
-        const pick = which === "open" ? ts.filter((t) => !t.closedAt) : which === "overdue" ? ts.filter(overdue) : which === "done" ? ts.filter((t) => { const x = dayOf(t.closedAt); return !!x && x >= week && x <= weekEnd; }) : ts;
+        const pick = pickWhich(ctx, ts, which);
         const sub = which === "open" ? `${ts.filter(overdue).length} overdue` : which === "done" ? `${pick.filter((t) => parse<Assignee[]>(t.assignees, []).some((a) => a.type === "employee")).length} by employees, ${pick.filter((t) => !parse<Assignee[]>(t.assignees, []).some((a) => a.type === "employee")).length} by people` : "";
         return { ...base, number: pick.length, sub };
       }
@@ -320,11 +328,18 @@ const fmt = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m %
 export async function cardChoices(orgId: number, v: Viewer) {
   const vis = visibleLists(orgId, v);
   const fields: { id: string; name: string; listName: string }[] = [];
-  for (const { list } of vis) for (const f of fieldsOf(orgId, list)) if (["number", "money", "formula", "rating"].includes(f.type) && !fields.some((x) => x.id === f.id)) fields.push({ id: f.id, name: f.name, listName: list.name });
+  const groupFields: { id: string; name: string; listName: string }[] = [];
+  for (const { list } of vis) for (const f of fieldsOf(orgId, list)) {
+    if (["number", "money", "formula", "rating"].includes(f.type) && !fields.some((x) => x.id === f.id)) fields.push({ id: f.id, name: f.name, listName: list.name });
+    if (["dropdown", "labels", "checkbox", "people", "rating"].includes(f.type) && !groupFields.some((x) => x.id === f.id)) groupFields.push({ id: f.id, name: f.name, listName: list.name });
+  }
   return {
     lists: vis.map((x) => ({ id: x.list.id, name: x.list.name })),
     folders: db.work.folders.all(orgId).map((f) => ({ id: f.id, name: f.name })),
     fields,
+    groupFields,
+    boards: db.work.boards.all(orgId).map((b) => ({ id: b.id, title: b.title })),
+    forms: db.work.forms.all(orgId).map((f) => ({ id: f.id, title: f.title })),
     goals: db.work.goals.all(orgId).filter((g) => g.state === "active").map((g) => ({ id: g.id, title: g.title })),
     docs: db.work.docs.all(orgId).map((d) => ({ id: d.id, title: d.title })),
   };

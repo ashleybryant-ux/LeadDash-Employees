@@ -281,10 +281,30 @@ const itemZ = z.object({ id: z.string().max(40), kind: z.string().max(10), x: z.
 const questionZ = z.object({ id: z.string().max(40), label: z.string().max(200), type: z.enum(["text", "longtext", "email", "phone", "number", "dropdown", "labels", "date", "files"]), required: z.boolean(), options: z.array(z.string().max(80)).max(40).optional(), mapTo: z.string().max(80) });
 const cardZ = z.object({
   id: z.string().max(40),
-  type: z.enum(["count", "status", "person", "overdue", "time", "workload", "trend", "burndown", "tasks", "goal", "doc", "fieldsum"]),
+  type: z.enum(["count", "status", "person", "overdue", "time", "workload", "trend", "burndown", "tasks", "goal", "doc", "fieldsum", "chart", "ai", "notes", "embed", "table"]),
   title: z.string().max(80),
   scope: z.object({ kind: z.enum(["everything", "folder", "list", "me"]), id: z.number().int().optional() }),
-  options: z.object({ which: z.enum(["open", "overdue", "done", "all"]).optional(), field: z.string().max(60).optional(), goalId: z.number().int().optional(), docId: z.number().int().optional() }).optional(),
+  options: z
+    .object({
+      which: z.enum(["open", "overdue", "done", "all", "active", "closed", "unassigned", "assigned", "urgent", "high", "normal", "low", "none"]).optional(),
+      field: z.string().max(60).optional(),
+      goalId: z.number().int().optional(),
+      docId: z.number().int().optional(),
+      chart: z.enum(["line", "bar", "pie", "donut", "battery", "number"]).optional(),
+      measure: z.enum(["count", "time", "estimate", "sum", "avg"]).optional(),
+      by: z.string().max(60).optional(),
+      period: z.enum(["week", "month", "quarter", "all"]).optional(),
+      ai: z.enum(["team", "standup", "project", "summary", "brain"]).optional(),
+      prompt: z.string().max(1000).optional(),
+      text: z.string().max(8000).optional(),
+      url: z.string().max(1000).optional(),
+      embed: z.enum(["url", "doc", "board", "form", "gdoc", "gsheet", "gslides", "youtube", "calendar"]).optional(),
+      boardId: z.number().int().optional(),
+      formId: z.number().int().optional(),
+      table: z.enum(["tasks", "overdue", "soon", "milestones", "completed", "workedon", "behind", "activity", "newcontent", "portfolio", "timereport", "timesheet", "billable", "estimates", "priority", "instatus"]).optional(),
+      limit: z.number().int().min(3).max(50).optional(),
+    })
+    .optional(),
   size: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 });
 const mediaMeta = z.object({ name: z.string().max(200).optional(), w: z.number().optional(), h: z.number().optional(), seconds: z.number().optional(), size: z.number().optional() });
@@ -2603,10 +2623,17 @@ export const appRouter = router({
       const v = await pjViewer(ctx, input.organizationId);
       return (await import("./work/pjDash")).starDashboard(input.organizationId, v, input.id, input.on);
     }),
-    dashboardData: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+    dashboardData: protectedProcedure.input(orgInput.extend({ id: z.number().int(), refresh: z.string().max(40).optional() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       const v = await pjViewer(ctx, input.organizationId);
-      return (await import("./work/pjDash")).data(input.organizationId, v, input.id, { type: "user", id: ctx.user.id, name: personName(ctx.user) });
+      return (await import("./work/pjDash")).data(input.organizationId, v, input.id, { type: "user", id: ctx.user.id, name: personName(ctx.user) }, input.refresh);
+    }),
+    /** Nora writes an AI card again now. */
+    refreshCard: protectedProcedure.input(orgInput.extend({ id: z.number().int(), cardId: z.string().max(40) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const v = await pjViewer(ctx, input.organizationId);
+      const out = await (await import("./work/pjDash")).data(input.organizationId, v, input.id, { type: "user", id: ctx.user.id, name: personName(ctx.user) }, input.cardId);
+      return out.cards.find((c) => c.id === input.cardId) ?? null;
     }),
     cardChoices: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

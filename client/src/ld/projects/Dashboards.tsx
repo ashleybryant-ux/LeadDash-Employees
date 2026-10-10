@@ -2,9 +2,14 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { ErrorLine } from "../ui";
 import { fmtYmd, Menu, OwnerAvatar } from "../goals/shared";
+import { useLocation } from "wouter";
+
+const TABLE_TEXT: [string, string][] = [["tasks", "Task list"], ["overdue", "Overdue tasks"], ["soon", "Tasks due soon"], ["priority", "Urgent and high tasks"], ["milestones", "Milestones"], ["instatus", "Time in status"], ["completed", "Completed, by person"], ["workedon", "Worked on, by person"], ["behind", "Who is behind"], ["activity", "Activity"], ["newcontent", "New content"], ["portfolio", "Portfolio"], ["timereport", "Time reporting"], ["timesheet", "Timesheet"], ["billable", "Billable report"], ["estimates", "Time estimated"]];
+const WHICH_TEXT: Record<string, string> = { open: "Open", overdue: "Overdue", done: "Done this week", all: "All", active: "In progress", closed: "Closed", unassigned: "Unassigned", assigned: "Assigned, open", urgent: "Urgent", high: "High", normal: "Normal", low: "Low", none: "No priority" };
 import type { Outputs } from "../types";
 import type { Where } from "../pages/Projects";
 import { fmtMin } from "./TaskModal";
+import { BarChart, Battery, CardLibrary, LineChart, PieChart, type Template } from "./CardLibrary";
 
 /**
  * Projects dashboards, the way ClickUp's hub works: All, Mine, Shared with me
@@ -29,6 +34,11 @@ const TYPES: { type: Card["type"]; label: string; title: string }[] = [
   { type: "goal", label: "Goal progress", title: "Goal progress" },
   { type: "doc", label: "A doc", title: "A doc" },
   { type: "fieldsum", label: "Custom field total (money, number)", title: "Total" },
+  { type: "chart", label: "Chart", title: "Chart" },
+  { type: "ai", label: "AI card", title: "AI card" },
+  { type: "notes", label: "Notes", title: "Notes" },
+  { type: "embed", label: "Embed", title: "Embed" },
+  { type: "table", label: "Table", title: "Table" },
 ];
 
 type Hub = Outputs["pj"]["dashboards"];
@@ -285,8 +295,14 @@ function DashView({ orgId, id, onPick, onOpenTask }: { orgId: number; id: number
   const dash = hub.data?.dashboards.find((d) => d.id === id);
   const data = trpc.pj.dashboardData.useQuery({ organizationId: orgId, id }, { refetchInterval: 60_000 });
   const [editCard, setEditCard] = React.useState<Card | null>(null);
+  const [library, setLibrary] = React.useState(false);
   const [naming, setNaming] = React.useState<string | null>(null);
   const [sharing, setSharing] = React.useState(false);
+  const refreshCard = trpc.pj.refreshCard.useMutation({ onSuccess: () => data.refetch() });
+  const fromLibrary = (t: Template) => {
+    setLibrary(false);
+    setEditCard({ id: `c${Date.now().toString(36)}`, scope: { kind: "everything" }, ...t.card, options: t.card.options ? { ...t.card.options } : undefined } as Card);
+  };
   const cards = dash?.cards ?? [];
   const canEdit = dash?.canEdit ?? data.data?.canEdit ?? false;
   const setCards = (next: Card[]) => dash && save.mutate({ organizationId: orgId, id: dash.id, name: dash.name, cards: next.map((c) => ({ ...c, scope: { kind: c.scope.kind, ...(c.scope.id ? { id: c.scope.id } : {}) } })) });
@@ -336,20 +352,7 @@ function DashView({ orgId, id, onPick, onOpenTask }: { orgId: number; id: number
           <span className="ld-small ld-muted">This week · {data.data ? fmtYmd(data.data.today) : ""}</span>
         </span>
         <span className="gp-tool-r">
-          {dash && canEdit && (
-            <Menu label="Add a card" button="+ Add card">
-              {(close) => (
-                <>
-                  <span className="gp-menu-h">Add a card</span>
-                  {TYPES.map((t) => (
-                    <button key={t.type} type="button" role="menuitem" onClick={() => { setEditCard({ id: `c${Date.now().toString(36)}`, type: t.type, title: t.title, scope: { kind: "everything" }, size: t.type === "trend" || t.type === "burndown" ? 2 : 1, options: t.type === "count" ? { which: "open" } : undefined }); close(); }}>
-                      {t.label}
-                    </button>
-                  ))}
-                </>
-              )}
-            </Menu>
-          )}
+          {dash && canEdit && <button type="button" className="ld-btn p" onClick={() => setLibrary(true)}>+ Add card</button>}
         </span>
       </div>
       <div className="gp-canvas" style={{ display: "block" }}>
@@ -376,11 +379,12 @@ function DashView({ orgId, id, onPick, onOpenTask }: { orgId: number; id: number
                   )}
                 </span>
               </h5>
-              <CardBody c={c} onOpenTask={onOpenTask} onPick={onPick} />
+              <CardBody c={c} onOpenTask={onOpenTask} onPick={onPick} onRefresh={() => refreshCard.mutate({ organizationId: orgId, id, cardId: c.id })} refreshing={refreshCard.isPending && refreshCard.variables?.cardId === c.id} />
             </div>
           ))}
         </div>
       </div>
+      {library && <CardLibrary onPick={fromLibrary} onClose={() => setLibrary(false)} />}
       {editCard && dash && (
         <CardEditor
           orgId={orgId}
@@ -433,8 +437,95 @@ function Line({ series, labels }: { series: { values: number[]; color: string; d
   );
 }
 
-function CardBody({ c, onOpenTask, onPick }: { c: CardData; onOpenTask: (id: number) => void; onPick: (w: Where) => void }) {
+function CardBody({ c, onOpenTask, onPick, onRefresh, refreshing }: { c: CardData; onOpenTask: (id: number) => void; onPick: (w: Where) => void; onRefresh?: () => void; refreshing?: boolean }) {
   const x = c as CardData & Record<string, unknown>;
+  const [, go] = useLocation();
+  if (c.type === "chart") {
+    const kind = c.options?.chart ?? "bar";
+    const unit = String(x.unit ?? "");
+    if (kind === "line") return <LineChart weeks={(x.weeks as string[]) ?? []} lines={(x.lines as { label: string; color: string; values: number[] }[]) ?? []} />;
+    const series = (x.series as { label: string; value: number; color: string }[]) ?? [];
+    if (kind === "number")
+      return (
+        <>
+          <span className="num">{unit === "minutes" ? fmtMin(Number(x.total)) : Number(x.total).toLocaleString("en-US")}</span>
+          <span className="ld-small ld-muted">{unit === "minutes" ? "Tracked" : unit === "tasks" ? `${WHICH_TEXT[c.options?.which ?? "open"]} tasks` : String(x.sub ?? "")}</span>
+        </>
+      );
+    if (kind === "pie" || kind === "donut") return <PieChart series={series} donut={kind === "donut"} unit={unit} />;
+    if (kind === "battery") return <Battery series={series} />;
+    return <BarChart series={series} />;
+  }
+  if (c.type === "table") {
+    const cols = (x.columns as string[]) ?? [];
+    const rows = (x.rows as { taskId?: number; link?: string; cells: string[] }[]) ?? [];
+    return rows.length ? (
+      <div className="gp-dtable">
+        <table>
+          <thead><tr>{cols.map((h) => <th key={h}>{h}</th>)}</tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className={r.taskId || r.link ? "link" : ""} onClick={() => (r.taskId ? onOpenTask(r.taskId) : r.link ? go(r.link) : undefined)}>
+                {r.cells.map((v, j) => <td key={j} className={j === 0 ? "nm" : ""}>{v}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <span className="ld-small ld-muted">Nothing here yet.</span>
+    );
+  }
+  if (c.type === "ai")
+    return (
+      <>
+        <div className="gp-aitext">{String(x.text ?? "")}</div>
+        <span className="ld-row ld-small ld-muted" style={{ justifyContent: "space-between" }}>
+          <span>Nora{x.at ? `, ${new Date(String(x.at)).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}{x.stale ? " (older)" : ""}</span>
+          {onRefresh && <button type="button" className="gp-link" disabled={refreshing} onClick={onRefresh}>{refreshing ? "Writing" : "Refresh"}</button>}
+        </span>
+      </>
+    );
+  if (c.type === "notes") return <div className="gp-notes">{String(x.text ?? "") || <span className="ld-small ld-muted">Nothing written yet. Edit the card to add notes.</span>}</div>;
+  if (c.type === "embed") {
+    const kind = String(x.kind ?? "url");
+    if (kind === "calendar") {
+      const days = (x.days as string[]) ?? [];
+      const byDay = (x.byDay as { id: number; name: string }[][]) ?? [];
+      return (
+        <div className="gp-dcal">
+          {days.map((d, i) => (
+            <div key={d} className="gp-dcal-day">
+              <b>{new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", day: "numeric", timeZone: "UTC" })}</b>
+              {byDay[i]?.map((t) => (
+                <button key={t.id} type="button" className="gp-dcal-t" onClick={() => onOpenTask(t.id)}>{t.name}</button>
+              ))}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    if (kind === "doc") {
+      const doc = x.doc as { id: number; title: string; lines: string[] } | null;
+      return doc ? (
+        <>
+          <button type="button" className="gp-link" style={{ alignSelf: "flex-start", fontWeight: 800 }} onClick={() => onPick({ scope: "doc", id: doc.id })}>{doc.title}</button>
+          {doc.lines.map((l, i) => <span key={i} className="ld-small">{l.replace(/\*+/g, "")}</span>)}
+        </>
+      ) : <span className="ld-small ld-muted">Pick a doc in Edit.</span>;
+    }
+    if (kind === "board" || kind === "form") {
+      const item = x.item as { id: number; title: string; link: string; note?: string } | null;
+      return item ? (
+        <>
+          <button type="button" className="gp-link" style={{ alignSelf: "flex-start", fontWeight: 800 }} onClick={() => go(item.link)}>{item.title}</button>
+          {item.note && <span className="ld-small ld-muted">{item.note}</span>}
+        </>
+      ) : <span className="ld-small ld-muted">Pick one in Edit.</span>;
+    }
+    const frame = String(x.frame ?? "");
+    return frame ? <iframe className="gp-frame" src={frame} title={c.title} loading="lazy" allow="fullscreen" referrerPolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" /> : <span className="ld-small ld-muted">{x.url ? "That link can't be shown here. Check it in Edit." : "Add a link in Edit."}</span>;
+  }
   if (c.type === "count" || c.type === "fieldsum")
     return (
       <>
@@ -512,7 +603,8 @@ function CardEditor({ orgId, card, onClose, onSave }: { orgId: number; card: Car
   const [c, setC] = React.useState<Card>(card);
   const put = (p: Partial<Card>) => setC({ ...c, ...p });
   const opt = (p: NonNullable<Card["options"]>) => setC({ ...c, options: { ...(c.options ?? {}), ...p } });
-  const needsScope = !["goal", "doc"].includes(c.type);
+  const needsScope = !["goal", "doc", "notes"].includes(c.type) && !(c.type === "embed" && c.options?.embed !== "calendar") && !(c.type === "table" && ["newcontent"].includes(c.options?.table ?? ""));
+  const chartKind = c.options?.chart ?? "bar";
   return (
     <div className="gp-modal" role="dialog" aria-modal="true" aria-label="Card">
       <div className="gp-mbox" style={{ width: 600 }}>
@@ -549,15 +641,166 @@ function CardEditor({ orgId, card, onClose, onSave }: { orgId: number; card: Car
               </select>
             </>
           )}
-          {c.type === "count" && (
+          {(c.type === "count" || (c.type === "chart" && c.options?.measure !== "time" && c.options?.measure !== "estimate")) && (
             <>
-              <label htmlFor="ce-which">Count</label>
+              <label htmlFor="ce-which">Which tasks</label>
               <select id="ce-which" className="ld-in xs" value={c.options?.which ?? "open"} onChange={(e) => opt({ which: e.target.value as "open" })}>
-                <option value="open">Open tasks</option>
-                <option value="overdue">Overdue tasks</option>
-                <option value="done">Done this week</option>
-                <option value="all">All tasks</option>
+                {Object.entries(WHICH_TEXT).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
               </select>
+            </>
+          )}
+          {c.type === "chart" && (
+            <>
+              <label htmlFor="ce-chart">Chart</label>
+              <select id="ce-chart" className="ld-in xs" value={chartKind} onChange={(e) => opt({ chart: e.target.value as "bar" })}>
+                <option value="number">Number</option>
+                <option value="bar">Bar chart</option>
+                <option value="pie">Pie chart</option>
+                <option value="donut">Donut</option>
+                <option value="battery">Battery</option>
+                <option value="line">Line, over time</option>
+              </select>
+              <label htmlFor="ce-measure">Measure</label>
+              <select id="ce-measure" className="ld-in xs" value={c.options?.measure ?? "count"} onChange={(e) => opt({ measure: e.target.value as "count" })}>
+                <option value="count">Count of tasks</option>
+                <option value="time">Time tracked (minutes)</option>
+                <option value="estimate">Time estimated (minutes)</option>
+                <option value="sum">Sum of a field</option>
+                <option value="avg">Average of a field</option>
+              </select>
+              {(c.options?.measure === "sum" || c.options?.measure === "avg") && (
+                <>
+                  <label htmlFor="ce-mfield">Field</label>
+                  <select id="ce-mfield" className="ld-in xs" value={c.options?.field ?? ""} onChange={(e) => opt({ field: e.target.value })}>
+                    <option value="">Pick a field</option>
+                    {ch.data?.fields.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name} ({f.listName})</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {chartKind !== "number" && (
+                <>
+                  <label htmlFor="ce-by">Split by</label>
+                  <select id="ce-by" className="ld-in xs" value={c.options?.by ?? "status"} onChange={(e) => opt({ by: e.target.value })}>
+                    <option value="status">Status</option>
+                    <option value="assignee">Assignee</option>
+                    <option value="priority">Priority</option>
+                    <option value="tag">Tag</option>
+                    <option value="list">List</option>
+                    {ch.data?.groupFields.map((f) => (
+                      <option key={f.id} value={`f:${f.id}`}>{f.name} ({f.listName})</option>
+                    ))}
+                    <option value="none">Nothing, one total</option>
+                  </select>
+                </>
+              )}
+              <label htmlFor="ce-period">Time</label>
+              <select id="ce-period" className="ld-in xs" value={c.options?.period ?? (chartKind === "line" ? "quarter" : "all")} onChange={(e) => opt({ period: e.target.value as "all" })}>
+                <option value="week">This week</option>
+                <option value="month">Last 30 days</option>
+                <option value="quarter">Last 90 days</option>
+                <option value="all">All time</option>
+              </select>
+            </>
+          )}
+          {c.type === "ai" && (
+            <>
+              <label htmlFor="ce-ai">Nora writes</label>
+              <select id="ce-ai" className="ld-in xs" value={c.options?.ai ?? "summary"} onChange={(e) => opt({ ai: e.target.value as "summary" })}>
+                <option value="team">A team update</option>
+                <option value="standup">A daily standup</option>
+                <option value="project">A project update</option>
+                <option value="summary">An executive summary</option>
+                <option value="brain">An answer to my prompt</option>
+              </select>
+              {c.options?.ai === "brain" && (
+                <>
+                  <label htmlFor="ce-prompt">Prompt</label>
+                  <textarea id="ce-prompt" className="ld-ta" rows={3} placeholder="What should Nora work out from these tasks?" value={c.options?.prompt ?? ""} onChange={(e) => opt({ prompt: e.target.value })} />
+                </>
+              )}
+              <span className="ld-small ld-muted" style={{ gridColumn: "1 / -1" }}>Nora writes it from the tasks in the place you pick, keeps it for six hours, and writes it again when you press Refresh.</span>
+            </>
+          )}
+          {c.type === "notes" && (
+            <>
+              <label htmlFor="ce-text">Notes</label>
+              <textarea id="ce-text" className="ld-ta" rows={8} placeholder="Anything the team should see on this dashboard." value={c.options?.text ?? ""} onChange={(e) => opt({ text: e.target.value })} />
+            </>
+          )}
+          {c.type === "table" && (
+            <>
+              <label htmlFor="ce-table">Table</label>
+              <select id="ce-table" className="ld-in xs" value={c.options?.table ?? "tasks"} onChange={(e) => opt({ table: e.target.value as "tasks" })}>
+                {TABLE_TEXT.map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+              <label htmlFor="ce-limit">Rows</label>
+              <select id="ce-limit" className="ld-in xs" value={c.options?.limit ?? 10} onChange={(e) => opt({ limit: Number(e.target.value) })}>
+                {[5, 10, 20, 50].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </>
+          )}
+          {c.type === "embed" && (
+            <>
+              <label htmlFor="ce-embed">Show</label>
+              <select id="ce-embed" className="ld-in xs" value={c.options?.embed ?? "url"} onChange={(e) => opt({ embed: e.target.value as "url" })}>
+                <option value="url">Any page by link</option>
+                <option value="doc">A doc from this workspace</option>
+                <option value="board">A whiteboard</option>
+                <option value="form">A form</option>
+                <option value="gdoc">A Google Doc</option>
+                <option value="gsheet">A Google Sheet</option>
+                <option value="gslides">Google Slides</option>
+                <option value="youtube">A YouTube video</option>
+                <option value="calendar">This week's tasks on a calendar</option>
+              </select>
+              {["url", "gdoc", "gsheet", "gslides", "youtube"].includes(c.options?.embed ?? "url") && (
+                <>
+                  <label htmlFor="ce-url">Link</label>
+                  <input id="ce-url" className="ld-in xs" placeholder="https://" value={c.options?.url ?? ""} onChange={(e) => opt({ url: e.target.value })} />
+                </>
+              )}
+              {c.options?.embed === "doc" && (
+                <>
+                  <label htmlFor="ce-edoc">Doc</label>
+                  <select id="ce-edoc" className="ld-in xs" value={c.options?.docId ?? ""} onChange={(e) => opt({ docId: Number(e.target.value) })}>
+                    <option value="">Pick a doc</option>
+                    {ch.data?.docs.map((d) => (
+                      <option key={d.id} value={d.id}>{d.title}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {c.options?.embed === "board" && (
+                <>
+                  <label htmlFor="ce-board">Whiteboard</label>
+                  <select id="ce-board" className="ld-in xs" value={c.options?.boardId ?? ""} onChange={(e) => opt({ boardId: Number(e.target.value) })}>
+                    <option value="">Pick a whiteboard</option>
+                    {ch.data?.boards.map((d) => (
+                      <option key={d.id} value={d.id}>{d.title}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {c.options?.embed === "form" && (
+                <>
+                  <label htmlFor="ce-form">Form</label>
+                  <select id="ce-form" className="ld-in xs" value={c.options?.formId ?? ""} onChange={(e) => opt({ formId: Number(e.target.value) })}>
+                    <option value="">Pick a form</option>
+                    {ch.data?.forms.map((d) => (
+                      <option key={d.id} value={d.id}>{d.title}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {["url", "gdoc", "gsheet", "gslides"].includes(c.options?.embed ?? "url") && <span className="ld-small ld-muted" style={{ gridColumn: "1 / -1" }}>Some sites refuse to show inside another page. Google files need "Anyone with the link" sharing.</span>}
             </>
           )}
           {c.type === "fieldsum" && (
