@@ -143,7 +143,7 @@ function TeamPane({ channel }: { channel: string }) {
   ) : null;
 
   return (
-    <div className="tc-wrap">
+    <div className={`tc-wrap ${side ? "with-side" : ""}`}>
       <div className={`tc-pane ${side && mobile ? "ld-hide-sm" : ""}`}>
         <header className="ld-emphead tc-head2">
           <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "var(--ld-ink)", display: "flex" }}>

@@ -203,9 +203,26 @@ export function Message({ m, people, employees, names, who, inThread, onOpenThre
   const isAi = !!m.employeeId;
   const emp = isAi ? employees.find((e) => e.id === m.employeeId) : null;
   const quick = (e: string) => react.mutate({ organizationId: org, messageId: m.id, emoji: e });
+  // On a touchscreen there is no hover, so a tap on the message shows its actions (react, reply in thread, pin, save, more); a tap anywhere else hides them.
+  const [open, setOpen] = React.useState(false);
+  const row = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const h = (e: PointerEvent) => {
+      if (row.current && !row.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", h);
+    return () => document.removeEventListener("pointerdown", h);
+  }, [open]);
+  const tap = (e: React.MouseEvent<HTMLDivElement>) => {
+    const t = e.target as HTMLElement;
+    if (t.closest("button, a, input, textarea, select, .tc-acts, .tc-rep")) return;
+    if (window.getSelection()?.toString()) return;
+    setOpen((v) => !v);
+  };
 
   return (
-    <div className={`tc-m ${highlight ? "hl" : ""} ${m.pinned ? "pinned" : ""}`} id={`m${m.id}`}>
+    <div ref={row} className={`tc-m ${highlight ? "hl" : ""} ${m.pinned ? "pinned" : ""} ${open ? "open" : ""}`} id={`m${m.id}`} onClick={tap}>
       {!m.deleted && !editing && (
         <div className="tc-acts" role="toolbar" aria-label="Message actions">
           {EMOJIS.slice(0, 3).map((e) => (

@@ -1447,7 +1447,8 @@ html[data-theme="dark"] .gp-page mark { color: #14221c !important; }
 .tc-mention { background: var(--ld-accent-bg); color: var(--ld-accent-dark); font-weight: 700; border-radius: 5px; padding: 0 4px; text-decoration: none; }
 .tc-mention.ai { background: #efe9fb; color: #5b2a86; }
 .tc-acts { position: absolute; right: 12px; top: -14px; background: var(--ld-surface); border: 1px solid var(--ld-line3); border-radius: 9px; display: none; gap: 2px; padding: 3px; box-shadow: 0 4px 12px rgba(18, 33, 29, 0.1); z-index: 5; }
-.tc-m:hover .tc-acts, .tc-m:focus-within .tc-acts { display: flex; }
+.tc-m:hover .tc-acts, .tc-m:focus-within .tc-acts, .tc-m.open .tc-acts { display: flex; }
+.tc-m.open { background: var(--ld-hover); }
 .tc-acts > button, .tc-acts > span > button, .tc-acts .gp-dots { width: 28px; height: 28px; border-radius: 6px; border: 0; background: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; padding: 0; color: var(--ld-text2); letter-spacing: 0; font-weight: 800; }
 .tc-acts > button:hover, .tc-acts > span > button:hover, .tc-acts .gp-dots:hover, .tc-acts > button.on { background: var(--ld-accent-bg); }
 .tc-rx { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
@@ -1532,6 +1533,11 @@ html[data-theme="dark"] .gp-page mark { color: #14221c !important; }
 .tc-imp.h { font-size: 11px; font-weight: 800; color: var(--ld-muted); text-transform: uppercase; letter-spacing: 0.04em; border-top: 0; padding-bottom: 2px; }
 .tc-imp .ld-in.xs { width: auto; min-width: 0; flex: 1; }
 
+/* On an iPad or a narrow window there is no room for the chat and a thread side by side: the thread takes the chat's place until Close. */
+@media (max-width: 1200px) {
+  .tc-wrap.with-side .tc-pane { display: none; }
+  .tc-wrap.with-side .tc-side { width: 100%; border-left: 0; }
+}
 @media (max-width: 760px) {
   .ld-tsearch, .ld-tpills { padding-left: 12px; padding-right: 12px; }
   .tc-wrap { flex-direction: column; }
