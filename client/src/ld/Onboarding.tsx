@@ -9,6 +9,7 @@ import { LeadSetupCard, SellsCard, WorksOnOwnCard, LinkedInStepCard } from "./sa
 import { ProjectsCard, MeetingsCard, NotetakerCard } from "./lead/OnboardingCards";
 import { OnboardingTop } from "./onboarding/WorkPlan";
 import { DictateButton, appendText } from "./Dictate";
+import { EmployeeLookCard } from "./EmployeeLook";
 
 type Data = Outputs["onboarding"]["get"];
 type Assignment = Data["assignments"][number];
@@ -64,6 +65,7 @@ export default function Onboarding({ emp }: { emp: EmployeeRow }) {
       {emp.kind === "leads" && <LeadSetupCard emp={emp} rule={d.rules.find((r) => r.key === "reply")} />}
       <WorksOnOwnCard emp={emp} rules={emp.kind === "leads" ? d.rules.filter((r) => r.key !== "reply") : d.rules} alwaysAsks={d.alwaysAsks} firstN={d.firstN} />
       <DayCard emp={emp} items={d.dayToDay} done={d.interview.state.done} />
+      <EmployeeLookCard employeeId={emp.id} />
       <AssignmentsCard emp={emp} list={d.assignments} templates={d.templates} />
     </main>
   );

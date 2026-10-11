@@ -685,6 +685,23 @@ export const appRouter = router({
         return emp ? (await import("./ehrLink")).withPortrait(emp) : emp;
       }),
 
+    /** An employee's photo for this workspace, shown everywhere the employee appears. */
+    uploadPhoto: protectedProcedure.input(orgInput.extend({ id: z.number().int(), data: z.string().max(12_000_000) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const emp = await db.getEmployeeForOrg(input.id, input.organizationId);
+      if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+      const saved = await saveImage(input.organizationId, input.data, `employees/${emp.kind}-${Date.now().toString(36)}`);
+      const next = await db.updateEmployee(input.id, input.organizationId, { avatar: saved.url });
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Changed an employee's photo", details: emp.name });
+      return { avatar: next?.avatar ?? null };
+    }),
+    /** Back to the bundled portrait. */
+    removePhoto: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const next = await db.updateEmployee(input.id, input.organizationId, { avatar: null });
+      if (!next) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+      return { avatar: null };
+    }),
     toggleStatus: protectedProcedure
       .input(z.object({ id: z.number(), organizationId: z.number(), status: z.enum(["active", "idle", "working", "paused"]) }))
       .mutation(async ({ ctx, input }) => {
@@ -3805,7 +3822,7 @@ export const appRouter = router({
           const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
           // A healthcare practice's answers can carry client information: spoken only by a provider under a BAA.
           const healthcare = (await db.getOrganizationById(input.organizationId))?.orgType === "healthcare";
-          const id = emp ? await huddle.speak(emp.kind, spokenText(result.reply.content), "", { clientInfo: healthcare }) : null;
+          const id = emp ? await huddle.speak(emp.kind, spokenText(result.reply.content), "", { clientInfo: healthcare, orgId: input.organizationId }) : null;
           audioUrl = id ? `/api/voice/audio/${id}` : null;
           voiceError = id ? null : forViewer(ctx, huddle.lastSpeechError());
         }
@@ -4793,6 +4810,34 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId);
       return db.listActivity(input.organizationId, 200);
     }),
+  }),
+
+  /** Voices: whose voices the employees speak with, a Play for every option, and what each costs. */
+  voices: router({
+    options: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return huddle.voiceOptions(input.organizationId);
+    }),
+    setProvider: protectedProcedure.input(orgInput.extend({ setting: z.enum(["auto", "elevenlabs", "openai"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Changed the voice provider", details: input.setting });
+      return huddle.setProvider(input.organizationId, input.setting);
+    }),
+    setEmployee: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number().int(), choice: z.object({ provider: z.enum(["elevenlabs", "openai"]), voiceId: z.string().min(1).max(120), voiceName: z.string().max(120) }).nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "admin");
+        return huddle.setEmployeeVoice(input.organizationId, input.employeeId, input.choice);
+      }),
+    /** A sample line in a voice; the result plays from /api/voice/audio/:id. */
+    preview: protectedProcedure
+      .input(orgInput.extend({ provider: z.enum(["elevenlabs", "openai"]), voiceId: z.string().min(1).max(120), employeeId: z.number().int().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const emp = input.employeeId ? await db.getEmployeeForOrg(input.employeeId, input.organizationId) : null;
+        const id = await huddle.previewVoice(input.organizationId, input.provider, input.voiceId, { name: emp?.name ?? "Simone", roleTitle: emp?.roleTitle ?? "Chief Operating Officer" });
+        return { audioUrl: `/api/voice/audio/${id}` };
+      }),
   }),
 
   /** Set up your team, once: the business, who starts first, say hello. */

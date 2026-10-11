@@ -89,9 +89,12 @@ export async function botImage(orgId: number): Promise<string | null> {
   const { default: fs } = await import("node:fs");
   const { default: path } = await import("node:path");
   const { default: sharp } = await import("sharp");
+  // The workspace's own photo of Avery when one was uploaded, else the bundled portrait.
+  const { uploadsRoot } = await import("../storage");
+  const own = avery?.avatar?.startsWith("/files/") ? path.join(uploadsRoot(), avery.avatar.replace(/^\/files\//, "")) : null;
   const fileUrl = avery?.avatar?.startsWith("/avatars/") ? avery.avatar : "/avatars/inbox.webp";
-  for (const base of ["dist/public", "client/public"]) {
-    const file = path.resolve(process.cwd(), base, fileUrl.slice(1));
+  const candidates = [...(own ? [own] : []), ...["dist/public", "client/public"].map((base) => path.resolve(process.cwd(), base, fileUrl.slice(1)))];
+  for (const file of candidates) {
     if (!fs.existsSync(file)) continue;
     const hit = imageCache.get(file);
     if (hit) return hit;

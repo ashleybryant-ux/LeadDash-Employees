@@ -349,9 +349,11 @@ describe("the media list builder", () => {
 
     // The daily tick builds again only when five hours have passed and the goal is not met; once met, it stops.
     db.press.saveSettings(orgId, { lastBuildAt: new Date(Date.now() - 6 * 3_600_000) });
+    // A weekday afternoon (1:00 PM Central) that is not a Monday, so the weekly scout stays out of the way.
     const noon = new Date();
-    noon.setUTCHours(18, 0, 0, 0); // 1:00 PM Central
+    noon.setUTCHours(18, 0, 0, 0);
     if (noon.getTime() < Date.now()) noon.setTime(noon.getTime() + 86_400_000);
+    while (noon.getUTCDay() === 1 || noon.getUTCDay() === 0) noon.setTime(noon.getTime() + 86_400_000);
     await newsroom.newsroomTicks(noon);
     expect(newsroom.listProgress(orgId).count).toBe(4);
     // One pass (women founders) reached the goal, so the build stopped there and the cursor wrapped to the first beat.

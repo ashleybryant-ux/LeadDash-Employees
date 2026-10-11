@@ -6,6 +6,7 @@ import { ErrorLine, OrgLogo, Page } from "../ui";
 import { initials, parseJson } from "../meta";
 import { UsageCard } from "../work/Usage";
 import { WebsiteRead } from "../onboarding/WebsiteRead";
+import { EmployeesLook } from "../EmployeeLook";
 
 const TIMEZONES = [
   { value: "America/New_York", label: "Eastern" },
@@ -272,6 +273,8 @@ export default function Workspace() {
       </section>
 
       {o.orgType === "healthcare" && <ClientInformation />}
+
+      <EmployeesLook />
 
       <section className={`ld-card ${editing === "basic" ? "editing" : ""}`}>
         {header("basic", "Basic information")}

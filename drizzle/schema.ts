@@ -118,6 +118,8 @@ export const organizations = sqliteTable("organizations", {
   ehrLocationId: text("ehrLocationId"),
   /** When the owner finished (or skipped) the one-time team setup. */
   setupAt: integer("setupAt", { mode: "timestamp" }),
+  /** Whose voices the employees speak with: auto (ElevenLabs when the server has it, else OpenAI), elevenlabs or openai. */
+  voiceProvider: text("voiceProvider", { enum: ["auto", "elevenlabs", "openai"] }).notNull().default("auto"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -190,6 +192,10 @@ export const aiEmployees = sqliteTable(
     kind: text("kind", { enum: EMPLOYEE_KINDS }).notNull().default("custom"),
     name: text("name").notNull(),
     avatar: text("avatar"),
+    /** This workspace's own pick of voice for the employee (null: the provider's default for the role). */
+    voiceProvider: text("voiceProvider", { enum: ["elevenlabs", "openai"] }),
+    voiceId: text("voiceId"),
+    voiceName: text("voiceName"),
     roleTitle: text("roleTitle").notNull(),
     department: text("department").notNull(),
     status: text("status", { enum: ["active", "idle", "working", "paused"] }).notNull().default("active"),

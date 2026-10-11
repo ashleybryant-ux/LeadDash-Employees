@@ -48,6 +48,9 @@ export const VOICES: Record<string, string> = {
   developer: "echo",
   onboarding: "shimmer",
   platform: "sage",
+  ads: "marin",
+  billing: "cedar",
+  compliance: "shimmer",
   custom: "alloy",
 };
 
@@ -91,6 +94,138 @@ function keepAudio(buf: Buffer) {
 let speechError: string | null = null;
 export function lastSpeechError() {
   return speechError;
+}
+
+
+// ==========================================
+// Whose voice each employee speaks with
+// ==========================================
+
+export type VoiceProvider = "elevenlabs" | "openai";
+export type VoiceChoice = { provider: VoiceProvider; id: string | null; name: string };
+
+/** OpenAI's stock voices for gpt-4o-mini-tts, with a plain line on how each sounds. */
+export const OPENAI_VOICES: { id: string; name: string; note: string }[] = [
+  { id: "marin", name: "Marin", note: "Clear and natural, OpenAI's best quality" },
+  { id: "cedar", name: "Cedar", note: "Warm and natural, OpenAI's best quality" },
+  { id: "alloy", name: "Alloy", note: "Neutral and even" },
+  { id: "ash", name: "Ash", note: "Low and steady" },
+  { id: "ballad", name: "Ballad", note: "Soft and expressive" },
+  { id: "coral", name: "Coral", note: "Bright and friendly" },
+  { id: "echo", name: "Echo", note: "Deep and calm" },
+  { id: "fable", name: "Fable", note: "Light, storyteller tone" },
+  { id: "nova", name: "Nova", note: "Upbeat and clear" },
+  { id: "onyx", name: "Onyx", note: "Deep and confident" },
+  { id: "sage", name: "Sage", note: "Measured and composed" },
+  { id: "shimmer", name: "Shimmer", note: "Gentle and warm" },
+  { id: "verse", name: "Verse", note: "Smooth and even" },
+];
+
+/** What each option costs, as the vendors publish it; shown next to the choice so nobody is surprised by a bill. */
+export const VOICE_PRICES = {
+  openai: { perMinute: "about $0.015 per minute", detail: "gpt-4o-mini-tts: $0.60 per 1M characters in, $12 per 1M audio tokens out; OpenAI's own estimate is about $0.015 per minute. Billed on your OpenAI account.", url: "https://openai.com/api/pricing/" },
+  elevenlabs: {
+    perMinute: "about $0.08 to $0.20 per minute",
+    detail: "Monthly plans with credits: Starter $6 for 30,000, Creator $22 for 121,000, Pro $99 for 600,000, Scale $299 for 1.8M, Business $990 for 6M. A minute of speech is about 1,000 characters; the Flash model the app uses costs 0.5 credit per character, so about $0.08 to $0.10 per minute on a paid plan (the standard model is 1 credit per character, about $0.17 to $0.20). Billed on your ElevenLabs account.",
+    url: "https://elevenlabs.io/pricing",
+  },
+} as const;
+
+/** The provider this workspace speaks with when nothing else is chosen. */
+export async function providerFor(orgId: number): Promise<VoiceProvider> {
+  const org = await db.getOrganizationById(orgId);
+  const want = org?.voiceProvider ?? "auto";
+  if (want === "openai") return "openai";
+  if (want === "elevenlabs") return ENV.elevenLabsKey ? "elevenlabs" : "openai";
+  return ENV.elevenLabsKey ? "elevenlabs" : "openai";
+}
+
+/** The voice an employee speaks with in this workspace: its own pick, else the workspace provider's default for the role. */
+export async function voiceFor(orgId: number, kind: string): Promise<VoiceChoice> {
+  const emp = await db.getEmployeeByKind(orgId, kind as never).catch(() => null);
+  const provider = await providerFor(orgId);
+  if (emp?.voiceProvider && emp.voiceId && (emp.voiceProvider === "openai" || ENV.elevenLabsKey)) return { provider: emp.voiceProvider, id: emp.voiceId, name: emp.voiceName ?? emp.voiceId };
+  if (provider === "elevenlabs") {
+    const id = await elevenVoiceFor(kind).catch(() => null);
+    return { provider, id, name: id ? elevenNames.get(id) ?? db.rosterDefaults.get(kind)?.voiceName ?? "" : "" };
+  }
+  const id = VOICES[kind] ?? "alloy";
+  return { provider: "openai", id, name: OPENAI_VOICES.find((v) => v.id === id)?.name ?? id };
+}
+
+const elevenNames = new Map<string, string>();
+
+/** Everything the Voices screen needs: the provider, every option with a Play, each employee's pick, and prices. */
+export async function voiceOptions(orgId: number) {
+  const org = await db.getOrganizationById(orgId);
+  const provider = await providerFor(orgId);
+  let eleven: Awaited<ReturnType<typeof listVoices>> | null = null;
+  let elevenError: string | null = null;
+  if (ENV.elevenLabsKey) {
+    try {
+      eleven = await listVoices();
+      for (const v of eleven) elevenNames.set(v.id, v.name);
+    } catch (err) {
+      elevenError = err instanceof Error ? err.message : String(err);
+    }
+  }
+  const employees = [];
+  for (const e of await db.listEmployeesByOrg(orgId)) {
+    const v = await voiceFor(orgId, e.kind);
+    employees.push({ id: e.id, kind: e.kind, name: e.name, roleTitle: e.roleTitle, avatar: e.avatar, own: Boolean(e.voiceProvider && e.voiceId), provider: v.provider, voiceId: v.id, voiceName: v.name });
+  }
+  return {
+    setting: org?.voiceProvider ?? "auto",
+    provider,
+    hasElevenLabs: !!ENV.elevenLabsKey,
+    hasOpenAi: !!ENV.openAiKey,
+    openai: OPENAI_VOICES,
+    elevenlabs: eleven,
+    elevenError,
+    prices: VOICE_PRICES,
+    employees,
+  };
+}
+
+export async function setProvider(orgId: number, setting: "auto" | "elevenlabs" | "openai") {
+  await db.updateOrganization(orgId, { voiceProvider: setting });
+  return voiceOptions(orgId);
+}
+
+/** An employee's own voice in this workspace; null goes back to the provider's default for the role. */
+export async function setEmployeeVoice(orgId: number, employeeId: number, choice: { provider: VoiceProvider; voiceId: string; voiceName: string } | null) {
+  const emp = await db.getEmployeeForOrg(employeeId, orgId);
+  if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+  if (choice?.provider === "openai" && !OPENAI_VOICES.some((v) => v.id === choice.voiceId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick one of OpenAI's voices." });
+  await db.updateEmployee(employeeId, orgId, choice ? { voiceProvider: choice.provider, voiceId: choice.voiceId.slice(0, 120), voiceName: choice.voiceName.slice(0, 120) } : { voiceProvider: null, voiceId: null, voiceName: null });
+  return voiceOptions(orgId);
+}
+
+const previews = new Map<string, { id: string; at: number }>();
+const SAMPLE = (name: string, role: string) => `Hi, I'm ${name}, your ${role}. Here is where things stand today, and what I need from you.`;
+
+/** A sample line in a voice, as an audio id for /api/voice/audio. Kept for a while so Play twice costs once. */
+export async function previewVoice(orgId: number, provider: VoiceProvider, voiceId: string, who: { name: string; roleTitle: string }) {
+  const key = `${provider}:${voiceId}:${who.name}`;
+  const hit = previews.get(key);
+  if (hit && Date.now() - hit.at < AUDIO_TTL - 60_000 && audio.has(hit.id)) return hit.id;
+  const org = await db.getOrganizationById(orgId);
+  const text = speakable(SAMPLE(who.name, who.roleTitle), org?.name ?? "");
+  let id: string | null;
+  if (provider === "elevenlabs") {
+    if (!ENV.elevenLabsKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "ElevenLabs is not set up on the server." });
+    try {
+      id = keepAudio(await elevenSpeak({ voiceId }, text));
+    } catch (err) {
+      throw new TRPCError({ code: "BAD_GATEWAY", message: err instanceof Error ? err.message : String(err) });
+    }
+  } else {
+    if (!OPENAI_VOICES.some((v) => v.id === voiceId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick one of OpenAI's voices." });
+    id = await openAiSpeak({ voice: voiceId }, text);
+    if (!id) throw new TRPCError({ code: "BAD_GATEWAY", message: speechError ?? "OpenAI didn't make the voice." });
+  }
+  previews.set(key, { id, at: Date.now() });
+  return id;
 }
 
 // ==========================================
@@ -180,8 +315,8 @@ export async function elevenVoiceFor(kind: string) {
   return elevenCache.map[kind] ?? elevenCache.map.custom ?? null;
 }
 
-async function elevenSpeak(kind: string, text: string) {
-  const voice = await elevenVoiceFor(kind);
+async function elevenSpeak(voiceOrKind: { voiceId: string } | string, text: string) {
+  const voice = typeof voiceOrKind === "string" ? await elevenVoiceFor(voiceOrKind) : voiceOrKind.voiceId;
   if (!voice) throw new Error("Your ElevenLabs account has no voices to use. Add voices in ElevenLabs, My Voices.");
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
     method: "POST",
@@ -232,17 +367,19 @@ export function speakable(text: string, company = "") {
  * `clientInfo`: the words can carry client information (a healthcare practice's workspace), so they are spoken
  * only by a provider under a BAA. ElevenLabs is not, so those answers use OpenAI's voices or stay text.
  */
-export async function speak(kind: string, words: string, company = "", opts: { clientInfo?: boolean } = {}): Promise<string | null> {
+export async function speak(kind: string, words: string, company = "", opts: { clientInfo?: boolean; orgId?: number } = {}): Promise<string | null> {
   if (process.env.NODE_ENV === "test") return null;
   const text = speakable(words, company);
+  const v = opts.orgId ? await voiceFor(opts.orgId, kind) : { provider: ENV.elevenLabsKey ? ("elevenlabs" as const) : ("openai" as const), id: ENV.elevenLabsKey ? null : VOICES[kind] ?? "alloy", name: "" };
+  const openAiVoice = v.provider === "openai" && v.id ? { voice: v.id } : kind;
   if (opts.clientInfo && !carriesClientInfo("elevenlabs")) {
-    if (carriesClientInfo("openai")) return openAiSpeak(kind, text);
+    if (carriesClientInfo("openai")) return openAiSpeak(openAiVoice, text);
     speechError = "Voices are off in this workspace: no voice provider is under a BAA for client information.";
     return null;
   }
-  if (ENV.elevenLabsKey) {
+  if (v.provider === "elevenlabs" && ENV.elevenLabsKey) {
     try {
-      const id = keepAudio(await elevenSpeak(kind, text));
+      const id = keepAudio(await elevenSpeak(v.id ? { voiceId: v.id } : kind, text));
       speechError = null;
       return id;
     } catch (err) {
@@ -257,10 +394,11 @@ export async function speak(kind: string, words: string, company = "", opts: { c
       return id;
     }
   }
-  return openAiSpeak(kind, text);
+  return openAiSpeak(openAiVoice, text);
 }
 
-async function openAiSpeak(kind: string, text: string): Promise<string | null> {
+async function openAiSpeak(voiceOrKind: { voice: string } | string, text: string): Promise<string | null> {
+  const voice = typeof voiceOrKind === "string" ? VOICES[voiceOrKind] ?? "alloy" : voiceOrKind.voice;
   if (!ENV.openAiKey) {
     speechError = "Voices are not set up: OPENAI_API_KEY is missing on the server.";
     return null;
@@ -271,7 +409,7 @@ async function openAiSpeak(kind: string, text: string): Promise<string | null> {
       headers: { authorization: `Bearer ${ENV.openAiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
         model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
-        voice: VOICES[kind] ?? "alloy",
+        voice,
         input: text.slice(0, 1600),
         instructions: "Speak like a warm, confident colleague in a team meeting: natural pace, conversational, never robotic.",
         response_format: "mp3",
@@ -567,7 +705,7 @@ ${facts.join("\n\n")}`,
 
   // A healthcare practice's huddle can carry client information: spoken only by a provider under a BAA.
   const healthcare = brain.org?.orgType === "healthcare";
-  const clips = await Promise.all(picked.map((r) => speak(r.emp.kind, r.say, brain.org?.name ?? "", { clientInfo: healthcare })));
+  const clips = await Promise.all(picked.map((r) => speak(r.emp.kind, r.say, brain.org?.name ?? "", { clientInfo: healthcare, orgId: r.emp.organizationId })));
   const fresh = db.getHuddle(id, orgId)!;
   const all = linesOf(fresh);
   const replies: Reply[] = picked.map((r, i) => {
