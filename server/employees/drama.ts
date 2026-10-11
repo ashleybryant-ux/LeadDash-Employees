@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
 import { TRPCError } from "@trpc/server";
+import * as hours from "../workHours";
 import * as db from "../db";
 import { ENV } from "../_core/env";
 import { generateJson, type JsonSchema } from "../_core/llm";
@@ -690,6 +691,7 @@ export async function startEpisode(orgId: number, id: number) {
     for (const s of shots) if (s.line && !s.takeUrl && !db.listDramaCast(orgId).find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${s.line.who} doesn't have a voice yet. Pick one on the Cast tab.` });
     if (shots.some((s) => s.vo && !s.takeUrl) && !ownVoice) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Pick your voice under Your avatar on my Videos tab, so the voice-over is you." });
   }
+  if (hours.meteredSync(orgId)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Cinematic episodes and campaign films aren't part of work-hour plans. Talking videos on my Videos tab are." });
   const estimate = animating ? estimateEpisode(shots) : estimateStills(shots);
   const limit = s0.limitCents;
   const spent = await spentThisMonth(orgId);
@@ -1338,6 +1340,7 @@ export const PLATES = ["Front, standing", "Walking", "Seated at a desk", "Side p
 
 /** Standard images of the owner made from her photos, so her face holds across long campaigns. */
 export async function makePlates(orgId: number) {
+  if (hours.meteredSync(orgId)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Cinematic episodes and campaign films aren't part of work-hour plans. Talking videos on my Videos tab are." });
   if (!ENV.falKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Making images isn't connected yet: FAL_KEY is missing on the server." });
   const photos = await ownerPhotos(orgId);
   if (!photos.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Add photos of yourself to the Brain first: front, both three-quarter angles, full body, seated and standing work best." });
@@ -1381,8 +1384,8 @@ export function episodeView(e: DramaEpisode) {
     versions: parse<Record<string, string>>(e.versions, {}),
     error: e.error,
     length: `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`,
-    cost: `${e.status === "ready" ? "" : "about "}$${(e.costCents / 100).toFixed(2)}`,
-    animateCost: `about $${(estimateEpisode(shots) / 100).toFixed(2)}`,
+    cost: hours.meteredSync(e.organizationId) ? "" : `${e.status === "ready" ? "" : "about "}$${(e.costCents / 100).toFixed(2)}`,
+    animateCost: hours.meteredSync(e.organizationId) ? "" : `about $${(estimateEpisode(shots) / 100).toFixed(2)}`,
     done: shots.filter((s) => s.clipUrl).length,
     stills: shots.filter((s) => s.stillUrl).length,
     plan: { goal: plan.goal ?? "", directions: plan.directions ?? [], chosen: plan.chosen ?? null, script: plan.script ?? "", cta: plan.cta ?? "", approved: Boolean(plan.approved) },

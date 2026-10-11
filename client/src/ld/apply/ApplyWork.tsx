@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
+import { BIG_JOB, useHoursAsk } from "../HoursAsk";
 import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine, FolderTabs, UnderlineTabs } from "../ui";
 import { APP_STATUS, CHANNEL_LABEL, OPP_TABS, fmtDate, openDownload, parseJson, uploadFile } from "../meta";
@@ -203,6 +204,7 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen, ski
   const [open, setOpen] = React.useState<number | null>(initialOpen ?? null);
   const [asking, setAsking] = React.useState<number | null>(null);
   const start = trpc.applications.start.useMutation({ onSuccess: async () => { await utils.applications.list.invalidate(); await utils.opps.list.invalidate(); onOpenApps(); } });
+  const hours = useHoursAsk();
   const skip = trpc.opps.skip.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
   const restore = trpc.opps.restore.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
   const refresh = trpc.opps.refreshPackage.useMutation({ onSuccess: () => utils.opps.list.invalidate() });
@@ -248,11 +250,12 @@ function OppTable({ list, kind, loading, apps, emp, onOpenApps, initialOpen, ski
               ) : skippedTab ? (
                 <button type="button" className="ld-btn" disabled={restore.isPending} onClick={() => restore.mutate({ organizationId: currentOrgId, id: o.id })}>Bring back</button>
               ) : (
-                <button type="button" className={`ld-btn ${o.fitCall === "skip" ? "" : "p"}`} disabled={start.isPending} onClick={() => start.mutate({ organizationId: currentOrgId, opportunityId: o.id })}>
+                <button type="button" className={`ld-btn ${o.fitCall === "skip" ? "" : "p"}`} disabled={start.isPending} onClick={() => hours.confirm(`opp-${o.id}`, o.kind === "grant" ? BIG_JOB.grant : BIG_JOB.application, () => start.mutate({ organizationId: currentOrgId, opportunityId: o.id }))}>
                   Apply
                 </button>
               )}
             </div>
+            {hours.asking(`opp-${o.id}`) && <div style={{ padding: "0 18px 12px" }}>{hours.question(`opp-${o.id}`)}</div>}
             {isOpen && (
               <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

@@ -176,7 +176,7 @@ export async function planLaunch(orgId: number, input: { name?: string; date: st
       }),
       maxTokens: 6000,
     });
-  });
+  }, { job: "doc", label: "Launch plan" });
 
   const clamp = (ymd: string) => {
     const ok = /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : input.date;
@@ -544,7 +544,7 @@ async function review(nora: AIEmployee, t: LaunchTask, ownerName: string, output
       schema: obj({ meets: { type: "boolean" }, missing: str }),
       maxTokens: 500,
     });
-  });
+  }, { job: "task", count: 0 });
 }
 
 /** The employee does the task with their own tools; Nora checks it and sends it back once if it misses. */
@@ -790,7 +790,7 @@ export async function weeklyReport(orgId: number, launchId: number) {
 - risks: open risks and blockers and what is being done, or "None open.".
 - needsYou: only decisions or approvals the owner must make (including work waiting for their approval), or "Nothing this week.".`);
     return generateJson<ReportBody>({ system, prompt: facts, schemaName: "launch_report", schema: obj({ rating: { type: "string", enum: ["green", "amber", "red"] }, overall: str, done: str, behind: str, next: str, risks: str, needsYou: str }), maxTokens: 1400 });
-  });
+  }, { job: "doc", label: "Weekly report" });
   const rating: Rating = body.rating === "red" || body.rating === "amber" || body.rating === "green" ? (late && body.rating === "green" ? "amber" : body.rating) : late ? "amber" : "green";
   body.rating = rating;
   const report = await db.createLaunchReport({ organizationId: orgId, launchId: launch.id, week, weeks, status: rating === "green" ? "on_track" : "behind", body: JSON.stringify(body) });
@@ -1164,7 +1164,7 @@ export async function projectAgenda(orgId: number, launchId: number, m: { title:
 - who: one person attending (${attendees.join(", ") || "the owner"}), ${nora.name}, or the employee whose task it is. No item without a reason to discuss it.`
     );
     return generateJson<{ items: { item: string; who: string; minutes: number }[] }>({ system, prompt: facts, schemaName: "meeting_agenda", schema: obj({ items: arr(obj({ item: str, who: str, minutes: int })) }), maxTokens: 1200 });
-  });
+  }, { job: "doc", label: "Project agenda" });
   return (out.items ?? []).slice(0, 8);
 }
 

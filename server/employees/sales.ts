@@ -182,7 +182,7 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
     }
     await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: "Searched for prospects", details: `Ran ${res.queries.length} searches${npi.length ? ` from ${npi.length} NPI Registry practices` : ""} and added ${created.length}.` });
     return { created: created.sort((a, b) => b.fitScore - a.fitScore), queries: res.queries };
-  });
+  }, { job: "lead", count: (r) => r.created.length });
 
   // Good fits go to Jada on their own unless Riley is set to ask.
   const good = result.created.filter((p) => p.fitScore >= 70 && p.email);
@@ -341,7 +341,7 @@ These parts read like AI wrote them: ${tells.join("; ")}. Rewrite every field so
       if (fixed?.email1) seq = fixed;
     }
     return seq;
-  });
+  }, { job: "doc", label: "Email sequence" });
 }
 
 /** Rewrites every sequence still waiting for approval with the current writing rules. Returns how many. */
@@ -661,7 +661,7 @@ Booking link: ${open.ready ? links.booking : "(none yet)"}`,
       schema: obj({ subject: str, body: str }),
       maxTokens: 800,
     });
-  });
+  }, { job: "email" });
   // A practice's client inquiries always wait: they can carry health information.
   const auto = !therapy && gate(malik, "reply") === "auto";
   const item = await db.createOutboundItem({

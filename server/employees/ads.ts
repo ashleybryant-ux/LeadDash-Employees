@@ -436,7 +436,7 @@ export async function createCampaign(orgId: number, me: { id: number; name: stri
     status: "budget",
     createdBy: me.id,
   });
-  const s = await working(emp, () => suggestSplit(emp, c));
+  const s = await working(emp, () => suggestSplit(emp, c), { job: "doc", label: "Budget split" });
   c = db.ads.updateCampaign(c.id, { split: JSON.stringify(brief.splitMode === "even" ? evenSplit(platforms, s.leftOut, s.split) : s.split), leftOut: JSON.stringify(s.leftOut), leftOutWhy: s.why });
   await db.logAction({ organizationId: orgId, actorType: "human_user", actorName: me.name, action: "Ad campaign started", details: `${c.name}: ${platforms.length} platforms, ${money(c.budgetCents)}.` });
   if (!opts.quiet) {
@@ -616,7 +616,7 @@ ${notes.length ? `- Notes from the owner on this campaign, each one a rule for t
         maxTokens: 2500,
       });
       return { content: fit(spec, out), summary: String(out.summary ?? "").trim().slice(0, 80), imagePrompt: String(out.imagePrompt ?? "").trim() };
-    });
+    }, { job: "doc", label: "Ad set" });
     const content = result.content;
     const summary = result.summary || firstLine(spec, content);
     let imageUrl: string | null = null;

@@ -67,7 +67,7 @@ ${HUMAN_EMAIL}`
       });
       await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(imani), action: "Drafted email", details: `Welcome email to ${practice} is waiting for approval.` });
       return { id: item.id, title: item.title };
-    });
+    }, { job: "email" });
   }
   return { launch: r.launch, auto: r.auto, counts, email, steps };
 }

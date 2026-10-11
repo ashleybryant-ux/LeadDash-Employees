@@ -169,7 +169,7 @@ ${answers.style ? `- Style: ${answers.style}.` : ""}${answers.always ? `\n- Alwa
     );
     const healthcare = (await db.getOrganizationById(orgId))?.orgType === "healthcare";
     return generateJson<{ items: { item: string; who: string; minutes: number }[] }>({ system, prompt: facts, schemaName: "meeting_agenda", schema: obj({ items: arr(obj({ item: str, who: str, minutes: int })) }), maxTokens: 1200, reason: true, clientInfo: healthcare });
-  });
+  }, { job: "doc", label: "Meeting agenda" });
   const items = (out.items ?? []).slice(0, 8);
   let total = 0;
   const fit = items.filter((i) => (total += Math.max(1, i.minutes)) <= m.minutes + 15);
@@ -306,7 +306,7 @@ export async function saveNotes(orgId: number, meetingId: number, notes: string,
   const out = await working(simone, async () => {
     const { system } = await systemPromptFor(simone, `Pull the action items out of these meeting ${from === "transcript" ? "transcript lines" : "notes"}. One item per thing someone agreed to do, written as a short task starting with a verb. owner: the person or employee who will do it, by first name, from: ${[...attendees.map((a) => a.name), ...emps.map((e) => e.name)].join(", ")}. If no owner is clear, use ${attendees[0]?.name.split(" ")[0] || "the owner"}. Skip discussion with no action. Never include a client's name.`);
     return generateJson<{ items: { text: string; owner: string }[] }>({ system, prompt: notes.slice(0, 30_000), schemaName: "action_items", schema: obj({ items: arr(obj({ text: str, owner: str })) }), maxTokens: 1500 });
-  });
+  }, { job: "task" });
   let items: ActionItem[] = (out.items ?? []).slice(0, 20).map((i) => {
     const emp = emps.find((e) => e.name.toLowerCase() === i.owner.trim().toLowerCase());
     return { text: i.text.slice(0, 200), owner: emp ? emp.name : i.owner.trim().split(" ")[0] || "Owner", ownerKind: emp?.kind ?? null, taskId: null, status: "open" };
@@ -364,7 +364,7 @@ export async function setDeadlines(orgId: number, meetingId: number, guidance: s
   const out = await working(simone, async () => {
     const { system } = await systemPromptFor(simone, `Give each action item a due date. Today is ${today} (${fmtDay(new Date(), tz)}). Dates are YYYY-MM-DD, on a weekday, after today. Follow the person's guidance when they gave it; otherwise pick a realistic date for the size of each item (small things in 2 to 3 business days, bigger ones within 2 weeks). Return the items in the same order.`);
     return generateJson<{ dates: string[] }>({ system, prompt: `Guidance: ${guidance || "none"}\n\nItems:\n${items.map((i, n) => `${n + 1}. ${i.text} (owner: ${i.owner})`).join("\n")}`, schemaName: "item_dates", schema: obj({ dates: arr(str) }), maxTokens: 600 });
-  });
+  }, { job: "task" });
   const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d > today;
   items.forEach((it, i) => {
     const d = out.dates?.[i] ?? "";

@@ -62,7 +62,7 @@ Never invent a number. No em dashes.`
       schema: obj({ note: str, items: arr(obj({ status: STATUS, text: str, action: { type: "string", enum: ["task", "meeting", "ask"] }, goal: str, measure: str, employee: str })), suggest: arr(obj({ title: str, why: str, dueDate: str, parentGoal: str, measure: str })) }),
       maxTokens: 2000,
     });
-  });
+  }, { job: "doc", label: "Weekly read" });
   const strip = (s: string) => s.replace(/\s*[–—]\s*/g, ", ").trim();
   const items: (ReadItem & { employee?: string })[] = (out.items ?? []).slice(0, 4).map((i) => ({
     status: i.status as Status,
@@ -106,7 +106,7 @@ For each: title (short, with the number, like "$420,000 in revenue"), why (one o
 Only use numbers from the facts. When the facts can't support a number, base it on this year's goal and say so in why. No em dashes.`
     );
     return generateJson<DraftOut>({ system, prompt: `${lines}\n\nAlready set for ${year}: ${have.map((g) => g.title).join("; ") || "nothing"}`, schemaName: "year_draft", schema: obj({ goals: arr(obj({ title: str, why: str, owner: str, target: { type: "number" }, unit: { type: "string", enum: ["currency", "number"] }, targetName: str })) }), maxTokens: 2500 });
-  });
+  }, { job: "doc" });
   const p = periodFor("year", year);
   const made = [];
   const drafts = (out.goals ?? []).slice(0, 6);

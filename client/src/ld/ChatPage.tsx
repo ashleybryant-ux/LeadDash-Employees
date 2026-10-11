@@ -2,6 +2,7 @@ import React from "react";
 import { Link, Redirect } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
+import { BIG_JOB, useHoursAsk } from "./HoursAsk";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, BottomNav, ChatList, EmpHeader, ErrorLine, PersonAvatar, Rail, useEmployees, useGo, useIsMobile } from "./ui";
 import { SUGGESTIONS, fmtDate, fmtTime, isSameDay, parseJson, type Kind } from "./meta";
@@ -578,6 +579,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
     },
   });
   const skip = trpc.opps.skip.useMutation({ onSuccess: () => { setDone("Skipped"); utils.opps.invalidate(); } });
+  const hours = useHoursAsk();
   const submit = trpc.applications.submit.useMutation({ onSuccess: () => { setDone("Approved"); utils.applications.invalidate(); } });
   const answer = trpc.applications.answer.useMutation({ onSuccess: (_r, v) => { setDone(v.answer); utils.applications.invalidate(); } });
   const research = trpc.applications.research.useMutation({
@@ -681,11 +683,12 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
     pill = card.call ? <span className={`ld-pill ${card.call === "skip" ? "gray" : card.call === "partner" ? "amber" : "green"}`}>{`${card.call === "skip" ? "Skip" : card.call === "partner" ? "Partner" : "Apply"} · ${card.score ?? 0}`}</span> : null;
     actions = (
       <>
-        <button type="button" className={`ld-btn ${card.call === "skip" ? "" : "p"}`} disabled={start.isPending} onClick={() => start.mutate({ organizationId: currentOrgId, opportunityId: card.id })}>
+        <button type="button" className={`ld-btn ${card.call === "skip" ? "" : "p"}`} disabled={start.isPending} onClick={() => hours.confirm(`opp-${card.id}`, emp.kind === "grants" ? BIG_JOB.grant : BIG_JOB.application, () => start.mutate({ organizationId: currentOrgId, opportunityId: card.id }))}>
           {start.isPending ? "Starting..." : "Apply"}
         </button>
         <Link href={`${base}/work?opp=${card.id}`} className="ld-btn">Details</Link>
         <button type="button" className="ld-btn" onClick={() => skip.mutate({ organizationId: currentOrgId, id: card.id })}>Skip</button>
+        {hours.question(`opp-${card.id}`)}
       </>
     );
   } else if (card.type === "application") {

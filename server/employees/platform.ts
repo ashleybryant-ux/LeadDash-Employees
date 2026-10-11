@@ -47,7 +47,7 @@ const failed = (note: string, url = ""): BrowserResult => ({ status: "failed", n
 /** One browser run in the platform, with the lock, the saved sign-in and the session carried between runs. */
 async function inPlatform(emp: AIEmployee, login: PortalLogin, t: WebTask, opts: Omit<BrowserTask, "orgId" | "secrets" | "storageState" | "allowUrl"> ) {
   const fresh = (await db.listPortalLogins(emp.organizationId)).find((l) => l.id === login.id) ?? login;
-  const res = await runBrowserTask({ orgId: emp.organizationId, actor: `${emp.name}, the owner's LeadDash platform specialist`, ...loginParts(fresh, `web-${t.id}`), rules: RULES, ...opts }).catch((err) => failed((err as Error).message, opts.startUrl));
+  const res = await runBrowserTask({ orgId: emp.organizationId, employeeId: emp.id, actor: `${emp.name}, the owner's LeadDash platform specialist`, ...loginParts(fresh, `web-${t.id}`), rules: RULES, ...opts }).catch((err) => failed((err as Error).message, opts.startUrl));
   await keepSession(emp.organizationId, fresh, res.storageState).catch(() => null);
   return res;
 }
@@ -379,6 +379,7 @@ Use done with result as JSON: {"answer":"one sentence: the page is live, with it
     const parts = loginParts(fresh, `web-${t.id}`);
     res = await runBrowserTask({
       orgId,
+      employeeId: emp.id,
       actor: `${emp.name}, the owner's LeadDash platform specialist`,
       ...parts,
       secrets: { ...parts.secrets, content: html },

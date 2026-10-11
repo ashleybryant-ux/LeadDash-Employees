@@ -1090,11 +1090,11 @@ export function setChatMessageCards(organizationId: number, id: number, cards: s
   return getDb().update(chatMessages).set({ cards }).where(and(eq(chatMessages.organizationId, organizationId), eq(chatMessages.id, id))).returning().all()[0];
 }
 
-/** A member's monthly AI limit setting. */
-export function setMemberAiLimit(organizationId: number, userId: number, mode: "default" | "custom" | "none", micros: number | null) {
+/** A member's monthly work-hour limit setting, in minutes. */
+export function setMemberAiLimit(organizationId: number, userId: number, mode: "default" | "custom" | "none", minutes: number | null) {
   return getDb()
     .update(organizationMembers)
-    .set({ aiLimitMode: mode, aiLimitMicros: mode === "custom" ? micros : null })
+    .set({ aiLimitMode: mode, aiLimitMinutes: mode === "custom" ? minutes : null, aiLimitMicros: null })
     .where(and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, userId)))
     .run();
 }

@@ -9,7 +9,8 @@ import { BASE_RULES, rosterEntry, CLIENT_INFO_KINDS, ROSTER, worksWithClientInfo
 import { guidelinesText } from "./interview";
 import { handbookText, playbookText } from "./handbook";
 import { findPassages, formatPassages } from "./kb";
-import { recordTask, withUsage } from "../usage";
+import { withUsage } from "../usage";
+import * as hours from "../workHours";
 
 // ==========================================
 // Shared helpers
@@ -91,15 +92,30 @@ async function passagesFor(emp: AIEmployee, about: string | undefined, job: stri
   }
 }
 
-/** Marks the employee busy while a task runs, then counts the finished task. */
-export async function working<T>(emp: AIEmployee, fn: () => Promise<T>): Promise<T> {
+/**
+ * Marks the employee busy while a job runs, then records the work hours it used
+ * (see workHours.ts). A job that throws, or comes back not done, uses nothing.
+ * Out of hours, the job doesn't start.
+ */
+export async function working<T>(emp: AIEmployee, fn: () => Promise<T>, job: hours.Job<T> = { job: "task" }): Promise<T> {
+  await withUsage({ orgId: emp.organizationId, employeeId: emp.id, kind: emp.kind }, () => hours.gate(emp.organizationId));
   const before = emp.status;
   await db.updateEmployee(emp.id, emp.organizationId, { status: "working" });
+  const labelOf = (r?: T) => (typeof job.label === "function" ? (r === undefined ? "" : job.label(r)) : job.label ?? "");
   try {
-    const result = await withUsage({ orgId: emp.organizationId, employeeId: emp.id, kind: emp.kind }, fn);
-    const minutes = rosterEntry(emp.kind)?.minutesPerTask ?? 15;
-    await db.recordEmployeeTask(emp.id, emp.organizationId, minutes);
-    await recordTask(emp.organizationId, emp.id, minutes);
+    let result: T;
+    try {
+      result = await withUsage({ orgId: emp.organizationId, employeeId: emp.id, kind: emp.kind }, fn);
+    } catch (err) {
+      await withUsage({ orgId: emp.organizationId, employeeId: emp.id, kind: emp.kind }, () => hours.skipped(emp.organizationId, emp.id, job.job, typeof job.count === "number" ? job.count : 1, labelOf())).catch(() => null);
+      throw err;
+    }
+    const count = typeof job.count === "function" ? job.count(result) : job.count ?? 1;
+    await withUsage({ orgId: emp.organizationId, employeeId: emp.id, kind: emp.kind }, async () => {
+      if (job.done && !job.done(result)) return hours.skipped(emp.organizationId, emp.id, job.job, count, labelOf(result));
+      const minutes = await hours.charge(emp.organizationId, emp.id, job.job, count, labelOf(result));
+      if (minutes > 0) await db.recordEmployeeTask(emp.id, emp.organizationId, minutes);
+    });
     return result;
   } finally {
     await db.updateEmployee(emp.id, emp.organizationId, { status: before === "working" ? "active" : before });
@@ -196,7 +212,7 @@ export async function planWebsitePage(organizationId: number, page: string, goal
       details: `Planned "${item.title}".`,
     });
     return item;
-  });
+  }, { job: "doc" });
 }
 
 // ==========================================
@@ -269,7 +285,7 @@ export async function findVideoIdeas(organizationId: number, focus?: string) {
       details: `Ran ${result.queries.length} searches and planned ${created.length} videos.`,
     });
     return { created, queries: result.queries };
-  });
+  }, { job: "search", label: "Video ideas" });
 }
 
 // ==========================================
@@ -325,7 +341,7 @@ ${input.desiredOutcome ? `\nWhat the owner wants to happen: ${input.desiredOutco
       details: `Reply to "${input.subject}" is waiting for approval.`,
     });
     return created;
-  });
+  }, { job: "email" });
 }
 
 /** A new email (not a reply) to someone, from the owner. Waits in Approvals; Send goes out through the connected Gmail. */
@@ -356,7 +372,7 @@ export async function composeEmail(organizationId: number, input: { to: string; 
     });
     await db.logAction({ organizationId, actorType: "employee", actorName: actor(emp), action: "Drafted email", details: `To ${input.to}: "${created.title}" is waiting for approval.` });
     return created;
-  });
+  }, { job: "email" });
 }
 
 export async function createCalendarHold(
@@ -495,7 +511,7 @@ export async function writeSocialPost(
       details: `"${created.title}" for ${input.targetPlatforms.join(", ")} is waiting for approval.`,
     });
     return created;
-  });
+  }, { job: "post" });
 }
 
 /**
@@ -536,7 +552,7 @@ export async function postsFromArticle(organizationId: number, articleId: number
       maxTokens: 3000,
     });
     return (out.posts ?? []).filter((p) => p.caption?.trim()).slice(0, 3);
-  });
+  }, { job: "post", count: (r) => r.length });
   const social = await import("../social");
   const times = await social.planTimes(organizationId, channels[0] as never, posts.length);
   const auto = gate(sienna, "posts") === "auto";
@@ -617,7 +633,7 @@ export async function writeSocialBatch(organizationId: number, channel: string, 
       );
     }
     return list;
-  });
+  }, { job: "post", count: (r) => r.length });
   if (created.length) {
     await db.logAction({ organizationId, actorType: "employee", actorName: actor(emp), action: "Wrote social posts", details: `${created.length} ${name} drafts are waiting for approval.` });
     void (async () => {
@@ -703,5 +719,5 @@ export async function writeBlogArticle(
       details: `"${input.title}" is waiting for approval.`,
     });
     return created;
-  });
+  }, { job: "doc" });
 }

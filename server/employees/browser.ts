@@ -3,6 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import { storagePut } from "../storage";
+import { getEmployeeByKind } from "../db";
+import { usageContext } from "../usage";
+import * as hours from "../workHours";
+import type { JobKey } from "../workHours";
 
 /**
  * A real browser on the server that an employee drives one step at a time:
@@ -61,6 +65,11 @@ export type BrowserTask = {
   decide?: (view: PageView, history: StepLog[]) => Promise<Action>;
   /** Keep a screenshot after every action (an SOP is written from them), saved under this folder. */
   shots?: string;
+  /** The work-hours job this run is (default: work done on a website), or null when it is one step of a bigger job charged elsewhere. */
+  job?: JobKey | null;
+  jobLabel?: string;
+  /** The employee doing it, for the work-hours record. */
+  employeeId?: number;
 };
 
 export type PageElement = { i: number; tag: string; type: string; label: string; text: string; href: string };
@@ -249,10 +258,36 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const VIEW = { width: 1280, height: 900 };
 
 /** One browser at a time keeps memory flat on a small server. */
-export function runBrowserTask(task: BrowserTask): Promise<BrowserResult> {
+function oneAtATime(task: BrowserTask): Promise<BrowserResult> {
   const job = running.then(() => run(task));
   running = job.catch(() => null);
   return job;
+}
+
+/**
+ * Runs a browser task as a job: it doesn't start when the workspace is out of
+ * work hours, and uses its hours only when it finishes (a failed run uses none).
+ */
+export async function runBrowserTask(task: BrowserTask): Promise<BrowserResult> {
+  const kind = task.job === undefined ? "website" : task.job;
+  if (kind) await hours.gate(task.orgId);
+  const res = await oneAtATime(task);
+  if (kind && (res.status === "done" || res.status === "failed")) {
+    const c = usageContext();
+    const empId = task.employeeId ?? c?.employeeId ?? (c?.kind ? (await getEmployeeByKind(task.orgId, c.kind))?.id ?? null : null);
+    const label = (task.jobLabel ?? hostOf(task.startUrl)).slice(0, 160);
+    if (res.status === "done") await hours.charge(task.orgId, empId, kind, 1, label).catch(() => 0);
+    else await hours.skipped(task.orgId, empId, kind, 1, label).catch(() => null);
+  }
+  return res;
+}
+
+function hostOf(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
 }
 
 /** True when Chromium is installed and starts on this machine. */

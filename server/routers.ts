@@ -544,21 +544,21 @@ export const appRouter = router({
     }),
 
     setAiLimit: protectedProcedure
-      .input(orgInput.extend({ userId: z.number(), mode: z.enum(["default", "custom", "none"]), dollars: z.number().min(0).max(100_000).nullable() }))
+      .input(orgInput.extend({ userId: z.number(), mode: z.enum(["default", "custom", "none"]), hours: z.number().min(0).max(100_000).nullable() }))
       .mutation(async ({ ctx, input }) => {
         blockReviewer(ctx);
         await requireMember(ctx, input.organizationId, "admin");
         const target = (await db.listMembers(input.organizationId)).find((m) => m.userId === input.userId);
         if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "That person is not on this workspace." });
-        if (input.mode === "custom" && input.dollars == null) throw new TRPCError({ code: "BAD_REQUEST", message: "Type the monthly limit in dollars." });
-        db.setMemberAiLimit(input.organizationId, input.userId, input.mode, input.mode === "custom" ? Math.round(input.dollars! * 1_000_000) : null);
+        if (input.mode === "custom" && input.hours == null) throw new TRPCError({ code: "BAD_REQUEST", message: "Type the monthly limit in work hours." });
+        db.setMemberAiLimit(input.organizationId, input.userId, input.mode, input.mode === "custom" ? Math.round(input.hours! * 60) : null);
         const lim = await import("./aiLimits");
         await db.logAction({
           organizationId: input.organizationId,
           actorType: "human_user",
           actorName: personName(ctx.user),
-          action: "AI limit changed",
-          details: `${target.name || target.email}: ${input.mode === "custom" ? `${lim.dollars(Math.round(input.dollars! * 1_000_000))} a month` : input.mode === "none" ? "no limit" : "the workspace limit"}.`,
+          action: "Work-hour limit changed",
+          details: `${target.name || target.email}: ${input.mode === "custom" ? `${lim.workHours(Math.round(input.hours! * 60))} a month` : input.mode === "none" ? "no limit" : "the workspace limit"}.`,
         });
         return { success: true };
       }),
@@ -3331,7 +3331,9 @@ export const appRouter = router({
       const emp = await db.getEmployeeByKind(input.organizationId, "video");
       const s = emp ? avatar.settingsOf(emp) : avatar.settingsOf({ studio: null });
       const [photos, voices, spent] = await Promise.all([avatar.photos(input.organizationId), avatar.voices(), avatar.spentThisMonth(input.organizationId)]);
-      return { ...s, photos, voices, spentCents: spent, rates: avatar.RATE_CENTS, ready: { fal: !!ENV.falKey, voice: !!ENV.elevenLabsKey } };
+      // On a plan, videos use work hours: no dollar amounts go to the workspace.
+      if ((await import("./workHours")).meteredSync(input.organizationId)) return { ...s, photos, voices, spentCents: 0, rates: { standard: 0, pro: 0 }, metered: true, ready: { fal: !!ENV.falKey, voice: !!ENV.elevenLabsKey } };
+      return { ...s, photos, voices, spentCents: spent, rates: avatar.RATE_CENTS, metered: false, ready: { fal: !!ENV.falKey, voice: !!ENV.elevenLabsKey } };
     }),
     saveSettings: protectedProcedure
       .input(orgInput.extend({ imageId: z.number().int().nullable(), voiceId: z.string().max(80).nullable(), voiceName: z.string().max(120).nullable(), quality: z.enum(["standard", "pro"]), limitCents: z.number().int().min(0).max(1_000_000) }))
@@ -4816,7 +4818,11 @@ export const appRouter = router({
   voices: router({
     options: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return huddle.voiceOptions(input.organizationId);
+      const v = await huddle.voiceOptions(input.organizationId);
+      // The providers and what they cost are LeadDash's trade secret: only LeadDash staff get them.
+      if (ctx.user.role === "admin") return v;
+      const hide = { perMinute: "", detail: "", url: "" };
+      return { ...v, prices: { openai: hide, elevenlabs: hide }, elevenError: v.elevenError ? "unavailable" : v.elevenError };
     }),
     setProvider: protectedProcedure.input(orgInput.extend({ setting: z.enum(["auto", "elevenlabs", "openai"]) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "admin");
@@ -5209,10 +5215,42 @@ export const appRouter = router({
   // Activity
   // ==========================================
   /** Hours saved and estimated AI cost for a month. */
+  /** Work hours: the plan, what's left, recent jobs; LeadDash staff set plans and add bought hours. */
+  hours: router({
+    get: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      return (await import("./workHours")).balance(input.organizationId);
+    }),
+    recent: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./workHours")).recentJobs(input.organizationId);
+    }),
+    staffList: adminProcedure.query(async () => (await import("./workHours")).staffList()),
+    setPlan: adminProcedure
+      .input(orgInput.extend({ plan: z.enum(["starter", "growth", "pro", "practice_starter", "practice_growth", "practice_pro"]).nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        const h = await import("./workHours");
+        const b = await h.setPlan(input.organizationId, input.plan);
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Work-hour plan changed", details: input.plan ? `${h.PLANS[input.plan].name}, ${h.PLANS[input.plan].hours} work hours a month.` : "No plan: work is counted but not limited." });
+        return b;
+      }),
+    addPack: adminProcedure
+      .input(orgInput.extend({ hours: z.number().min(0.5).max(10_000), note: z.string().max(200).default("") }))
+      .mutation(async ({ ctx, input }) => {
+        const h = await import("./workHours");
+        const b = await h.addPack(input.organizationId, input.hours, input.note, personName(ctx.user));
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Work hours added", details: `${input.hours} work hours, good for 12 months.${input.note.trim() ? ` ${input.note.trim()}` : ""}` });
+        return b;
+      }),
+  }),
+
   usage: router({
     summary: protectedProcedure.input(orgInput.extend({ back: z.number().int().min(0).max(1).default(0) })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return usageSummary(input.organizationId, input.back);
+      const u = await usageSummary(input.organizationId, input.back);
+      // AI cost in dollars is for LeadDash staff only; a workspace sees work hours.
+      if (ctx.user.role === "admin") return u;
+      return { ...u, cost: 0, shared: 0, employees: u.employees.map((e) => ({ ...e, cost: 0 })) };
     }),
     byPerson: protectedProcedure.input(orgInput.extend({ back: z.number().int().min(0).max(1).default(0) })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
@@ -5221,16 +5259,16 @@ export const appRouter = router({
     limits: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "chat");
       const s = await (await import("./aiLimits")).limitsFor(input.organizationId);
-      return { defaultDollars: s.defaultMicros == null ? null : s.defaultMicros / 1_000_000, ownersExempt: s.ownersExempt, warnPct: s.warnPct, atLimit: s.atLimit };
+      return { defaultHours: s.defaultMinutes == null ? null : Math.round((s.defaultMinutes / 60) * 10) / 10, ownersExempt: s.ownersExempt, warnPct: s.warnPct, atLimit: s.atLimit };
     }),
     saveLimits: protectedProcedure
-      .input(orgInput.extend({ defaultDollars: z.number().min(0).max(100_000).nullable(), ownersExempt: z.boolean(), warnPct: z.union([z.literal(0), z.literal(80), z.literal(90)]), atLimit: z.enum(["stop", "warn"]) }))
+      .input(orgInput.extend({ defaultHours: z.number().min(0).max(100_000).nullable(), ownersExempt: z.boolean(), warnPct: z.union([z.literal(0), z.literal(80), z.literal(90)]), atLimit: z.enum(["stop", "warn"]) }))
       .mutation(async ({ ctx, input }) => {
         blockReviewer(ctx);
         await requireMember(ctx, input.organizationId, "admin");
         const lim = await import("./aiLimits");
-        await lim.saveLimits(input.organizationId, { defaultMicros: input.defaultDollars == null ? null : Math.round(input.defaultDollars * 1_000_000), ownersExempt: input.ownersExempt, warnPct: input.warnPct, atLimit: input.atLimit });
-        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "AI limits changed", details: input.defaultDollars == null ? "Workspace limit: none." : `Workspace limit: ${lim.dollars(Math.round(input.defaultDollars * 1_000_000))} a month.` });
+        await lim.saveLimits(input.organizationId, { defaultMinutes: input.defaultHours == null ? null : Math.round(input.defaultHours * 60), ownersExempt: input.ownersExempt, warnPct: input.warnPct, atLimit: input.atLimit });
+        await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Work-hour limits changed", details: input.defaultHours == null ? "Workspace limit: none." : `Workspace limit: ${lim.workHours(Math.round(input.defaultHours * 60))} a person, each month.` });
         return { success: true };
       }),
   }),

@@ -2,20 +2,21 @@ import { and, eq, gte, isNull, lt } from "drizzle-orm";
 import * as db from "./db";
 import { chatMessages, usageEvents } from "../drizzle/schema";
 import { monthRange } from "./usage";
+import { hoursNum, minutesByPerson } from "./workHours";
 
 /**
- * AI limits per person. Every AI cost is saved with the person whose request
- * started it (scheduled work has no person). Each person has a monthly limit:
- * the workspace's, their own, or none. Near the limit they get a heads-up; at
- * the limit the employees stop starting new work for them (or keep going and
- * only tell the owner, if the workspace chose that). Costs from before
- * per-person tracking began are matched afterward to the chat message that
- * started them and marked estimated.
+ * Work-hour limits per person. Every job's work hours are saved with the
+ * person whose request started it (scheduled work has no person). Each person
+ * has a monthly limit in work hours: the workspace's, their own, or none.
+ * Near the limit they get a heads-up; at the limit the employees stop starting
+ * new work for them (or keep going and only tell the owner, if the workspace
+ * chose that). AI costs from before per-person tracking began are matched
+ * afterward to the chat message that started them and marked estimated.
  */
 
 export type AiLimits = {
-  /** The workspace limit in millionths of a dollar a month; null means no limit. */
-  defaultMicros: number | null;
+  /** The workspace limit in work-hour minutes a month; null means no limit. */
+  defaultMinutes: number | null;
   /** Owners and admins have no limit. */
   ownersExempt: boolean;
   /** Heads-up at this share of the limit (80 or 90), or 0 for none. */
@@ -28,13 +29,15 @@ export type AiLimits = {
   backfilledAt?: string | null;
 };
 
-const DEFAULTS: AiLimits = { defaultMicros: null, ownersExempt: true, warnPct: 80, atLimit: "stop", sent: [], backfilledAt: null };
+const DEFAULTS: AiLimits = { defaultMinutes: null, ownersExempt: true, warnPct: 80, atLimit: "stop", sent: [], backfilledAt: null };
 
 export function readLimits(raw: string | null | undefined): AiLimits {
   try {
     const v = raw ? JSON.parse(raw) : {};
+    // A limit saved in dollars before work hours: $1 of AI cost is about 3 work hours.
+    const minutes = typeof v.defaultMinutes === "number" && v.defaultMinutes >= 0 ? Math.round(v.defaultMinutes) : v.defaultMinutes === undefined && typeof v.defaultMicros === "number" && v.defaultMicros >= 0 ? Math.round((v.defaultMicros * 180) / 1_000_000) : null;
     return {
-      defaultMicros: typeof v.defaultMicros === "number" && v.defaultMicros >= 0 ? Math.round(v.defaultMicros) : null,
+      defaultMinutes: minutes,
       ownersExempt: v.ownersExempt !== false,
       warnPct: v.warnPct === 0 || v.warnPct === 90 ? v.warnPct : 80,
       atLimit: v.atLimit === "warn" ? "warn" : "stop",
@@ -57,6 +60,8 @@ export async function saveLimits(orgId: number, patch: Partial<AiLimits>) {
 }
 
 export const dollars = (micros: number) => `$${(micros / 1_000_000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** "12 work hours" or "12.5 work hours". */
+export const workHours = (minutes: number) => `${hoursNum(minutes)} work hour${minutes === 60 ? "" : "s"}`;
 
 async function month(orgId: number, back = 0) {
   const org = await db.getOrganizationById(orgId);
@@ -88,13 +93,19 @@ export async function costsByPerson(orgId: number, back = 0) {
 
 type Member = Awaited<ReturnType<typeof db.listMembers>>[number];
 
-/** The limit that applies to one member: their own, the workspace's, or none. */
-export function limitOf(m: Pick<Member, "role" | "aiLimitMode" | "aiLimitMicros">, s: AiLimits): { micros: number | null; source: "own" | "workspace" | "none" | "exempt" | "chat" } {
-  if (m.role === "chat") return { micros: null, source: "chat" };
-  if (m.aiLimitMode === "none") return { micros: null, source: "none" };
-  if (m.aiLimitMode === "custom" && typeof m.aiLimitMicros === "number") return { micros: m.aiLimitMicros, source: "own" };
-  if (s.ownersExempt && (m.role === "owner" || m.role === "admin")) return { micros: null, source: "exempt" };
-  return s.defaultMicros == null ? { micros: null, source: "none" } : { micros: s.defaultMicros, source: "workspace" };
+/** The limit that applies to one member, in work-hour minutes: their own, the workspace's, or none. */
+export function limitOf(m: Pick<Member, "role" | "aiLimitMode" | "aiLimitMinutes">, s: AiLimits): { minutes: number | null; source: "own" | "workspace" | "none" | "exempt" | "chat" } {
+  if (m.role === "chat") return { minutes: null, source: "chat" };
+  if (m.aiLimitMode === "none") return { minutes: null, source: "none" };
+  if (m.aiLimitMode === "custom" && typeof m.aiLimitMinutes === "number") return { minutes: m.aiLimitMinutes, source: "own" };
+  if (s.ownersExempt && (m.role === "owner" || m.role === "admin")) return { minutes: null, source: "exempt" };
+  return s.defaultMinutes == null ? { minutes: null, source: "none" } : { minutes: s.defaultMinutes, source: "workspace" };
+}
+
+/** Work-hour minutes each person used this month (or last), with scheduled work under the key 0. */
+async function minutesByPersonNow(orgId: number, back = 0) {
+  const { start, end } = await month(orgId, back);
+  return minutesByPerson(orgId, start, end);
 }
 
 /** Where one person stands this month. Null for LeadDash staff and anyone not on the team. */
@@ -105,9 +116,9 @@ export async function personStatus(orgId: number, userId: number) {
   if (!m) return null;
   const s = await limitsFor(orgId);
   const lim = limitOf(m, s);
-  const used = (await costsByPerson(orgId)).get(userId)?.micros ?? 0;
-  const pct = lim.micros ? Math.round((used / lim.micros) * 100) : 0;
-  return { member: m, settings: s, used, limit: lim.micros, source: lim.source, pct, reached: lim.micros != null && used >= lim.micros };
+  const used = (await minutesByPersonNow(orgId)).get(userId) ?? 0;
+  const pct = lim.minutes ? Math.round((used / lim.minutes) * 100) : 0;
+  return { member: m, settings: s, used, limit: lim.minutes, source: lim.source, pct, reached: lim.minutes != null && used >= lim.minutes };
 }
 
 async function ownerIds(orgId: number) {
@@ -140,16 +151,16 @@ export async function blockFor(orgId: number, userId: number | null | undefined,
   const owner = await ownerFirstName(orgId);
   // Over the limit with "keep working": tell the owners once, then go ahead.
   if (st.settings.atLimit === "warn") {
-    await sendOnce(orgId, `${userId}:${key}:reached`, () => notifyOwners(orgId, `${name} reached their AI limit`, `${name} used ${dollars(st.used)} of ${dollars(st.limit!)} for ${label}. The employees keep working for them.`));
+    await sendOnce(orgId, `${userId}:${key}:reached`, () => notifyOwners(orgId, `${name} reached their work-hour limit`, `${name} used ${hoursNum(st.used)} of ${workHours(st.limit!)} for ${label}. The employees keep working for them.`));
     return null;
   }
   if (/\bask\b.*\braise\b/i.test(said)) {
-    await notifyOwners(orgId, `${name} asked for a higher AI limit`, `${name} used ${dollars(st.used)} of ${dollars(st.limit!)} for ${label}. You can raise it on the Team page.`);
+    await notifyOwners(orgId, `${name} asked for a higher work-hour limit`, `${name} used ${hoursNum(st.used)} of ${workHours(st.limit!)} for ${label}. You can raise it on the Team page.`);
     return { text: `I asked ${owner} to raise your limit. I'll pick this back up as soon as it's raised.`, choices: [] as string[] };
   }
-  await sendOnce(orgId, `${userId}:${key}:reached`, () => notifyOwners(orgId, `${name} reached their AI limit`, `${name} used ${dollars(st.used)} of ${dollars(st.limit!)} for ${label}. The employees won't start new work for them until ${resetLabel} unless you raise it on the Team page.`));
+  await sendOnce(orgId, `${userId}:${key}:reached`, () => notifyOwners(orgId, `${name} reached their work-hour limit`, `${name} used ${hoursNum(st.used)} of ${workHours(st.limit!)} for ${label}. The employees won't start new work for them until ${resetLabel} unless you raise it on the Team page.`));
   return {
-    text: `You've reached your ${dollars(st.limit!)} AI limit for ${label}, so I can't start new work for you until ${resetLabel}. ${owner === "the owner" ? "The owner" : owner} can raise your limit on the Team page.`,
+    text: `You've used your ${workHours(st.limit!)} for ${label}, so I can't start new work for you until ${resetLabel}. ${owner === "the owner" ? "The owner" : owner} can raise your limit on the Team page.`,
     choices: [`Ask ${owner === "the owner" ? "the owner" : owner} to raise it`],
   };
 }
@@ -169,16 +180,16 @@ export async function noteAfter(orgId: number, userId: number | null | undefined
   if (!crossedWarn && !crossedLimit) return null;
   const name = st.member.name?.trim() || st.member.email;
   if (crossedLimit) {
-    await sendOnce(orgId, `${userId}:${key}:reached`, () => notifyOwners(orgId, `${name} reached their AI limit`, `${name} used ${dollars(st.used)} of ${dollars(st.limit!)} for ${label}.`));
+    await sendOnce(orgId, `${userId}:${key}:reached`, () => notifyOwners(orgId, `${name} reached their work-hour limit`, `${name} used ${hoursNum(st.used)} of ${workHours(st.limit!)} for ${label}.`));
   } else {
-    await sendOnce(orgId, `${userId}:${key}:warn`, () => notifyOwners(orgId, `${name} is near their AI limit`, `${name} used ${dollars(st.used)} of ${dollars(st.limit!)} for ${label}.`));
+    await sendOnce(orgId, `${userId}:${key}:warn`, () => notifyOwners(orgId, `${name} is near their work-hour limit`, `${name} used ${hoursNum(st.used)} of ${workHours(st.limit!)} for ${label}.`));
   }
-  return `You've used ${dollars(Math.min(st.used, st.limit))} of your ${dollars(st.limit)} AI limit for ${label}.`;
+  return `You've used ${hoursNum(Math.min(st.used, st.limit))} of your ${workHours(st.limit)} for ${label}.`;
 }
 
 export async function usedNow(orgId: number, userId: number | null | undefined) {
   if (!userId) return 0;
-  return (await costsByPerson(orgId)).get(userId)?.micros ?? 0;
+  return (await minutesByPersonNow(orgId)).get(userId) ?? 0;
 }
 
 async function notifyOwners(orgId: number, title: string, body: string) {
@@ -186,47 +197,45 @@ async function notifyOwners(orgId: number, title: string, body: string) {
   await notify(orgId, "ai_limit", { title, body, url: "/team" }, { only: await ownerIds(orgId) });
 }
 
-/** Each person's AI cost this month against their limit, with scheduled work on its own row. */
+/** Each person's work hours this month (or last) against their limit, with scheduled work on its own row. */
 export async function byPerson(orgId: number, back = 0) {
-  const [{ label }, members, s, costs] = await Promise.all([month(orgId, back), db.listMembers(orgId), limitsFor(orgId), costsByPerson(orgId, back)]);
-  const people = members
-    .filter((m) => m.role !== "chat" || (costs.get(m.userId)?.micros ?? 0) > 0)
+  const [{ label }, members, s, used] = await Promise.all([month(orgId, back), db.listMembers(orgId), limitsFor(orgId), minutesByPersonNow(orgId, back)]);
+  const rows = members
+    .filter((m) => m.role !== "chat" || (used.get(m.userId) ?? 0) > 0)
     .map((m) => {
-      const c = costs.get(m.userId) ?? { micros: 0, estimatedMicros: 0 };
+      const u = used.get(m.userId) ?? 0;
       const lim = limitOf(m, s);
       return {
         userId: m.userId,
         name: m.name?.trim() || m.email,
         avatarUrl: m.avatarUrl,
         role: m.role,
-        cost: c.micros / 1_000_000,
-        estimated: c.estimatedMicros > 0,
-        limit: lim.micros == null ? null : lim.micros / 1_000_000,
+        hours: Number(hoursNum(u)),
+        limit: lim.minutes == null ? null : Number(hoursNum(lim.minutes)),
         source: lim.source,
-        pct: lim.micros ? Math.round((c.micros / lim.micros) * 100) : null,
+        pct: lim.minutes ? Math.round((u / lim.minutes) * 100) : null,
       };
     })
-    .sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name));
-  // Costs for people no longer on the team count with scheduled work so the totals still add up.
+    .sort((a, b) => b.hours - a.hours || a.name.localeCompare(b.name));
+  // Work for people no longer on the team counts with scheduled work so the totals still add up.
   const known = new Set(members.map((m) => m.userId));
   let scheduled = 0;
-  costs.forEach((v, k) => {
-    if (k === 0 || !known.has(k)) scheduled += v.micros;
+  used.forEach((v, k) => {
+    if (k === 0 || !known.has(k)) scheduled += v;
   });
-  const people$ = people.reduce((n, p) => n + p.cost, 0);
-  return { month: label, total: people$ + scheduled / 1_000_000, people: people$, scheduled: scheduled / 1_000_000, rows: people };
+  const people = rows.reduce((n, p) => n + p.hours, 0);
+  return { month: label, total: Number(hoursNum(people * 60 + scheduled)), people: Number(hoursNum(people * 60)), scheduled: Number(hoursNum(scheduled)), rows };
 }
 
-/** The Team page's column: each member's cost this month and their limit. */
+/** The Team page's column: each member's work hours this month and their limit. */
 export async function teamColumn(orgId: number) {
-  const r = await byPerson(orgId);
+  const { label } = await month(orgId);
   const members = await db.listMembers(orgId);
   const s = await limitsFor(orgId);
-  const costs = await costsByPerson(orgId);
+  const used = await minutesByPersonNow(orgId);
   return members.map((m) => {
     const lim = limitOf(m, s);
-    const used = (costs.get(m.userId)?.micros ?? 0) / 1_000_000;
-    return { userId: m.userId, used, limit: lim.micros == null ? null : lim.micros / 1_000_000, source: lim.source, mode: m.aiLimitMode, own: m.aiLimitMicros == null ? null : m.aiLimitMicros / 1_000_000, month: r.month };
+    return { userId: m.userId, used: Number(hoursNum(used.get(m.userId) ?? 0)), limit: lim.minutes == null ? null : Number(hoursNum(lim.minutes)), source: lim.source, mode: m.aiLimitMode, own: m.aiLimitMinutes == null ? null : Number(hoursNum(m.aiLimitMinutes)), month: label };
   });
 }
 

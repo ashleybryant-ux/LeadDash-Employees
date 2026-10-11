@@ -1624,7 +1624,10 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const from = /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date : today;
       const toDay = new Date(`${from}T12:00:00Z`);
       toDay.setUTCDate(toDay.getUTCDate() + days - 1);
+      const hrs = await import("../workHours");
+      await hrs.gate(org);
       const r = await ehr.read(org, what, from, toDay.toISOString().slice(0, 10));
+      if (r.facts) await hrs.charge(org, emp.id, "ehr", 1, what).catch(() => 0);
       return { text: r.text, cards: [], queries: [], facts: r.facts || undefined, quiet: Boolean(r.facts), answer: Boolean(r.facts) };
     }
     case "check_schedule": {
@@ -1830,7 +1833,12 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n")}`
   );
   const decision = await generateJson<Decision>({ system, prompt: request, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 3000, reason: true, clientInfo: (await db.getOrganizationById(emp.organizationId))?.orgType === "healthcare" });
   if (!decision?.action || !actions.includes(decision.action)) return { action: "none", text: decision?.reply ?? "", cards: [] as ChatCard[], refs: [] as Ref[] };
+  const hrs = await import("../workHours");
+  await hrs.gate(emp.organizationId);
+  const before = (await hrs.balance(emp.organizationId)).usedMinutes;
   const result = await runAction(emp, decision, { who: task.from });
+  // A task whose action was itself a job (a post, a doc) used that job's hours; anything else is one finished task.
+  if ((await hrs.balance(emp.organizationId)).usedMinutes === before) await hrs.charge(emp.organizationId, emp.id, "task", 1, task.title).catch(() => 0);
   const refs: Ref[] = [...(result.refs ?? []), ...result.cards.filter((c) => c.type === "post" || c.type === "article" || c.type === "reply").map((c) => ({ kind: "outbound" as const, id: c.id }))];
   const text = result.text || decision.reply;
   await db.createChatMessage({ organizationId: emp.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `For ${task.project}, "${task.title}": ${text}`, cards: result.cards.length ? JSON.stringify(result.cards) : null, searchQueries: result.queries.length ? JSON.stringify(result.queries) : null });
@@ -2070,11 +2078,18 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     // A healthcare workspace's chats can hold client information, so they stay on the BAA-covered route.
     const clientInfo = brain.org?.orgType === "healthcare";
     const decide = (prompt: string) => generateJson<Decision>({ system, prompt, schemaName: "chat_decision", schema: decisionSchema(emp.kind, actions), maxTokens: 3000, reason: true, clientInfo });
-    const decision = await decide(base);
+    // Jobs of 3 work hours or more ask first on a plan; "Go ahead" runs the job asked about, "Not now" drops it.
+    const hrs = await import("../workHours");
+    const metered = !scheduled && hrs.meteredSync(opts.organizationId);
+    const answered = metered ? hrs.answerPending(opts.organizationId, emp.id, opts.text) : null;
+    if (answered && "no" in answered) return { user: userMsg, reply: await reply("Okay, I won't start it.") };
+    const goAhead = !!answered && "go" in answered;
+    const bigAsk = (d: Decision) => (metered && !goAhead ? bigJobText(emp.kind, d.action) : null);
+    const decision = goAhead ? (answered as { go: Decision }).go : await decide(base);
     const quick = (list?: string[]) => (!scheduled && list?.length ? [choicesCard(list)] : []);
     // Something new and lasting: saved to the Brain so nobody has to be told twice.
     let learned = "";
-    if (!scheduled && decision.remember_topic?.trim() && decision.remember_fact?.trim()) {
+    if (!scheduled && !goAhead && decision.remember_topic?.trim() && decision.remember_fact?.trim()) {
       const r = await learnFact(opts.organizationId, { topic: decision.remember_topic, fact: decision.remember_fact, category: decision.remember_category, who: opts.authorName, via: emp.name }).catch(() => null);
       if (r) learned = `\n\n${r.replaced ? "Updated the Brain" : "Saved to the Brain"} for the whole team: ${r.fact}`;
     }
@@ -2089,6 +2104,11 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     }
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
       return { user: userMsg, reply: await reply(`${decision.reply || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
+    }
+    const firstAsk = bigAsk(decision);
+    if (firstAsk) {
+      hrs.setPending(opts.organizationId, emp.id, decision, firstAsk);
+      return { user: userMsg, reply: await reply(`${await hrs.askText(opts.organizationId, firstAsk)}${learned}`, quick(["Go ahead", "Not now"])) };
     }
     const ctx = { who: opts.authorName, files: sent.length ? sent : files, history, said: pasted ? pasted.words : opts.text, userId: opts.userId ?? null, visible };
     const result = await runAction(emp, decision, ctx);
@@ -2105,6 +2125,12 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
       const next = await decide(`${base}\n\nYou are part way through this request. Your plan after the last step was: ${steps[steps.length - 1].d.plan || "finish up"}.\n${done}\n\nChoose the next action, or "none" when the request is done or you need the person. With "none", "reply" is the whole message the person sees: what you did, what you decided and why, and anything from the results they still need to do (a button to press). Never repeat a step that already ran.`);
       // A step chosen again with the same fields would loop: the steps so far speak for themselves.
       if (steps.some((s) => s.d.action === next.action && stepFields(s.d) === stepFields(next))) break;
+      const nextAsk = bigAsk(next);
+      if (nextAsk) {
+        hrs.setPending(opts.organizationId, emp.id, next, nextAsk);
+        final = { ...next, action: "none", reply: `${steps.map((x) => x.r.text).filter((t) => t?.trim()).join("\n\n")}\n\n${await hrs.askText(opts.organizationId, nextAsk)}`.trim(), choices: ["Go ahead", "Not now"] };
+        break;
+      }
       if (!next.action || next.action === "none" || !actions.includes(next.action)) {
         final = next;
         break;
@@ -2128,6 +2154,20 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
   }
 }
 
+
+/** What a job of 3 work hours or more uses, for the question asked before it starts; null for smaller jobs. */
+export function bigJobText(kind: string, action: string | undefined) {
+  switch (action) {
+    case "apply":
+      return kind === "grants" ? "a full grant application uses 8 work hours (a pitch or accelerator application uses 3)" : "a full application uses 3 work hours";
+    case "make_avatar":
+      return "a talking video uses 8 work hours for each minute (16 in Pro quality)";
+    case "audit_workflows":
+      return "reading your workflows uses 1 work hour for each one I open";
+    default:
+      return null;
+  }
+}
 
 /** Reese's work from chat: the brief becomes a campaign; approvals, notes and rewrites move the open set along. */
 async function adsAction(emp: AIEmployee, d: Decision, me: { id: number; name: string }): Promise<ActionResult> {

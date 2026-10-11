@@ -232,7 +232,7 @@ async function build(emp: AIEmployee, page: SitePage, request: string | null, ex
             extra.source ? `\n${extra.source}` : "",
           ].filter(Boolean).join("\n");
       return clean(await generateText({ system, prompt, maxTokens: 16000, temperature: 0.7, timeoutMs: 290_000 }));
-    });
+    }, { job: "doc" });
     if (!html.includes(wrapClass(page.id))) throw new Error("The page came back without its wrapper. Ask again and I'll rebuild it.");
     const filled = await fill(orgId, page, html, progress);
     const version = (current?.version ?? page.currentVersion) + 1;

@@ -185,6 +185,9 @@ export async function checkBidPrime(orgId: number, manual = false, now = new Dat
   try {
     res = await runBrowserTask({
       orgId,
+      job: "search",
+      jobLabel: "BidPrime",
+      employeeId: emp.id,
       actor: `${emp.name}, the grants and bids employee`,
       startUrl: c.settings.startUrl || BIDPRIME_HOME,
       secrets,
@@ -230,6 +233,7 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","refnum":"","location"
     if (opened || listUrl) {
       const d = await runBrowserTask({
         orgId,
+        job: null,
         actor: `${emp.name}, the grants and bids employee`,
         startUrl: opened ? b.detailUrl! : listUrl!,
         secrets,
@@ -424,6 +428,9 @@ export async function autoSubmit(orgId: number, appId: number) {
     const site = hostOf(route.url) ?? route.url;
     const res = await runBrowserTask({
       orgId,
+      job: "portal",
+      jobLabel: site,
+      employeeId: emp.id,
       actor: `${emp.name}, submitting an approved application`,
       startUrl: route.url,
       allowSubmit: true,
@@ -462,6 +469,9 @@ If the site requires creating an account or signing in before the form can be su
   const liveId = newLiveId();
   const res = await runBrowserTask({
     orgId,
+    job: "portal",
+    jobLabel: opp?.title ?? "",
+    employeeId: emp.id,
     actor: `${emp.name}, submitting an approved bid response`,
     startUrl: login.url || opp?.sourceUrl || "",
     secrets: { email: login.username, password: secrets?.password, code: takeCode(`portal-${login.id}`) },

@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
+import { BIG_JOB, useHoursAsk } from "../HoursAsk";
 import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine, FolderTabs } from "../ui";
 import { fmtDate } from "../meta";
@@ -20,6 +21,7 @@ function StatusCard({ emp }: { emp: EmployeeRow }) {
   const utils = trpc.useUtils();
   const q = trpc.platform.overview.useQuery({ organizationId: currentOrgId });
   const audit = trpc.platform.audit.useMutation({ onSuccess: () => Promise.all([utils.platform.overview.invalidate(), utils.chat.list.invalidate()]) });
+  const hours = useHoursAsk();
   const o = q.data;
   return (
     <div className="ld-card ld-av-set">
@@ -39,6 +41,7 @@ function StatusCard({ emp }: { emp: EmployeeRow }) {
             </span>
           </>
         )}
+        {hours.question("audit")}
         <ErrorLine error={audit.error} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -46,7 +49,7 @@ function StatusCard({ emp }: { emp: EmployeeRow }) {
           o.auditing ? (
             <Link href="/chats/platform" className="ld-btn ld-av-link-plain">Watch</Link>
           ) : (
-            <button type="button" className="ld-btn p" disabled={audit.isPending} onClick={() => audit.mutate({ organizationId: currentOrgId })}>{audit.isPending ? "Starting..." : o.auditedAt ? "Audit again" : "Audit now"}</button>
+            <button type="button" className="ld-btn p" disabled={audit.isPending} onClick={() => hours.confirm("audit", BIG_JOB.audit, () => audit.mutate({ organizationId: currentOrgId }))}>{audit.isPending ? "Starting..." : o.auditedAt ? "Audit again" : "Audit now"}</button>
           )
         )}
       </div>

@@ -130,7 +130,7 @@ export async function writeSiteAudit(emp: AIEmployee, input: { url: string; abou
     );
     db.attachChatFiles(orgId, [file.id], msg.id);
     return { file, site };
-  });
+  }, { job: "doc", label: "Website audit" });
 }
 
 /** The newest audit in Jordan's chat, for the mockup. */

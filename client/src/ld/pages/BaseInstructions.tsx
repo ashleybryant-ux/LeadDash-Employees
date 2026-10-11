@@ -2,6 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { ErrorLine, FolderTabs, Page } from "../ui";
 import { fmtDate } from "../meta";
+import type { Outputs } from "../types";
 import { RulesEditor, TableEditor, type HbPart, type HbSection } from "../handbook/parts";
 
 const COLS = "minmax(0,1fr) 90px 170px 128px";
@@ -12,7 +13,7 @@ type Row = HbPart & { ruleCount: number; updatedBy: string | null; updatedAt: st
 /** LeadDash staff only: the base handbook every workspace follows, and who changed it. */
 export default function BaseInstructions() {
   const q = trpc.handbook.base.useQuery();
-  const [tab, setTab] = React.useState<"handbook" | "playbooks" | "changes">("handbook");
+  const [tab, setTab] = React.useState<"handbook" | "playbooks" | "changes" | "hours">("handbook");
   const [open, setOpen] = React.useState<string | null>(null);
   const parts = (q.data?.parts ?? []) as Row[];
   const plays = (q.data?.playbooks ?? []) as Row[];
@@ -29,11 +30,14 @@ export default function BaseInstructions() {
           { key: "handbook", label: `Handbook (${parts.length})` },
           { key: "playbooks", label: `Playbooks (${plays.length})` },
           { key: "changes", label: `Changes (${changes.length})` },
+          { key: "hours", label: "Work hours" },
         ]}
         value={tab}
         onChange={setTab}
       >
-        {tab !== "changes" ? (
+        {tab === "hours" ? (
+          <WorkHoursTab />
+        ) : tab !== "changes" ? (
           <>
             <div className="ld-hd" style={{ gridTemplateColumns: COLS }}>
               <span>{tab === "handbook" ? "Part" : "Playbook"}</span>
@@ -79,6 +83,112 @@ export default function BaseInstructions() {
       </FolderTabs>
       <ErrorLine error={q.error} />
     </Page>
+  );
+}
+
+const WH_COLS = "minmax(0,1fr) 150px 120px 90px 80px 128px";
+const PLAN_OPTIONS: { key: string; label: string }[] = [
+  { key: "", label: "No plan (not limited)" },
+  { key: "starter", label: "Starter, 50 hours, $49" },
+  { key: "growth", label: "Growth, 120 hours, $99" },
+  { key: "pro", label: "Pro, 300 hours, $199" },
+  { key: "practice_starter", label: "Practice Starter, 50 hours, $99" },
+  { key: "practice_growth", label: "Practice Growth, 120 hours, $199" },
+  { key: "practice_pro", label: "Practice Pro, 300 hours, $349" },
+];
+type PlanKey = "starter" | "growth" | "pro" | "practice_starter" | "practice_growth" | "practice_pro";
+
+/** LeadDash staff: each workspace's plan, work hours this month, AI cost and margin; set the plan and add bought hours. */
+function WorkHoursTab() {
+  const q = trpc.hours.staffList.useQuery();
+  const [open, setOpen] = React.useState<number | null>(null);
+  const list = q.data ?? [];
+  return (
+    <>
+      <div className="ld-hd" style={{ gridTemplateColumns: WH_COLS }}>
+        <span>Workspace</span>
+        <span>Plan</span>
+        <span>Used / left</span>
+        <span>AI cost</span>
+        <span>Margin</span>
+        <span />
+      </div>
+      {list.length === 0 && <div className="ld-empty">{q.isLoading ? "Loading..." : "No workspaces yet."}</div>}
+      {list.map((w) => {
+        const isOpen = open === w.id;
+        return (
+          <React.Fragment key={w.id}>
+            <div className={`ld-rw ${isOpen ? "open" : ""}`} style={{ gridTemplateColumns: WH_COLS }}>
+              <span className="ld-strong" style={{ overflowWrap: "anywhere" }}>{w.name}</span>
+              <span>{w.planName ?? <span className="ld-muted">No plan</span>}</span>
+              <span>{w.usedHours} hr{w.leftHours != null ? ` / ${w.leftHours} hr` : ""}</span>
+              <span>${w.cost.toFixed(2)}</span>
+              <span style={{ fontWeight: 700, color: w.margin == null ? "var(--ld-muted)" : w.margin >= 50 ? "var(--ld-accent)" : w.margin >= 35 ? "#b5651d" : "var(--ld-bad)" }}>{w.margin == null ? "None" : `${w.margin}%`}</span>
+              <button type="button" className="ld-btn" onClick={() => setOpen(isOpen ? null : w.id)}>{isOpen ? "Close" : "Open"}</button>
+            </div>
+            {isOpen && <WorkspaceHours w={w} />}
+          </React.Fragment>
+        );
+      })}
+      <ErrorLine error={q.error} />
+    </>
+  );
+}
+
+type StaffRow = Outputs["hours"]["staffList"][number];
+
+function WorkspaceHours({ w }: { w: StaffRow }) {
+  const utils = trpc.useUtils();
+  const refresh = () => Promise.all([utils.hours.staffList.invalidate(), utils.hours.get.invalidate()]);
+  const [editing, setEditing] = React.useState(false);
+  const [plan, setPlan] = React.useState<string>(w.plan ?? "");
+  const [hours, setHours] = React.useState("");
+  const [note, setNote] = React.useState("");
+  const savePlan = trpc.hours.setPlan.useMutation({ onSuccess: async () => { setEditing(false); await refresh(); } });
+  const add = trpc.hours.addPack.useMutation({ onSuccess: async () => { setHours(""); setNote(""); await refresh(); } });
+  const hoursOk = /^\d+(\.\d)?$/.test(hours.trim()) && Number(hours) >= 0.5;
+  return (
+    <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+        <span className="ld-lbl">Plan</span>
+        {!editing ? (
+          <span>{w.planName ? `${w.planName}, ${w.planHours} work hours a month` : "No plan. Work is counted but not limited."}</span>
+        ) : (
+          <select className="ld-in" style={{ maxWidth: 320 }} aria-label="Plan" value={plan} onChange={(e) => setPlan(e.target.value)}>
+            {PLAN_OPTIONS.map((p) => (
+              <option key={p.key} value={p.key}>{p.label}</option>
+            ))}
+          </select>
+        )}
+        <span className="ld-lbl" style={{ marginTop: 8 }}>Add bought hours</span>
+        <div className="ld-row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <input className="ld-in" style={{ width: 90 }} inputMode="decimal" placeholder="Hours" aria-label="Hours bought" value={hours} onChange={(e) => setHours(e.target.value)} />
+          <input className="ld-in" style={{ flex: "1 1 180px", minWidth: 0 }} placeholder="Note (paid Oct 11, 2026)" aria-label="Note" value={note} onChange={(e) => setNote(e.target.value)} />
+          <button type="button" className="ld-btn p" style={{ width: 100 }} disabled={!hoursOk || add.isPending} onClick={() => add.mutate({ organizationId: w.id, hours: Number(hours), note })}>{add.isPending ? "Adding" : "Add"}</button>
+        </div>
+        <span className="ld-small ld-muted">Bought hours are used after the plan's hours each month and last 12 months.</span>
+        <ErrorLine error={savePlan.error ?? add.error} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+        <span className="ld-lbl">Bought hours</span>
+        {w.packs.length === 0 && <span className="ld-muted">None yet.</span>}
+        {w.packs.map((p) => (
+          <span key={p.id} className="ld-small" style={{ lineHeight: 1.5 }}>
+            <b>{p.hours} hr</b> added {p.added}{p.addedBy ? ` by ${p.addedBy}` : ""}, {p.left} hr left, good through {p.expires}{p.note ? `. ${p.note}` : ""}
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {!editing ? (
+          <button type="button" className="ld-btn" onClick={() => { setPlan(w.plan ?? ""); setEditing(true); }}>Edit plan</button>
+        ) : (
+          <>
+            <button type="button" className="ld-btn p" disabled={savePlan.isPending} onClick={() => savePlan.mutate({ organizationId: w.id, plan: (plan || null) as PlanKey | null })}>{savePlan.isPending ? "Saving" : "Save"}</button>
+            <button type="button" className="ld-btn" onClick={() => setEditing(false)}>Cancel</button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

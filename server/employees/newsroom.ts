@@ -358,7 +358,7 @@ The owner: ${brain.org?.signerName ?? ""}${brain.org?.signerTitle ? `, ${brain.o
 Return up to 15 reporters, up to 8 stories and any coverage found.`;
       const res = await searchJson<ScoutResult>({ system, prompt, schemaName: "press_scout", schema: SCOUT_SCHEMA, maxUses: 15, maxTokens: 16000 });
       return applyScout(orgId, res.data, res.sources, opts);
-    });
+    }, { job: "search", label: "Reporter scout" });
   } finally {
     scouting.delete(orgId);
     db.press.saveSettings(orgId, { lastScoutAt: new Date() });
@@ -556,7 +556,7 @@ Return up to 15 new reporters you can prove.`;
         });
       }
       return { added, updated, emails: contacts.emails, beats: ran, ...p };
-    });
+    }, { job: "lead", count: (r) => r.added });
   } finally {
     building.delete(orgId);
   }
@@ -625,7 +625,7 @@ export async function recheck(orgId: number, contactId: number) {
       return contactFor(orgId, contactId)!;
     }
     return mergeReporter(orgId, r, newsroomOrgs(orgId)).contact;
-  });
+  }, { job: "search", label: "Reporter contact check" });
 }
 
 // ==========================================

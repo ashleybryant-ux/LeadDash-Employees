@@ -1,6 +1,7 @@
 import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, ErrorLine } from "./ui";
 import { SILENT } from "./voice";
 import type { Outputs } from "./types";
@@ -17,6 +18,11 @@ type Options = Outputs["voices"]["options"];
 type Emp = Options["employees"][number];
 type Provider = "elevenlabs" | "openai";
 const PROVIDER_NAME: Record<Provider, string> = { elevenlabs: "ElevenLabs", openai: "OpenAI" };
+/** The AI providers are LeadDash's trade secret: workspaces see Standard and Premium voices, and only LeadDash staff see who and what it costs. */
+const CUSTOMER_NAME: Record<Provider, string> = { elevenlabs: "Premium", openai: "Standard" };
+function useStaff() {
+  return useAuth().user?.role === "admin";
+}
 
 /** Plays a sample: the audio element starts on the tap (so phones allow it), then gets the clip. */
 function usePlayer() {
@@ -153,8 +159,10 @@ export function EmployeeLookRow({ v, e, single }: { v: Options; e: Emp; single?:
   };
   const options: { id: string; name: string; note: string }[] =
     provider === "openai" ? v.openai : (v.elevenlabs ?? []).map((x) => ({ id: x.id, name: x.name, note: [x.gender, x.accent, x.own ? "your own voice" : ""].filter(Boolean).join(", ") }));
+  const staff = useStaff();
+  const nameOf = (p: Provider) => (staff ? PROVIDER_NAME[p] : CUSTOMER_NAME[p]);
   const defaultName = e.own ? "" : e.voiceName;
-  const voiceText = e.voiceId ? `${e.voiceName || e.voiceId} (${PROVIDER_NAME[e.provider]})${e.own ? "" : ", the standard voice for this role"}` : `No voice yet (${PROVIDER_NAME[e.provider]})`;
+  const voiceText = e.voiceId ? `${e.voiceName || e.voiceId} (${nameOf(e.provider)})${e.own ? "" : ", the standard voice for this role"}` : `No voice yet (${nameOf(e.provider)})`;
   return (
     <div className={`ld-look ${editing ? "editing" : ""}`}>
       <div className="ld-look-row">
@@ -191,12 +199,12 @@ export function EmployeeLookRow({ v, e, single }: { v: Options; e: Emp; single?:
             <div className="ld-row" style={{ flexWrap: "wrap" }}>
               {(["elevenlabs", "openai"] as Provider[]).map((p) => (
                 <button key={p} type="button" className={`ld-chip ${provider === p ? "on" : ""}`} aria-pressed={provider === p} disabled={p === "elevenlabs" && !v.hasElevenLabs} onClick={() => { setProvider(p); setVoiceId(null); }}>
-                  {PROVIDER_NAME[p]} · {v.prices[p].perMinute.replace("about ", "")}
+                  {staff ? `${PROVIDER_NAME[p]} · ${v.prices[p].perMinute.replace("about ", "")}` : CUSTOMER_NAME[p]}
                 </button>
               ))}
-              {!v.hasElevenLabs && <span className="ld-small ld-muted">ElevenLabs is not set up on the server.</span>}
+              {!v.hasElevenLabs && <span className="ld-small ld-muted">{staff ? "ElevenLabs is not set up on the server." : "Premium voices aren't turned on yet."}</span>}
             </div>
-            {provider === "elevenlabs" && v.elevenError && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{v.elevenError}</span>}
+            {provider === "elevenlabs" && v.elevenError && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{staff ? v.elevenError : "Premium voices couldn't load. Try again in a minute."}</span>}
             <div className="ld-look-voices">
               <label className={`ld-look-opt ${voiceId === null ? "on" : ""}`}>
                 <input type="radio" name={`voice-${e.id}`} checked={voiceId === null} onChange={() => setVoiceId(null)} />
@@ -215,7 +223,7 @@ export function EmployeeLookRow({ v, e, single }: { v: Options; e: Emp; single?:
                   <PlayButton small on={player.playing === `${provider}:${o.id}:${e.id}`} busy={player.busy} onClick={() => player.play(provider, o.id, e.id)} />
                 </label>
               ))}
-              {provider === "elevenlabs" && v.hasElevenLabs && !options.length && !v.elevenError && <span className="ld-small ld-muted">No voices on the ElevenLabs account yet. Add some under My Voices in ElevenLabs.</span>}
+              {provider === "elevenlabs" && v.hasElevenLabs && !options.length && !v.elevenError && <span className="ld-small ld-muted">{staff ? "No voices on the ElevenLabs account yet. Add some under My Voices in ElevenLabs." : "No premium voices yet."}</span>}
             </div>
           </div>
           {player.error && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>{player.error}</span>}
@@ -243,10 +251,11 @@ export function EmployeeLookRow({ v, e, single }: { v: Options; e: Emp; single?:
 export function EmployeesLook() {
   const { currentOrgId } = useTenant();
   const q = trpc.voices.options.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const staff = useStaff();
   if (!q.data) return <section className="ld-card"><div className="ld-empty">{q.isLoading ? "Loading..." : "Could not load the voices."}<ErrorLine error={q.error} /></div></section>;
   return (
     <>
-      <VoiceProviderCard v={q.data} />
+      {staff && <VoiceProviderCard v={q.data} />}
       <section className="ld-card" style={{ overflow: "hidden" }}>
         <div className="ld-sh">
           <span className="ld-st">Photos and voices</span>

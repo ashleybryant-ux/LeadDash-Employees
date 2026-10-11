@@ -282,7 +282,7 @@ export async function checkPress(orgId: number) {
           console.warn(`[press] ${service.name} email skipped:`, err instanceof Error ? err.message : err);
         }
       }
-    });
+    }, { job: "search", count: () => (made.length ? 1 : 0), label: "Reporter requests" });
     // Pitches start for the good fits; each waits in Approvals until the owner sends it.
     const good = made.filter((x) => x.opp.fitCall === "apply");
     for (const x of good) await startApplication(orgId, x.opp.id, null);

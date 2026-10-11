@@ -146,6 +146,10 @@ html.ld-review .ld-emphead { top: 34px !important; }
 .ld-nextbar-sp { flex: 1; }
 .ld-nextbar-b { height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid #3b5a4e; color: #fff !important; font: inherit; font-size: 12.5px; font-weight: 700; display: inline-flex; align-items: center; background: none; cursor: pointer; text-decoration: none; flex-shrink: 0; }
 .ld-nextbar-b.p { background: var(--ld-accent); border-color: var(--ld-accent); }
+.ld-nextbar.out { background: #fdf3e1; color: #8a4510; border-bottom: 1px solid #f1d6a6; }
+.ld-nextbar.out .ld-nextbar-t { color: #6b4a22; }
+.ld-nextbar.out .ld-nextbar-b { border-color: #e4c48f; color: #14221c !important; background: #fff; }
+.ld-nextbar.out .ld-nextbar-b.p { background: var(--ld-accent); border-color: var(--ld-accent); color: #fff !important; }
 html.ld-next .ld { padding-top: 36px; }
 html.ld-next .ld-rail { top: 36px !important; height: calc(100vh - 36px); height: calc(100dvh - 36px); }
 html.ld-next .ld-chatlist { top: 36px !important; height: calc(100vh - 36px) !important; }
@@ -2158,4 +2162,13 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-look-row { flex-wrap: wrap; }
   .ld-look-voice { max-width: none; white-space: normal; width: 100%; }
   .ld-look-voices { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Asking before a job of 3 work hours or more */
+.ld-hours-ask { flex-basis: 100%; width: 100%; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; padding: 10px 12px; border: 1px solid var(--ld-accent-line); background: var(--ld-accent-bg); border-radius: 10px; font-size: 13.5px; line-height: 1.45; color: var(--ld-ink); }
+.ld-hours-bar { height: 10px; border-radius: 99px; background: var(--ld-line2); overflow: hidden; }
+.ld-hours-bar i { display: block; height: 100%; background: var(--ld-accent); border-radius: 99px; }
+@media (max-width: 640px) {
+  .ld-job-row { grid-template-columns: 28px minmax(0, 1fr) 56px !important; }
+  .ld-job-row > span.ld-small { display: none; }
 }

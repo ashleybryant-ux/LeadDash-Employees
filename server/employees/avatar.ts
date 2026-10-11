@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import * as hours from "../workHours";
 import * as db from "../db";
 import { ENV } from "../_core/env";
 import type { AIEmployee, AvatarVideo } from "../../drizzle/schema";
@@ -250,8 +251,10 @@ export async function make(orgId: number, id: number): Promise<AvatarVideo> {
   }
   const quality = (v.quality as Quality) ?? s.quality;
   const estimate = costFor(estimateTenths(v.script), quality);
-  const spent = await spentThisMonth(orgId);
-  if (spent + estimate > s.limitCents) {
+  const metered = hours.meteredSync(orgId);
+  if (metered) await hours.gate(orgId);
+  const spent = metered ? 0 : await spentThisMonth(orgId);
+  if (!metered && spent + estimate > s.limitCents) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `This one (about $${(estimate / 100).toFixed(2)}) would go over your $${(s.limitCents / 100).toFixed(0)} monthly limit. You've spent $${(spent / 100).toFixed(2)} this month. Raise the limit under Your avatar.` });
   }
   db.updateAvatarVideo(id, orgId, { status: "making", error: null, imageId: photo.id, voiceId, voiceName, quality, costCents: estimate, madeAt: new Date() });
@@ -333,10 +336,14 @@ export async function check(v: AvatarVideo) {
 async function finish(v: AvatarVideo, videoUrl: string | null, error: string | null) {
   const done = db.updateAvatarVideo(v.id, v.organizationId, videoUrl ? { status: "ready", videoUrl, error: null } : { status: "failed", error: error?.slice(0, 400) ?? "Something went wrong.", costCents: 0 })!;
   const emp = await db.getEmployeeForOrg(v.employeeId, v.organizationId);
+  const metered = hours.meteredSync(v.organizationId);
+  const minutes = hours.videoMinutes(done.tenths, done.quality);
+  if (videoUrl) await hours.charge(v.organizationId, emp?.id ?? null, "video", minutes / hours.JOBS.video.minutes, done.title).catch(() => 0);
+  else await hours.skipped(v.organizationId, emp?.id ?? null, "video", minutes / hours.JOBS.video.minutes, done.title).catch(() => null);
   if (emp) {
     const content = videoUrl
-      ? `Your video "${done.title}" is ready. It came out at ${fmtLength(done.tenths)} and cost $${(done.costCents / 100).toFixed(2)}. It's saved on my Videos tab.`
-      : `"${done.title}" didn't finish: ${done.error} You weren't charged for it.`;
+      ? `Your video "${done.title}" is ready. It came out at ${fmtLength(done.tenths)} and ${metered ? `used ${hours.hoursText(minutes)} of work` : `cost $${(done.costCents / 100).toFixed(2)}`}. It's saved on my Videos tab.`
+      : `"${done.title}" didn't finish: ${done.error} ${metered ? "It used no work hours." : "You weren't charged for it."}`;
     await db.createChatMessage({
       organizationId: v.organizationId,
       employeeId: emp.id,
@@ -369,7 +376,11 @@ export function view(v: AvatarVideo, photoTitle?: string) {
     script: v.script,
     status: v.status,
     length: fmtLength(v.tenths ?? (v.status === "ready" ? null : estimateTenths(v.script))),
-    cost: `${v.status === "ready" || v.status === "failed" ? "" : "about "}$${(v.costCents / 100).toFixed(2)}`,
+    cost: hours.meteredSync(v.organizationId)
+      ? v.status === "failed"
+        ? "Not charged"
+        : `${v.status === "ready" ? "" : "about "}${hours.hoursText(hours.videoMinutes(v.tenths ?? estimateTenths(v.script), v.quality))}`
+      : `${v.status === "ready" || v.status === "failed" ? "" : "about "}$${(v.costCents / 100).toFixed(2)}`,
     quality: v.quality,
     voiceName: v.voiceName,
     /** Who is on camera: the owner (null) or a made-up person from the cast. */

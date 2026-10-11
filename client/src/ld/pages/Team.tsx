@@ -42,19 +42,19 @@ function accessLabel(m: Member) {
   return n ? `Own + ${n}` : "Own only";
 }
 type Ai = { userId: number; used: number; limit: number | null; source: "own" | "workspace" | "none" | "exempt" | "chat"; mode: LimitMode; own: number | null; month: string };
-type Limits = { defaultDollars: number | null; ownersExempt: boolean; warnPct: 0 | 80 | 90; atLimit: "stop" | "warn" };
+type Limits = { defaultHours: number | null; ownersExempt: boolean; warnPct: 0 | 80 | 90; atLimit: "stop" | "warn" };
 
-const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const hrs = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 1 })} hr`;
 const radio: React.CSSProperties = { margin: 0, accentColor: "var(--ld-accent)" };
 
-/** This month's AI cost against the person's limit, with a bar that turns orange near it and red at it. */
+/** This month's work hours against the person's limit, with a bar that turns orange near it and red at it. */
 function AiCell({ a, warnPct }: { a?: Ai; warnPct: number }) {
   if (!a) return <span />;
   if (a.source === "chat") return <span className="ld-small ld-muted">Team chat only</span>;
   if (a.limit == null)
     return (
       <span style={{ fontSize: 14 }}>
-        <b>{money(a.used)}</b> <span className="ld-muted">· No limit</span>
+        <b>{hrs(a.used)}</b> <span className="ld-muted">· No limit</span>
       </span>
     );
   const pct = a.limit > 0 ? Math.min(100, Math.round((a.used / a.limit) * 100)) : 100;
@@ -63,9 +63,9 @@ function AiCell({ a, warnPct }: { a?: Ai; warnPct: number }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <span style={{ fontSize: 14 }}>
-        <b>{money(a.used)}</b> <span className="ld-muted">of {money(a.limit)}</span>
+        <b>{hrs(a.used)}</b> <span className="ld-muted">of {hrs(a.limit)}</span>
       </span>
-      <div style={{ height: 6, borderRadius: 999, background: "#e8eeeb", overflow: "hidden" }} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="AI used this month">
+      <div style={{ height: 6, borderRadius: 999, background: "#e8eeeb", overflow: "hidden" }} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Work hours used this month">
         <div style={{ width: `${pct}%`, height: "100%", background: color }} />
       </div>
       {reached && <span style={{ fontSize: 12, fontWeight: 700, color: "var(--ld-bad)" }}>Limit reached</span>}
@@ -73,7 +73,7 @@ function AiCell({ a, warnPct }: { a?: Ai; warnPct: number }) {
   );
 }
 
-/** The workspace's AI limits: read view with Edit, and the edit state with Save and Cancel. */
+/** The workspace's work-hour limits: read view with Edit, and the edit state with Save and Cancel. */
 function AiLimitsSection({ canEdit }: { canEdit: boolean }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
@@ -87,11 +87,11 @@ function AiLimitsSection({ canEdit }: { canEdit: boolean }) {
   });
   const l = q.data as Limits | undefined;
   if (!l) return null;
-  const amountOk = !edit || edit.amount.trim() === "" || /^\d+(\.\d{1,2})?$/.test(edit.amount.trim().replace(/^\$/, ""));
+  const amountOk = !edit || edit.amount.trim() === "" || /^\d+(\.\d)?$/.test(edit.amount.trim());
   return (
     <section className="ld-card" style={edit ? { borderColor: "var(--ld-accent)" } : undefined}>
       <div className="ld-between" style={{ padding: "14px 18px", borderBottom: "1px solid #eef2f0" }}>
-        <span className="ld-st">AI limits</span>
+        <span className="ld-st">Work-hour limits</span>
         {edit ? (
           <span className="ld-row">
             <button type="button" className="ld-btn" onClick={() => setEdit(null)}>Cancel</button>
@@ -100,8 +100,8 @@ function AiLimitsSection({ canEdit }: { canEdit: boolean }) {
               className="ld-btn p"
               disabled={save.isPending || !amountOk}
               onClick={() => {
-                const a = edit.amount.trim().replace(/^\$/, "");
-                save.mutate({ organizationId: currentOrgId, defaultDollars: a === "" ? null : Number(a), ownersExempt: edit.ownersExempt, warnPct: edit.warnPct, atLimit: edit.atLimit });
+                const a = edit.amount.trim();
+                save.mutate({ organizationId: currentOrgId, defaultHours: a === "" ? null : Number(a), ownersExempt: edit.ownersExempt, warnPct: edit.warnPct, atLimit: edit.atLimit });
               }}
             >
               Save
@@ -109,7 +109,7 @@ function AiLimitsSection({ canEdit }: { canEdit: boolean }) {
           </span>
         ) : (
           canEdit && (
-            <button type="button" className="ld-btn" onClick={() => setEdit({ amount: l.defaultDollars == null ? "" : String(l.defaultDollars), ownersExempt: l.ownersExempt, warnPct: l.warnPct, atLimit: l.atLimit })}>
+            <button type="button" className="ld-btn" onClick={() => setEdit({ amount: l.defaultHours == null ? "" : String(l.defaultHours), ownersExempt: l.ownersExempt, warnPct: l.warnPct, atLimit: l.atLimit })}>
               Edit
             </button>
           )
@@ -118,7 +118,7 @@ function AiLimitsSection({ canEdit }: { canEdit: boolean }) {
       {!edit ? (
         <div style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "8px 16px", padding: "14px 18px", fontSize: 14, lineHeight: 1.55 }}>
           <span className="ld-muted" style={{ fontWeight: 600 }}>Workspace limit</span>
-          <span>{l.defaultDollars == null ? "No limit" : `${money(l.defaultDollars)} a person, each month`}</span>
+          <span>{l.defaultHours == null ? "No limit" : `${hrs(l.defaultHours)} a person, each month`}</span>
           <span className="ld-muted" style={{ fontWeight: 600 }}>Owners and admins</span>
           <span>{l.ownersExempt ? "No limit" : "Same limit as everyone"}</span>
           <span className="ld-muted" style={{ fontWeight: 600 }}>Heads-up</span>
@@ -132,9 +132,8 @@ function AiLimitsSection({ canEdit }: { canEdit: boolean }) {
         <div style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "10px 16px", padding: "14px 18px", fontSize: 14, alignItems: "center" }}>
           <label htmlFor="ai-default" className="ld-muted" style={{ fontWeight: 600 }}>Workspace limit</label>
           <span className="ld-row" style={{ gap: 6 }}>
-            <span className="ld-muted">$</span>
             <input id="ai-default" className="ld-in" style={{ width: 90, height: 32 }} inputMode="decimal" placeholder="None" value={edit.amount} onChange={(e) => setEdit({ ...edit, amount: e.target.value })} />
-            <span className="ld-muted">a person, each month. Leave it blank for no limit.</span>
+            <span className="ld-muted">work hours a person, each month. Leave it blank for no limit.</span>
           </span>
           <span className="ld-muted" style={{ fontWeight: 600 }}>Owners and admins</span>
           <span className="ld-row" style={{ gap: 18, fontSize: 13.5 }}>
@@ -155,7 +154,7 @@ function AiLimitsSection({ canEdit }: { canEdit: boolean }) {
             <label className="ld-row" style={{ gap: 6 }}><input type="radio" name="ai-at" style={radio} checked={edit.atLimit === "stop"} onChange={() => setEdit({ ...edit, atLimit: "stop" })} />Employees stop starting new work for that person</label>
             <label className="ld-row" style={{ gap: 6 }}><input type="radio" name="ai-at" style={radio} checked={edit.atLimit === "warn"} onChange={() => setEdit({ ...edit, atLimit: "warn" })} />Keep working, just tell me</label>
           </span>
-          {!amountOk && <span style={{ gridColumn: "1 / -1", color: "var(--ld-bad)", fontSize: 13 }}>Type the limit in dollars, like 20 or 25.50.</span>}
+          {!amountOk && <span style={{ gridColumn: "1 / -1", color: "var(--ld-bad)", fontSize: 13 }}>Type the limit in work hours, like 20 or 12.5.</span>}
           <div style={{ gridColumn: "1 / -1" }}><ErrorLine error={save.error} /></div>
         </div>
       )}
@@ -199,14 +198,14 @@ export default function Team() {
 
   const members = (q.data ?? []) as Member[];
   const aiBy = new Map(((ai.data ?? []) as Ai[]).map((a) => [a.userId, a]));
-  const workspaceLimit = (lim.data as Limits | undefined)?.defaultDollars ?? null;
+  const workspaceLimit = (lim.data as Limits | undefined)?.defaultHours ?? null;
   const warnPct = (lim.data as Limits | undefined)?.warnPct ?? 80;
   const ownerCount = members.filter((m) => m.role === "owner").length;
   const me = members.find((m) => m.userId === user?.id);
   const canMakeOwner = user?.role === "admin" || me?.role === "owner";
   // Owners, admins and LeadDash staff change the team; everyone else only sees it.
   const canManage = !user?.reviewer && !chatOnly && (user?.role === "admin" || me?.role === "owner" || me?.role === "admin");
-  const ownOk = limitMode !== "custom" || /^\d+(\.\d{1,2})?$/.test(own.trim().replace(/^\$/, ""));
+  const ownOk = limitMode !== "custom" || /^\d+(\.\d)?$/.test(own.trim());
   const saving = updateRole.isPending || setLimit.isPending || setChatAccess.isPending;
 
   const saveMember = async (m: Member) => {
@@ -216,8 +215,8 @@ export default function Team() {
     const a = aiBy.get(m.userId);
     try {
       if (role !== m.role) await updateRole.mutateAsync({ organizationId: currentOrgId, userId: m.userId, role });
-      const dollars = limitMode === "custom" ? Number(own.trim().replace(/^\$/, "")) : null;
-      if (limitMode !== a?.mode || (limitMode === "custom" && dollars !== a?.own)) await setLimit.mutateAsync({ organizationId: currentOrgId, userId: m.userId, mode: limitMode, dollars });
+      const hours = limitMode === "custom" ? Number(own.trim()) : null;
+      if (limitMode !== a?.mode || (limitMode === "custom" && hours !== a?.own)) await setLimit.mutateAsync({ organizationId: currentOrgId, userId: m.userId, mode: limitMode, hours });
       const was = accessOf(m);
       const picked = { ...access, users: access.mode === "some" ? access.users : [], workspace: access.mode === "some" ? access.workspace : false };
       const changed = picked.mode !== was.mode || picked.workspace !== was.workspace || picked.users.slice().sort().join() !== was.users.slice().sort().join();
@@ -245,7 +244,7 @@ export default function Team() {
           <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: COLS, gap: 16, padding: "12px 18px 8px", borderBottom: "1px solid #eef2f0", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ld-muted)" }}>
             <span />
             <span>Person</span>
-            <span>AI this month</span>
+            <span>Work hours this month</span>
             <span>Sees in chats</span>
             <span>Role</span>
             <span />
@@ -303,19 +302,18 @@ export default function Team() {
                     ))}
                   </fieldset>
                   <fieldset style={{ border: 0, margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
-                    <legend className="ld-lbl" style={{ padding: 0, marginBottom: 6 }}>Monthly AI limit</legend>
+                    <legend className="ld-lbl" style={{ padding: 0, marginBottom: 6 }}>Monthly work-hour limit</legend>
                     <label style={{ display: "grid", gridTemplateColumns: "18px 130px minmax(0,1fr)", gap: 10, alignItems: "center", fontSize: 13.5, cursor: "pointer" }}>
                       <input type="radio" name={`lim-${m.userId}`} checked={limitMode === "default"} onChange={() => setLimitMode("default")} style={radio} />
                       <b>Workspace limit</b>
-                      <span className="ld-muted">{workspaceLimit == null ? "None set" : money(workspaceLimit)}</span>
+                      <span className="ld-muted">{workspaceLimit == null ? "None set" : hrs(workspaceLimit)}</span>
                     </label>
                     <label style={{ display: "grid", gridTemplateColumns: "18px 130px minmax(0,1fr)", gap: 10, alignItems: "center", fontSize: 13.5, cursor: "pointer" }}>
                       <input type="radio" name={`lim-${m.userId}`} checked={limitMode === "custom"} onChange={() => setLimitMode("custom")} style={radio} />
                       <b>Their own limit</b>
                       <span className="ld-row" style={{ gap: 6 }}>
-                        <span className="ld-muted">$</span>
-                        <input className="ld-in" style={{ width: 80, height: 30 }} inputMode="decimal" aria-label={`${name}'s monthly limit in dollars`} value={own} onFocus={() => setLimitMode("custom")} onChange={(e) => setOwn(e.target.value)} />
-                        <span className="ld-muted">a month</span>
+                        <input className="ld-in" style={{ width: 80, height: 30 }} inputMode="decimal" aria-label={`${name}'s monthly limit in work hours`} value={own} onFocus={() => setLimitMode("custom")} onChange={(e) => setOwn(e.target.value)} />
+                        <span className="ld-muted">hours a month</span>
                       </span>
                     </label>
                     <label style={{ display: "grid", gridTemplateColumns: "18px 130px minmax(0,1fr)", gap: 10, alignItems: "center", fontSize: 13.5, cursor: "pointer" }}>
@@ -323,8 +321,8 @@ export default function Team() {
                       <b>No limit</b>
                       <span />
                     </label>
-                    {a && <span className="ld-small ld-muted">Used in {a.month}: {money(a.used)}{a.limit != null ? ` of ${money(a.limit)}` : ""}</span>}
-                    {!ownOk && <span style={{ color: "var(--ld-bad)", fontSize: 13 }}>Type the limit in dollars, like 25 or 40.50.</span>}
+                    {a && <span className="ld-small ld-muted">Used in {a.month}: {hrs(a.used)}{a.limit != null ? ` of ${hrs(a.limit)}` : ""}</span>}
+                    {!ownOk && <span style={{ color: "var(--ld-bad)", fontSize: 13 }}>Type the limit in work hours, like 25 or 12.5.</span>}
                     <ErrorLine error={updateRole.error ?? setLimit.error ?? setChatAccess.error ?? remove.error} />
                   </fieldset>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, gridColumn: 4, gridRow: "1 / 3" }}>

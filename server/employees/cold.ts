@@ -563,7 +563,7 @@ export async function research(orgId: number, count: number, filter: db.ColdLead
           console.warn("[cold] search research skipped:", err instanceof Error ? err.message : err);
         }
       }
-    });
+    }, { job: "research", count: () => Math.ceil(done / 25) });
   } finally {
     researching.delete(orgId);
   }

@@ -1,0 +1,166 @@
+<!--
+  LeadDash Employees pricing page, for leaddash.io/employees.
+  Paste this whole file into a custom HTML/code block on the page.
+  Checkout links: fill in LINKS near the bottom (one per plan and billing, one per top-up).
+  A link left blank opens an email to info@leaddash.io instead.
+-->
+<div id="ldp">
+<style>
+#ldp{--ink:#14221c;--text2:#3d4c45;--muted:#5b6b64;--line:#e3e9e6;--line2:#eef2f0;--accent:#1b6b4a;--accent-bg:#e6f2ec;--page:#f8fafb;font-family:"Plus Jakarta Sans",Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--page);padding:48px 16px 64px;box-sizing:border-box}
+#ldp *{box-sizing:border-box}
+#ldp .wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+#ldp h1{margin:0;font-size:clamp(28px,4vw,40px);line-height:1.15;letter-spacing:-0.01em}
+#ldp h2{margin:0 0 10px;font-size:18px}
+#ldp .sub{color:var(--muted);font-size:16px;margin-top:8px}
+#ldp .top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+#ldp .toggles{display:flex;gap:10px;flex-wrap:wrap}
+#ldp .tg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px;background:#fff}
+#ldp .tg button{border:0;background:none;padding:8px 16px;border-radius:999px;font:inherit;font-weight:700;font-size:14px;color:var(--muted);cursor:pointer;white-space:nowrap}
+#ldp .tg button.on{background:var(--ink);color:#fff}
+#ldp .plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+#ldp .plan{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px}
+#ldp .plan.hot{border:2px solid var(--accent)}
+#ldp .plan .name{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:17px}
+#ldp .pill{background:var(--accent-bg);color:var(--accent);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:800}
+#ldp .price{font-size:38px;font-weight:800;line-height:1.1}
+#ldp .price small{font-size:14px;color:var(--muted);font-weight:600}
+#ldp .hours{color:var(--accent);font-weight:800;font-size:16px}
+#ldp ul{margin:0;padding-left:18px;color:var(--text2);line-height:1.8;font-size:14.5px}
+#ldp .btn{display:flex;align-items:center;justify-content:center;height:44px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:800;text-decoration:none;margin-top:auto}
+#ldp .btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+#ldp .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px}
+#ldp .grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+#ldp .tbl{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:16px;font-size:14.5px}
+#ldp .tbl div{padding:9px 0;border-top:1px solid var(--line2)}
+#ldp .tbl div:nth-child(even){text-align:right;font-weight:800;white-space:nowrap}
+#ldp .tbl .free{color:var(--accent)}
+#ldp .rules{margin:0;padding:0;list-style:none}
+#ldp .rules li{padding:9px 0;border-top:1px solid var(--line2);font-size:14.5px;line-height:1.5}
+#ldp .tops{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+#ldp .tops a{flex:1 1 200px}
+#ldp .note{color:var(--muted);font-size:13.5px;line-height:1.5;margin-top:10px}
+#ldp [hidden]{display:none !important}
+@media (max-width:860px){#ldp .plans,#ldp .grid2{grid-template-columns:minmax(0,1fr)}}
+</style>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>One team. One pool of work hours.</h1>
+      <div class="sub">Every plan includes all 17 employees. Chatting with them is free.</div>
+    </div>
+    <div class="toggles">
+      <div class="tg" role="group" aria-label="Kind of business">
+        <button type="button" data-kind="business" class="on">Business</button>
+        <button type="button" data-kind="healthcare">Healthcare (HIPAA)</button>
+      </div>
+      <div class="tg" role="group" aria-label="Billing" id="ldp-billing">
+        <button type="button" data-bill="monthly">Monthly</button>
+        <button type="button" data-bill="yearly" class="on">Yearly, save 30%</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="plans" id="ldp-plans"></div>
+  <div class="note" id="ldp-hc-note" hidden>Healthcare plans are billed yearly. Your employees work inside LeadDash EHR under our BAA, and client information only goes to tools covered by one.</div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>What uses work hours</h2>
+      <div class="tbl" id="ldp-jobs"></div>
+    </div>
+    <div class="card">
+      <h2>How hours work</h2>
+      <ul class="rules">
+        <li>A work hour is a unit of work, not time on a clock. Each job uses the amount in the table, every time.</li>
+        <li>Hours are shared by the whole team and reset on the 1st of each month. Unused plan hours don't roll over.</li>
+        <li>Hours you buy are used after your plan's hours and last 12 months.</li>
+        <li>Jobs that use 3 hours or more ask you first.</li>
+        <li>If an employee can't finish a job, it uses no hours.</li>
+        <li>At 0 hours, employees pause until you add hours or your plan resets. Chat still works.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" id="hours">
+    <h2>Need more hours?</h2>
+    <div class="sub" style="margin-top:0;font-size:15px">Add hours any time. They're ready the same day and last 12 months.</div>
+    <div class="tops" id="ldp-tops"></div>
+  </div>
+</div>
+<script>
+(function () {
+  // Checkout links: paste each payment link between the quotes.
+  var LINKS = {
+    starter_monthly: "", starter_yearly: "", growth_monthly: "", growth_yearly: "", pro_monthly: "", pro_yearly: "",
+    practice_starter: "", practice_growth: "", practice_pro: "",
+    topup_business_10: "", topup_business_50: "", topup_healthcare_10: "", topup_healthcare_50: ""
+  };
+  var PLANS = {
+    business: [
+      { key: "starter", name: "Starter", hours: 50, monthly: 49, yearly: 34 },
+      { key: "growth", name: "Growth", hours: 120, monthly: 99, yearly: 69, hot: true },
+      { key: "pro", name: "Pro", hours: 300, monthly: 199, yearly: 139 }
+    ],
+    healthcare: [
+      { key: "practice_starter", name: "Practice Starter", hours: 50, yearly: 99 },
+      { key: "practice_growth", name: "Practice Growth", hours: 120, yearly: 199, hot: true },
+      { key: "practice_pro", name: "Practice Pro", hours: 300, yearly: 349 }
+    ]
+  };
+  var TOPUPS = { business: [{ hours: 10, price: 10 }, { hours: 50, price: 45 }], healthcare: [{ hours: 10, price: 15 }, { hours: 50, price: 65 }] };
+  var JOBS = [
+    ["Chat, setup, edits and revisions", "Free"],
+    ["Email or reply written", "10 min"],
+    ["Lead or reporter found, with contact info", "10 min"],
+    ["Answer from LeadDash EHR", "10 min", "healthcare"],
+    ["Social post with picture", "30 min"],
+    ["Task finished in Projects", "30 min"],
+    ["Blog post, doc, page or deck", "1 hr"],
+    ["Search for grants, events or prospects", "1 hr"],
+    ["Cold leads researched, per 25 leads", "1 hr", "business"],
+    ["Meeting notes, per meeting hour", "1 hr"],
+    ["Work done on a website for you", "1 hr"],
+    ["Application portal filled out", "3 hr"],
+    ["Speaking, pitch or accelerator application", "3 hr"],
+    ["Full grant application", "8 hr"],
+    ["Talking video, per minute (Pro quality: 16 hr)", "8 hr"]
+  ];
+  var kind = "business", bill = "yearly";
+  var root = document.getElementById("ldp");
+  function link(key, label) {
+    return LINKS[key] || "mailto:info@leaddash.io?subject=" + encodeURIComponent("LeadDash Employees: " + label);
+  }
+  function render() {
+    var hc = kind === "healthcare";
+    document.getElementById("ldp-billing").hidden = hc;
+    document.getElementById("ldp-hc-note").hidden = !hc;
+    document.getElementById("ldp-plans").innerHTML = PLANS[kind].map(function (p) {
+      var price = hc || bill === "yearly" ? p.yearly : p.monthly;
+      var per = hc || bill === "yearly" ? "/month, billed yearly" : "/month";
+      var key = hc ? p.key : p.key + "_" + bill;
+      var t = TOPUPS[kind][0];
+      return '<div class="plan' + (p.hot ? " hot" : "") + '">' +
+        '<div class="name"><span>' + p.name + "</span>" + (p.hot ? '<span class="pill">Most picked</span>' : "") + "</div>" +
+        '<div class="price">$' + price + "<small> " + per + "</small></div>" +
+        '<div class="hours">' + p.hours + " work hours a month</div>" +
+        "<ul><li>" + (hc ? "The full practice team" : "All 17 employees") + "</li><li>Unlimited chat</li><li>Extra hours: " + t.hours + " for $" + t.price + "</li>" + (hc ? "<li>HIPAA, under our BAA</li>" : "") + "</ul>" +
+        '<a class="btn' + (p.hot ? " p" : "") + '" href="' + link(key, p.name + (hc ? "" : ", " + bill)) + '">Start</a></div>';
+    }).join("");
+    document.getElementById("ldp-jobs").innerHTML = JOBS.filter(function (j) { return !j[2] || j[2] === kind; }).map(function (j) {
+      return "<div>" + j[0] + '</div><div class="' + (j[1] === "Free" ? "free" : "") + '">' + j[1] + "</div>";
+    }).join("");
+    document.getElementById("ldp-tops").innerHTML = TOPUPS[kind].map(function (t, i) {
+      return '<a class="btn' + (i === 1 ? " p" : "") + '" href="' + link("topup_" + kind + "_" + t.hours, t.hours + " extra hours") + '">' + t.hours + " hours for $" + t.price + "</a>";
+    }).join("");
+    root.querySelectorAll("[data-kind]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-kind") === kind); });
+    root.querySelectorAll("[data-bill]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-bill") === bill); });
+  }
+  root.querySelectorAll("[data-kind]").forEach(function (b) { b.addEventListener("click", function () { kind = b.getAttribute("data-kind"); render(); }); });
+  root.querySelectorAll("[data-bill]").forEach(function (b) { b.addEventListener("click", function () { bill = b.getAttribute("data-bill"); render(); }); });
+  if (/healthcare|practice/i.test(location.hash)) kind = "healthcare";
+  render();
+  // From the app's "Add hours" buttons: straight to the top-ups.
+  if (/^#hours/.test(location.hash)) document.getElementById("hours").scrollIntoView();
+})();
+</script>
+</div>

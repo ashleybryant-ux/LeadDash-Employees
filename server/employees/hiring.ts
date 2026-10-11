@@ -118,7 +118,7 @@ ${FAIR}`
     const saved = await db.updateHrRole(roleId, orgId, { post: `${out.title}\n\n${out.post}`.trim(), targets: JSON.stringify(targets) });
     await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: "Wrote job post", details: role.title });
     return saved!;
-  });
+  }, { job: "doc", label: "Job post" });
 }
 
 // ==========================================
@@ -203,7 +203,7 @@ Workspace location: ${brain.org?.state ?? "not listed"}${opts.focus ? `\nFocus o
     if (created.length) await draftMessages(emp, role, created);
     await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: "Searched for people", details: `Ran ${result.queries.length} searches and added ${created.length}.` });
     return { created: await Promise.all(created.map((p) => db.getHrPerson(p.id, orgId))).then((l) => l.filter(Boolean) as HrPerson[]), queries: result.queries, role };
-  });
+  }, { job: "lead", count: (r) => r.created.length });
 }
 
 async function signer(emp: AIEmployee) {
@@ -346,7 +346,7 @@ export async function addApplicant(orgId: number, input: { roleId: number | null
       mustHaves: JSON.stringify((s.mustHaves ?? []).slice(0, 16)),
       appliedOn: today(),
     });
-  });
+  }, { job: "task" });
   await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: "Screened applicant", details: `${person.name} for ${role?.title ?? "an open role"}` });
   if (person.fitScore >= 60) runChecks(orgId, person.id).catch((err) => console.warn("[hiring] checks failed:", err));
   return person;

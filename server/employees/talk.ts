@@ -260,7 +260,7 @@ event: the event, date and room as one line from the Brain ('' when the Brain do
     });
     db.attachChatFiles(emp.organizationId, [file.id], msg.id);
     return { file, sections };
-  });
+  }, { job: "doc", label: "Talk script" });
 }
 
 /** Section minutes that add up to exactly the talk's length. */
@@ -503,7 +503,7 @@ event: the event, date and room as one line ('' when unknown).`
     });
     db.attachChatFiles(emp.organizationId, [file.id], msg.id);
     return { file, slides };
-  });
+  }, { job: "doc", label: "Slides" });
 }
 
 /** Writes the PowerPoint and keeps the deck with it (new file, or the same file updated). */

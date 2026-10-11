@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { and, eq, gte, lt } from "drizzle-orm";
 import * as db from "./db";
-import { usageEvents, type EmployeeKind } from "../drizzle/schema";
+import { chatMessages, usageEvents, type EmployeeKind } from "../drizzle/schema";
 import { partsIn, zonedToUtc } from "./employees/schedule";
 
 /**
@@ -93,9 +93,14 @@ export function recordMeeting(orgId: number, employeeId: number | null, minutes:
   return insert("meeting", (minutes / 60) * MEETING_PRICE_PER_HOUR, 0, { minutes }, { orgId, employeeId });
 }
 
-/** A finished piece of work and the time it saved. */
-export function recordTask(orgId: number, employeeId: number, minutes: number) {
-  return insert("task", 0, minutes, {}, { orgId, employeeId });
+/** A finished job and the work-hour minutes it used (see workHours.ts). */
+export function recordTask(orgId: number, employeeId: number | null, minutes: number, detail: Record<string, unknown> = {}, userId: number | null = null) {
+  return insert("task", 0, minutes, detail, { orgId, employeeId, userId });
+}
+
+/** A job that came back without its result: it used no hours, and the recent-jobs list shows it as not charged. */
+export function recordSkipped(orgId: number, employeeId: number | null, detail: Record<string, unknown>, userId: number | null = null) {
+  return insert("skipped", 0, 0, detail, { orgId, employeeId, userId });
 }
 
 // ---------- Reading ----------
@@ -150,8 +155,15 @@ export async function usageSummary(orgId: number, back = 0) {
     .map((e) => ({ id: e.id, name: e.name, kind: e.kind, roleTitle: e.roleTitle, avatar: e.avatar, hours: hours(e.minutes), tasks: e.tasks, cost: dollars(e.micros) }))
     .sort((a, b) => b.hours - a.hours || b.cost - a.cost || a.name.localeCompare(b.name));
   const shared = by.get(null);
+  const chats = db
+    .getDb()
+    .select({ id: chatMessages.id })
+    .from(chatMessages)
+    .where(and(eq(chatMessages.organizationId, orgId), eq(chatMessages.role, "user"), gte(chatMessages.createdAt, start), lt(chatMessages.createdAt, end)))
+    .all().length;
   return {
     month: label,
+    chats,
     daily: dailyMin.map((m) => Math.round((m / 60) * 10) / 10),
     hours: hours(total.minutes),
     tasks: total.tasks,

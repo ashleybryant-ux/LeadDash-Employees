@@ -277,7 +277,7 @@ export async function writeFromChat(emp: AIEmployee, input: { title: string; sai
       "The material is a conversation. Use only what was said; where a step is missing, write the step the words imply and keep it short. Do not invent screens or buttons that were not mentioned."
     );
     return create(emp.organizationId, { title: input.title || w.title, area: (SOP_AREAS as readonly string[]).includes(input.area ?? "") ? (input.area as SopArea) : w.area, ownerKind: emp.kind, follows: input.follows || w.follows, when: w.when, steps: stepsFrom(w, () => null) }, input.by, { kind: "chat", note: `Written by ${emp.name} from chat` });
-  });
+  }, { job: "doc", label: "SOP" });
   return s;
 }
 
@@ -319,7 +319,7 @@ export async function finishFromSite(emp: AIEmployee, t: WebTask, res: BrowserRe
     const byStep = new Map(walked.filter((l) => l.screenshotUrl).map((l) => [l.step, l.screenshotUrl!]));
     const image = (at: number) => byStep.get(at) ?? Array.from(byStep.entries()).filter(([k]) => k <= at).pop()?.[1] ?? null;
     return create(orgId, { title, area: w.area, ownerKind: emp.kind, follows: w.follows, when: w.when, steps: stepsFrom(w, image) }, job.createdBy, { kind: "site", note: `${emp.name} walked the screens on ${new Date().toISOString().slice(0, 10)}`, url: t.startUrl });
-  });
+  }, { job: "doc", label: "SOP" });
   db.sops.updateJob(job.id, { status: "done", stage: "Done", sopId: sop.id });
   return sop;
 }
@@ -469,7 +469,7 @@ async function runRecording(orgId: number, id: number) {
         return (after ?? shots[shots.length - 1]).url;
       };
       return create(orgId, { title: job!.title || w.title, area: w.area, ownerKind: emp.kind, follows: w.follows, when: w.when, steps: stepsFrom(w, image) }, job!.createdBy, { kind: "record", note: `Screen recording by ${job!.createdBy || "the owner"}, ${mmss(transcript.seconds)}, ${today()}`, url: saved.url });
-    });
+    }, { job: "doc", label: "SOP" });
     db.sops.updateJob(id, { status: "done", stage: "Done", sopId: sop.id });
     await post(emp, `Your recording for "${sop.title}" is written up: ${stepsOf(sop).length} steps with a screenshot under each one. Open it on the SOPs tab, fix anything I misheard, then send it to me for review.`, [card(sop)]);
   } finally {

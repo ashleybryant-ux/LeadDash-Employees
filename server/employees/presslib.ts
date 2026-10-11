@@ -59,7 +59,7 @@ Return: reporter (who they are and how they write, 2 or 3 sentences), points (3)
       schema: obj({ reporter: str, points: arr(str), likely: arr(str), hardQuestions: arr(obj({ q: str, answerIndex: { type: "integer" } })), dontClaim: str, where: str, bio: str, after: str }),
       maxTokens: 3000,
     });
-  });
+  }, { job: "doc", label: "Interview briefing" });
   const briefing: Briefing = {
     reporter: r.reporter ?? "",
     points: (r.points ?? []).slice(0, 3),
@@ -161,7 +161,7 @@ export async function addCoverage(orgId: number, url: string) {
       schema: obj({ headline: str, outlet: str, author: str, ranOn: str, quotesUsed: str, messagesIn: str, messagesMissed: str, backlink: { type: "boolean" }, campaign: str }),
       maxTokens: 1500,
     });
-  });
+  }, { job: "task" });
   const author = contactsFor(orgId).find((c) => norm(c.name) === norm(r.author));
   const camp = camps.find((c) => norm(c.title) === norm(r.campaign));
   const row = db.press.coverage.create({
@@ -283,7 +283,7 @@ export async function fillLibrary(orgId: number, what: "bios" | "stories" | "cal
       n++;
     }
     return n;
-  });
+  }, { job: "doc" });
 }
 
 /** A press kit for a campaign: release, company description, bio, key facts, approved quotes, FAQ, contact. */
@@ -304,7 +304,7 @@ export async function makeKit(orgId: number, campaignId: number) {
       schema: obj({ release: str, company: str, facts: arr(str), faq: arr(obj({ q: str, a: str })) }),
       maxTokens: 5000,
     });
-  });
+  }, { job: "doc", label: "Media kit" });
   const org = await db.getOrganizationById(orgId);
   const text = `# ${camp.title}: press kit\n\n## Press release\n${r.release}\n\n## About ${org?.name ?? "us"}\n${r.company}\n\n## Founder bio\n${bio?.text ?? "[Founder bio, 100 words]"}\n\n## Key facts\n${(r.facts ?? []).map((f) => `- ${f}`).join("\n")}\n\n## Approved quotes\n${quotes.map((q) => `- "${q.text}"`).join("\n") || "- [Approve a quote in the Quote bank]"}\n\n## FAQ\n${(r.faq ?? []).map((f) => `**${f.q}**\n${f.a}`).join("\n\n")}\n\n## Media contact\n${org?.signerName ?? ""}${org?.signerTitle ? `, ${org.signerTitle}` : ""}`;
   const old = lib.find((x) => x.kind === "kit" && parse<{ campaignId?: number }>(x.meta, {}).campaignId === campaignId);

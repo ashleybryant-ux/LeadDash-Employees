@@ -120,6 +120,8 @@ export const organizations = sqliteTable("organizations", {
   setupAt: integer("setupAt", { mode: "timestamp" }),
   /** Whose voices the employees speak with: auto (ElevenLabs when the server has it, else OpenAI), elevenlabs or openai. */
   voiceProvider: text("voiceProvider", { enum: ["auto", "elevenlabs", "openai"] }).notNull().default("auto"),
+  /** Work hours (JSON): the plan this workspace is on ({plan}), set by LeadDash staff. No plan means work is not metered. */
+  workHours: text("workHours"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -139,6 +141,8 @@ export const organizationMembers = sqliteTable(
     /** Monthly AI limit: the workspace's ("default"), their own ("custom", aiLimitMicros), or "none". */
     aiLimitMode: text("aiLimitMode", { enum: ["default", "custom", "none"] }).notNull().default("default"),
     aiLimitMicros: integer("aiLimitMicros"),
+    /** Their own monthly limit in work-hour minutes (aiLimitMode "custom"). Replaces aiLimitMicros. */
+    aiLimitMinutes: integer("aiLimitMinutes"),
     /**
      * Which conversations with the AI employees this person can open: their own ("own"), their own plus
      * the people listed in chatAccessList ("some"), or everyone's ("all"). Owners and admins always see
@@ -1343,7 +1347,7 @@ export type NotetakerMeeting = typeof notetakerMeetings.$inferSelect;
 // ==========================================
 
 /** task = a finished piece of work (minutes saved); the rest are AI costs. */
-export const USAGE_TYPES = ["task", "writing", "search", "image", "meeting"] as const;
+export const USAGE_TYPES = ["task", "writing", "search", "image", "meeting", "skipped"] as const;
 
 export const usageEvents = sqliteTable(
   "usage_events",
@@ -1367,6 +1371,24 @@ export const usageEvents = sqliteTable(
   (t) => [index("usage_org_time_idx").on(t.organizationId, t.createdAt), index("usage_org_user_time_idx").on(t.organizationId, t.userId, t.createdAt)]
 );
 export type UsageEvent = typeof usageEvents.$inferSelect;
+
+/** Work hours a workspace bought on top of its plan. Used after the plan's hours, oldest first; each pack lasts 12 months. */
+export const hourPacks = sqliteTable(
+  "hour_packs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    /** Minutes bought, and minutes still left. */
+    minutes: integer("minutes").notNull(),
+    remaining: integer("remaining").notNull(),
+    note: text("note"),
+    addedBy: text("addedBy"),
+    expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("hour_packs_org_idx").on(t.organizationId)]
+);
+export type HourPack = typeof hourPacks.$inferSelect;
 
 // ==========================================
 // Handbook: the LeadDash base every employee follows, plus each workspace's additions

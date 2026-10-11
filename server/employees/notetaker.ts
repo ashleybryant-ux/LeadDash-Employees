@@ -307,7 +307,7 @@ Never include a client's name or health details. Your own lines in the transcrip
       schema: obj({ summary: str, decisions: arr(str), questions: arr(str), items: arr(obj({ text: str, owner: str, due: str })) }),
       maxTokens: 2500,
     });
-  });
+  }, { job: "meeting", count: Math.max(1, Math.ceil((row.heldMinutes || Math.round((new Date(row.endsAt).getTime() - new Date(row.startsAt).getTime()) / 60000) || 30) / 60)), label: row.title });
   const items: NotesItem[] = (out.items ?? []).slice(0, 25).map((i) => {
     const emp = emps.find((e) => e.name.toLowerCase() === i.owner.trim().toLowerCase());
     const due = /^\d{2}\/\d{2}\/\d{4}$/.test(i.due.trim()) ? i.due.trim() : null;

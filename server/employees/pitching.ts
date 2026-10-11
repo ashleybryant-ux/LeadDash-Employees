@@ -68,7 +68,7 @@ export async function planCampaign(orgId: number, brief: string, opts: { storyId
       angles: JSON.stringify(angles),
       storyId: story?.id ?? null,
     });
-  });
+  }, { job: "doc", label: "Press campaign plan" });
 }
 
 export function saveCampaign(orgId: number, id: number, input: { title: string; plan: Plan; angles: Angle[] }) {
@@ -110,7 +110,7 @@ export async function addReporters(orgId: number, campaignId: number, opts: { ma
       maxTokens: 3000,
     });
     return (r.picks ?? []).filter((p) => candidates.some((c) => c.id === p.contactId)).slice(0, opts.max ?? 12);
-  });
+  }, { job: "task" });
   db.press.campaigns.update(campaignId, orgId, { status: "pitching" });
   const made: PressPitch[] = [];
   for (const p of picks) made.push(await writePitch(orgId, p.contactId, { campaignId, angle: angles[Math.max(0, Math.min(angles.length - 1, (p.angle || 1) - 1))].text }));
@@ -196,7 +196,7 @@ export async function writePitch(orgId: number, contactId: number, ctx: Ctx) {
       if (st.level >= 4 && score >= (st.level >= 5 ? PASS : 90) && !sensitive && !st.paused) await postNow(item, `${emp.name} (on her own, level ${st.level})`, "system", "Sent on its own", { approvedBy: `${emp.name} (level ${st.level})`, approvedAt: new Date() });
     }
     return db.press.pitches.get(pitch.id, orgId)!;
-  });
+  }, { job: "email" });
 }
 
 /** The Approvals item that sends a pitch, made once. */
@@ -374,7 +374,7 @@ The draft: short, warm, specific, signed as the owner's team. For interview, off
       schema: obj({ kind: { type: "string", enum: REPLY_KINDS as unknown as string[] }, askedFor: str, referralName: str, referralOutlet: str, referralEmail: str, newOutlet: str, proposedTime: str, draft: str }),
       maxTokens: 2000,
     });
-  });
+  }, { job: "email" });
   const kind = (REPLY_KINDS as readonly string[]).includes(r.kind) ? (r.kind as PressReply["kind"]) : "other";
   const reply = db.press.replies.create({ ...base, kind, draft: kind === "dnc" || kind === "ooo" ? null : (r.draft ?? "").slice(0, 4000) || null, status: kind === "ooo" ? "done" : "open" });
   if (pitch) db.press.pitches.update(pitch.id, desk, { status: "replied" });

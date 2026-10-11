@@ -4,7 +4,7 @@ import * as db from "./db";
 import { monthRange, recordImage, recordMeeting, recordSearch, recordTokens, tokenCost, withUsage } from "./usage";
 import { working } from "./employees/tasks";
 
-describe("usage: hours saved and AI cost", () => {
+describe("usage: work hours and AI cost", () => {
   it("prices tokens by model from the published list", () => {
     expect(tokenCost("claude-sonnet-4-6", 1_000_000, 1_000_000)).toBeCloseTo(18, 5);
     expect(tokenCost("claude-sonnet-5-5", 1_000_000, 1_000_000)).toBeCloseTo(12, 5);
@@ -20,7 +20,7 @@ describe("usage: hours saved and AI cost", () => {
   });
 
   it("records work and AI costs against the employee doing it, and sums them by month", async () => {
-    const { orgId, owner } = await makeWorkspace("usage-sum");
+    const { orgId, owner, staff } = await makeWorkspace("usage-sum");
     const emps = await db.listEmployeesByOrg(orgId);
     const theo = emps.find((e) => e.kind === "blog")!;
     const morgan = emps.find((e) => e.kind === "grants")!;
@@ -40,10 +40,15 @@ describe("usage: hours saved and AI cost", () => {
     // A workspace call with no employee is shared.
     await withUsage({ orgId }, () => recordTokens("claude-sonnet-4-6", 10_000, 0));
 
-    const s = await caller(owner).usage.summary({ organizationId: orgId });
+    // Dollar costs are for LeadDash staff; the workspace sees work hours.
+    const seen = await caller(owner).usage.summary({ organizationId: orgId });
+    expect(seen.cost).toBe(0);
+    expect(seen.employees.every((e) => e.cost === 0)).toBe(true);
+    const s = await caller(staff).usage.summary({ organizationId: orgId });
     const row = (id: number) => s.employees.find((e) => e.id === id)!;
     expect(row(theo.id).tasks).toBe(1);
-    expect(row(theo.id).hours).toBe(Math.round(((await import("./employees/roster")).rosterEntry("blog")!.minutesPerTask / 60) * 10) / 10);
+    // A job with no job named is one finished task: 30 minutes.
+    expect(row(theo.id).hours).toBe(0.5);
     // 20k in x $3 + 3k out x $15 = $0.105, plus $0.041 image.
     expect(row(theo.id).cost).toBe(0.15);
     // 50k x $2 + 4k x $10 = $0.14, plus 5 searches x $0.01.
@@ -54,7 +59,7 @@ describe("usage: hours saved and AI cost", () => {
     expect(s.cost).toBeCloseTo(0.15 + 0.19 + 0.65 + 0.03, 1);
     expect(s.employees[0].id).toBe(theo.id);
 
-    const last = await caller(owner).usage.summary({ organizationId: orgId, back: 1 });
+    const last = await caller(staff).usage.summary({ organizationId: orgId, back: 1 });
     expect(last.tasks).toBe(0);
     expect(last.cost).toBe(0);
   });

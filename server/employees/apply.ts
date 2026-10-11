@@ -485,7 +485,7 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
     const more = round === 1 && created.length >= 4 && (opts.keepLooking ?? process.env.NODE_ENV !== "test");
     if (more) void keepLooking(orgId, empKind, kind, opts.focus, cost, result.queries);
     return { created, queries: result.queries, kind, cost, more };
-  });
+  }, { job: "search" });
 }
 
 const MAX_ROUNDS = 5;
@@ -1162,7 +1162,7 @@ export async function writeApplication(orgId: number, appId: number, opts: { fre
           await db.updateApplication(appId, orgId, { extras: JSON.stringify(extras) });
         }
       }
-    });
+    }, { job: opp.kind === "grant" ? "grant" : "application", label: app.title });
 
     await db.updateApplication(appId, orgId, { progress: "Reviewer check" });
     await reviewApplication(orgId, appId);

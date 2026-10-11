@@ -20,20 +20,40 @@ const ymdIn = (at: Date | string, tz: string) => {
 const dayText = (at: Date | string, tz: string) => new Date(at).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" });
 
 export function NextUpBar() {
-  const { currentOrgId } = useTenant();
+  const { currentOrgId, currentOrg } = useTenant();
   const q = trpc.calendar.nextUp.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 60_000, staleTime: 30_000 });
+  const role = (currentOrg as { role?: string } | null)?.role;
+  const manager = role === "owner" || role === "admin";
+  const hq = trpc.hours.get.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && manager, refetchInterval: 120_000, staleTime: 60_000 });
   const start = trpc.calendar.start.useMutation();
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(t);
   }, []);
-  const show = !!q.data?.connected;
+  const out = manager && !!hq.data?.out;
+  const show = !!q.data?.connected || out;
   React.useEffect(() => {
     document.documentElement.classList.toggle("ld-next", show);
     return () => document.documentElement.classList.remove("ld-next");
   }, [show]);
   if (!show) return null;
+  // Out of work hours outranks the next appointment: the owner can't miss it, and can buy more right there.
+  if (out && hq.data) {
+    const h = hq.data;
+    return (
+      <div className="ld-nextbar out" role="status">
+        <span className="ld-nextbar-k">0 work hours left.</span>
+        <span className="ld-nextbar-t">Paused until {h.resetsOn}. Chat still works.</span>
+        <span className="ld-nextbar-sp" />
+        {h.topUps.map((t, i) => (
+          <a key={t.hours} className={`ld-nextbar-b ${i === h.topUps.length - 1 ? "p" : ""}`} style={{ width: 96, justifyContent: "center" }} href={`${h.pricingUrl}#hours${h.healthcare ? "-healthcare" : ""}`} target="_blank" rel="noreferrer">
+            {t.hours} hr, ${t.price}
+          </a>
+        ))}
+      </div>
+    );
+  }
   const it = q.data!.item;
   const tz = q.data!.tz;
   if (!it) {

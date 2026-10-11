@@ -224,6 +224,8 @@ export async function runWebTask(orgId: number, id: number) {
   const liveId = t.liveId || newLiveId();
   const res = await runBrowserTask({
     orgId,
+    employeeId: emp.id,
+    jobLabel: t.title || hostOf(t.startUrl) || "",
     actor: `${emp.name}, the owner's ${emp.roleTitle}`,
     goal: goalText(t),
     startUrl: t.startUrl,

@@ -1,6 +1,7 @@
 import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
+import { BIG_JOB, useHoursAsk } from "../HoursAsk";
 import { ErrorLine } from "../ui";
 import { fmtDate } from "../meta";
 
@@ -52,8 +53,12 @@ function Player({ url, width = 200 }: { url: string; width?: number }) {
 function useAvatarActions(id: number) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
+  const hours = useHoursAsk();
   const refresh = () => Promise.all([utils.avatar.get.invalidate({ organizationId: currentOrgId, id }), utils.avatar.list.invalidate(), utils.avatar.settings.invalidate()]);
   return {
+    /** On a plan, asks before a video starts (8 work hours a minute). */
+    ask: (run: () => void) => hours.confirm(`video-${id}`, BIG_JOB.video, run),
+    question: hours.question(`video-${id}`),
     make: trpc.avatar.make.useMutation({ onSuccess: refresh }),
     newLook: trpc.avatar.newLook.useMutation({ onSuccess: refresh }),
     setVoice: trpc.avatar.setCastVoice.useMutation({ onSuccess: refresh }),
@@ -160,6 +165,7 @@ export function AvatarVideoCard({ id }: { id: number }) {
           )}
           {v.status === "making" && <span className="ld-small ld-muted">This usually takes 3 to 8 minutes. Elena posts it here when it's done.</span>}
           {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{v.error}</span>}
+          {a.question}
           <ErrorLine error={a.make.error ?? a.again.error ?? a.newLook.error} />
         </div>
       )}
@@ -167,7 +173,7 @@ export function AvatarVideoCard({ id }: { id: number }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {(v.status === "draft" || v.status === "failed") && (
             <>
-              <button type="button" className="ld-btn p" disabled={a.make.isPending} onClick={() => a.make.mutate({ organizationId: a.orgId, id })}>
+              <button type="button" className="ld-btn p" disabled={a.make.isPending} onClick={() => a.ask(() => a.make.mutate({ organizationId: a.orgId, id }))}>
                 {a.make.isPending ? "Starting..." : v.status === "failed" ? "Try again" : "Make it"}
               </button>
               <button type="button" className="ld-btn" onClick={() => setEditing(true)}>Edit script</button>
@@ -181,7 +187,7 @@ export function AvatarVideoCard({ id }: { id: number }) {
           {v.status === "ready" && v.videoUrl && (
             <>
               <a className="ld-btn p ld-av-link" href={v.videoUrl} download={`${v.title}.mp4`}>Download</a>
-              <button type="button" className="ld-btn" disabled={a.again.isPending} onClick={() => a.again.mutate({ organizationId: a.orgId, id })}>
+              <button type="button" className="ld-btn" disabled={a.again.isPending} onClick={() => a.ask(() => a.again.mutate({ organizationId: a.orgId, id }))}>
                 {a.again.isPending ? "Starting..." : "Make again"}
               </button>
             </>
@@ -214,7 +220,7 @@ function SettingsCard() {
     setForm({ imageId: photo?.id ?? null, voiceId: voice?.id ?? null, quality: s.quality, limit: String(Math.round(s.limitCents / 100)) });
     setEditing(true);
   };
-  const rate = (k: "standard" | "pro") => `$${(s.rates[k] / 100).toFixed(3).replace(/0$/, "")} a second`;
+  const rate = (k: "standard" | "pro") => (s.metered ? `${k === "pro" ? 16 : 8} work hours a minute` : `$${(s.rates[k] / 100).toFixed(3).replace(/0$/, "")} a second`);
   const missing = !s.ready.fal || !s.ready.voice;
 
   return (
@@ -238,8 +244,12 @@ function SettingsCard() {
             <span>{voice ? voice.name : s.ready.voice ? "Not picked yet" : "Voice isn't set up"}</span>
             <span className="ld-strong">Quality</span>
             <span>{s.quality === "pro" ? "Pro" : "Standard"}, {rate(s.quality)}</span>
-            <span className="ld-strong">This month</span>
-            <span>{money(s.spentCents)} of {money(s.limitCents)}</span>
+            {!s.metered && (
+              <>
+                <span className="ld-strong">This month</span>
+                <span>{money(s.spentCents)} of {money(s.limitCents)}</span>
+              </>
+            )}
           </div>
         ) : (
           <div className="ld-av-kv">
@@ -273,12 +283,16 @@ function SettingsCard() {
                 </button>
               ))}
             </div>
-            <label className="ld-strong" htmlFor="av-limit">Monthly limit</label>
-            <div className="ld-row">
-              <span>$</span>
-              <input id="av-limit" className="ld-in" inputMode="numeric" style={{ maxWidth: 100 }} value={form.limit} onChange={(e) => setForm({ ...form, limit: e.target.value.replace(/[^0-9]/g, "") })} />
-              <span className="ld-small ld-muted">Elena won't start a video that goes over it.</span>
-            </div>
+            {!s.metered && (
+              <>
+                <label className="ld-strong" htmlFor="av-limit">Monthly limit</label>
+                <div className="ld-row">
+                  <span>$</span>
+                  <input id="av-limit" className="ld-in" inputMode="numeric" style={{ maxWidth: 100 }} value={form.limit} onChange={(e) => setForm({ ...form, limit: e.target.value.replace(/[^0-9]/g, "") })} />
+                  <span className="ld-small ld-muted">Elena won't start a video that goes over it.</span>
+                </div>
+              </>
+            )}
           </div>
         )}
         {missing && <span className="ld-small" style={{ color: "#8a4510" }}>Making videos isn't set up yet. LeadDash support can turn it on.</span>}
@@ -326,13 +340,14 @@ function VideoRow({ v, open, onToggle }: { v: View; open: boolean; onToggle: () 
         <span>{v.cost}</span>
         <span>{v.status === "draft" ? "" : fmtDate(v.madeAt ?? v.createdAt)}</span>
         {v.status === "draft" && !open ? (
-          <button type="button" className="ld-btn p" disabled={a.make.isPending} onClick={() => a.make.mutate({ organizationId: a.orgId, id: v.id })}>
+          <button type="button" className="ld-btn p" disabled={a.make.isPending} onClick={() => a.ask(() => a.make.mutate({ organizationId: a.orgId, id: v.id }))}>
             {a.make.isPending ? "Starting..." : "Make it"}
           </button>
         ) : (
           <button type="button" className="ld-btn" onClick={onToggle}>{open ? "Close" : "Open"}</button>
         )}
       </div>
+      {!open && a.question && <div style={{ padding: "0 18px 10px" }}>{a.question}</div>}
       {!open && a.make.error && <div style={{ padding: "0 18px 10px" }}><ErrorLine error={a.make.error} /></div>}
       {open && (
         <div className="ld-av-exp" style={{ gridTemplateColumns: v.status === "ready" && v.videoUrl ? "180px minmax(0,1fr) 128px" : "minmax(0,1fr) 128px" }}>
@@ -346,6 +361,7 @@ function VideoRow({ v, open, onToggle }: { v: View; open: boolean; onToggle: () 
               <span className="ld-small ld-muted">{[v.photoTitle ? `Photo: ${v.photoTitle}` : "", v.voiceName ? `Voice: ${v.voiceName}` : "", v.quality === "pro" ? "Pro" : "Standard"].filter(Boolean).join(" · ")}</span>
               {v.status === "making" && <span className="ld-small ld-muted">This usually takes 3 to 8 minutes.</span>}
               {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{v.error}</span>}
+              {a.question}
               <ErrorLine error={a.make.error ?? a.again.error ?? a.remove.error} />
             </div>
           )}
@@ -354,12 +370,12 @@ function VideoRow({ v, open, onToggle }: { v: View; open: boolean; onToggle: () 
               {v.status === "ready" && v.videoUrl && (
                 <>
                   <a className="ld-btn p ld-av-link" href={v.videoUrl} download={`${v.title}.mp4`}>Download</a>
-                  <button type="button" className="ld-btn" disabled={a.again.isPending} onClick={() => a.again.mutate({ organizationId: a.orgId, id: v.id })}>Make again</button>
+                  <button type="button" className="ld-btn" disabled={a.again.isPending} onClick={() => a.ask(() => a.again.mutate({ organizationId: a.orgId, id: v.id }))}>Make again</button>
                 </>
               )}
               {(v.status === "draft" || v.status === "failed") && (
                 <>
-                  <button type="button" className="ld-btn p" disabled={a.make.isPending} onClick={() => a.make.mutate({ organizationId: a.orgId, id: v.id })}>
+                  <button type="button" className="ld-btn p" disabled={a.make.isPending} onClick={() => a.ask(() => a.make.mutate({ organizationId: a.orgId, id: v.id }))}>
                     {v.status === "failed" ? "Try again" : "Make it"}
                   </button>
                   <button type="button" className="ld-btn" onClick={() => setEditing(true)}>Edit script</button>

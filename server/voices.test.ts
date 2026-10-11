@@ -15,8 +15,12 @@ describe("photos and voices", () => {
     expect(v.provider).toBe("openai");
     expect(v.hasElevenLabs).toBe(false);
     expect(v.openai.map((x) => x.id)).toEqual(OPENAI_VOICES.map((x) => x.id));
-    expect(v.prices.openai.perMinute).toMatch(/\$0\.015 per minute/);
-    expect(v.prices.elevenlabs.detail).toMatch(/Starter \$6/);
+    // The providers and their prices are LeadDash's trade secret: the workspace gets none of it, staff get all of it.
+    expect(v.prices.openai.perMinute).toBe("");
+    const { staff } = { staff: (await db.getUserByEmail("staff@leaddash.io"))! };
+    const sv = await caller(staff).voices.options({ organizationId: orgId });
+    expect(sv.prices.openai.perMinute).toMatch(/\$0\.015 per minute/);
+    expect(sv.prices.elevenlabs.detail).toMatch(/Starter \$6/);
     const simone = v.employees.find((e) => e.kind === "coo")!;
     expect(simone).toMatchObject({ provider: "openai", voiceId: VOICES.coo, voiceName: "Coral", own: false });
 

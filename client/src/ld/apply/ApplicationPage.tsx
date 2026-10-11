@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
+import { BIG_JOB, useHoursAsk } from "../HoursAsk";
 import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine } from "../ui";
 import { APP_STATUS, CHANNEL_LABEL, openDownload, parseJson, uploadFile, wordCount } from "../meta";
@@ -76,6 +77,7 @@ function MainView({ d, emp, base }: { d: AppDetail; emp: EmployeeRow; base: stri
   const refresh = () => Promise.all([utils.applications.get.invalidate(), utils.applications.list.invalidate()]);
   const submit = trpc.applications.submit.useMutation({ onSuccess: refresh });
   const rewrite = trpc.applications.rewrite.useMutation({ onSuccess: refresh });
+  const hours = useHoursAsk();
   const sendNow = trpc.applications.sendNow.useMutation({ onSuccess: refresh });
   const dl = trpc.applications.download.useMutation({ onSuccess: openDownload });
   const sigs = atts.filter((a) => a.needsSignature);
@@ -147,9 +149,10 @@ function MainView({ d, emp, base }: { d: AppDetail; emp: EmployeeRow; base: stri
       {app.status === "error" && (
         <div className="ld-card" style={{ padding: "12px 16px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 12, alignItems: "center", borderColor: "#f3c7c1" }}>
           <span className="ld-body" style={{ color: "var(--ld-bad)" }}>{app.errorNote || "Something went wrong."}</span>
-          <button type="button" className="ld-btn p" disabled={rewrite.isPending} onClick={() => rewrite.mutate({ organizationId: currentOrgId, id: app.id })}>Write again</button>
+          <button type="button" className="ld-btn p" disabled={rewrite.isPending} onClick={() => hours.confirm("rewrite", opp?.kind === "grant" ? BIG_JOB.grant : BIG_JOB.application, () => rewrite.mutate({ organizationId: currentOrgId, id: app.id }))}>Write again</button>
         </div>
       )}
+      {hours.question("rewrite")}
       {app.mode === "outline" && (
         <div style={{ background: "#fdf0e3", border: "1px solid #f3d3b0", borderRadius: 12, padding: "14px 18px" }}>
           <span className="ld-body" style={{ color: "#5c2e0a" }}>
