@@ -11,7 +11,6 @@ type Person = Outputs["hiring"]["people"][number];
 type TeamItem = Outputs["hiring"]["team"][number];
 type MustHave = { item: string; met: "yes" | "no" | "unknown"; kind: "must" | "nice" };
 type Check = { name: string; detail: string; status: "clear" | "flag" | "manual" | "needs_setup"; url: string | null; checkedAt: string };
-type Target = { name: string; status: "ready" | "posted"; url: string | null };
 type ChecklistItem = { item: string; detail: string; status: "to_do" | "waiting" | "pending" | "done" | "stuck" };
 type NewHire = { offerLetter?: string; paperwork: ChecklistItem[]; credentialing: ChecklistItem[] };
 
@@ -304,78 +303,121 @@ function RoleRow({ role, open, onToggle, onEdit }: { role: Role; open: boolean; 
         </button>
         <button type="button" className="ld-btn" onClick={onEdit}>Edit</button>
       </div>
-      {open && (
-        <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 28 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <KV label="Where">{role.place === "both" ? "In person and telehealth" : role.place === "telehealth" ? "Telehealth" : "In person"}</KV>
-            <KV label="Licenses accepted">{parseJson<string[]>(role.licenses, []).join(", ") || "Not set"}</KV>
-            <KV label="Must have">{role.mustHave || "Not set"}</KV>
-            <KV label="Nice to have">{role.niceToHave || "Not set"}</KV>
-          </div>
-          <JobPost role={role} />
-        </div>
-      )}
+      {open && <JobDescription role={role} />}
     </>
   );
 }
 
-function JobPost({ role }: { role: Role }) {
+type JdDraft = { title: string; schedule: string; duties: string; mustHave: string; niceToHave: string };
+
+/** The job description (read view, Edit) and, once it's published, whether it's live and who applied. */
+function JobDescription({ role }: { role: Role }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
+  const done = () => utils.hiring.roles.invalidate();
+  const jd = parseJson<{ about?: string; schedule?: string; duties?: string; howToApply?: string } | null>(role.jd, null);
+  const [edit, setEdit] = React.useState<JdDraft | null>(null);
   const [copied, setCopied] = React.useState(false);
-  const write = trpc.hiring.writePost.useMutation({ onSuccess: () => utils.hiring.roles.invalidate() });
-  const posted = trpc.hiring.markPosted.useMutation({ onSuccess: () => utils.hiring.roles.invalidate() });
-  const targets = parseJson<Target[]>(role.targets, []);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-      <span className="ld-lbl">Job post</span>
-      {role.post ? (
-        <div className="ld-card ld-body ld-pre" style={{ padding: "14px 16px", lineHeight: 1.6 }}>{role.post}</div>
-      ) : (
-        <span className="ld-body ld-muted">{write.isPending ? "Quinn is writing the post..." : "No post yet."}</span>
-      )}
-      <div className="ld-row">
-        <button type="button" className="ld-btn" disabled={write.isPending} onClick={() => write.mutate({ organizationId: currentOrgId, id: role.id })}>
-          {write.isPending ? "Writing..." : role.post ? "Rewrite" : "Write post"}
-        </button>
-        {role.post && (
-          <button type="button" className="ld-btn" onClick={async () => setCopied(await copy(role.post ?? ""))}>
-            {copied ? "Copied" : "Copy post"}
-          </button>
-        )}
-      </div>
+  const write = trpc.hiring.writePost.useMutation({ onSuccess: done });
+  const save = trpc.hiring.saveDescription.useMutation({ onSuccess: async () => { await done(); setEdit(null); } });
+  const publish = trpc.hiring.publish.useMutation({ onSuccess: done });
+  const unpublish = trpc.hiring.unpublish.useMutation({ onSuccess: done });
+  const busy = write.isPending || publish.isPending || unpublish.isPending;
+  const id = { organizationId: currentOrgId, id: role.id };
+  const job = role.job;
+  const errors = (
+    <>
       <ErrorLine error={write.error} />
-      {targets.length > 0 && (
-        <>
-          <span className="ld-lbl" style={{ marginTop: 6 }}>Post to</span>
-          <div>
-            {targets.map((t) => (
-              <div key={t.name} className="ld-keep" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 72px 128px", gap: 12, alignItems: "center", padding: "8px 0", borderBottom: "1px solid #eef2f0" }}>
-                <span className="ld-body">{t.name}</span>
-                <span className={`ld-pill ${t.status === "posted" ? "green" : "amber"}`}>{t.status === "posted" ? "Posted" : "Ready"}</span>
-                {t.status === "ready" ? (
-                  <button
-                    type="button"
-                    className="ld-btn"
-                    disabled={!role.post || posted.isPending}
-                    onClick={async () => {
-                      await copy(role.post ?? "");
-                      if (t.url) window.open(t.url, "_blank", "noopener");
-                      posted.mutate({ organizationId: currentOrgId, id: role.id, target: t.name, posted: true });
-                    }}
-                  >
-                    Copy and open
-                  </button>
-                ) : (
-                  <button type="button" className="ld-btn" onClick={() => posted.mutate({ organizationId: currentOrgId, id: role.id, target: t.name, posted: false })}>
-                    Not posted
-                  </button>
-                )}
-              </div>
-            ))}
+      <ErrorLine error={save.error} />
+      <ErrorLine error={publish.error} />
+      <ErrorLine error={unpublish.error} />
+    </>
+  );
+
+  if (edit) {
+    const set = (k: keyof JdDraft, v: string) => setEdit({ ...edit, [k]: v });
+    return (
+      <div className="ld-expand ld-jd">
+        <div className="ld-jd-main">
+          <div className="ld-jd-kv">
+            <label className="ld-lbl ld-jd-l" htmlFor={`jd-title-${role.id}`}>Title</label>
+            <input id={`jd-title-${role.id}`} className="ld-in" value={edit.title} maxLength={120} onChange={(e) => set("title", e.target.value)} />
+            <label className="ld-lbl ld-jd-l" htmlFor={`jd-sched-${role.id}`}>Schedule and pay</label>
+            <input id={`jd-sched-${role.id}`} className="ld-in" value={edit.schedule} maxLength={200} onChange={(e) => set("schedule", e.target.value)} />
+            <label className="ld-lbl ld-jd-l" htmlFor={`jd-duties-${role.id}`}>What you'll do</label>
+            <textarea id={`jd-duties-${role.id}`} className="ld-in ld-jd-ta" rows={3} value={edit.duties} maxLength={4000} onChange={(e) => set("duties", e.target.value)} />
+            <label className="ld-lbl ld-jd-l" htmlFor={`jd-must-${role.id}`}>Must have</label>
+            <input id={`jd-must-${role.id}`} className="ld-in" value={edit.mustHave} maxLength={1000} onChange={(e) => set("mustHave", e.target.value)} />
+            <label className="ld-lbl ld-jd-l" htmlFor={`jd-nice-${role.id}`}>Nice to have</label>
+            <input id={`jd-nice-${role.id}`} className="ld-in" value={edit.niceToHave} maxLength={1000} onChange={(e) => set("niceToHave", e.target.value)} />
           </div>
-        </>
-      )}
+          {errors}
+        </div>
+        <div className="ld-jd-btns">
+          <button type="button" className="ld-btn p" disabled={save.isPending || edit.title.trim().length < 2} onClick={() => save.mutate({ ...id, ...edit })}>Save</button>
+          <button type="button" className="ld-btn" onClick={() => setEdit(null)}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  const rewrite = (
+    <button type="button" className="ld-btn" disabled={busy} onClick={() => write.mutate(id)}>
+      {write.isPending ? "Writing..." : jd?.duties ? "Rewrite" : "Write it"}
+    </button>
+  );
+
+  if (job.live) {
+    return (
+      <div className="ld-expand ld-jd live">
+        <div className="ld-jd-kv">
+          <b>Where</b><span>{role.place === "both" ? "In person and telehealth" : role.place === "telehealth" ? "Telehealth" : "In person"}</span>
+          <b>Licenses accepted</b><span>{parseJson<string[]>(role.licenses, []).join(", ") || "Not set"}</span>
+          <b>Must have</b><span>{role.mustHave || "Not set"}</span>
+        </div>
+        <div className="ld-jd-post">
+          <span className="ld-lbl">Job post</span>
+          <div className="ld-jd-kv">
+            <b>Status</b><span><span className="ld-pill green">Live since {job.liveSince ? fmtDate(job.liveSince) : ""}</span></span>
+            <b>Applicants</b><span>{job.applicants} so far, in Candidates</span>
+            <b>Job page</b><span className="ld-jd-link"><a href={job.jobUrl ?? "#"} target="_blank" rel="noopener noreferrer">{(job.jobUrl ?? "").replace(/^https?:\/\//, "")}</a></span>
+          </div>
+          {errors}
+        </div>
+        <div className="ld-jd-btns">
+          <button type="button" className="ld-btn" disabled={busy} onClick={() => unpublish.mutate(id)}>{unpublish.isPending ? "Taking down..." : "Unpublish"}</button>
+          {rewrite}
+          <button type="button" className="ld-btn" onClick={async () => { setCopied(await copy(job.jobUrl ?? "")); setTimeout(() => setCopied(false), 2000); }}>{copied ? "Copied" : "Copy link"}</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ld-expand ld-jd">
+      <div className="ld-jd-main">
+        {jd?.duties ? (
+          <div className="ld-jd-kv">
+            <b>Title</b><span>{role.title}</span>
+            <b>Schedule and pay</b><span>{jd.schedule || payRange(role.payFrom, role.payTo) || "Not set"}</span>
+            <b>What you'll do</b><span className="ld-pre">{jd.duties}</span>
+            <b>Must have</b><span>{role.mustHave || "Not set"}</span>
+            <b>How to apply</b><span>{jd.howToApply || "Apply on the job page"}</span>
+          </div>
+        ) : (
+          <div className="ld-jd-kv">
+            <b>Job description</b><span className="ld-muted">{write.isPending || publish.isPending ? "Quinn is writing it..." : "Not written yet"}</span>
+          </div>
+        )}
+        {errors}
+      </div>
+      <div className="ld-jd-btns">
+        <button type="button" className="ld-btn p" disabled={busy} onClick={() => publish.mutate(id)}>{publish.isPending ? "Publishing..." : "Publish"}</button>
+        {jd?.duties && (
+          <button type="button" className="ld-btn" onClick={() => setEdit({ title: role.title, schedule: jd.schedule ?? "", duties: jd.duties ?? "", mustHave: role.mustHave ?? "", niceToHave: role.niceToHave ?? "" })}>Edit</button>
+        )}
+        {rewrite}
+      </div>
     </div>
   );
 }
@@ -402,7 +444,7 @@ function RoleEditor({ draft: start, role, onDone }: { draft: RoleDraft; role?: R
         <button type="button" className="ld-btn" onClick={onDone}>Cancel</button>
         <button type="button" className="ld-btn p" disabled={save.isPending || d.title.trim().length < 2} onClick={submit}>Save</button>
       </div>
-      <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: role ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)", gap: 28 }}>
+      <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 28 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 620 }}>
           <div className="ld-field">
             <label className="ld-lbl" htmlFor="r-title">Title</label>
@@ -444,7 +486,6 @@ function RoleEditor({ draft: start, role, onDone }: { draft: RoleDraft; role?: R
           </div>
           <ErrorLine error={save.error} />
         </div>
-        {role && <JobPost role={role} />}
       </div>
     </>
   );

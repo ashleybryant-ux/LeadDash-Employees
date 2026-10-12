@@ -6,6 +6,7 @@ import * as tasks from "./tasks";
 import * as apply from "./apply";
 import * as pages from "./pages";
 import * as hiring from "./hiring";
+import * as jobs from "./jobs";
 import { writeReport } from "./onboarding";
 import { KNOWLEDGE_CATEGORIES, type Opportunity, type OppKind } from "../../drizzle/schema";
 import { learnFact } from "./learn";
@@ -73,7 +74,7 @@ const ACTIONS: Record<string, string[]> = {
   inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   onboarding: ["none", "report", "onboard_hire", "offboard", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  hiring: ["none", "report", "find_people", "write_job_post", "publish_job", "unpublish_job", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   prospecting: ["none", "report", "find_prospects", "repeat_search", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   leads: ["none", "report", "ehr_read", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -198,7 +199,9 @@ const ACTION_HELP: Record<string, string> = {
   check_schedule: "check_schedule: read the person's own calendars, the ones connected on Integrations (meetings, calls: today, tomorrow, a day, this week, \"am I free Friday at 2\"). Put the first day as YYYY-MM-DD in `date` and how many days in `count` (1 for a day, 7 for a week). It only lists what is there: when they want a time picked, a recommendation, or something booked, say so in `plan` and you get the busy and open times back to decide from. In a practice, client appointments and sessions are on the LeadDash EHR calendar, not here: for those use ehr_read with `appointments`.",
   report: "report: the person (or a scheduled task) asks for a report, summary or update on your work. Put what they want covered in `notes`.",
   find_people: "find_people: search the web for professionals to reach out to for an open role. Put the role or any focus (city, license, specialty) in `focus`.",
-  write_job_post: "write_job_post: write or rewrite the job post for a role. Put the role title in `target` ('' for the newest open role).",
+  write_job_post: "write_job_post: the owner needs someone (\"we need a part-time front desk person\"), or wants a job description written, rewritten or changed. Adds the role when it isn't saved yet, asks only for what is still missing (hours and pay), then writes the full job description. Put the role title in `target` (their words, '' for the newest open role) and everything they said about it (hours, pay, schedule, must-haves, what to change) in `notes`.",
+  publish_job: "publish_job: post a role's job description so people can apply (\"post it\", \"publish it\", \"put it up\"). Put the role title in `target` ('' for the newest open role).",
+  unpublish_job: "unpublish_job: take a role's job post down (\"take it down\", \"unpublish it\", \"we filled it\"). Put the role title in `target`.",
   check_bidprime: "check_bidprime: the person asks about BidPrime (their leads inbox, saved bids, \"did you look in BidPrime\", \"check BidPrime\"). You sign in to their BidPrime account with the sign-in saved on Integrations; you never need them to share a login.",
   find_grants: "find_grants: search the web now. Set `oppKind` to grant, pitch (pitch competitions), accelerator (accelerator or incubator programs) or bid (government or agency RFPs and bids); default grant. Put any focus the person gave in `focus`.",
   press_campaign: "press_campaign: she wants a media campaign or a media list for a story, launch or topic (\"build a media list for the LeadDash Employees launch\", \"pitch me on burnout\"). Put what it's about in `notes`. You plan it (goal, story, angles), then match reporters and write pitches; every pitch waits for her approval.",
@@ -507,6 +510,10 @@ TALK_BY_KIND.ads = `- You own paid acquisition for this brand: think like a perf
 TALK_BY_KIND.blog = `- Every article has a main keyword: the search term it should rank for. When the person names one, put it in "target". When they haven't, still choose write_article with "target" empty: you ask "Which search term should this rank for?" with their saved search terms and your suggestions as choices.
 - When they answer that question, choose write_article for the same article with their answer in "target" exactly as they said it ("No keyword" when they chose none). Never ask about the keyword twice for one article.
 - The keyword goes in the title, the first paragraph, one heading and the meta description, written naturally. Never quote a search volume or promise a ranking.`;
+TALK_BY_KIND.hiring = `- "We need a part-time front desk person" (or any role) is write_job_post, right away: it adds the role and asks only what's missing. Never ask for something the Brain or this chat already answers. When the owner answers your question about hours and pay, choose write_job_post again with the same role in "target" and their answer in "notes".
+- "I'll type it" means they want to type the hours and pay: choose "none" and ask them to type them.
+- "Post it" after a job description is publish_job. "Change it" with no details: choose "none" and ask what to change, with choices like "Change the pay", "Add a must-have", "Shorter". A change they describe is write_job_post with the change in "notes".
+- Publishing puts the job on the workspace's careers page and the job boards the server is connected to; applicants from all of them land in Candidates. Never name a job board or say which ones.`;
 TALK_BY_KIND.social = `- You make the graphics yourself: every post gets a picture when you write it, and post_graphic makes or remakes one on request (a drawn picture with the headline set under it in the brand colors, or a scene with no words). A graphic always has a real visual idea in it (a visual metaphor, a small scene, a cartoon); words on a plain color only when they ask for just the words. Never say you can't build image files, never hand a graphic to Elena or a person, and never only describe a concept when they asked for the graphic.`;
 TALK_BY_KIND.inbox = `- You are the owner's executive assistant. You protect her time and attention: you sort what comes in, decide whether she needs it, and keep the one list of decisions for her and her team.
 - Lead with a recommendation, not a pile of options: "Nov 17 works and Nov 19 clashes with your board call. I suggest Nov 17 and can confirm it."
@@ -1033,12 +1040,22 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       return { text, cards: best.slice(0, 2).map((p) => hiring.personCard(p) as ChatCard), queries: r.queries };
     }
     case "write_job_post": {
+      const r = await jobs.roleFromChat(org, { title: d.target || d.title, notes: [d.notes, d.focus].filter((x) => x?.trim()).join(". ") });
+      if (r.ask) return { text: r.ask, cards: [], queries: [], choices: r.choices };
+      return { text: "Here's the job description: duties, schedule, pay, what you need and what's nice to have, and how to apply. It's on my Roles tab.", cards: [], queries: [], choices: r.role.publishedAt ? ["Change it"] : ["Post it", "Change it"], facts: `Job description written for ${r.role.title}${r.role.publishedAt ? " (it is live, and the live post now shows the new words)" : ""}.` };
+    }
+    case "publish_job":
+    case "unpublish_job": {
       const roles = (await db.listHrRoles(org)).filter((r) => r.status === "open");
-      const t = d.target.trim().toLowerCase();
-      const role = (t && roles.find((r) => r.title.toLowerCase().includes(t))) || roles[0];
-      if (!role) return { text: "Add the role first on Hiring, then Roles, and I'll write the post.", cards: [], queries: [] };
-      await hiring.writeJobPost(org, role.id);
-      return { text: `The ${role.title} post is written. It's on Hiring, then Roles, with the places to post it.`, cards: [], queries: [] };
+      const t = d.target.trim().toLowerCase().replace(/\(.*?\)/g, "").trim();
+      const role = (t && roles.find((r) => r.title.toLowerCase().includes(t) || t.includes(r.title.toLowerCase().replace(/\(.*?\)/g, "").trim()))) || (d.action === "unpublish_job" ? roles.find((r) => r.publishedAt) : roles[0]);
+      if (!role) return { text: "There's no open role to post yet. Tell me who you need and I'll write the job description.", cards: [], queries: [] };
+      if (d.action === "unpublish_job") {
+        await jobs.unpublish(org, role.id);
+        return { text: `I took the ${role.title} job down. Anyone who already applied stays in Candidates.`, cards: [], queries: [] };
+      }
+      const v = await jobs.publish(org, role.id);
+      return { text: `The ${role.title} job is live on your careers page and the job boards. Everyone who applies lands in Candidates, scored. Job page: ${v.jobUrl}`, cards: [], queries: [], choices: ["Find people too", "Show the applicants"] };
     }
     case "add_guideline": {
       const r = await interview.addGuideline(emp, d.target, d.notes || d.message);

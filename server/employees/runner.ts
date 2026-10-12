@@ -135,6 +135,9 @@ export function startScheduler() {
       await hiringDaily();
       // Imani: new hire check-ins and last-day reminders.
       await (await import("./people")).peopleTicks();
+
+      // Quinn: applicants from outside job channels, once an hour.
+      await (await import("./jobs")).jobsTick();
       await sweepExpired();
       await cooTicks();
       await morningChecks();

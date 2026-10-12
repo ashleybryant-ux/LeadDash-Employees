@@ -21,6 +21,7 @@ import { pushReady, startNotifications } from "../notify";
 import { readyApps, registerOAuth } from "../integrations";
 import { registerPublicPages } from "../public-pages";
 import { registerSalesPages } from "../sales-pages";
+import { registerCareers } from "../careers";
 import { registerProjectPages } from "../project-pages";
 
 async function startServer() {
@@ -147,6 +148,7 @@ async function startServer() {
   registerOAuth(app);
   registerPublicPages(app);
   registerSalesPages(app);
+  registerCareers(app);
   registerProjectPages(app);
 
   app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
