@@ -2288,3 +2288,8 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-jd-kv > b, .ld-jd-l { margin-top: 8px; padding-top: 0; }
   .ld-jd-btns .ld-btn { width: 100%; }
 }
+
+/* Works on its own: on a phone the choices sit under the rule and long ones wrap. */
+@media (max-width: 760px) {
+  .ld-rule-row .ld-chip { white-space: normal; height: auto; min-height: 32px; padding: 6px 12px; text-align: left; }
+}

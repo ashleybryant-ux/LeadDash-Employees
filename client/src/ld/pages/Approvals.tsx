@@ -273,7 +273,7 @@ export default function Approvals() {
                     {isEditing ? (
                       <textarea id={`body-${item.id}`} className="ld-ta" rows={8} value={draft} onChange={(e) => setDraft(e.target.value)} />
                     ) : (
-                      <span className="ld-body ld-pre" style={{ lineHeight: 1.6 }}>{item.body || "No text."}</span>
+                      <span className="ld-body ld-pre" style={{ lineHeight: 1.6 }}>{(item.body ?? "").replace(/^!\[[^\]]*\]\([^)]*\)\s*$/gm, "").replace(/\n{3,}/g, "\n\n").trim() || "No text."}</span>
                     )}
                     {chans.length > 0 && isPending && liveChans.length > 0 && (
                       <>

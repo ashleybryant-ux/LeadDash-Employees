@@ -1346,7 +1346,7 @@ export async function dispatch(item: OutboundItem): Promise<{ status: OutboundIt
         const kind = emp?.kind ?? (item.kind === "outreach_email" ? "outreach" : item.kind === "lead_reply" ? "leads" : null);
         url = await sendGmail(item.organizationId, to, subject, item.body ?? "", kind);
       } else if (ch === "calendar") url = await addToCalendar(item.organizationId, item);
-      else if (ch === "wordpress") url = await (await import("./wordpress")).publishDraft(item);
+      else if (ch === "wordpress") url = await (await import("./wordpress")).publishArticle(item);
       else url = await SOCIAL[ch as SocialChannel](item.organizationId, payloadFor(item, ch as SocialChannel));
       results.push({ channel: ch, ok: true, url, at: new Date().toISOString() });
     } catch (err) {

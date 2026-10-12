@@ -15,10 +15,12 @@ import type { OutboundItem } from "../drizzle/schema";
  * Integrations. Saving checks them with the site (GET /wp/v2/users/me) and
  * marks the connection connected.
  *
- * An approved article goes up as a draft (POST /wp/v2/posts, status draft):
- * the article as HTML, the meta description as the excerpt, the slug, and the
- * banner uploaded (POST /wp/v2/media) as the featured image. The owner
- * presses Publish in WordPress. Nothing here publishes on its own.
+ * An approved article is posted (POST /wp/v2/posts, status publish): the
+ * article as HTML with its photos, the meta description as the excerpt, the
+ * slug, and the banner as the featured image. Every photo is uploaded to the
+ * site's media library first (POST /wp/v2/media), so the post never points
+ * back at this app. Approved means a person approved it, or Theo was set to
+ * post on his own ("Posting new articles to WordPress" on his Onboarding tab).
  *
  * SEO plugins (Yoast, Rank Math) keep their own meta description field that
  * the REST API does not accept by default, so the excerpt carries it.
@@ -70,7 +72,7 @@ function why(r: { status: number; data: Record<string, unknown> | null }, what: 
   const code = String(r.data?.code ?? "");
   const msg = String(r.data?.message ?? "").replace(/<[^>]+>/g, "").slice(0, 200);
   if (r.status === 401 || code === "incorrect_password" || code === "invalid_username" || code === "rest_not_logged_in") return "WordPress didn't accept that username and application password. Make a new application password under Users, Profile in WordPress and save it again.";
-  if (r.status === 403 || code === "rest_cannot_create") return "That WordPress user can't create posts. Use an Author, Editor or Administrator account.";
+  if (r.status === 403 || code === "rest_cannot_create" || code === "rest_cannot_publish") return "That WordPress user can't publish posts. Use an Author, Editor or Administrator account.";
   if (r.status === 404) return "That address doesn't answer like a WordPress site. Check the site address.";
   return `WordPress couldn't ${what}${msg ? `: ${msg}` : ` (${r.status || "no answer"})`}.`;
 }
@@ -83,7 +85,7 @@ export async function verify(c: WpCreds): Promise<{ ok: true; name: string } | {
     const r = await call(c, "/wp/v2/users/me?context=edit");
     if (r.status === 200 && r.data?.id) {
       const caps = (r.data.capabilities ?? {}) as Record<string, boolean>;
-      if (Object.keys(caps).length && !caps.edit_posts) return { ok: false, error: "That WordPress user can't write posts. Use an Author, Editor or Administrator account." };
+      if (Object.keys(caps).length && !caps.publish_posts) return { ok: false, error: "That WordPress user can't publish posts. Use an Author, Editor or Administrator account." };
       return { ok: true, name: String(r.data.name || c.username) };
     }
     return { ok: false, error: why(r, "check the sign-in") };
@@ -134,31 +136,44 @@ const meta = (item: OutboundItem) => {
   }
 };
 
-/** Puts an approved article on the site as a draft and returns the link to edit it there. */
-export async function publishDraft(item: OutboundItem): Promise<string> {
+/** Uploads one picture to the site's media library: its id and address there, or null. */
+async function upload(c: WpCreds, url: string | null | undefined, name: string, alt: string): Promise<{ id: number; url: string } | null> {
+  try {
+    const pic = await bannerOf(url);
+    if (!pic) return null;
+    const body = new FormData();
+    body.append("file", new Blob([new Uint8Array(pic.bytes)], { type: pic.type }), `${name.slice(0, 60)}${path.extname(pic.name) || ".png"}`);
+    if (alt) body.append("alt_text", alt.slice(0, 160));
+    const up = await call(c, "/wp/v2/media", { method: "POST", body });
+    if ((up.status === 201 || up.status === 200) && up.data?.id) return { id: Number(up.data.id), url: String(up.data.source_url ?? "") };
+    console.warn("[wordpress] photo upload:", why(up, "upload the photo"));
+  } catch (err) {
+    console.warn("[wordpress] photo upload failed:", err instanceof Error ? err.message : err);
+  }
+  return null;
+}
+
+/** Posts an approved article on the site, with its photos, and returns the post's address. */
+export async function publishArticle(item: OutboundItem): Promise<string> {
   const c = await credsFor(item.organizationId);
   if (!c) throw new Error("WordPress is not connected");
   const m = meta(item);
-  let featured: number | undefined;
-  try {
-    const banner = await bannerOf(item.imageUrl);
-    if (banner) {
-      const body = new FormData();
-      body.append("file", new Blob([new Uint8Array(banner.bytes)], { type: banner.type }), `${(m.slug || "banner").slice(0, 60)}${path.extname(banner.name) || ".png"}`);
-      body.append("alt_text", item.title.slice(0, 120));
-      const up = await call(c, "/wp/v2/media", { method: "POST", body });
-      if (up.status === 201 || up.status === 200) featured = Number(up.data?.id) || undefined;
-      else console.warn("[wordpress] banner upload:", why(up, "upload the banner"));
-    }
-  } catch (err) {
-    console.warn("[wordpress] banner upload failed:", err instanceof Error ? err.message : err);
+  const slug = (m.slug || "article").slice(0, 50);
+  const banner = await upload(c, item.imageUrl, slug, item.title);
+  // Photos inside the article move to the site: each one is uploaded and its address swapped in. One that can't be uploaded is left out.
+  let text = item.body ?? "";
+  const photos = Array.from(text.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g));
+  let n = 0;
+  for (const p of photos) {
+    const up = await upload(c, p[2], `${slug}-${++n}`, p[1]);
+    text = text.replace(p[0], up?.url ? `![${p[1]}](${up.url})` : "");
   }
-  const html = await marked.parse(item.body ?? "", { gfm: true });
+  const html = await marked.parse(text, { gfm: true });
   const r = await call(c, "/wp/v2/posts", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ title: item.title, content: html, status: "draft", ...(m.slug ? { slug: m.slug } : {}), ...(m.metaDescription ? { excerpt: m.metaDescription } : {}), ...(featured ? { featured_media: featured } : {}) }),
+    body: JSON.stringify({ title: item.title, content: html, status: "publish", ...(m.slug ? { slug: m.slug } : {}), ...(m.metaDescription ? { excerpt: m.metaDescription } : {}), ...(banner ? { featured_media: banner.id } : {}) }),
   });
-  if ((r.status !== 201 && r.status !== 200) || !r.data?.id) throw new Error(why(r, "save the draft"));
-  return `${c.site}/wp-admin/post.php?post=${r.data.id}&action=edit`;
+  if ((r.status !== 201 && r.status !== 200) || !r.data?.id) throw new Error(why(r, "post the article"));
+  return typeof r.data.link === "string" && /^https?:\/\//.test(r.data.link) ? r.data.link : `${c.site}/?p=${r.data.id}`;
 }

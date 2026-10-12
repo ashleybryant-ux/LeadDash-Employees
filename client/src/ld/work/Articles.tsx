@@ -205,7 +205,7 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
                       </>
                     ) : a.status === "published" && a.externalReference ? (
                       <a className="ld-btn p" href={a.externalReference} target="_blank" rel="noreferrer noopener">
-                        Open draft
+                        View post
                       </a>
                     ) : failed ? (
                       <>
@@ -240,9 +240,9 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
   );
 }
 
-/** Renders the article's markdown simply: "#" lines as headings, everything else as paragraphs. */
+/** Renders the article's markdown simply: "#" lines as headings, photos, everything else as paragraphs. */
 function ArticleBody({ text }: { text: string }) {
-  const blocks: { h: boolean; text: string }[] = [];
+  const blocks: { h: boolean; text: string; img?: { src: string; alt: string } }[] = [];
   let para: string[] = [];
   const flush = () => {
     if (para.length) blocks.push({ h: false, text: para.join(" ") });
@@ -252,6 +252,12 @@ function ArticleBody({ text }: { text: string }) {
     const line = raw.trim();
     if (!line) {
       flush();
+      continue;
+    }
+    const pic = line.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/);
+    if (pic) {
+      flush();
+      blocks.push({ h: false, text: "", img: { alt: pic[1], src: pic[2] } });
       continue;
     }
     const m = line.match(/^#{1,6}\s+(.*)$/);
@@ -271,10 +277,12 @@ function ArticleBody({ text }: { text: string }) {
   return (
     <>
       {blocks.map((b, i) =>
-        b.h ? (
+        b.img ? (
+          <img key={i} src={b.img.src} alt={b.img.alt} style={{ width: "100%", maxHeight: 360, objectFit: "cover", borderRadius: 8, display: "block", margin: "6px 0" }} />
+        ) : b.h ? (
           <span key={i} style={{ fontSize: 17, fontWeight: 800, marginTop: 6 }}>{clean(b.text)}</span>
         ) : (
-          <span key={i} style={{ fontSize: 15, lineHeight: 1.65, color: "#24332c" }}>{clean(b.text)}</span>
+          <span key={i} style={{ fontSize: 15, lineHeight: 1.65, color: "var(--ld-text2)" }}>{clean(b.text)}</span>
         )
       )}
     </>

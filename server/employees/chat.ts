@@ -1766,8 +1766,8 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       }
       const a = await tasks.writeBlogArticle(org, { title: d.title || d.topic || "Untitled article", category: "Practice insights", outlineNotes: [d.notes, docText].filter(Boolean).join("\n\n") || undefined, keyword, generateBannerFlag: true });
       return {
-        text: "The article is drafted and waiting for your approval. The full text is on the Articles tab.",
-        cards: [{ type: "article", id: a.id, title: a.title, body: (a.body ?? "").replace(/[#*_>]/g, "").slice(0, 280), imageUrl: a.imageUrl }],
+        text: a.status === "published" ? `It's posted on your WordPress site${a.externalReference ? `: ${a.externalReference}` : ""}. The full text is on the Articles tab.` : a.approvedBy && a.status !== "pending_approval" ? `I wrote it, but it didn't go up on WordPress. It's on the Articles tab with the reason and Try again.` : "The article is written and waiting for your approval. The full text is on the Articles tab.",
+        cards: [{ type: "article", id: a.id, title: a.title, body: (a.body ?? "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/[#*_>]/g, "").replace(/\n{3,}/g, "\n\n").trim().slice(0, 280), imageUrl: a.imageUrl }],
         queries: [],
       };
     }

@@ -27,7 +27,10 @@ export const RULES: Partial<Record<EmployeeKind, Rule[]>> = {
   leads: [{ key: "reply", label: "Replies to new leads", default: "auto" }],
   inbox: [{ key: "new_email", label: "New emails you ask for", default: "auto" }],
   social: [{ key: "posts", label: "New posts", default: "ask" }],
-  blog: [{ key: "pass_to_social", label: "Passing new articles to Sienna", default: "auto" }],
+  blog: [
+    { key: "publish", label: "Posting new articles to WordPress", default: "ask" },
+    { key: "pass_to_social", label: "Passing new articles to Sienna", default: "auto" },
+  ],
   coo: [
     { key: "invites", label: "Sending invites and agendas", default: "auto" },
     { key: "recap", label: "Sending the recap", default: "auto" },

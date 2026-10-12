@@ -70,7 +70,7 @@ export function WorksOnOwnCard({ emp, rules, alwaysAsks, firstN }: { emp: Employ
           {rules.map((r) => {
             const mode = editing ? draft[r.key] ?? r.mode : r.mode;
             return (
-              <div key={r.key} className="ld-keep" style={{ display: "grid", gridTemplateColumns: "220px minmax(0,1fr)", gap: 12, alignItems: "center", padding: "10px 0", borderBottom: "1px solid #eef2f0" }}>
+              <div key={r.key} className="ld-rule-row" style={{ display: "grid", gridTemplateColumns: "220px minmax(0,1fr)", gap: 12, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--ld-line2)" }}>
                 <span className="ld-strong" style={{ fontSize: 14 }}>{r.label}</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
                   {editing ? <Choice options={MODES} value={mode} onChange={(v) => setDraft({ ...draft, [r.key]: v })} /> : <span className="ld-body">{MODES.find((m) => m.key === mode)?.label}</span>}

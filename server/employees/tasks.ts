@@ -1,7 +1,7 @@
 import { carriesClientInfo } from "../_core/baa";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
-import type { AIEmployee, EmployeeKind } from "../../drizzle/schema";
+import type { AIEmployee, EmployeeKind, OutboundItem } from "../../drizzle/schema";
 import { CACHE_MARK, generateJson, searchJson, type JsonSchema } from "../_core/llm";
 import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
@@ -669,7 +669,7 @@ export async function writeBlogArticle(
   const { cleanKeyword, fitMetaDescription } = await import("./blogKeywords");
   const keyword = cleanKeyword(input.keyword);
   const wp = await db.getConnectionByProvider(organizationId, "wordpress");
-  return working(emp, async () => {
+  const written = await working(emp, async () => {
     const { system } = await systemPromptAbout(
       emp,
       `${input.title} ${input.outlineNotes ?? ""}`,
@@ -678,22 +678,27 @@ export async function writeBlogArticle(
 - No made-up studies or numbers. If a claim needs a source you do not have, leave it out.
 - metaDescription: 150 to 160 characters, plain words, says what the reader gets.${keyword ? `
 - The main keyword is "${keyword}". Work it in naturally, never stuffed: in the article's title line, in the first paragraph, in one ## heading, and in metaDescription. Use its close variants elsewhere only where they read well.` : ""}
-- body: the article in markdown, starting with the first paragraph (the title is shown separately).`
+- body: the article in markdown, starting with the first paragraph (the title is shown separately).
+- photos: ${input.generateBannerFlag ? "2 photos to place inside the article, each under a different ## heading" : "[]"}. For each: afterHeading (the ## heading text exactly as written in body), prompt (a realistic editorial photograph that shows the idea of that section: a real setting, natural light, no text, letters or logos, no recognizable real person), and alt (one plain sentence describing the photo).`
     );
-    const out = await generateJson<{ body: string; metaDescription: string }>({
+    const out = await generateJson<{ body: string; metaDescription: string; photos: { afterHeading: string; prompt: string; alt: string }[] }>({
       system,
       prompt: `Title: ${input.title}\nCategory: ${input.category}${keyword ? `\nMain keyword: ${keyword}` : ""}\nPoints to cover: ${input.outlineNotes || "Use your judgment from the Brain."}`,
       schemaName: "blog_article",
       schema: {
         type: "object",
         additionalProperties: false,
-        required: ["body", "metaDescription"],
-        properties: { body: { type: "string" }, metaDescription: { type: "string" } },
+        required: ["body", "metaDescription", "photos"],
+        properties: {
+          body: { type: "string" },
+          metaDescription: { type: "string" },
+          photos: { type: "array", items: { type: "object", additionalProperties: false, required: ["afterHeading", "prompt", "alt"], properties: { afterHeading: { type: "string" }, prompt: { type: "string" }, alt: { type: "string" } } } },
+        },
       } as JsonSchema,
       maxTokens: 4500,
       temperature: 0.5,
     });
-    const body = (out?.body ?? "").trim();
+    let body = (out?.body ?? "").trim();
     const metaDescription = fitMetaDescription(out?.metaDescription);
 
     const bannerPrompt = `Editorial horizontal banner photograph for an article titled "${input.title}". Calm, natural light, real setting. No text, letters or logos.`;
@@ -706,6 +711,8 @@ export async function writeBlogArticle(
         imageError = (err as Error).message;
         console.warn("[blog] banner failed:", imageError);
       }
+      // Photos inside the article, each under its heading.
+      body = await placePhotos(body, (out?.photos ?? []).slice(0, 2), organizationId);
     }
 
     const created = await db.createOutboundItem({
@@ -723,9 +730,10 @@ export async function writeBlogArticle(
         keyword,
         metaDescription,
         slug: input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
-        statusOnWordPress: "draft",
+        statusOnWordPress: "publish",
         targetEndpoint: wp?.accountHandle || null,
         imageError,
+        rule: "publish",
       }),
     });
     await db.logAction({
@@ -737,4 +745,34 @@ export async function writeBlogArticle(
     });
     return created;
   }, { job: "doc" });
+  return postOnOwn(emp, written);
+}
+
+/** Generates each photo and puts it in the article under its heading. A photo that fails is left out. */
+export async function placePhotos(body: string, photos: { afterHeading: string; prompt: string; alt: string }[], organizationId: number) {
+  let out = body;
+  for (const p of photos) {
+    const heading = p.afterHeading.replace(/^#+\s*/, "").trim();
+    const lines = out.split("\n");
+    const at = lines.findIndex((l) => /^#{2,3}\s+/.test(l) && l.replace(/^#+\s*/, "").trim().toLowerCase() === heading.toLowerCase());
+    if (at < 0 || !p.prompt.trim()) continue;
+    try {
+      const url = (await generateImage({ prompt: `${p.prompt.trim()} Editorial photograph. No text, letters or logos.`, size: "1536x1024", folder: `org-${organizationId}/blog` })).url;
+      lines.splice(at + 1, 0, "", `![${p.alt.replace(/[\[\]]/g, "").trim().slice(0, 160)}](${url})`, "");
+      out = lines.join("\n").replace(/\n{3,}/g, "\n\n");
+    } catch (err) {
+      console.warn("[blog] photo failed:", (err as Error).message);
+    }
+  }
+  return out;
+}
+
+/** When Theo posts on his own, the article goes straight to WordPress and on to Sienna. */
+async function postOnOwn(emp: AIEmployee, item: OutboundItem) {
+  const team = await import("./team");
+  if (team.gate(emp, "publish") !== "auto") return item;
+  const by = `${emp.name} (on its own)`;
+  const sent = await (await import("../social")).postNow(item, by, "system", "Posted on its own", { approvedBy: by, approvedAt: new Date() });
+  if (team.gate(emp, "pass_to_social") === "auto") void postsFromArticle(item.organizationId, item.id).catch((err) => console.warn("[team] posts from article failed:", err instanceof Error ? err.message : err));
+  return sent ?? item;
 }
