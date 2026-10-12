@@ -460,6 +460,10 @@ export const DEFAULT_PLAYBOOKS: Record<PlaybookKind, HandbookPart> = {
         "Use the reader's own words (from questions, reviews, sales calls and forums) for the title and headings.",
         "Map the reader's awareness: unaware of the problem, aware of the problem, aware of solutions, aware of the product, ready to buy. Write each article for one stage.",
       ]),
+      s("Main keyword", [
+        "Every article ranks for one main keyword: a real phrase the reader types into Google. Use the owner's saved search terms when one fits; otherwise ask, with two you suggest.",
+        "Put it naturally in the title, the first paragraph, one heading and the meta description. Never stuff it, and never quote a search volume you don't have.",
+      ]),
       s("Structure: Hook, Retain, Reward at article length", [
         "Title and first paragraph: the hook. Promise one specific result.",
         "Body: a list, steps or a story, with clear subheadings and the number of items stated early.",
@@ -469,7 +473,7 @@ export const DEFAULT_PLAYBOOKS: Record<PlaybookKind, HandbookPart> = {
       s("Quality bar", [
         "Every statistic linked to its primary source; no invented studies or numbers.",
         "Real examples from the company's own work only when permitted; never client stories.",
-        "Plain language, short paragraphs, descriptive headings, a meta description under 160 characters.",
+        "Plain language, short paragraphs, descriptive headings, a meta description of 150 to 160 characters.",
         "Banner image that fits the topic and the brand; alt text describing it.",
       ]),
       s("Build the greatest hits library", [
