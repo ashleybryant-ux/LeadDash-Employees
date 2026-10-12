@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { Avatar, BottomNav, ErrorLine, Rail, useEmployees } from "../ui";
+import { DEPARTMENT_ORDER, EHR_GROUP, EHR_KINDS } from "../meta";
 import { SILENT, listen, micErrorText, type Listener } from "../voice";
 
 /** True when what the microphone heard is the employee's own line coming back through the speakers. */
@@ -38,7 +39,7 @@ function elapsed(from: Date | string, now: number) {
 }
 
 export default function Huddle() {
-  const { currentOrgId } = useTenant();
+  const { currentOrgId, currentOrg } = useTenant();
   const utils = trpc.useUtils();
   const { list: employees } = useEmployees();
   const active = employees.filter((e) => e.status !== "paused");
@@ -55,6 +56,7 @@ export default function Huddle() {
   const [blocked, setBlocked] = React.useState<Reply | null>(null);
   const [link, setLink] = React.useState("");
   const [whoOpen, setWhoOpen] = React.useState(false);
+  const [mode, setMode] = React.useState<"team" | "dept" | "pick">("team");
   const [now, setNow] = React.useState(Date.now());
   const listener = React.useRef<Listener | null>(null);
   const queue = React.useRef<Reply[]>([]);
@@ -219,22 +221,69 @@ export default function Huddle() {
 
   const inKinds = live?.kinds ?? picked ?? active.map((e) => e.kind);
   const inHuddle = active.filter((e) => inKinds.includes(e.kind));
-  const toggle = (kind: string) => {
-    const next = inKinds.includes(kind) ? inKinds.filter((k) => k !== kind) : [...inKinds, kind];
-    if (!next.length) return;
+  const choose = (next: string[]) => {
+    if (!next.length && live) return;
     if (live) members.mutate({ organizationId: currentOrgId, id: live.id, kinds: next });
     else setPicked(next);
+  };
+  const toggle = (kind: string) => choose(inKinds.includes(kind) ? inKinds.filter((k) => k !== kind) : [...inKinds, kind]);
+  // Departments: in a healthcare practice the three who work with LeadDash EHR are a group too.
+  const orgType = currentOrg?.orgType ?? "business";
+  const groups = [
+    ...(orgType === "healthcare" ? [{ name: EHR_GROUP, ehr: true, people: active.filter((e) => (EHR_KINDS as string[]).includes(e.kind)) }] : []),
+    // The three who work with LeadDash EHR are in their own group, not again under their departments.
+    ...(DEPARTMENT_ORDER[orgType] ?? DEPARTMENT_ORDER.business).map((d) => ({ name: d, ehr: false, people: active.filter((e) => (e.department || "Other") === d && !(orgType === "healthcare" && (EHR_KINDS as string[]).includes(e.kind))) })),
+  ].filter((g) => g.people.length);
+  const groupOn = (g: (typeof groups)[number]) => g.people.every((e) => inKinds.includes(e.kind));
+  const toggleGroup = (g: (typeof groups)[number]) => {
+    const kinds: string[] = g.people.map((e) => e.kind);
+    choose(groupOn(g) ? inKinds.filter((k) => !kinds.includes(k)) : Array.from(new Set([...inKinds, ...kinds])));
+  };
+  const pickMode = (m: "team" | "dept" | "pick") => {
+    setMode(m);
+    if (m === "team") choose(active.map((e) => e.kind));
+    if (m === "dept" && !live) choose(groups[0] ? groups[0].people.map((e) => e.kind) : []);
   };
   const thinking = say.isPending;
   const last = q.data?.last ?? null;
 
   const whoPicker = (
-    <div className="ld-card" style={{ padding: 14, display: "flex", flexWrap: "wrap", gap: 8 }}>
-      {active.map((e) => (
-        <button key={e.kind} type="button" className={`ld-chip ${inKinds.includes(e.kind) ? "on" : ""}`} aria-pressed={inKinds.includes(e.kind)} onClick={() => toggle(e.kind)}>
-          {e.name}
-        </button>
-      ))}
+    <div className="ld-hud-who">
+      <div className="ld-hud-segs" role="radiogroup" aria-label="Who's in">
+        {([["team", "Whole team"], ["dept", "Departments"], ["pick", "Pick people"]] as const).map(([k, l]) => (
+          <button key={k} type="button" role="radio" aria-checked={mode === k} className={mode === k ? "on" : ""} onClick={() => pickMode(k)}>{l}</button>
+        ))}
+      </div>
+      {mode === "dept" ? (
+        <div className="ld-hud-depts">
+          {groups.map((g) => (
+            <button key={g.name} type="button" className={`ld-hud-dept ${groupOn(g) ? "on" : ""}`} aria-pressed={groupOn(g)} onClick={() => toggleGroup(g)}>
+              <span className="box" aria-hidden="true">{groupOn(g) ? "✓" : ""}</span>
+              <span className="nm">
+                {g.ehr && <span className="ld-bench-badge sm">LeadDash EHR</span>}
+                {g.name}
+                <small>{g.people.map((e) => e.name).join(", ")}</small>
+              </span>
+              <span className="faces">{g.people.map((e) => <Avatar key={e.kind} name={e.name} kind={e.kind} src={e.avatar} size={32} />)}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="ld-hud-people">
+          {active.map((e) => {
+            const on = inKinds.includes(e.kind);
+            return (
+              <button key={e.kind} type="button" className={`ld-hud-person ${on ? "on" : ""}`} aria-pressed={on} disabled={mode === "team"} onClick={() => toggle(e.kind)}>
+                {mode === "pick" && <span className="check" aria-hidden="true">{on ? "✓" : ""}</span>}
+                <Avatar name={e.name} kind={e.kind} src={e.avatar} size={72} />
+                <b>{e.name}</b>
+                <small>{e.roleTitle}</small>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {!active.length && <span className="ld-small">Nobody is on your team yet. <Link href="/bench">Bring someone on from the bench.</Link></span>}
     </div>
   );
 
@@ -285,11 +334,14 @@ export default function Huddle() {
               <span style={{ fontSize: 14, lineHeight: 1.6, color: "var(--ld-text2)" }}>Say a name to ask someone directly, or ask the whole team. Each employee answers from their own work, in their own voice. When you end, Simone writes the notes and Nora tracks the action items.</span>
               <span className="ld-lbl">Who's in</span>
               {whoPicker}
-              <div>
+              <div className="ld-hud-foot">
+                <span className="faces">{inHuddle.map((e) => <Avatar key={e.kind} name={e.name} kind={e.kind} src={e.avatar} size={30} />)}</span>
+                <span className="n"><b>{inHuddle.length}</b> in this huddle</span>
                 <button type="button" className="ld-btn p" style={{ width: "auto", padding: "0 20px" }} disabled={start.isPending || !inHuddle.length} onClick={() => start.mutate({ organizationId: currentOrgId, kinds: inKinds })}>
                   {start.isPending ? "Starting..." : "Start the huddle"}
                 </button>
               </div>
+              <span className="ld-small ld-muted">Only people on your team join huddles. Anyone on the bench stays out.</span>
               <ErrorLine error={start.error} />
             </div>
           </main>

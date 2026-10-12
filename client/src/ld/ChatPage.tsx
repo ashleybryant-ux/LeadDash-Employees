@@ -87,9 +87,12 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
   // Team chat only people open the general channel.
   if (chatOnly && !listOnly) return <Redirect to="/chats/team/everyone" />;
   if (fresh && setup.data && !setup.data.done && !setup.data.inUse) return <Redirect to="/setup" />;
+  // Someone on the bench has no chat: their bio opens on the bench.
+  if (emp && emp.status === "paused") return <Redirect to={`/bench?bio=${emp.kind === "custom" ? `e${emp.id}` : emp.kind}`} />;
   if (!params.kind && !params.id && list.length > 0 && !listOnly) {
-    // The first employee that is working; a workspace fresh from setup has most of them paused.
-    const first = list.find((e) => e.kind === "grants" && e.status !== "paused") ?? list.find((e) => e.status !== "paused") ?? list[0];
+    // The first employee on the team; with nobody on it yet, the bench.
+    const first = list.find((e) => e.kind === "grants" && e.status !== "paused") ?? list.find((e) => e.status !== "paused");
+    if (!first) return <Redirect to="/bench" />;
     return <Redirect to={first.kind === "custom" ? `/chats/e/${first.id}` : `/chats/${first.kind}`} />;
   }
 

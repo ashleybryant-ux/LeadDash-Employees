@@ -88,11 +88,21 @@ export async function pickTeam(orgId: number, employeeIds: number[]) {
 }
 
 /** Setup is done: each starting employee gets its first job as a message the owner can send with one press. */
-export async function finishSetup(orgId: number, by: string, skipped = false) {
+export async function finishSetup(orgId: number, by: string, skipped = false, bench = false) {
   const org = await db.getOrganizationById(orgId);
   if (!org) throw new TRPCError({ code: "NOT_FOUND", message: "That workspace isn't here." });
   const first = !org.setupAt;
   await db.updateOrganization(orgId, { setupAt: new Date() });
+  // The bench: everyone starts there and the owner brings people on. On the LeadDash EHR start, the three who work with LeadDash EHR start on the team.
+  if (first && bench) {
+    const { limits, EHR_KINDS } = await import("./bench");
+    const l = await limits(orgId);
+    for (const e of await db.listEmployeesByOrg(orgId)) {
+      const keep = l.ehrStart && EHR_KINDS.includes(e.kind);
+      if (keep && e.status === "paused") await db.updateEmployee(e.id, orgId, { status: "active" });
+      if (!keep && e.status !== "paused") await db.updateEmployee(e.id, orgId, { status: "paused" });
+    }
+  }
   if (!first || skipped) return setupView(orgId);
   const firstName = by.trim().replace(/^(dr|mr|mrs|ms|prof)\.?\s+/i, "").split(" ")[0] || "there";
   for (const e of await db.listEmployeesByOrg(orgId)) {

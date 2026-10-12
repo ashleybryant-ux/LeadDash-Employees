@@ -34,6 +34,8 @@ export type InterviewState = {
   done: boolean;
   doneAt?: string;
   welcomedAt?: string;
+  /** When the owner brought this employee on from the bench. */
+  hiredAt?: string;
   remindAt?: string;
   samples?: { label: string; text: string }[];
   examples?: Example[];
@@ -62,7 +64,7 @@ const nowIso = () => new Date().toISOString();
 
 export function readState(emp: Pick<AIEmployee, "interview">): InterviewState {
   const s = parse<Partial<InterviewState>>(emp.interview, {});
-  return { step: Number.isInteger(s.step) ? Math.max(0, s.step!) : 0, done: !!s.done, doneAt: s.doneAt, welcomedAt: s.welcomedAt, remindAt: s.remindAt, samples: Array.isArray(s.samples) ? s.samples : undefined, examples: Array.isArray(s.examples) ? s.examples : [], followups: Array.isArray(s.followups) ? s.followups : [], followupsAsked: !!s.followupsAsked, plan: s.plan && typeof s.plan === "object" && s.plan.answers ? s.plan : undefined };
+  return { step: Number.isInteger(s.step) ? Math.max(0, s.step!) : 0, done: !!s.done, doneAt: s.doneAt, welcomedAt: s.welcomedAt, hiredAt: s.hiredAt, remindAt: s.remindAt, samples: Array.isArray(s.samples) ? s.samples : undefined, examples: Array.isArray(s.examples) ? s.examples : [], followups: Array.isArray(s.followups) ? s.followups : [], followupsAsked: !!s.followupsAsked, plan: s.plan && typeof s.plan === "object" && s.plan.answers ? s.plan : undefined };
 }
 
 export function readAnswers(emp: Pick<AIEmployee, "onboarding">): Record<string, Answer> {
@@ -505,6 +507,20 @@ export async function welcome(emp: AIEmployee) {
   });
   await saveState(emp, { welcomedAt: nowIso() });
   return msg;
+}
+
+/** Brought on from the bench: thanks in the chat and the onboarding card (Start or Later). Back on the team after onboarding: a short hello. */
+export async function welcomeFromBench(emp: AIEmployee) {
+  const st = readState(emp);
+  await db.createChatMessage({
+    organizationId: emp.organizationId,
+    employeeId: emp.id,
+    role: "employee",
+    authorName: emp.name,
+    content: st.done ? "Thank you for bringing me back onto the team! I still have everything from my onboarding, so I can pick up right where I left off." : "Thank you for bringing me onto the team! Can we start the onboarding? It works like a new hire's first week: I already read your Brain, so I'll only ask what's missing.",
+    cards: st.done ? null : JSON.stringify([onboardingCard(emp)]),
+  });
+  return saveState(emp, { hiredAt: nowIso(), welcomedAt: st.welcomedAt ?? nowIso() });
 }
 
 /** Later: remind tomorrow at 9:00 AM in the workspace's time zone. */

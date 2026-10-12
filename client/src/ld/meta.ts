@@ -33,6 +33,9 @@ export const DEPARTMENT_ORDER: Record<string, string[]> = {
   nonprofit: ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"],
   healthcare: ["Leadership", "Client care", "Billing and compliance", "Growth", "Operations", "Other"],
 };
+/** In a healthcare practice, the three who read from LeadDash EHR: their own section on the bench and a group in huddles. */
+export const EHR_KINDS: Kind[] = ["leads", "billing", "compliance"];
+export const EHR_GROUP = "Works with LeadDash EHR";
 /** In a healthcare practice, the employees that work with client information. */
 export const CLIENT_INFO_KINDS: Kind[] = ["inbox", "leads", "billing", "compliance"];
 export function worksWithClientInfo(kind: string | null | undefined, orgType: string | null | undefined) {

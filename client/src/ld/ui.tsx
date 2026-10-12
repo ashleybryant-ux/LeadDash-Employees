@@ -134,6 +134,7 @@ const I = (d: React.ReactNode) => (
 export const Icons = {
   chats: I(<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />),
   huddle: I(<><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></>),
+  bench: I(<><path d="M3 10h18M5 10V7h14v3M6 10l-1 8M18 10l1 8M4 14h16" /></>),
   activity: I(<path d="M3 12h4l3-8 4 16 3-8h4" />),
   approvals: I(<><path d="M9 11l3 3 8-8" /><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" /></>),
   tasks: I(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>),
@@ -162,7 +163,7 @@ export const Icons = {
 // Rail
 // ==========================================
 
-export type RailKey = "chats" | "calendar" | "goals" | "projects" | "huddle" | "activity" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
+export type RailKey = "chats" | "bench" | "calendar" | "goals" | "projects" | "huddle" | "activity" | "approvals" | "tasks" | "brain" | "workspace" | "integrations" | "team" | "account" | "more";
 
 export function Rail({ active }: { active: RailKey }) {
   const count = useApprovalCount();
@@ -222,6 +223,7 @@ export function Rail({ active }: { active: RailKey }) {
         <img src="/brand/icon.png" alt="LeadDash Employees" width={44} height={44} style={{ display: "block", width: 44, height: 44, borderRadius: 11 }} />
       </button>
       {item("chats", "Chats", "/chats", Icons.chats, railUnread.total)}
+      {!chatOnly && item("bench", "Bench", "/bench", Icons.bench)}
       {!chatOnly && item("calendar", "Calendar", "/calendar", Icons.calendar)}
       {!chatOnly && item("goals", "Goals", "/goals", Icons.goals)}
       {!chatOnly && item("projects", "Projects", "/projects", Icons.projects)}
@@ -481,7 +483,9 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
   const summaries = trpc.chat.summaries.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && !chatOnly, refetchInterval: 30_000 });
   const elsewhere = useUnreadElsewhere();
   const [switcher, setSwitcher] = React.useState(false);
-  const sorted = [...list].sort((a, b) => KIND_ORDER.indexOf(a.kind as Kind) - KIND_ORDER.indexOf(b.kind as Kind) || a.id - b.id);
+  // Chats holds only the people brought on from the bench.
+  const sorted = list.filter((e) => e.status !== "paused").sort((a, b) => KIND_ORDER.indexOf(a.kind as Kind) - KIND_ORDER.indexOf(b.kind as Kind) || a.id - b.id);
+  const benched = list.filter((e) => e.status === "paused");
   return (
     <aside className="ld-chatlist" style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "var(--ld-surface)", borderRight: "1px solid var(--ld-line)", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
       <div style={{ padding: "18px 18px 12px 18px", position: "relative" }} className="ld-between">
@@ -531,6 +535,13 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
           </div>
         );
       })}
+      {!chatOnly && benched.length > 0 && (
+        <Link href="/bench" className="ld-benchrow">
+          <span className="faces">{benched.slice(0, 4).map((e) => <Avatar key={e.id} name={e.name} kind={e.kind} src={e.avatar} size={28} />)}</span>
+          <span className="tx">{`${benched.length} on the bench`}</span>
+          <span className="ld-btn sm">Bench</span>
+        </Link>
+      )}
       {!chatOnly && list.length === 0 && <div className="ld-empty">No employees in this workspace yet.</div>}
       {!chatOnly && <HoursSaved />}
     </aside>
@@ -635,7 +646,8 @@ type Emp = { id: number; name: string; roleTitle: string; kind: string; status: 
 export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines"; base: string }) {
   const { currentOrgId, currentOrg } = useTenant();
   const utils = trpc.useUtils();
-  const toggle = trpc.employees.toggleStatus.useMutation({ onSuccess: () => utils.employees.list.invalidate() });
+  const [, navigate] = useLocation();
+  const toBench = trpc.bench.sendToBench.useMutation({ onSuccess: async () => { await Promise.all([utils.employees.list.invalidate(), utils.bench.view.invalidate()]); navigate("/bench"); } });
   const work = KIND_META[(emp.kind as Kind) ?? "custom"].work;
   const clientInfo = worksWithClientInfo(emp.kind, currentOrg?.orgType);
   // Client names on this person's screen: Show, Initial (A. Price) or Hide (a black box). Chat and the Work tabs follow it at once.
@@ -694,15 +706,12 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
         </div>
       )}
       <div className="ld-row ld-emphead-status" style={{ marginLeft: clientInfo ? 0 : "auto" }}>
-        <span className={`ld-pill ${paused ? "gray" : "green"}`}>{paused ? "Paused" : emp.status === "working" ? "Working" : "Ready"}</span>
-        <button
-          type="button"
-          className="ld-btn sm"
-          disabled={toggle.isPending}
-          onClick={() => toggle.mutate({ organizationId: currentOrgId, id: emp.id, status: paused ? "active" : "paused" })}
-        >
-          {paused ? "Resume" : "Pause"}
-        </button>
+        <span className={`ld-pill ${paused ? "gray" : "green"}`}>{paused ? "On the bench" : emp.status === "working" ? "Working" : "Ready"}</span>
+        {!paused && (
+          <button type="button" className="ld-btn sm" style={{ width: 128 }} disabled={toBench.isPending} onClick={() => toBench.mutate({ organizationId: currentOrgId, employeeId: emp.id })}>
+            Send to bench
+          </button>
+        )}
       </div>
     </header>
   );
@@ -764,7 +773,7 @@ const MoreIcon = I(<><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r=
 export function BottomNav({ active }: { active: RailKey }) {
   const count = useApprovalCount();
   const { chatOnly } = useTenant();
-  const on = (k: RailKey) => (k === "more" ? ["calendar", "goals", "tasks", "huddle", "activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
+  const on = (k: RailKey) => (k === "more" ? ["bench", "calendar", "goals", "tasks", "huddle", "activity", "brain", "workspace", "integrations", "team", "account", "more"].includes(active) : active === k);
   const item = (key: RailKey, label: string, href: string, icon: React.ReactNode, badge?: number) => (
     <Link key={key} href={href} className={`ld-bn-item ${on(key) ? "on" : ""}`} aria-current={on(key) ? "page" : undefined}>
       <span style={{ position: "relative", display: "flex" }}>

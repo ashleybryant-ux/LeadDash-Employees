@@ -15,6 +15,7 @@ import TeamViewPage from "./ld/team/Views";
 import SlackImportPage from "./ld/team/Import";
 import Approvals from "./ld/pages/Approvals";
 import Huddle from "./ld/pages/Huddle";
+import Bench from "./ld/pages/Bench";
 import Activity from "./ld/pages/Activity";
 import Tasks from "./ld/pages/Tasks";
 import Calendar from "./ld/pages/Calendar";
@@ -97,6 +98,8 @@ function Router() {
       <Route path="/goals" component={Goals} />
       <Route path="/projects" component={Projects} />
       <Route path="/huddle" component={Huddle} />
+      <Route path="/bench" component={Bench} />
+      <Route path="/bench/:kind" component={Bench} />
       <Route path="/activity" component={Activity} />
       <Route path="/approvals" component={Approvals} />
       <Route path="/tasks" component={Tasks} />

@@ -30,6 +30,7 @@ export const JOBS = {
   application: { label: "Speaking, pitch or accelerator application", minutes: 180 },
   grant: { label: "Full grant application", minutes: 480 },
   video: { label: "Talking video, per minute (Pro quality: 16 hr)", minutes: 480 },
+  interview: { label: "Interview answer from the bench", minutes: 5 },
 } as const;
 export type JobKey = keyof typeof JOBS;
 

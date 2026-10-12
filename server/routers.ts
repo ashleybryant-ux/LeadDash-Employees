@@ -715,13 +715,20 @@ export const appRouter = router({
       .input(z.object({ id: z.number(), organizationId: z.number(), status: z.enum(["active", "idle", "working", "paused"]) }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
+        // Off the bench goes through the same limits as Bring on.
+        const before = await db.getEmployeeForOrg(input.id, input.organizationId);
+        if (before?.status === "paused" && input.status !== "paused") {
+          const bench = await import("./employees/bench");
+          const l = await bench.limits(input.organizationId);
+          if (!l.canBringOn(before.kind)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: bench.limitMessage(l, before.name) });
+        }
         const emp = await db.updateEmployee(input.id, input.organizationId, { status: input.status });
         if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "Employee not found in this workspace." });
         await db.logAction({
           organizationId: input.organizationId,
           actorType: "human_user",
           actorName: personName(ctx.user),
-          action: input.status === "paused" ? "Paused employee" : "Resumed employee",
+          action: input.status === "paused" ? "Sent an employee to the bench" : "Brought an employee on from the bench",
           details: `${emp.name} is now ${input.status}.`,
         });
         return emp;
@@ -5020,11 +5027,44 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId, "admin");
       return (await import("./employees/setup")).pickTeam(input.organizationId, input.employeeIds);
     }),
-    finish: protectedProcedure.input(orgInput.extend({ skipped: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {
+    finish: protectedProcedure.input(orgInput.extend({ skipped: z.boolean().default(false), bench: z.boolean().default(false) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "admin");
       await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: input.skipped ? "Skipped team setup" : "Finished team setup", details: "" });
-      return (await import("./employees/setup")).finishSetup(input.organizationId, personName(ctx.user), input.skipped);
+      return (await import("./employees/setup")).finishSetup(input.organizationId, personName(ctx.user), input.skipped, input.bench);
     }),
+  }),
+
+  // ==========================================
+  // The bench: read a bio, interview, bring on
+  // ==========================================
+  bench: router({
+    view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/bench")).benchView(input.organizationId);
+    }),
+    /** One click: the employee joins the team and offers to start onboarding in their chat. */
+    bringOn: protectedProcedure.input(orgInput.extend({ employeeId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const emp = await (await import("./employees/bench")).bringOn(input.organizationId, input.employeeId);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Brought an employee on from the bench", details: emp.name });
+      return { id: emp.id, kind: emp.kind, name: emp.name };
+    }),
+    sendToBench: protectedProcedure.input(orgInput.extend({ employeeId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const emp = await (await import("./employees/bench")).sendToBench(input.organizationId, input.employeeId);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Sent an employee to the bench", details: emp.name });
+      return { id: emp.id };
+    }),
+    /** One answer in an interview, said out loud in the employee's voice. Each answer uses work hours. */
+    interview: protectedProcedure
+      .input(orgInput.extend({ employeeId: z.number().int(), question: z.string().max(1000).default(""), history: z.array(z.object({ me: z.boolean(), text: z.string().max(2000) })).max(30).default([]) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const r = await (await import("./employees/bench")).interviewAnswer(input.organizationId, input.employeeId, input.history, input.question);
+        const healthcare = (await db.getOrganizationById(input.organizationId))?.orgType === "healthcare";
+        const id = await huddle.speak(r.emp.kind, r.text, "", { clientInfo: healthcare, orgId: input.organizationId });
+        return { text: r.text, audioUrl: id ? `/api/voice/audio/${id}` : null, voiceError: id ? null : forViewer(ctx, huddle.lastSpeechError()) };
+      }),
   }),
 
   onboarding: router({
