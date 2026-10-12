@@ -4481,15 +4481,17 @@ export const appRouter = router({
       const { settings } = await sales.salesSettings(input.organizationId);
       const google = (await db.getConnectionByProvider(input.organizationId, "google_workspace"))?.status === "connected";
       const { token, ...rest } = settings;
-      return { ...rest, links: sales.salesLinks(token), google, partnerOptions: [...sales.PARTNER_TYPES] };
+      return { ...rest, links: sales.salesLinks(token), google };
     }),
 
     saveSettings: protectedProcedure
       .input(
         orgInput.extend({
           sells: z.enum(["software", "therapy"]).optional(),
-          partnerTypes: z.array(z.string().max(60)).max(10).optional(),
+          target: z.string().max(500).optional(),
           area: z.string().max(200).optional(),
+          repeat: z.enum(sales.REPEATS).optional(),
+          count: z.number().int().min(10).max(100).optional(),
           meetingMinutes: z.number().int().optional(),
           hoursFrom: z.string().regex(/^\d{2}:\d{2}$/).optional(),
           hoursTo: z.string().regex(/^\d{2}:\d{2}$/).optional(),
@@ -4501,7 +4503,7 @@ export const appRouter = router({
         await requireMember(ctx, input.organizationId, "admin");
         const { organizationId, ...rest } = input;
         const saved = await sales.saveSalesSettings(organizationId, rest);
-        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved sales settings", details: saved.sells === "therapy" ? "Sells therapy to clients" : "Sells to practices" });
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Saved sales settings", details: rest.target !== undefined || rest.area !== undefined || rest.repeat ? `Riley finds: ${saved.target || "not set"}; area: ${saved.area || "not set"}; repeat: ${sales.repeatText(saved.repeat, saved.count)}` : saved.sells === "therapy" ? "New leads are people seeking care" : "New leads are businesses" });
         return { ok: true };
       }),
 

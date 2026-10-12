@@ -91,59 +91,57 @@ export function WorksOnOwnCard({ emp, rules, alwaysAsks, firstN }: { emp: Employ
   );
 }
 
-/** Riley: what the workspace sells, and for a practice, which referral partners to look for. */
-export function SellsCard() {
+type Repeat = "off" | "weekly" | "monthly";
+const REPEATS: { key: Repeat; label: string }[] = [
+  { key: "off", label: "Off" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+];
+const COUNTS = [10, 25, 50, 100];
+const repeatText = (r: Repeat, n: number) => (r === "weekly" ? `Every Monday, ${n} new` : r === "monthly" ? `The 1st of each month, ${n} new` : "Off");
+
+/** Riley: who she looks for by default, where, and whether the search repeats. */
+export function SearchCard() {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const q = trpc.sales.settings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const [editing, setEditing] = React.useState(false);
-  const [d, setD] = React.useState({ sells: "therapy" as "software" | "therapy", partnerTypes: [] as string[], area: "" });
+  const [d, setD] = React.useState({ target: "", area: "", repeat: "off" as Repeat, count: 25 });
   const save = trpc.sales.saveSettings.useMutation({ onSuccess: async () => { setEditing(false); await utils.sales.settings.invalidate(); } });
   if (!q.data) return null;
   const s = q.data;
-  const cur = editing ? d : { sells: s.sells, partnerTypes: s.partnerTypes, area: s.area };
-  const therapy = cur.sells === "therapy";
   return (
     <section className={`ld-card ${editing ? "editing" : ""}`}>
       <div style={grid}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
-          <div style={col}>
-            <span className="ld-lbl">This workspace sells</span>
-            {editing ? <Choice options={[{ key: "software", label: "Software or services to practices" }, { key: "therapy", label: "Therapy to clients" }]} value={d.sells} onChange={(v) => setD({ ...d, sells: v })} /> : <span className="ld-body">{therapy ? "Therapy to clients" : "Software or services to practices"}</span>}
-          </div>
-          {therapy && (
-            <div style={col}>
-              <span className="ld-lbl">Riley finds</span>
-              {editing ? (
-                <div className="ld-row" style={{ flexWrap: "wrap" }}>
-                  {s.partnerOptions.map((o) => {
-                    const on = d.partnerTypes.includes(o);
-                    return <button key={o} type="button" className={`ld-chip ${on ? "on" : ""}`} aria-pressed={on} onClick={() => setD({ ...d, partnerTypes: on ? d.partnerTypes.filter((x) => x !== o) : [...d.partnerTypes, o] })}>{o}</button>;
-                  })}
-                </div>
-              ) : (
-                <span className="ld-body">{s.partnerTypes.join(", ") || "Not set"}</span>
-              )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+          {editing ? (
+            <div className="ld-rs-kv">
+              <label className="ld-lbl" htmlFor="rs-target" style={{ paddingTop: 8 }}>Riley finds</label>
+              <textarea id="rs-target" className="ld-in ld-rs-ta" rows={2} maxLength={500} placeholder="Family law attorneys who refer families to counseling" value={d.target} onChange={(e) => setD({ ...d, target: e.target.value })} />
+              <label className="ld-lbl" htmlFor="rs-area" style={{ paddingTop: 8 }}>Area</label>
+              <input id="rs-area" className="ld-in" maxLength={200} placeholder="Denver metro" value={d.area} onChange={(e) => setD({ ...d, area: e.target.value })} />
+              <span className="ld-lbl" style={{ paddingTop: 8 }}>Repeat</span>
+              <div className="ld-row" style={{ flexWrap: "wrap", gap: 8 }}>
+                <Choice options={REPEATS} value={d.repeat} onChange={(v) => setD({ ...d, repeat: v })} />
+                <select className="ld-in" aria-label="How many new each time" style={{ width: 90 }} value={d.count} onChange={(e) => setD({ ...d, count: Number(e.target.value) })}>
+                  {Array.from(new Set([...COUNTS, d.count])).sort((x, y) => x - y).map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <span style={small}>new each time</span>
+              </div>
+            </div>
+          ) : (
+            <div className="ld-rs-kv">
+              <b>Riley finds</b>
+              <span className="ld-body">{s.target || "Not set"}</span>
+              <b>Area</b>
+              <span className="ld-body">{s.area || "Not set"}</span>
+              <b>Repeat</b>
+              <span className="ld-body">{repeatText(s.repeat, s.count)}</span>
             </div>
           )}
-          <div style={col}>
-            <label className="ld-lbl" htmlFor="sales-area">Area</label>
-            {editing ? <input id="sales-area" className="ld-in" style={{ maxWidth: 360 }} placeholder={therapy ? "Within 25 miles of Denver, CO" : "Colorado and Wyoming"} value={d.area} onChange={(e) => setD({ ...d, area: e.target.value })} /> : <span className="ld-body">{s.area || "Not set"}</span>}
-          </div>
-          <div style={col}>
-            <span className="ld-lbl">How the team works for this choice</span>
-            <div className="ld-keep" style={{ display: "grid", gridTemplateColumns: "110px minmax(0,1fr)", gap: "6px 14px", fontSize: 14, lineHeight: 1.5 }}>
-              <b>Riley</b>
-              <span>{therapy ? "Finds referral partners nearby and the person to contact at each." : "Finds practices that fit and the owner to contact at each."}</span>
-              <b>Jada</b>
-              <span>{therapy ? "Writes introductions sent from your Gmail." : "Sends a 3-email sequence from your Gmail and stops when they book or reply."}</span>
-              <b>Malik</b>
-              <span>{therapy ? "Answers new client inquiries with consultation times. Every reply waits for your approval." : "Answers new leads within minutes and books the meeting."}</span>
-            </div>
-          </div>
           <ErrorLine error={save.error} />
         </div>
-        <Buttons editing={editing} saving={save.isPending} onEdit={() => { setD({ sells: s.sells, partnerTypes: s.partnerTypes, area: s.area }); setEditing(true); }} onSave={() => save.mutate({ organizationId: currentOrgId, ...d })} onCancel={() => setEditing(false)} />
+        <Buttons editing={editing} saving={save.isPending} onEdit={() => { setD({ target: s.target, area: s.area, repeat: s.repeat, count: s.count }); setEditing(true); }} onSave={() => save.mutate({ organizationId: currentOrgId, target: d.target.trim(), area: d.area.trim(), repeat: d.repeat, count: d.count })} onCancel={() => setEditing(false)} />
       </div>
     </section>
   );
@@ -156,14 +154,14 @@ export function LeadSetupCard({ emp, rule }: { emp: EmployeeRow; rule: Rule | un
   const q = trpc.sales.settings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const [editing, setEditing] = React.useState(false);
   const [copied, setCopied] = React.useState<string | null>(null);
-  const [d, setD] = React.useState({ meetingMinutes: 30, hoursFrom: "09:00", hoursTo: "16:00", days: [1, 2, 3, 4, 5] as number[], reply: "auto" as Mode });
+  const [d, setD] = React.useState({ sells: "therapy" as "software" | "therapy", meetingMinutes: 30, hoursFrom: "09:00", hoursTo: "16:00", days: [1, 2, 3, 4, 5] as number[], reply: "auto" as Mode });
   const saveSettings = trpc.sales.saveSettings.useMutation();
   const saveRules = trpc.onboarding.saveRules.useMutation();
   const [error, setError] = React.useState<string | null>(null);
   if (!q.data) return null;
   const s = q.data;
   const replyMode = rule?.mode ?? "auto";
-  const therapy = s.sells === "therapy";
+  const therapy = (editing ? d.sells : s.sells) === "therapy";
   const copy = async (k: string, v: string) => {
     try {
       await navigator.clipboard.writeText(v);
@@ -176,7 +174,7 @@ export function LeadSetupCard({ emp, rule }: { emp: EmployeeRow; rule: Rule | un
   const save = async () => {
     setError(null);
     try {
-      await saveSettings.mutateAsync({ organizationId: currentOrgId, meetingMinutes: d.meetingMinutes, hoursFrom: d.hoursFrom, hoursTo: d.hoursTo, days: d.days });
+      await saveSettings.mutateAsync({ organizationId: currentOrgId, sells: d.sells, meetingMinutes: d.meetingMinutes, hoursFrom: d.hoursFrom, hoursTo: d.hoursTo, days: d.days });
       if (rule) await saveRules.mutateAsync({ organizationId: currentOrgId, employeeId: emp.id, rules: { reply: d.reply } });
       await Promise.all([utils.sales.settings.invalidate(), utils.onboarding.get.invalidate()]);
       setEditing(false);
@@ -200,6 +198,10 @@ export function LeadSetupCard({ emp, rule }: { emp: EmployeeRow; rule: Rule | un
               <button type="button" className="ld-btn" onClick={() => copy("hook", s.links.hook)}>{copied === "hook" ? "Copied" : "Copy address"}</button>
             </div>
             <span style={small}>Paste the address into a LeadDash platform workflow (a webhook step) so new contacts come to {emp.name}.</span>
+          </div>
+          <div style={col}>
+            <span className="ld-lbl">New leads are</span>
+            {editing ? <Choice options={[{ key: "therapy", label: "People seeking care" }, { key: "software", label: "Businesses" }]} value={d.sells} onChange={(v) => setD({ ...d, sells: v })} /> : <span className="ld-body">{therapy ? "People seeking care" : "Businesses"}</span>}
           </div>
           <div style={col}>
             <span className="ld-lbl">Replies</span>
@@ -245,7 +247,7 @@ export function LeadSetupCard({ emp, rule }: { emp: EmployeeRow; rule: Rule | un
           </div>
           {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
         </div>
-        <Buttons editing={editing} saving={saveSettings.isPending || saveRules.isPending} onEdit={() => { setD({ meetingMinutes: s.meetingMinutes, hoursFrom: s.hoursFrom, hoursTo: s.hoursTo, days: s.days, reply: replyMode }); setEditing(true); }} onSave={save} onCancel={() => setEditing(false)} />
+        <Buttons editing={editing} saving={saveSettings.isPending || saveRules.isPending} onEdit={() => { setD({ sells: s.sells, meetingMinutes: s.meetingMinutes, hoursFrom: s.hoursFrom, hoursTo: s.hoursTo, days: s.days, reply: replyMode }); setEditing(true); }} onSave={save} onCancel={() => setEditing(false)} />
       </div>
     </section>
   );

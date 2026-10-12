@@ -4,7 +4,8 @@
  * practice, the authorized official (usually the owner). Free and public; no key.
  * https://npiregistry.cms.hhs.gov/api/?version=2.1
  *
- * Riley starts from this list so she works from real, licensed practices, then
+ * When the owner asks for health or therapy providers, Riley starts from this
+ * list so she works from real, licensed practices, then
  * finds each one's website, email and license on the state board's lookup.
  */
 
@@ -62,7 +63,7 @@ export type NpiPractice = {
   url: string;
 };
 
-/** What to look for. Practices that buy software, or referral partners for a practice. */
+/** What to look for: mental health practices, pediatric offices, primary care (see npiKindsFor in prospecting.ts). */
 const SEARCHES = {
   practices: ["Counselor", "Clinic/Center, Mental Health", "Marriage & Family Therapist", "Social Worker, Clinical", "Psychologist"],
   "Pediatric offices": ["Pediatrics"],
@@ -113,9 +114,4 @@ export async function npiPractices(places: { state: string; city?: string }[], k
     }
   }
   return Array.from(seen.values()).slice(0, max);
-}
-
-/** The NPI kinds that match what Riley is looking for. */
-export function npiKinds(sells: "software" | "therapy", partnerTypes: string[]) {
-  return sells === "software" ? ["practices"] : partnerTypes.filter((p) => SEARCHES[p]);
 }

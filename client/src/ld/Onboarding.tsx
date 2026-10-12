@@ -5,7 +5,7 @@ import type { EmployeeRow } from "./ChatPage";
 import { ErrorLine } from "./ui";
 import { fmtDate } from "./meta";
 import type { Outputs } from "./types";
-import { LeadSetupCard, SellsCard, WorksOnOwnCard, LinkedInStepCard } from "./sales/OnboardingCards";
+import { LeadSetupCard, SearchCard, WorksOnOwnCard, LinkedInStepCard } from "./sales/OnboardingCards";
 import { ProjectsCard, MeetingsCard, NotetakerCard } from "./lead/OnboardingCards";
 import { OnboardingTop } from "./onboarding/WorkPlan";
 import { DictateButton, appendText } from "./Dictate";
@@ -57,7 +57,7 @@ export default function Onboarding({ emp }: { emp: EmployeeRow }) {
   return (
     <main className="ld-main" style={{ padding: "28px 36px", maxWidth: 1180 }}>
       <OnboardingTop emp={emp} view={d.interview} />
-      {emp.kind === "prospecting" && <SellsCard />}
+      {emp.kind === "prospecting" && <SearchCard />}
       {emp.kind === "outreach" && <LinkedInStepCard emp={emp} />}
       {emp.kind === "projects" && <ProjectsCard emp={emp} />}
       {emp.kind === "coo" && <MeetingsCard emp={emp} />}

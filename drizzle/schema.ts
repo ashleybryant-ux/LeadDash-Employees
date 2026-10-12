@@ -1017,9 +1017,11 @@ export const salesProspects = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
-    /** "practice" when the workspace sells to practices, "referral" for a practice's referral partners. */
+    /** "referral" when the owner asked for people who refer clients, otherwise "practice" (someone who could buy). */
     kind: text("kind", { enum: ["practice", "referral"] }).notNull().default("practice"),
     stage: text("stage", { enum: PROSPECT_STAGES }).notNull().default("new"),
+    /** The search Riley found it in, e.g. "Family law attorneys, Denver metro". */
+    search: text("search"),
     name: text("name").notNull(),
     city: text("city"),
     contactName: text("contactName"),

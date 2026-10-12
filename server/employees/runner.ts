@@ -162,6 +162,8 @@ export function startScheduler() {
       await (await import("../work/simone")).goalsTicks();
       // Projects: due-date and scheduled automations, and tasks that repeat on schedule.
       await (await import("../work/pjTicks")).projectsTicks();
+      // Riley: a saved search runs again on Monday morning or the 1st, once per period.
+      await (await import("./prospecting")).prospectingTicks();
     } catch (err) {
       console.error("[tasks] scheduler error:", err);
     } finally {
