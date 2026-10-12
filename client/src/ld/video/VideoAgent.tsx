@@ -22,12 +22,12 @@ type Size = "vertical" | "square" | "wide";
 type Src = V["shots"][number]["src"];
 
 export const FORMATS: { key: FormatKey; title: string; note: string }[] = [
-  { key: "ad", title: "Ad", note: "15 to 30 seconds that sell one offer. Three versions to test." },
-  { key: "broll", title: "B-roll story", note: "Real footage under your voice-over, captions on." },
-  { key: "explainer", title: "Explainer", note: "Kinetic text and simple motion that teach one idea." },
-  { key: "talking", title: "Talking to camera", note: "You, or your avatar, saying the script." },
-  { key: "story", title: "Personal story", note: "First person, your photos and footage." },
-  { key: "audio", title: "Audio to video", note: "A podcast clip or voice memo, with visuals and captions." },
+  { key: "ad", title: "Ad", note: "Sell one offer in 15 to 30 seconds." },
+  { key: "broll", title: "B-roll story", note: "Real footage under your voice." },
+  { key: "explainer", title: "Explainer", note: "Motion text that teaches one idea." },
+  { key: "talking", title: "Talking to camera", note: "You or your avatar on camera." },
+  { key: "story", title: "Personal story", note: "Your photos and footage, first person." },
+  { key: "audio", title: "Audio to video", note: "A podcast clip or voice memo, with visuals." },
 ];
 const STARTS: { key: StartKey; title: string; note: string }[] = [
   { key: "idea", title: "An idea", note: "One line is enough" },
@@ -41,6 +41,39 @@ const SIZES: { key: Size; ratio: string }[] = [
   { key: "wide", ratio: "16:9" },
 ];
 const LENGTHS = [15, 30, 60, 90];
+
+/**
+ * What a frame of each format looks like in the finished video, drawn over its photo:
+ * the story bars along the top and the caption in the Bold pop style.
+ */
+const FRAME: Record<FormatKey, { cap: [string, string, string]; extra?: "shop" | "wave" | "big" | "rec" }> = {
+  ad: { cap: ["20% off", "this", "week"], extra: "shop" },
+  broll: { cap: ["Mornings", "just", "got easier"] },
+  explainer: { cap: ["One", "big", "idea"], extra: "big" },
+  talking: { cap: ["Here's", "what", "works"], extra: "rec" },
+  story: { cap: ["The day", "it", "changed"] },
+  audio: { cap: ["Your", "words,", "seen"], extra: "wave" },
+};
+const COLOR: Record<FormatKey, string> = { ad: "linear-gradient(170deg,#f7b3a6,#e46a7d)", broll: "linear-gradient(170deg,#e9c17d,#3c5a45)", explainer: "linear-gradient(170deg,#b7a6ff,#5a3fd0)", talking: "linear-gradient(170deg,#8aa6d8,#22355f)", story: "linear-gradient(170deg,#ffd38a,#e4708f)", audio: "linear-gradient(170deg,#7b5cff,#1b1145)" };
+
+function FrameOverlay({ k }: { k: FormatKey }) {
+  const f = FRAME[k];
+  return (
+    <span className="ld-vm-ov" aria-hidden="true">
+      <span className="ld-vm-bars"><i className="on" /><i /><i /></span>
+      {f.extra === "rec" && <span className="ld-vm-rec"><i />REC</span>}
+      {f.extra === "wave" && (
+        <span className="ld-vm-wave">
+          {[30, 60, 90, 45, 75, 100, 55, 80, 40, 65, 35, 70, 50].map((h, i) => <i key={i} style={{ height: `${h}%` }} />)}
+        </span>
+      )}
+      <span className={`ld-vm-cap ${f.extra === "big" ? "big" : ""}`}>
+        {f.cap[0]} <em>{f.cap[1]}</em> {f.cap[2]}
+      </span>
+      {f.extra === "shop" && <span className="ld-vm-shop">Shop now</span>}
+    </span>
+  );
+}
 
 /** A file sent to one of the upload slots; the reply is JSON or an error. */
 export async function uploadTo<T>(slot: string, orgId: number, file: File): Promise<T> {
@@ -144,8 +177,9 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
         <div className="ld-vm-formats" role="radiogroup" aria-label="Format">
           {FORMATS.map((f) => (
             <button key={f.key} type="button" role="radio" aria-checked={format === f.key} className={`ld-vm-fmt ${format === f.key ? "on" : ""}`} onClick={() => pickFormat(f.key)}>
-              <span className="ld-vm-fmt-img">
-                <img src={`/api/video-pictures/${f.key}`} alt="" loading="lazy" />
+              <span className="ld-vm-fmt-img" style={{ background: COLOR[f.key] }}>
+                <img src={`/api/video-pictures/${f.key}`} alt="" loading="lazy" onError={(e) => (e.currentTarget.style.visibility = "hidden")} />
+                <FrameOverlay k={f.key} />
                 {format === f.key && (
                   <span className="ld-vm-check" aria-hidden="true">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>

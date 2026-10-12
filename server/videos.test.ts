@@ -419,10 +419,10 @@ describe("Format card photos", () => {
     const file = await fp.makePicture("talking");
     expect(file).toBe(fp.pictureFile("talking"));
     const sharp = (await import("sharp")).default;
-    expect(await sharp(file!).metadata()).toMatchObject({ width: 724, height: 444, format: "webp" });
+    expect(await sharp(file!).metadata()).toMatchObject({ width: 360, height: 640, format: "webp" });
     const asked = posted("fal-ai/nano-banana-pro")[0];
-    expect(asked).toMatchObject({ aspect_ratio: "16:9" });
-    expect(asked.prompt).toMatch(/talking straight to the camera.*No text, letters, words, logos or watermarks/);
+    expect(asked).toMatchObject({ aspect_ratio: "9:16" });
+    expect(asked.prompt).toMatch(/vertical selfie-style phone video frame.*No text, letters, words, captions, logos or watermarks/);
     // Already made: nothing is asked again.
     calls = [];
     expect(await fp.makePicture("talking")).toBe(file);

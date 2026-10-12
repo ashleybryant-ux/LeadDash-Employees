@@ -91,7 +91,7 @@ async function startServer() {
     res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey(), push: pushReady(), connect: readyApps() });
   });
 
-  // The photos on Elena's Make a video format cards: made once and kept; the drawn picture shows until then.
+  // The photos on Elena's Make a video format cards: made once and kept; until then the card shows its color and caption.
   app.get("/api/video-pictures/:key", async (req, res) => {
     const fp = await import("../employees/formatPictures");
     const key = String(req.params.key).replace(/\.webp$/i, "");
@@ -102,13 +102,7 @@ async function startServer() {
       return res.sendFile(photo);
     }
     void fp.makePicture(key as never);
-    for (const base of [path.resolve(process.cwd(), "dist/public"), path.resolve(process.cwd(), "client/public")]) {
-      const drawn = path.join(base, "video-formats", `${key}.webp`);
-      if (fs.existsSync(drawn)) {
-        res.setHeader("Cache-Control", "no-store");
-        return res.sendFile(drawn);
-      }
-    }
+    res.setHeader("Cache-Control", "no-store");
     return res.status(404).send("Not found");
   });
 

@@ -2533,15 +2533,27 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 /* Elena's video agent: Make a video, the storyboard, the finished video, Edit, the b-roll library, formats */
 .ld-vm { padding: 18px 20px; display: flex; flex-direction: column; gap: 16px; max-width: 980px; }
 .ld-vm-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.ld-vm-formats { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.ld-vm-formats { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
 .ld-vm-fmt { border: 2px solid var(--ld-line); border-radius: 12px; padding: 8px 8px 12px; background: var(--ld-surface); display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: left; color: var(--ld-ink); font: inherit; }
 .ld-vm-fmt:hover { border-color: var(--ld-line4); }
 .ld-vm-fmt.on { border-color: var(--ld-accent); background: var(--ld-accent-bg); }
 .ld-vm-fmt b { font-size: 14px; padding: 4px 4px 0; }
 .ld-vm-fmt > span:not(.ld-vm-fmt-img) { font-size: 12.5px; color: var(--ld-text2); line-height: 1.4; padding: 0 4px; }
-.ld-vm-fmt-img { position: relative; display: block; aspect-ratio: 181 / 111; border-radius: 8px; overflow: hidden; background: var(--ld-faint2); }
+.ld-vm-fmt-img { position: relative; display: block; container-type: inline-size; aspect-ratio: 9 / 16; max-width: 100%; border-radius: 10px; overflow: hidden; background: var(--ld-faint2); }
+.ld-vm-ov { position: absolute; inset: 0; display: block; background: linear-gradient(180deg, rgba(0,0,0,.28) 0%, rgba(0,0,0,0) 22%, rgba(0,0,0,0) 55%, rgba(0,0,0,.38) 100%); }
+.ld-vm-bars { position: absolute; top: 6px; left: 6px; right: 6px; display: flex; gap: 3px; }
+.ld-vm-bars i { flex: 1; height: 2px; border-radius: 1px; background: rgba(255,255,255,.45); }
+.ld-vm-bars i.on { background: #fff; }
+.ld-vm-cap { position: absolute; left: 6px; right: 6px; top: 60%; text-align: center; color: #fff; font-weight: 800; font-size: clamp(9.5px, 9cqw, 14px); line-height: 1.1; text-transform: uppercase; letter-spacing: .01em; text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 6px rgba(0,0,0,.55); }
+.ld-vm-cap em { font-style: normal; color: #F5C542; display: inline-block; transform: scale(1.08); }
+.ld-vm-cap.big { top: 14%; font-size: clamp(12px, 9.5cqw, 18px); line-height: 1.05; }
+.ld-vm-shop { position: absolute; left: 50%; bottom: 9px; transform: translateX(-50%); background: #fff; color: #111; font-size: clamp(8px, 5.4cqw, 10.5px); font-weight: 800; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.ld-vm-rec { position: absolute; top: 14px; left: 7px; display: flex; align-items: center; gap: 3px; background: rgba(0,0,0,.55); color: #fff; font-size: 9px; font-weight: 800; border-radius: 5px; padding: 2px 5px; }
+.ld-vm-rec i { width: 5px; height: 5px; border-radius: 50%; background: #ff4d4d; }
+.ld-vm-wave { position: absolute; left: 12px; right: 12px; top: 34%; height: 22%; display: flex; align-items: center; gap: 2px; }
+.ld-vm-wave i { flex: 1; border-radius: 2px; background: rgba(255,255,255,.9); }
 .ld-vm-fmt-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ld-vm-check { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; background: var(--ld-accent); color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 2px #fff; }
+.ld-vm-check { position: absolute; z-index: 1; top: 14px; right: 6px; width: 22px; height: 22px; border-radius: 50%; background: var(--ld-accent); color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 2px #fff; }
 .ld-vm-starts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .ld-vm-start { border: 1px dashed var(--ld-line4); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; color: var(--ld-text2); background: var(--ld-surface); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
 .ld-vm-start b { color: var(--ld-ink); font-size: 13.5px; }
@@ -2635,7 +2647,10 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 }
 @media (max-width: 760px) {
   .ld-vm { padding: 14px; }
-  .ld-vm-formats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ld-vm-formats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .ld-vm-fmt { padding: 5px 5px 8px; }
+  .ld-vm-fmt b { font-size: 12.5px; padding: 4px 2px 0; line-height: 1.25; }
+  .ld-vm-fmt > span:not(.ld-vm-fmt-img) { display: none; }
   .ld-vm-starts, .ld-vm-asks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ld-vm-asks { grid-template-columns: minmax(0, 1fr); }
   .ld-vm-scene { grid-template-columns: 20px 64px minmax(0, 1fr); gap: 10px; }
