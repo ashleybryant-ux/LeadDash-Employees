@@ -1572,6 +1572,38 @@ export const avatarVideos = sqliteTable(
 );
 export type AvatarVideo = typeof avatarVideos.$inferSelect;
 
+/** A video Elena makes from instructions (b-roll with a voice-over, a slideshow of Brain photos, an explainer). */
+export const videos = sqliteTable(
+  "videos",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    title: text("title").notNull(),
+    kind: text("kind", { enum: ["broll", "slideshow", "explainer"] }).notNull().default("broll"),
+    size: text("size", { enum: ["vertical", "square", "wide"] }).notNull().default("vertical"),
+    /** The planned length in seconds. */
+    seconds: integer("seconds").notNull().default(30),
+    /** What the person asked for, in their words. */
+    instructions: text("instructions").notNull().default(""),
+    /** JSON: { shots: [{ at, see, say, photo }], caption }. */
+    script: text("script").notNull().default("{}"),
+    voiceId: text("voiceId"),
+    voiceName: text("voiceName"),
+    /** The video plan (work item) it was made from, if any. */
+    planId: integer("planId"),
+    status: text("status", { enum: ["draft", "making", "ready", "failed"] }).notNull().default("draft"),
+    videoUrl: text("videoUrl"),
+    error: text("error"),
+    /** Length in tenths of a second, once made. */
+    tenths: integer("tenths"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("videos_org_idx").on(t.organizationId)]
+);
+export type Video = typeof videos.$inferSelect;
+
 /** Company history read from an export of the owner's Claude or ChatGPT chats into the Brain. */
 export const historyImports = sqliteTable(
   "history_imports",

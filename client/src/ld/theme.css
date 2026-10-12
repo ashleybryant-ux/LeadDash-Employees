@@ -2216,3 +2216,22 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-cap-sheet, .ld-cap-ed, .ld-cap-pair { grid-template-columns: 1fr; }
   .ld-cap-l { padding-top: 0; }
 }
+
+/* Elena: videos made from instructions (Videos tab and chat card) */
+.ld-mv-exp { display: grid; gap: 20px; padding: 14px 18px 18px; background: var(--ld-hover); border-bottom: 1px solid var(--ld-line); align-items: start; }
+.ld-mv-shots { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,.8fr); gap: 8px 14px; font-size: 14px; align-items: start; }
+.ld-mv-btns { display: flex; flex-direction: column; gap: 8px; }
+.ld-mv-edit { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ld-mv-erow { display: grid; grid-template-columns: 64px minmax(0,1fr) minmax(0,1fr); gap: 8px; align-items: center; }
+.ld-mv-ehd { font-size: 12px; font-weight: 700; color: var(--ld-muted); text-transform: uppercase; letter-spacing: .04em; }
+@media (max-width: 760px) {
+  .ld-mv-exp { grid-template-columns: 1fr !important; padding: 14px; }
+  .ld-mv-shots { grid-template-columns: 1fr; gap: 2px; }
+  .ld-mv-shots > .ld-small { margin-bottom: 8px; }
+  .ld-mv-erow { grid-template-columns: 56px minmax(0,1fr); }
+  .ld-mv-erow > :nth-child(3) { grid-column: 2; }
+  .ld-mv-ehd { display: none; }
+  .ld-mv-btns { flex-direction: row; flex-wrap: wrap; }
+  .ld-mv-btns .ld-btn { flex: 1 1 120px; }
+  .ld-av-card .ld-mv-player, .ld-mv-exp .ld-mv-player { width: 100% !important; max-width: 300px; }
+}

@@ -987,7 +987,7 @@ export async function makeEpisode(orgId: number, id: number) {
   });
 }
 
-function ffmpegPath() {
+export function ffmpegPath() {
   try {
     // Shipped with the app, so the server needs nothing installed.
     const p = createRequire(import.meta.url)("ffmpeg-static") as string | null;
@@ -998,7 +998,7 @@ function ffmpegPath() {
   return "ffmpeg";
 }
 
-function fontsDir() {
+export function fontsDir() {
   try {
     const pkg = createRequire(import.meta.url).resolve("dejavu-fonts-ttf/package.json");
     return path.join(path.dirname(pkg), "ttf");

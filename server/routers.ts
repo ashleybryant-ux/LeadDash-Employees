@@ -3450,6 +3450,49 @@ export const appRouter = router({
         await workItemOf(input.organizationId, input.id, "video_plan");
         return db.updateWorkItem(input.id, input.organizationId, { status: "dismissed" });
       }),
+    /** Make it: the plan's shot list becomes a b-roll video, made now. */
+    makeIt: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      const v = await vd.fromPlan(input.organizationId, input.id);
+      return vd.view(v.status === "ready" ? v : await vd.makeVideo(input.organizationId, v.id));
+    }),
+  }),
+
+  /** Elena's videos made from instructions (b-roll, slideshow, explainer). */
+  videos: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const vd = await import("./employees/videos");
+      return vd.list(input.organizationId).map(vd.view);
+    }),
+    get: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const vd = await import("./employees/videos");
+      const v = vd.get(input.organizationId, input.id);
+      return v ? vd.view(v) : null;
+    }),
+    make: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      return vd.view(await vd.makeVideo(input.organizationId, input.id));
+    }),
+    saveScript: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), title: z.string().max(120).optional(), caption: z.string().max(600).optional(), shots: z.array(z.object({ at: z.number().int().min(0).max(600), see: z.string().max(300), say: z.string().max(400) })).min(1).max(16) }))
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const vd = await import("./employees/videos");
+        return vd.view(vd.saveScript(input.organizationId, input.id, { title: input.title, caption: input.caption, shots: input.shots }));
+      }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./employees/videos")).remove(input.organizationId, input.id);
+      return { success: true };
+    }),
   }),
 
   // ==========================================
