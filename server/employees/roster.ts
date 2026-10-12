@@ -248,7 +248,11 @@ export const DEPARTMENT_ORDER: Record<OrgType, Department[]> = {
 /** In a healthcare practice, the employees that work with client information (only on providers under a signed BAA). */
 export const CLIENT_INFO_KINDS: EmployeeKind[] = ["inbox", "leads", "billing", "compliance"];
 
-export function onTeam(kind: EmployeeKind, orgType: OrgType) {
+/** Employees built for LeadDash's own work: only LeadDash's own workspaces get them, never a customer's. */
+export const INTERNAL_ONLY: EmployeeKind[] = ["developer", "platform"];
+
+export function onTeam(kind: EmployeeKind, orgType: OrgType, internal = false) {
+  if (INTERNAL_ONLY.includes(kind) && !internal) return false;
   return !OFF_TEAM[orgType].includes(kind);
 }
 

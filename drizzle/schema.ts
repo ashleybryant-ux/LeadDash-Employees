@@ -122,6 +122,8 @@ export const organizations = sqliteTable("organizations", {
   voiceProvider: text("voiceProvider", { enum: ["auto", "elevenlabs", "openai"] }).notNull().default("auto"),
   /** Work hours (JSON): the plan this workspace is on ({plan}), set by LeadDash staff. No plan means work is not metered. */
   workHours: text("workHours"),
+  /** LeadDash's own workspace (LeadDash, Legacy, the owner's brand), set by LeadDash staff. Only these get the in-house employees (Developer, Platform Specialist). */
+  internal: integer("internal", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

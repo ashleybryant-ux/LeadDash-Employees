@@ -22,6 +22,8 @@ async function mockAi(decision: any) {
 /** A workspace with Caroline on the team as an admin. */
 async function team(slug: string) {
   const w = await makeWorkspace(slug);
+  // LeadDash's own workspace: Kai is on the team.
+  await caller(w.staff).hours.setInternal({ organizationId: w.orgId, internal: true });
   const caroline = await makeUser(`caroline@${slug}.test`, "user", "Caroline Mwangi");
   await db.addOrganizationMember({ organizationId: w.orgId, userId: caroline.id, role: "admin" });
   return { ...w, caroline };

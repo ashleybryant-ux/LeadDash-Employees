@@ -326,6 +326,7 @@ export async function staffList() {
       id: o.id,
       name: o.name,
       orgType: o.orgType,
+      internal: !!o.internal,
       plan: b.plan,
       planName: b.planName,
       usedHours: hoursNum(b.usedMinutes),

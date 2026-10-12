@@ -142,9 +142,21 @@ function WorkspaceHours({ w }: { w: StaffRow }) {
   const refresh = () => Promise.all([utils.hours.staffList.invalidate(), utils.hours.get.invalidate()]);
   const [editing, setEditing] = React.useState(false);
   const [plan, setPlan] = React.useState<string>(w.plan ?? "");
+  const [internal, setInternal] = React.useState<boolean>(w.internal);
   const [hours, setHours] = React.useState("");
   const [note, setNote] = React.useState("");
-  const savePlan = trpc.hours.setPlan.useMutation({ onSuccess: async () => { setEditing(false); await refresh(); } });
+  const savePlan = trpc.hours.setPlan.useMutation();
+  const saveInternal = trpc.hours.setInternal.useMutation();
+  const save = async () => {
+    try {
+      if ((plan || null) !== w.plan) await savePlan.mutateAsync({ organizationId: w.id, plan: (plan || null) as PlanKey | null });
+      if (internal !== w.internal) await saveInternal.mutateAsync({ organizationId: w.id, internal });
+      setEditing(false);
+      await refresh();
+    } catch {
+      // The error shows under the fields.
+    }
+  };
   const add = trpc.hours.addPack.useMutation({ onSuccess: async () => { setHours(""); setNote(""); await refresh(); } });
   const hoursOk = /^\d+(\.\d)?$/.test(hours.trim()) && Number(hours) >= 0.5;
   return (
@@ -160,6 +172,15 @@ function WorkspaceHours({ w }: { w: StaffRow }) {
             ))}
           </select>
         )}
+        <span className="ld-lbl" style={{ marginTop: 8 }}>Whose workspace</span>
+        {!editing ? (
+          <span>{w.internal ? "LeadDash's own. Kai and Zara are on the team." : "A customer's. Kai and Zara are off the team."}</span>
+        ) : (
+          <span className="ld-row" style={{ gap: 18, fontSize: 13.5, flexWrap: "wrap" }}>
+            <label className="ld-row" style={{ gap: 6 }}><input type="radio" name={`own-${w.id}`} checked={internal} onChange={() => setInternal(true)} />LeadDash's own</label>
+            <label className="ld-row" style={{ gap: 6 }}><input type="radio" name={`own-${w.id}`} checked={!internal} onChange={() => setInternal(false)} />A customer's</label>
+          </span>
+        )}
         <span className="ld-lbl" style={{ marginTop: 8 }}>Add bought hours</span>
         <div className="ld-row" style={{ gap: 8, flexWrap: "wrap" }}>
           <input className="ld-in" style={{ width: 90 }} inputMode="decimal" placeholder="Hours" aria-label="Hours bought" value={hours} onChange={(e) => setHours(e.target.value)} />
@@ -167,7 +188,7 @@ function WorkspaceHours({ w }: { w: StaffRow }) {
           <button type="button" className="ld-btn p" style={{ width: 100 }} disabled={!hoursOk || add.isPending} onClick={() => add.mutate({ organizationId: w.id, hours: Number(hours), note })}>{add.isPending ? "Adding" : "Add"}</button>
         </div>
         <span className="ld-small ld-muted">Bought hours are used after the plan's hours each month and last 12 months.</span>
-        <ErrorLine error={savePlan.error ?? add.error} />
+        <ErrorLine error={savePlan.error ?? saveInternal.error ?? add.error} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
         <span className="ld-lbl">Bought hours</span>
@@ -180,10 +201,10 @@ function WorkspaceHours({ w }: { w: StaffRow }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {!editing ? (
-          <button type="button" className="ld-btn" onClick={() => { setPlan(w.plan ?? ""); setEditing(true); }}>Edit plan</button>
+          <button type="button" className="ld-btn" onClick={() => { setPlan(w.plan ?? ""); setInternal(w.internal); setEditing(true); }}>Edit</button>
         ) : (
           <>
-            <button type="button" className="ld-btn p" disabled={savePlan.isPending} onClick={() => savePlan.mutate({ organizationId: w.id, plan: (plan || null) as PlanKey | null })}>{savePlan.isPending ? "Saving" : "Save"}</button>
+            <button type="button" className="ld-btn p" disabled={savePlan.isPending || saveInternal.isPending} onClick={() => void save()}>{savePlan.isPending || saveInternal.isPending ? "Saving" : "Save"}</button>
             <button type="button" className="ld-btn" onClick={() => setEditing(false)}>Cancel</button>
           </>
         )}

@@ -23,7 +23,7 @@ export async function ensureRoster(organizationId: number) {
     const current = have.find((e) => e.kind === r.kind);
     const title = titleFor(r, orgType);
     const department = departmentFor(r, orgType);
-    const team = onTeam(r.kind, orgType);
+    const team = onTeam(r.kind, orgType, !!org?.internal);
     if (current) {
       // Keep the job text current. Names stay as the workspace set them; a typed title stays too.
       const caps = JSON.stringify(r.capabilities);

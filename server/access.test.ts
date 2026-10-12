@@ -36,8 +36,18 @@ describe("access control", () => {
   it("starts every new workspace with every employee on the roster", async () => {
     const { orgId, owner } = await makeWorkspace("roster");
     const employees = await caller(owner).employees.list({ organizationId: orgId });
-    expect(employees.map((e) => e.kind).sort()).toEqual(["ads", "blog", "coo", "developer", "grants", "hiring", "inbox", "leads", "onboarding", "outreach", "platform", "projects", "prospecting", "social", "speaking", "video", "website"]);
+    // A customer's workspace: the in-house Developer (Kai) and Platform Specialist (Zara) are not on it.
+    expect(employees.map((e) => e.kind).sort()).toEqual(["ads", "blog", "coo", "grants", "hiring", "inbox", "leads", "onboarding", "outreach", "projects", "prospecting", "social", "speaking", "video", "website"]);
     expect(employees.find((e) => e.kind === "video")?.name).toBe("Elena");
+    // LeadDash staff mark LeadDash's own workspaces; those get Kai and Zara. Owners can't.
+    const { staff } = await makeWorkspace("roster-staff");
+    await expect(caller(owner).hours.setInternal({ organizationId: orgId, internal: true })).rejects.toThrow();
+    await caller(staff).hours.setInternal({ organizationId: orgId, internal: true });
+    const own = await caller(owner).employees.list({ organizationId: orgId });
+    expect(own.map((e) => e.kind)).toEqual(expect.arrayContaining(["developer", "platform"]));
+    expect((await caller(staff).hours.staffList()).find((w) => w.id === orgId)!.internal).toBe(true);
+    await caller(staff).hours.setInternal({ organizationId: orgId, internal: false });
+    expect((await caller(owner).employees.list({ organizationId: orgId })).some((e) => e.kind === "developer" || e.kind === "platform")).toBe(false);
   });
 
   it("only admins and owners manage the team; reviewers can approve", async () => {
@@ -53,7 +63,7 @@ describe("access control", () => {
   it("gives LeadDash staff support access without putting them on the team", async () => {
     const { orgId, staff } = await makeWorkspace("support");
     const employees = await caller(staff).employees.list({ organizationId: orgId });
-    expect(employees.length).toBe(17);
+    expect(employees.length).toBe(15);
     const team = await caller(staff).members.list({ organizationId: orgId });
     expect(team.some((m) => m.email === staff.email)).toBe(false);
     await expect(caller(staff).members.add({ organizationId: orgId, email: staff.email })).rejects.toThrow(/cannot be added/);

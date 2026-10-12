@@ -407,6 +407,13 @@
       "when": 1791760730600,
       "tag": "0057_work_hours",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1791768240784,
+      "tag": "0058_internal_workspaces",
+      "breakpoints": true
     }
   ]
 }

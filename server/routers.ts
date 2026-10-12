@@ -5240,6 +5240,13 @@ export const appRouter = router({
         await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Work-hour plan changed", details: input.plan ? `${h.PLANS[input.plan].name}, ${h.PLANS[input.plan].hours} work hours a month.` : "No plan: work is counted but not limited." });
         return b;
       }),
+    /** LeadDash's own workspace: only these get the in-house employees (Kai and Zara). */
+    setInternal: adminProcedure.input(orgInput.extend({ internal: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await db.updateOrganization(input.organizationId, { internal: input.internal });
+      await ensureRoster(input.organizationId);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: input.internal ? "Marked as LeadDash's own workspace" : "Marked as a customer workspace", details: input.internal ? "The Developer and Platform Specialist are on the team." : "The Developer and Platform Specialist are off the team." });
+      return { success: true };
+    }),
     addPack: adminProcedure
       .input(orgInput.extend({ hours: z.number().min(0.5).max(10_000), note: z.string().max(200).default("") }))
       .mutation(async ({ ctx, input }) => {

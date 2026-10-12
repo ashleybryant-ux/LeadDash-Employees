@@ -35,7 +35,7 @@ describe("A healthcare practice workspace", () => {
     const before = await me.employees.list({ organizationId: orgId });
     expect(before.map((e) => e.kind)).not.toContain("billing");
     expect(before.find((e) => e.kind === "hiring")!.roleTitle).toBe("HR Director");
-    expect((await db.listAllEmployeesByOrg(orgId)).filter((e) => !e.onTeam).map((e) => e.kind).sort()).toEqual(["billing", "compliance"]);
+    expect((await db.listAllEmployeesByOrg(orgId)).filter((e) => !e.onTeam).map((e) => e.kind).sort()).toEqual(["billing", "compliance", "developer", "platform"]);
 
     await me.organizations.update({ id: orgId, orgType: "healthcare" });
     const list = await me.employees.list({ organizationId: orgId });
@@ -45,7 +45,8 @@ describe("A healthcare practice workspace", () => {
     expect(kinds).not.toContain("prospecting");
     expect(kinds).not.toContain("outreach");
     expect(kinds).not.toContain("developer");
-    expect(list).toHaveLength(16);
+    expect(kinds).not.toContain("platform");
+    expect(list).toHaveLength(15);
     const by = (k: string) => list.find((e) => e.kind === k)!;
     expect(by("leads")).toMatchObject({ name: "Malik", roleTitle: "Intake Coordinator", department: "Client care" });
     expect(by("inbox").department).toBe("Client care");
