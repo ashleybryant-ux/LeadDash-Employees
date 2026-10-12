@@ -72,7 +72,7 @@ const ACTIONS: Record<string, string[]> = {
   website: ["none", "report", "site_audit", "mockup_site", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
-  onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  onboarding: ["none", "report", "onboard_hire", "offboard", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -134,6 +134,8 @@ const ACTION_HELP: Record<string, string> = {
   fix_code: "fix_code: have Claude fix a bug or make a change in the owner's code. Put which code in `target` (the code's name from your list), a short title in `title` (under 10 words), and in `notes` a clear write-up for Claude: what's wrong or wanted, where it shows up (screen, button, who sees it), what should happen instead, and how to check it's fixed. Never put client data in it. Do it as soon as you know which code and what's wrong; ask only if you can't tell.",
   merge_change: "merge_change: merge a change Claude finished, when the owner says to (\"merge it\", \"looks good, merge\"). Words from its title in `target` ('' for the newest one ready).",
   change_request: "change_request: send a finished change back to Claude with what to change. Words from its title in `target` ('' for the newest), what to change in `notes`.",
+  onboard_hire: "onboard_hire: onboard a new hire (\"Sam starts Nov 2 as front desk\", \"onboard Jordan\"). Put their full name in `target`, their role here in `title` ('' if not given), the start date as YYYY-MM-DD in `date` ('' if not given and you don't know it), and their email in `to` ('' if not given). You set up the paperwork and accounts checklists, a first-week plan in Projects, the welcome email for approval and check-ins at 30, 60 and 90 days. Someone Quinn hired already has a start date, so leave `date` '' for them.",
+  offboard: "offboard: someone is leaving (\"Taylor Brooks is leaving, last day Dec 15\"), or the owner answers your caseload question about them. Put their full name in `target`, the last day as YYYY-MM-DD in `date` ('' when already set), the reason in `notes` ('' if not given), their role in `title` ('' if not given), and in `focus` yes when they see clients and want a caseload handoff (\"Yes, plan the handoff\"), no when there's no caseload (\"No caseload\"), else ''. Never put a client's name or anything clinical in any field.",
   onboard_customer: "onboard_customer: start onboarding a new customer. The practice name in `title`, the contact's name in `to`, their email in `from` ('' if not given), the go-live date as YYYY-MM-DD in `date`, anything else in `notes`. If there's no go-live date, ask for it.",
   write_campaign: "write_campaign: a branded video or ad (a commercial, a campaign, a promo, a brand film, a video about the business, an offer or a launch). Put everything she said about it in `notes`. You write the campaign goal and three creative directions first; nothing is generated yet.",
   pick_direction: "pick_direction: she picked one of the three directions (\"use the second one\", \"go with the late-night one\"). Put its number (1, 2 or 3) in `count` and words from the campaign's title in `target` ('' for the newest). You then write the script, storyboard and shot list and make the keyframes for her approval.",
@@ -402,7 +404,7 @@ async function teamFacts(emp: AIEmployee) {
     const linkOnly = !(await import("../_core/env")).ENV.githubToken;
     return `${linkOnly ? "\nGitHub isn't connected, by the owner's choice: you write each fix up and she posts it on GitHub from your link, then reviews and merges Claude's change there. You can't see progress on GitHub, so never say you'll tell her when it's ready; tell her to watch the issue on GitHub. Never ask her for a GitHub token." : ""}\nCode you work on (name: repo; deploy command after a merge):\n${repos.map((r) => `- ${r.label}: ${r.repo}; ${r.deploy}`).join("\n")}\nRecent changes:\n${changes.map((c) => `- ${c.title} (${c.label}): ${c.status}${c.prNumber ? `, change #${c.prNumber}` : ""}`).join("\n") || "- none yet"}`;
   }
-  if (emp.kind === "onboarding") return (await import("./customers")).customersFacts(emp.organizationId);
+  if (emp.kind === "onboarding") return (await import("./people")).peopleFacts(emp.organizationId);
   if (emp.kind === "platform") return (await import("./platform")).platformFacts(emp.organizationId);
   if (emp.kind === "video") return (await import("./drama")).dramaFacts(emp.organizationId);
   if (emp.kind === "outreach") return (await import("./cold")).coldFacts(emp.organizationId);
@@ -507,9 +509,13 @@ TALK_BY_KIND.platform = `- You work in the LeadDash platform in your own browser
 - An audit only reads. You change a workflow only when the owner says to fix it (fix_workflow) or presses Fix. Never fix something on your own.
 - Pages go in as drafts. They go live only when the owner presses Publish on the page card.
 - Call it the LeadDash platform. Plain words: what's wrong, what you'll change, what stays the same.`;
-TALK_BY_KIND.onboarding = `- You onboard new customers onto this business's product or service, from signed to live. Not new hires.
-- Every email to a customer waits for the owner's approval. Never promise a date, price or feature the Brain doesn't state.
-- Nora tracks each onboarding plan as a project; you own the customer-facing steps.`;
+TALK_BY_KIND.onboarding = `- Your main job is the team: you onboard new hires (onboard_hire) and offboard people who leave (offboard). When Quinn marks someone hired, they come to you. You also onboard new customers when asked (onboard_customer).
+- A new hire gets the paperwork and accounts checklists, a first-week plan in Projects, a welcome email for approval and check-ins at 30, 60 and 90 days. Someone leaving gets the checklist (clients and records, access and property, pay and paperwork) and a plan in Projects. Both are on your Work tab, where the owner edits the checklists.
+- Ask only for what's missing, one question per message, with 2 to 4 fixed choices in "choices" when the answer is one of a few. A start date or last day you can't work out is the only thing you must ask for.
+- Never put a client's name or anything clinical anywhere: a caseload handoff is counts only.
+- You never change passwords or remove anyone's access. Access removal is a reminder for the owner or their admin on the last day.
+- Every email waits for the owner's approval. Never promise a date, price, pay, benefit or feature the Brain doesn't state.
+- Nora tracks each plan as a project; you own the welcome, reminders and check-ins.`;
 TALK_BY_KIND.video = `- The owner's photos are in the Brain under "Images on file". When she asks about her photos, name the ones there and how many. Never say you can't get to her photos when they're listed there. When none are, ask her to attach them right here with the paperclip (up to 10 at a time) and save them to the Brain with save_files.
 - You make videos of the owner from her photo and her own cloned voice yourself: choose avatar_script to write one, and make_avatar when she says to make it. Never recommend HeyGen, Synthesia or any other tool; this is how it's made.
 - Three kinds of video. A branded campaign or ad is write_campaign (three directions first), then pick_direction, then she approves the keyframes (approve_keyframes) before anything is animated. A micro drama (story, scenes, characters, cinematic, episodes, a series) is write_episodes, then make_episode: a cinematic episode cut from 10 to 16 shots with camera moves, the cast's faces matched in every shot, and each line spoken in that character's voice. A video of one person talking to camera (a tip, an announcement, a UGC-style piece) is avatar_script, then make_avatar: the owner by default, or anyone she describes (put them in from); you cast made-up people yourself, a portrait from the description and a stock voice, the same way you cast a drama, so you never say you can't cast someone else. When she asks for a drama, never write a talking-to-camera script, and in a drama she is the lead and she talks: her character is always played from her own photos and speaks in her own cloned voice (spoken lines lip synced to her face, and voice-over). Never cast anyone else as her. If she says she isn't in it or isn't talking, that's rewrite_episode.
@@ -1255,6 +1261,40 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
       }
     }
+    case "onboard_hire": {
+      const people = await import("./people");
+      const name = d.target.trim();
+      if (!name) return { text: "Who is starting?", cards: [], queries: [] };
+      const known = await people.findPerson(org, name);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date) && !people.toYmd(known?.startDate)) return { text: `When does ${name.split(/\s+/)[0]} start?`, cards: [], queries: [] };
+      try {
+        const r = await people.onboardHire(org, { personId: known?.id, name, role: d.title, startDate: d.date, email: d.to });
+        return { text: people.hireSummary(r), cards: r.plan?.launch ? [projects.planCard(r.plan.launch, r.plan.counts) as ChatCard] : [], queries: [] };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+    }
+    case "offboard": {
+      const people = await import("./people");
+      const name = d.target.trim();
+      if (!name) return { text: "Who is leaving?", cards: [], queries: [] };
+      const firstName = name.split(/\s+/)[0];
+      const focus = d.focus.trim().toLowerCase();
+      const caseload = /^(yes|true)/.test(focus) ? true : /^(no|false)/.test(focus) ? false : null;
+      try {
+        const r = await people.offboard(org, { name, lastDay: d.date, reason: d.notes, caseload, role: d.title });
+        const day = people.longDate(r.offboarding.lastDay);
+        const lead = r.created ? `I set up ${firstName}'s offboarding for ${day}.` : caseload === true ? `I added the caseload handoff to ${firstName}'s offboarding: counts only, no client names.` : caseload === false ? `Got it, no caseload for ${firstName}.` : `I updated ${firstName}'s offboarding for ${day}.`;
+        const plan = r.plan?.launch ? ` The plan is in Projects (${plural(r.plan.counts.tasks, "task")})${r.plan.auto ? "" : ", waiting for your OK on Nora's Projects tab"}.` : "";
+        if (r.ask) {
+          const q = r.ask === "sees" ? ` ${firstName} sees clients: should I plan a handoff of their caseload?` : ` Does ${firstName} see clients? Should I plan a handoff of their caseload?`;
+          return { text: `${lead}${q}`, cards: r.plan?.launch ? [projects.planCard(r.plan.launch, r.plan.counts) as ChatCard] : [], queries: [], choices: ["Yes, plan the handoff", "No caseload"] };
+        }
+        return { text: `${lead}${plan}${r.created ? " Access removal is on the list as a reminder for the last day." : ""}`, cards: r.plan?.launch ? [projects.planCard(r.plan.launch, r.plan.counts) as ChatCard] : [], queries: [] };
+      } catch (err) {
+        return { text: err instanceof Error ? err.message : String(err), cards: [], queries: [] };
+      }
+    }
     case "onboard_customer": {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { text: "When should they go live?", cards: [], queries: [] };
       const cust = await import("./customers");
@@ -1480,6 +1520,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
               : "I haven't audited your workflows yet. Say the word and I'll start.";
         return { text, cards: open.length ? [{ type: "platform_findings", id: 0, title: "Still to fix" }] : [], queries: [] };
       }
+      if (emp.kind === "onboarding") return { text: await (await import("./people")).peopleStatus(org), cards: [], queries: [] };
       if (emp.kind === "hiring") {
         const facts = await hiring.hiringFacts(org);
         const fresh = (await db.listHrPeople(org, "applicant")).filter((p) => p.stage === "new").slice(0, 3);

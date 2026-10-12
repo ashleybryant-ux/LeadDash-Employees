@@ -912,7 +912,7 @@ export const hrRoles = sqliteTable(
 
 export type HrRole = typeof hrRoles.$inferSelect;
 
-export const HR_STAGES = ["prospect", "contacted", "replied", "dnc", "new", "interview", "hold", "offer", "passed", "hired"] as const;
+export const HR_STAGES = ["prospect", "contacted", "replied", "dnc", "new", "interview", "hold", "offer", "passed", "hired", "leaving", "left"] as const;
 export type HrStage = (typeof HR_STAGES)[number];
 
 /** Applicants and outreach prospects. Prospects hold work facts only. */
@@ -922,7 +922,8 @@ export const hrPeople = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
     roleId: integer("roleId"),
-    source: text("source", { enum: ["applicant", "prospect"] }).notNull(),
+    /** "staff": someone Imani onboards or offboards who never came through Quinn. */
+    source: text("source", { enum: ["applicant", "prospect", "staff"] }).notNull(),
     stage: text("stage", { enum: HR_STAGES }).notNull(),
     name: text("name").notNull(),
     /** "LPC", "LMFT, LADC"... */
@@ -949,8 +950,10 @@ export const hrPeople = sqliteTable(
     appliedOn: text("appliedOn"),
     /** MM/DD/YYYY. */
     startDate: text("startDate"),
-    /** JSON {paperwork: [{item, detail, status}], credentialing: [...]} once hired. */
+    /** JSON {paperwork: [{item, detail, status}], credentialing: [...]} once hired; Imani adds accounts, planLaunchId, welcome and checkins. */
     onboarding: text("onboarding"),
+    /** JSON {lastDay, reason, caseload, exitInterview, planLaunchId, clients, access, pay} while someone is leaving. Never client names. */
+    offboarding: text("offboarding"),
     /** Prospects nobody acted on are deleted after this. */
     purgeAt: integer("purgeAt", { mode: "timestamp" }),
     createdAt: createdAt(),

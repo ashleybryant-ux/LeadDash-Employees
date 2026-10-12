@@ -133,6 +133,8 @@ export function startScheduler() {
       await tick();
       await remindRegistrations();
       await hiringDaily();
+      // Imani: new hire check-ins and last-day reminders.
+      await (await import("./people")).peopleTicks();
       await sweepExpired();
       await cooTicks();
       await morningChecks();

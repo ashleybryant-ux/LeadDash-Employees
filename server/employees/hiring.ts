@@ -611,7 +611,10 @@ export async function markHired(orgId: number, personId: number) {
       /* the owner can add payers by hand */
     }
   }
-  return db.updateHrPerson(personId, orgId, { stage: "hired", onboarding: JSON.stringify({ ...hire, paperwork, credentialing }) });
+  const saved = await db.updateHrPerson(personId, orgId, { stage: "hired", onboarding: JSON.stringify({ ...hire, paperwork, credentialing }) });
+  // Imani takes over onboarding in the background; a failure there never stops the hire.
+  void import("./people").then((m) => m.handOffHire(orgId, personId)).catch((err) => console.warn("[hiring] hand-off to Imani failed:", err instanceof Error ? err.message : err));
+  return saved;
 }
 
 export async function updateChecklist(orgId: number, personId: number, list: "paperwork" | "credentialing", items: ChecklistItem[]) {
