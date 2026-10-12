@@ -4741,10 +4741,6 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId, "member");
       return coo.sendRecap(input.organizationId, input.id, personName(ctx.user));
     }),
-    scorecard: protectedProcedure.input(orgInput.extend({ weeksBack: z.number().int().min(0).max(26) })).query(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId);
-      return coo.scorecard(input.organizationId, new Date(Date.now() - input.weeksBack * 7 * 86_400_000));
-    }),
     settings: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       const { ops } = await opsFor(input.organizationId);

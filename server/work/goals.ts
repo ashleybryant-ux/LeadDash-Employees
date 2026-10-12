@@ -264,7 +264,7 @@ export async function overview(orgId: number) {
         files: files.filter((f) => f.link.itemId === g.id).map((f) => ({ linkId: f.link.id, id: f.file!.id, name: f.file!.name, url: f.file!.fileUrl, kind: f.file!.kind, size: f.file!.size })),
       };
     });
-  const read = db.work.reads.all(orgId).filter((r) => r.weekStart !== "layout").sort((a, b) => b.id - a.id)[0] ?? null;
+  const read = db.work.reads.all(orgId).filter((r) => ymdOk(r.weekStart)).sort((a, b) => b.id - a.id)[0] ?? null;
   const layoutRow = db.work.reads.all(orgId).find((r) => r.weekStart === "layout") ?? null;
   return {
     today,

@@ -17,7 +17,8 @@ import { cancelAll, notetakerStatus, notetakerTick } from "./notetaker";
  *   built from the week's work, then an invite with a Google Meet or Zoom link.
  * - After a meeting: your notes (or the Zoom transcript) become action items.
  *   Items go to Nora as tasks, and employees hear about theirs in their chat.
- * - The scorecard: each team's numbers this week against last week and the goal.
+ * - The scorecard lives on the Goals page (server/work/goals.ts). SCORE_ROWS
+ *   here are the numbers the app counts by itself, used there as sources.
  * - Project meetings (meetings.launchId set) run through the same engine, but
  *   Nora owns them: she writes the agenda from the project's status, sends the
  *   invite and recap, and their action items go to that project.
@@ -116,8 +117,6 @@ async function weekFacts(orgId: number, updatesFrom: string[]) {
     const rep = v.reports[0];
     lines.push(`Launch ${l.name} (launch day ${fmtDay(l.launchDate, tz)}): ${v.tasks.filter((t) => t.status === "done").length} of ${v.tasks.length} tasks done, ${v.tasks.filter((t) => t.state.key === "behind").length} behind${rep ? `. Nora's latest report: ${rep.body.overall} Behind: ${rep.body.behind}` : ""}`);
   }
-  const card = await scorecard(orgId);
-  lines.push(`Scorecard this week: ${card.rows.map((r) => `${r.team} ${r.label}: ${r.thisWeek}${r.goal !== null ? ` (goal ${r.goal})` : ""}`).join("; ")}`);
   const topics = (await import("../work/simone")).takeTopics(orgId);
   if (topics.length) lines.push(`Topics the owner added to this meeting (put each on the agenda):\n${topics.map((t) => `- ${t}`).join("\n")}`);
   try {
@@ -504,10 +503,11 @@ export async function sendRecap(orgId: number, meetingId: number, who: string) {
 }
 
 // ==========================================
-// The scorecard
+// Numbers the app counts (sources for the Goals page scorecard)
 // ==========================================
 
 export const SCORE_ROWS = [
+  { key: "new_leads", team: "Sales", label: "New leads", lowerIsBetter: false, unit: "" },
   { key: "practices_contacted", team: "Sales", label: "Prospects contacted", lowerIsBetter: false, unit: "" },
   { key: "demos_booked", team: "Sales", label: "Calls booked", lowerIsBetter: false, unit: "" },
   { key: "reply_minutes", team: "Sales", label: "Malik's reply time", lowerIsBetter: true, unit: " min" },
@@ -518,14 +518,6 @@ export const SCORE_ROWS = [
   { key: "approvals_waiting", team: "Operations", label: "Approvals waiting over 2 days", lowerIsBetter: true, unit: "" },
 ] as const;
 
-/** Monday 00:00 of the week holding `d`, in the workspace's time zone. */
-function weekStart(d: Date, tz: string) {
-  const p = partsIn(d, tz);
-  const back = (p.wd + 6) % 7;
-  const day = new Date(Date.UTC(p.y, p.m - 1, p.d - back, 12));
-  return zonedToUtc(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), 0, 0, tz);
-}
-
 /** Counts one scorecard number over a span of time. Loads the workspace's data once, so it can be asked for many weeks. */
 export async function scoreCounter(orgId: number) {
   const inRange = (d: Date | null | undefined, a: Date, b: Date) => !!d && new Date(d) >= a && new Date(d) < b;
@@ -535,6 +527,8 @@ export async function scoreCounter(orgId: number) {
   const tasks = await db.listOrgLaunchTasks(orgId);
   const value = (key: string, a: Date, b: Date): number | null => {
     switch (key) {
+      case "new_leads":
+        return leads.filter((l) => inRange(l.createdAt, a, b)).length;
       case "practices_contacted":
         return out.filter((m) => m.kind === "outreach_email" && m.status === "published" && inRange(m.publishedAt, a, b) && JSON.parse(m.metadata || "{}").step === 1).length;
       case "demos_booked":
@@ -566,35 +560,6 @@ export async function scoreCounter(orgId: number) {
     }
   };
   return value;
-}
-
-export async function scorecard(orgId: number, weekOf?: Date) {
-  const { ops, tz } = await opsFor(orgId);
-  const start = weekStart(weekOf ?? new Date(), tz);
-  const end = new Date(start.getTime() + 7 * DAY);
-  const prev = new Date(start.getTime() - 7 * DAY);
-  const isCurrent = end.getTime() > Date.now();
-  const value = await scoreCounter(orgId);
-  const rows = SCORE_ROWS.map((r) => {
-    const thisWeek = value(r.key, start, end);
-    const lastWeek = r.key === "approvals_waiting" ? null : value(r.key, prev, start);
-    const goal = ops.goals[r.key] ?? null;
-    const met = goal === null || thisWeek === null ? null : r.lowerIsBetter ? thisWeek <= goal : thisWeek >= goal;
-    return { key: r.key, team: r.team, label: r.label, unit: r.unit, thisWeek, lastWeek, goal, met };
-  });
-  const label = `${new Date(start).toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric" })} to ${new Date(end.getTime() - DAY).toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric" })}`;
-  return { weekStart: start, label, isCurrent, rows };
-}
-
-export async function setGoal(orgId: number, key: string, goal: number | null) {
-  const row = SCORE_ROWS.find((r) => r.key === key);
-  if (!row) throw new TRPCError({ code: "BAD_REQUEST", message: "That number isn't on the scorecard." });
-  const { ops } = await opsFor(orgId);
-  const goals = { ...ops.goals };
-  if (goal === null) delete goals[key];
-  else goals[key] = Math.max(0, Math.round(goal));
-  await saveOps(orgId, { goals });
-  return row;
 }
 
 // ==========================================
@@ -671,12 +636,13 @@ export function meetingCard(m: Pick<Meeting, "id" | "title" | "status">) {
 
 export async function cooStatus(orgId: number) {
   const { tz } = await opsFor(orgId);
-  const card = await scorecard(orgId);
+  const card = await (await import("../work/goals")).scorecard(orgId, 1);
   const v = await meetingsView(orgId);
   const next = v.upcoming.slice(0, 3).map((m) => `${m.title} (${fmtDay(m.startsAt, tz)} at ${fmtTime(m.startsAt, tz)}${m.status === "invited" ? ", invites sent" : ", invite not sent"})`);
   const open = v.past.flatMap((m) => m.actionItems.filter((i) => i.status !== "done").map((i) => `${i.text} (${i.owner})`)).slice(0, 8);
   return [
-    `Scorecard ${card.label}: ${card.rows.map((r) => `${r.label} ${r.thisWeek ?? "no data"}${r.unit}${r.goal !== null ? ` against ${r.goal}${r.unit}` : ""}`).join("; ")}.`,
+    `Active goals on the Goals page: ${db.work.goals.all(orgId).filter((g) => g.state === "active").map((g) => g.title).join("; ") || "none yet"}.`,
+    card.rows.length ? `Goals page scorecard, this week: ${card.rows.map((r) => `${r.measure.name} ${r.value ?? "no number yet"}${r.measure.weeklyGoal !== null ? ` against ${r.measure.weeklyGoal}` : ""}`).join("; ")}.` : "The Goals page scorecard has no measures yet.",
     `Coming up: ${next.join("; ") || "no meetings scheduled"}.`,
     `Open action items: ${open.join("; ") || "none"}.`,
     await notetakerStatus(orgId),

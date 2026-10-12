@@ -142,25 +142,35 @@ export function takeTopics(orgId: number) {
   return list.map((t) => `${t.text} (added by ${t.by})`);
 }
 
-/** Typed-in measures: the people who own them get a notice when last week's number is missing. */
-export async function askForNumbers(orgId: number, lastWeek: string) {
+/** Typed-in measures: the people who own them get a notice when a week's number is missing (Friday for this week, Monday for last week). */
+export async function askForNumbers(orgId: number, lastWeek: string, which: "this" | "last" = "last") {
   const ms = db.work.measures.all(orgId).filter((m) => m.active && m.source === "manual" && m.ownerType === "user" && m.ownerId);
   const have = db.work.values.all(orgId).filter((v) => v.weekStart === lastWeek);
   const missing = new Map<number, string[]>();
   for (const m of ms) if (!have.some((v) => v.measureId === m.id)) missing.set(m.ownerId!, [...(missing.get(m.ownerId!) ?? []), m.name]);
   const { notify } = await import("../notify");
   for (const [userId, names] of Array.from(missing.entries())) {
-    await notify(orgId, "task_assigned", { title: "Scorecard numbers for last week", body: `Enter ${names.join(", ")} for the week of ${fmtDay(lastWeek)}.`, url: "/goals?view=scorecard" }, { only: [userId] }).catch(() => null);
+    await notify(orgId, "task_assigned", { title: `Scorecard numbers for ${which} week`, body: `Enter ${names.join(", ")} for the week of ${fmtDay(lastWeek)}, or tell Simone in chat.`, url: "/goals?view=scorecard" }, { only: [userId] }).catch(() => null);
   }
   return missing.size;
 }
 
-/** Monday after 7:00: the read, once a week. In November and December: next year's draft, once. */
+/** Friday after 9:00, once a week: the owners of typed-in measures are asked for this week's number. */
+export async function fridayAsk(orgId: number, tz: string) {
+  const week = sundayOf(todayYmd(tz));
+  const mark = `asked:${week}`;
+  if (db.work.reads.all(orgId).some((r) => r.weekStart === mark)) return 0;
+  db.work.reads.insert({ organizationId: orgId, weekStart: mark, items: "[]" });
+  return askForNumbers(orgId, week, "this");
+}
+
+/** Friday: the ask for typed-in numbers. Monday after 7:00: the read, once a week. In November and December: next year's draft, once. */
 export async function goalsTicks() {
   for (const orgId of await db.listAllOrganizationIds()) {
     try {
       const tz = await zoneOf(orgId);
       const p = partsIn(new Date(), tz);
+      if (p.wd === 5 && p.h >= 9 && db.work.measures.all(orgId).some((m) => m.active && m.source === "manual" && m.ownerType === "user")) await fridayAsk(orgId, tz);
       if (p.wd !== 1 || p.h < 7) continue;
       const week = sundayOf(todayYmd(tz));
       if (db.work.reads.all(orgId).some((r) => r.weekStart === week)) continue;

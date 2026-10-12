@@ -7,7 +7,7 @@ import { ErrorLine, FolderTabs } from "../ui";
 import type { Outputs } from "../types";
 
 type M = Outputs["coo"]["meetings"]["upcoming"][number];
-type Tab = "upcoming" | "sitting" | "notes" | "past" | "scorecard";
+type Tab = "upcoming" | "sitting" | "notes" | "past";
 type NT = Outputs["coo"]["notetaker"]["upcoming"][number];
 
 const day = (d: Date | string | number, tz: string) => new Date(d).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" });
@@ -55,7 +55,7 @@ export function meetingStatus(m: Pick<M, "status" | "agenda" | "startsAt" | "act
   return { l: `Agenda ${new Date(new Date(m.startsAt).getTime() - 86_400_000).toLocaleDateString("en-US", { timeZone: tz, weekday: "short" })}`, c: "gray" };
 }
 
-/** Simone's Work tab: meetings coming up, past meetings and their action items, and the scorecard. */
+/** Simone's Work tab: meetings coming up, and past meetings and their action items. The scorecard lives on the Goals page. */
 export default function Meetings({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId, currentOrg } = useTenant();
   const tz = currentOrg?.timezone || "America/Chicago";
@@ -63,7 +63,7 @@ export default function Meetings({ emp }: { emp: EmployeeRow }) {
   const nt = trpc.coo.notetaker.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 60_000 });
   const [tab, setTab] = React.useState<Tab>(() => {
     const t = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
-    return t === "sitting" || t === "notes" || t === "past" || t === "scorecard" ? t : "upcoming";
+    return t === "sitting" || t === "notes" || t === "past" ? t : "upcoming";
   });
   const data = q.data;
   return (
@@ -76,14 +76,12 @@ export default function Meetings({ emp }: { emp: EmployeeRow }) {
           { key: "sitting", label: `Sitting in (${nt.data?.upcoming.length ?? 0})` },
           { key: "notes", label: `Notes (${nt.data?.notes.length ?? 0})` },
           { key: "past", label: `Past (${data?.past.length ?? 0})` },
-          { key: "scorecard", label: "Scorecard" },
         ]}
       >
         {tab === "upcoming" && <List list={data?.upcoming ?? []} tz={tz} loading={q.isLoading} emp={emp} />}
         {tab === "sitting" && <SittingIn list={nt.data?.upcoming ?? []} tz={tz} loading={nt.isLoading} emp={emp} />}
         {tab === "notes" && <NotesList list={nt.data?.notes ?? []} tz={tz} loading={nt.isLoading} emp={emp} />}
         {tab === "past" && <List list={data?.past ?? []} tz={tz} loading={q.isLoading} emp={emp} past />}
-        {tab === "scorecard" && <Scorecard />}
       </FolderTabs>
     </main>
   );
@@ -566,49 +564,5 @@ export function NotesDetail({ r, tz, onClose }: { r: NT; tz: string; onClose?: (
         {onClose && <button type="button" className="ld-btn" onClick={onClose}>Close</button>}
       </div>
     </div>
-  );
-}
-
-// ==========================================
-// Scorecard
-// ==========================================
-
-const SQ = "130px minmax(0,1.8fr) 110px 110px 110px 130px";
-
-function Scorecard() {
-  const { currentOrgId } = useTenant();
-  const [back, setBack] = React.useState(0);
-  const q = trpc.coo.scorecard.useQuery({ organizationId: currentOrgId, weeksBack: back }, { enabled: currentOrgId > 0 });
-  const weeks = Array.from({ length: 8 }, (_, i) => i);
-  const val = (n: number | null, unit: string) => (n === null ? <span className="ld-muted">None</span> : `${n}${unit}`);
-  return (
-    <>
-      <div style={{ padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid #e3e9e6" }}>
-        <label className="ld-lbl" htmlFor="sc-week" style={{ margin: 0 }}>Week</label>
-        <select id="sc-week" className="ld-in" style={{ width: "auto", minWidth: 240 }} value={back} onChange={(e) => setBack(Number(e.target.value))}>
-          {weeks.map((w) => <option key={w} value={w}>{w === 0 ? `This week${q.data && back === 0 ? `, ${q.data.label}` : ""}` : w === 1 ? "Last week" : `${w} weeks ago`}</option>)}
-        </select>
-        {q.data && back > 0 && <span className="ld-small ld-muted">{q.data.label}</span>}
-      </div>
-      <div className="ld-hd" style={{ gridTemplateColumns: SQ }}>
-        <span>Team</span>
-        <span>Number</span>
-        <span>This week</span>
-        <span>Last week</span>
-        <span>Weekly goal</span>
-        <span />
-      </div>
-      {(q.data?.rows ?? []).map((r) => (
-        <div key={r.key} className="ld-rw" style={{ gridTemplateColumns: SQ }}>
-          <span className="ld-muted" style={{ fontWeight: 700 }}>{r.team}</span>
-          <span className="ld-strong">{r.label}</span>
-          <span>{val(r.thisWeek, r.unit)}</span>
-          <span>{val(r.lastWeek, r.unit)}</span>
-          <span>{r.goal === null ? <span className="ld-muted">Not set</span> : `${r.goal}${r.unit}`}</span>
-          {r.met === null ? <span /> : <span className={`ld-pill ${r.met ? "green" : "amber"}`}>{r.met ? "On goal" : "Below goal"}</span>}
-        </div>
-      ))}
-      <div style={{ padding: "10px 18px" }} className="ld-small ld-muted">Set a weekly goal by asking Simone in Chat, for example "Set the weekly goal for demos booked to 4."</div>
-    </>
   );
 }
