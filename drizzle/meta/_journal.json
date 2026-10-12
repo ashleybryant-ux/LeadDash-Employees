@@ -414,6 +414,13 @@
       "when": 1791768240784,
       "tag": "0058_internal_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1791774805605,
+      "tag": "0059_morgan_forms_capability",
+      "breakpoints": true
     }
   ]
 }

@@ -98,6 +98,22 @@ export async function applicationZip(orgId: number, appId: number) {
     const p = localPath(deck.url);
     if (p) zip.file(deck.name, fs.readFileSync(p));
   }
+  const vp = localPath(extras.videoUrl ?? null);
+  if (vp) zip.file(`Pitch video${path.extname(vp)}`, fs.readFileSync(vp));
+  // The host's forms, filled in their own format (the signed copy when there is one), and the capability statement.
+  const { parseForms, CAPABILITY_ID } = await import("./forms");
+  for (const f of parseForms(app)) {
+    if (f.fileId === CAPABILITY_ID) {
+      const cap = await import("./capability");
+      const c = await cap.get(orgId);
+      if (c.overview) zip.file("Capability statement.docx", await cap.docxBuffer(c));
+      continue;
+    }
+    const p = localPath(f.signedUrl ?? f.filledUrl);
+    if (!p) continue;
+    const base = f.name.replace(/\.[^.]+$/, "");
+    zip.file(`Forms/${safe(base)}${f.signedUrl ? " (signed)" : f.status === "word_copy" || (f.status === "needs_signature" && path.extname(p) !== path.extname(f.name)) ? " (answers)" : " (filled)"}${path.extname(p)}`, fs.readFileSync(p));
+  }
   const buf = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", streamFiles: true });
   const saved = await storagePut(`org-${orgId}/downloads/${safe(app.title)}.zip`, buf);
   return { url: saved.url, name: `${safe(app.title)}.zip` };

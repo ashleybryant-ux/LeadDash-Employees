@@ -123,6 +123,8 @@ export const organizations = sqliteTable("organizations", {
   /** Work hours (JSON): the plan this workspace is on ({plan}), set by LeadDash staff. No plan means work is not metered. */
   workHours: text("workHours"),
   /** LeadDash's own workspace (LeadDash, Legacy, the owner's brand), set by LeadDash staff. Only these get the in-house employees (Developer, Platform Specialist). */
+  /** JSON: the one-page capability statement Morgan writes and the owner edits. */
+  capability: text("capability"),
   internal: integer("internal", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -720,6 +722,8 @@ export const opportunityFiles = sqliteTable(
     chars: integer("chars"),
     status: text("status", { enum: ["read", "failed", "needs_signature"] }).notNull().default("read"),
     note: text("note"),
+    /** What the file is: the host's RFP or rules, a form the applicant fills in, or reference. Null until decided. */
+    role: text("role", { enum: ["rfp", "form", "reference"] }),
     createdAt: createdAt(),
   },
   (t) => [index("opportunity_files_opp_idx").on(t.organizationId, t.opportunityId)]
@@ -760,6 +764,8 @@ export const applications = sqliteTable(
     attachments: text("attachments").notNull().default("[]"),
     /** JSON: pitch deck slides, video script, uploaded video. */
     extras: text("extras"),
+    /** JSON array: each of the host's forms as filled for this application (file, kind, status, filled copy, signed copy). */
+    forms: text("forms"),
     /** JSON: the reviewer check. */
     review: text("review"),
     progress: text("progress"),

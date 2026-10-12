@@ -838,6 +838,11 @@ export async function listOppFilesForOrg(orgId: number) {
   return getDb().select().from(opportunityFiles).where(eq(opportunityFiles.organizationId, orgId)).all();
 }
 
+/** Whether an opportunity's file is the RFP, a form to fill or reference. */
+export function setOppFileRole(id: number, orgId: number, role: "rfp" | "form" | "reference") {
+  getDb().update(opportunityFiles).set({ role }).where(and(eq(opportunityFiles.id, id), eq(opportunityFiles.organizationId, orgId))).run();
+}
+
 export async function createOppFile(item: typeof opportunityFiles.$inferInsert) {
   return getDb().insert(opportunityFiles).values(item).returning().all()[0];
 }

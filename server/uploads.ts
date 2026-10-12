@@ -29,6 +29,7 @@ async function photosAllowed(orgId: number, kind: string) {
 const LIMITS: Record<string, number> = {
   knowledge: 30_000_000,
   rfp: 30_000_000,
+  hostform: 30_000_000,
   attachment: 25_000_000,
   letter: 25_000_000,
   video: 250_000_000,
@@ -405,8 +406,23 @@ export function registerUploads(app: Express) {
 
       if (slot === "rfp") {
         const empKind = req.query.employee === "speaking" ? "speaking" : "grants";
+        const role = req.query.role === "form" ? "form" : req.query.role === "reference" ? "reference" : "rfp";
+        // More files for an opportunity just made from the first one: the host's forms and attachments.
+        if (req.query.opportunityId) {
+          const { addOppFile } = await import("./employees/apply");
+          const f = await addOppFile(orgId, Number(req.query.opportunityId), { name, buf, mime }, role);
+          return res.json({ id: Number(req.query.opportunityId), fileId: f.id });
+        }
         const opp = await addOpportunity(orgId, empKind, { file: { name, buf, mime } }, who);
+        for (const f of await db.listOppFiles(orgId, opp.id)) db.setOppFileRole(f.id, orgId, role);
         return res.json({ id: opp.id });
+      }
+
+      // A signed copy of one of the host's forms.
+      if (slot === "hostform") {
+        const { saveSigned } = await import("./employees/forms");
+        const f = await saveSigned(orgId, Number(req.query.applicationId), Number(req.query.fileId), { name, buf, mime });
+        return res.json({ url: f.signedUrl });
       }
 
       const appId = Number(req.query.applicationId);

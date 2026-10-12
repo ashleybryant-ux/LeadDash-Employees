@@ -608,6 +608,25 @@ Use only what the text says; use "" for anything it does not state.`
   return opp;
 }
 
+/** Another of the host's files (a form, a template, an attachment) added to an opportunity; the package is read again. */
+export async function addOppFile(orgId: number, oppId: number, file: { name: string; buf: Buffer; mime: string }, role: "rfp" | "form" | "reference") {
+  const opp = await db.getOpp(oppId, orgId);
+  if (!opp) throw new TRPCError({ code: "NOT_FOUND", message: "That opportunity is not in this workspace." });
+  const saved = await storagePut(`org-${orgId}/packages/${file.name}`, file.buf, file.mime);
+  let f;
+  try {
+    const read = await readFile(file.buf, file.name, file.mime);
+    f = await db.createOppFile({ organizationId: orgId, opportunityId: oppId, name: file.name, fileUrl: saved.url, pages: read.pages, pagesUnit: read.unit, chars: read.text.length, status: "read", note: read.note, role });
+    db.replaceChunks(orgId, "opp_file", f.id, null, chunkText(read.text));
+  } catch {
+    f = await db.createOppFile({ organizationId: orgId, opportunityId: oppId, name: file.name, fileUrl: saved.url, status: "failed", note: "Could not read this file", role });
+  }
+  await db.updateOpp(oppId, orgId, { packageStatus: "none" });
+  // Read again with this file, even if a read is already running.
+  enqueue(`package-${oppId}-file-${f.id}`, () => fetchPackage(orgId, oppId));
+  return f;
+}
+
 /**
  * An opportunity found by signing in somewhere (BidPrime): the page text and
  * any documents were read in the browser, so nothing is fetched here first.
@@ -1168,6 +1187,21 @@ export async function writeApplication(orgId: number, appId: number, opts: { fre
           await db.updateApplication(appId, orgId, { progress: "Building the deck and video script" });
           const extras = await writePitchExtras(orgId, ctx, questions, parse<Extras>(app!.extras, {}));
           await db.updateApplication(appId, orgId, { extras: JSON.stringify(extras) });
+        }
+        // The host's own forms, filled in their own format, and the capability statement when the RFP asks for one.
+        const forms = await import("./forms");
+        const fresh = (await db.getApplication(appId, orgId))!;
+        const filled = await forms.fillHostForms(orgId, emp, { opp, app: fresh, questions }, (what) => db.updateApplication(appId, orgId, { progress: what }));
+        const cap = await import("./capability");
+        const packageText = `${JSON.stringify(reqs)} ${opp.summary ?? ""} ${opp.eligibility ?? ""} ${(await db.listOppFiles(orgId, opp.id)).map((f) => db.chunksOf(orgId, "opp_file", f.id).map((c) => c.text).join(" ")).join(" ").slice(0, 200_000)}`;
+        if (cap.asksForIt(packageText)) {
+          await db.updateApplication(appId, orgId, { progress: "Attaching the capability statement" });
+          if (!(await cap.get(orgId)).overview) await cap.write(orgId).catch(() => null);
+          if ((await cap.get(orgId)).overview) {
+            const without = filled.filter((f) => f.fileId !== forms.CAPABILITY_ID);
+            without.push({ fileId: forms.CAPABILITY_ID, name: "Capability statement", kind: "docx", status: "filled", filledUrl: null, signedUrl: null, note: "From the Capability statement tab; the latest version goes in the download." });
+            await db.updateApplication(appId, orgId, { forms: JSON.stringify(without) });
+          }
         }
       }
     }, { job: opp.kind === "grant" ? "grant" : "application", label: app.title });

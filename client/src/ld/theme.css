@@ -2173,3 +2173,46 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-job-row > span.ld-small { display: none; }
 }
 .ld-hours-buy { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; padding: 12px; border: 1px solid var(--ld-line); border-radius: 10px; background: var(--ld-hover2); font-size: 13.5px; line-height: 1.45; }
+
+/* Morgan: upload an RFP with its forms */
+.ld-drop { border: 1.5px dashed var(--ld-accent-line); border-radius: 10px; background: var(--ld-surface); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.ld-drop.over { border-color: var(--ld-accent); background: var(--ld-accent-bg); }
+.ld-drop-list { display: flex; flex-direction: column; }
+.ld-drop-file { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; font-size: 13.5px; padding: 6px 0; border-top: 1px solid var(--ld-line2); }
+.ld-drop-file:first-child { border-top: 0; }
+.ld-drop-file .ld-clip { white-space: nowrap; }
+.ld-linkbtn { border: 0; background: none; padding: 0; font: inherit; font-weight: 700; color: var(--ld-accent-dark); cursor: pointer; text-decoration: underline; }
+
+/* An application's materials, in the expanded row */
+.ld-mat { display: grid; grid-template-columns: minmax(0,1fr) 128px; gap: 24px; align-items: start; }
+.ld-mat-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ld-mat-list { display: grid; grid-template-columns: minmax(0,1fr) 190px; gap: 8px 14px; align-items: center; font-size: 14px; }
+.ld-mat-list .ld-clip { white-space: nowrap; }
+.ld-mat-list .ld-pill { justify-self: stretch; text-align: center; }
+.ld-mat-btns { display: flex; flex-direction: column; gap: 8px; }
+.ld-mat-btns .ld-btn { width: 100%; }
+
+/* Morgan's capability statement */
+.ld-cap { padding: 18px; display: grid; grid-template-columns: minmax(0,1fr) 128px; gap: 20px; align-items: start; }
+.ld-cap-sheet { border: 1px solid var(--ld-line); border-radius: 10px; padding: 22px 24px; background: var(--ld-surface); display: grid; grid-template-columns: minmax(0,1.5fr) minmax(0,1fr); gap: 18px 26px; }
+.ld-cap-top { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; }
+.ld-cap-top h3 { margin: 0; font-size: 18px; font-weight: 800; }
+.ld-cap-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; font-size: 14px; }
+.ld-cap-col h4 { margin: 0 0 4px; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ld-accent-dark); }
+.ld-cap-col p { margin: 0; }
+.ld-cap-col ul { margin: 0; padding-left: 18px; }
+.ld-cap-kv { display: grid; grid-template-columns: 80px minmax(0,1fr); gap: 4px 10px; font-size: 13px; }
+.ld-cap-v { overflow-wrap: anywhere; }
+.ld-cap-btns { display: flex; flex-direction: column; gap: 8px; }
+.ld-cap-btns .ld-btn { width: 100%; }
+.ld-cap-ask { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; border-left: 2px solid var(--ld-accent-line); }
+.ld-cap-ed { display: grid; grid-template-columns: 150px minmax(0,1fr); gap: 8px 12px; align-items: start; }
+.ld-cap-l { padding-top: 8px; }
+.ld-cap-ta { height: auto; padding: 6px 10px; resize: vertical; font: inherit; font-size: 14px; }
+.ld-cap-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 760px) {
+  .ld-mat, .ld-cap { grid-template-columns: 1fr; }
+  .ld-mat-list { grid-template-columns: minmax(0,1fr) auto; }
+  .ld-cap-sheet, .ld-cap-ed, .ld-cap-pair { grid-template-columns: 1fr; }
+  .ld-cap-l { padding-top: 0; }
+}

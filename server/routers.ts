@@ -933,6 +933,44 @@ export const appRouter = router({
       }),
   }),
 
+  /** Morgan's capability statement: the one page for buyers and funders. */
+  capability: router({
+    get: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/capability")).get(input.organizationId);
+    }),
+    save: protectedProcedure
+      .input(
+        orgInput.extend({
+          overview: z.string().max(900),
+          competencies: z.array(z.string().max(200)).max(8),
+          pastPerformance: z.array(z.string().max(200)).max(8),
+          differentiators: z.array(z.string().max(200)).max(8),
+          uei: z.string().max(20),
+          cage: z.string().max(10),
+          naics: z.string().max(200),
+          certifications: z.string().max(300),
+          contactName: z.string().max(160),
+          contactEmail: z.string().max(200),
+          contactPhone: z.string().max(40),
+          web: z.string().max(200),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, ...rest } = input;
+        return (await import("./employees/capability")).save(organizationId, rest);
+      }),
+    rewrite: protectedProcedure.input(orgInput.extend({ length: z.enum(["shorter", "fuller", "first"]) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return (await import("./employees/capability")).write(input.organizationId, input.length);
+    }),
+    download: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/capability")).docx(input.organizationId);
+    }),
+  }),
+
   applications: router({
     list: protectedProcedure
       .input(orgInput.extend({ employee: z.enum(["grants", "speaking"]).optional() }))

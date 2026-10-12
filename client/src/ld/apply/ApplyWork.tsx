@@ -6,6 +6,7 @@ import { BIG_JOB, useHoursAsk } from "../HoursAsk";
 import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine, FolderTabs, UnderlineTabs } from "../ui";
 import { APP_STATUS, CHANNEL_LABEL, OPP_TABS, fmtDate, openDownload, parseJson, uploadFile } from "../meta";
+import CapabilityTab from "./Capability";
 import type { AppRow, Award, OppRow, Question, Requirements, Attachment } from "../types";
 
 type EmpKind = "grants" | "speaking";
@@ -44,9 +45,9 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
   const empKind: EmpKind = emp.kind === "speaking" ? "speaking" : "grants";
   const { currentOrgId } = useTenant();
   const initial = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
-  const [tab, setTab] = React.useState<"opps" | "apps" | "awards">(initial === "applications" ? "apps" : initial === "awards" ? "awards" : "opps");
+  const [tab, setTab] = React.useState<"opps" | "apps" | "awards" | "cap">(initial === "applications" ? "apps" : initial === "awards" ? "awards" : initial === "capability" && empKind === "grants" ? "cap" : "opps");
   const [kind, setKind] = React.useState<OppKind | "skipped">(OPP_TABS[empKind][0].key);
-  const [adding, setAdding] = React.useState(false);
+  const [adding, setAdding] = React.useState<null | "link" | "upload">(null);
   const linkedOpp = typeof window !== "undefined" ? Number(new URLSearchParams(window.location.search).get("opp")) || null : null;
   const opps = trpc.opps.list.useQuery({ organizationId: currentOrgId, employee: empKind }, { refetchInterval: (q) => ((q.state.data ?? []).some((o) => o.packageStatus === "fetching") ? 5000 : false) });
   const apps = trpc.applications.list.useQuery({ organizationId: currentOrgId, employee: empKind }, { refetchInterval: (q) => ((q.state.data ?? []).some((a) => a.status === "writing") ? 5000 : 30_000) });
@@ -69,12 +70,15 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
   const Shell = embedded ? EmbeddedShell : MainShell;
   return (
     <Shell>
-      <div className="ld-row" style={{ justifyContent: "flex-end" }}>
+      <div className="ld-row" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
         {find.data && !find.isPending && (
           <span className="ld-small ld-muted">{find.data.added ? `Added ${find.data.added} from ${find.data.queries.length} searches.` : `Nothing new from ${find.data.queries.length} searches.`}</span>
         )}
-        <button type="button" className="ld-btn" onClick={() => { setTab("opps"); setAdding((v) => !v); }}>
-          Add
+        <button type="button" className="ld-btn" onClick={() => { setTab("opps"); setAdding((v) => (v === "link" ? null : "link")); }}>
+          Add link
+        </button>
+        <button type="button" className="ld-btn" onClick={() => { setTab("opps"); setAdding((v) => (v === "upload" ? null : "upload")); }}>
+          Upload RFP
         </button>
         <button type="button" className="ld-btn p" disabled={find.isPending} onClick={() => { setTab("opps"); find.mutate({ organizationId: currentOrgId, employee: empKind, kind: kind === "skipped" ? OPP_TABS[empKind][0].key : kind }); }}>
           {find.isPending ? "Searching..." : kind === "media" ? "Find press" : empKind === "speaking" ? "Find events" : "Find more"}
@@ -89,6 +93,7 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
           { key: "opps", label: `Opportunities (${live.length})` },
           { key: "apps", label: `Applications (${appList.length})` },
           { key: "awards", label: `${empKind === "speaking" ? "Results" : "Awards"} (${awardList.length})` },
+          ...(empKind === "grants" ? [{ key: "cap" as const, label: "Capability statement" }] : []),
         ]}
       />
 
@@ -99,7 +104,8 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
             onChange={setKind}
             tabs={[...OPP_TABS[empKind].map((t) => ({ key: t.key, label: `${t.label} (${live.filter((o) => o.kind === t.key).length})` })), { key: "skipped", label: `Skipped (${skipped.length})` }]}
           >
-            {adding && kind !== "skipped" && <AddPanel empKind={empKind} onDone={() => setAdding(false)} />}
+            {adding === "link" && kind !== "skipped" && <AddPanel empKind={empKind} onDone={() => setAdding(null)} />}
+            {adding === "upload" && kind !== "skipped" && <UploadPanel empKind={empKind} onDone={() => setAdding(null)} onStarted={() => { setAdding(null); setTab("apps"); }} />}
             {kind === "skipped" ? (
               <OppTable initialOpen={linkedOpp} list={skipped} kind={OPP_TABS[empKind][0].key} skippedTab loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
             ) : (
@@ -112,7 +118,8 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
             onChange={setKind}
             tabs={[{ key: OPP_TABS[empKind][0].key, label: `${OPP_TABS[empKind][0].label} (${live.length})` }, { key: "skipped", label: `Skipped (${skipped.length})` }]}
           >
-            {adding && kind !== "skipped" && <AddPanel empKind={empKind} onDone={() => setAdding(false)} />}
+            {adding === "link" && kind !== "skipped" && <AddPanel empKind={empKind} onDone={() => setAdding(null)} />}
+            {adding === "upload" && kind !== "skipped" && <UploadPanel empKind={empKind} onDone={() => setAdding(null)} onStarted={() => { setAdding(null); setTab("apps"); }} />}
             {kind === "skipped" ? (
               <OppTable initialOpen={linkedOpp} list={skipped} kind={OPP_TABS[empKind][0].key} skippedTab loading={opps.isLoading} apps={apps.data ?? []} emp={emp} onOpenApps={() => setTab("apps")} />
             ) : (
@@ -122,6 +129,7 @@ export default function ApplyWork({ emp, embedded }: { emp: EmployeeRow; embedde
         ))}
       {tab === "apps" && <AppTable list={appList} loading={apps.isLoading} emp={emp} />}
       {tab === "awards" && <AwardTable list={awardList} loading={apps.isLoading} emp={emp} />}
+      {tab === "cap" && <CapabilityTab />}
     </Shell>
   );
 }
@@ -142,25 +150,18 @@ function AddPanel({ empKind, onDone }: { empKind: EmpKind; onDone: () => void })
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const [url, setUrl] = React.useState("");
-  const [file, setFile] = React.useState<File | null>(null);
-  const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const addLink = trpc.opps.addLink.useMutation();
-  const fileRef = React.useRef<HTMLInputElement>(null);
 
   const submit = async () => {
     setError(null);
-    setBusy(true);
     try {
-      if (file) await uploadFile("rfp", file, { organizationId: currentOrgId, employee: empKind });
-      else if (url.trim()) await addLink.mutateAsync({ organizationId: currentOrgId, employee: empKind, url: url.trim() });
-      else throw new Error("Paste a link or choose a file.");
+      if (!url.trim()) throw new Error("Paste a link.");
+      await addLink.mutateAsync({ organizationId: currentOrgId, employee: empKind, url: url.trim() });
       await utils.opps.list.invalidate();
       onDone();
     } catch (err) {
       setError((err as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -168,27 +169,104 @@ function AddPanel({ empKind, onDone }: { empKind: EmpKind; onDone: () => void })
     <div style={{ background: "var(--ld-hover)", padding: "16px 18px", borderBottom: "1px solid #e3e9e6", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <span className="ld-st">{empKind === "speaking" ? "Add an event or media request" : "Add an opportunity"}</span>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)", gap: 12, alignItems: "end" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <label htmlFor="add-link" className="ld-lbl">{empKind === "speaking" ? "Call for proposals or request link" : "Page link"}</label>
-            <input id="add-link" className="ld-in lg" type="text" value={url} disabled={Boolean(file)} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="ld-lbl">Or the RFP file</span>
-            <div className="ld-row">
-              <input ref={fileRef} type="file" className="ld-sr" id="add-file" accept=".pdf,.docx,.xlsx,.pptx,.txt,.md" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-              <button type="button" className="ld-btn" style={{ width: 112, height: 34 }} onClick={() => fileRef.current?.click()}>
-                Choose file
-              </button>
-              <span className="ld-small ld-muted ld-clip" style={{ whiteSpace: "nowrap" }}>{file ? file.name : "PDF or Word"}</span>
-            </div>
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 640 }}>
+          <label htmlFor="add-link" className="ld-lbl">{empKind === "speaking" ? "Call for proposals or request link" : "Page link"}</label>
+          <input id="add-link" className="ld-in lg" type="text" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
         </div>
         {error && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>{error}</span>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <button type="button" className="ld-btn p" disabled={busy} onClick={submit}>{busy ? "Reading..." : "Add"}</button>
+        <button type="button" className="ld-btn p" disabled={addLink.isPending} onClick={submit}>{addLink.isPending ? "Reading..." : "Add"}</button>
         <button type="button" className="ld-btn" onClick={onDone}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/** A file that came with an opportunity, before it goes up: the RFP or rules, or a form Morgan fills in. */
+type Picked = { file: File; role: "rfp" | "form" };
+const FORM_NAME = /form|attachment|appendix|exhibit|application|budget|template|certif|assurance|worksheet|cover sheet|w-?9|questionnaire/i;
+function roleOf(file: File, already: Picked[]): Picked["role"] {
+  const hasRfp = already.some((p) => p.role === "rfp");
+  const looksLikeForm = /\.(xlsx|xls|docx|doc)$/i.test(file.name) || FORM_NAME.test(file.name);
+  if (!hasRfp && !looksLikeForm) return "rfp";
+  return looksLikeForm || hasRfp ? "form" : "rfp";
+}
+
+/** Upload the RFP (or a competition's rules) and every form that came with it; Complete it starts the application. */
+function UploadPanel({ empKind, onDone, onStarted }: { empKind: EmpKind; onDone: () => void; onStarted: () => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const [files, setFiles] = React.useState<Picked[]>([]);
+  const [busy, setBusy] = React.useState<null | "complete" | "score">(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [over, setOver] = React.useState(false);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+  const start = trpc.applications.start.useMutation();
+  const hoursAsk = useHoursAsk();
+
+  const pick = (list: FileList | null) => {
+    if (!list) return;
+    setFiles((prev) => {
+      const next = [...prev];
+      for (const f of Array.from(list)) if (!next.some((p) => p.file.name === f.name && p.file.size === f.size)) next.push({ file: f, role: roleOf(f, next) });
+      // The RFP goes up first: it makes the opportunity.
+      return next.sort((a, b) => (a.role === b.role ? 0 : a.role === "rfp" ? -1 : 1));
+    });
+  };
+
+  const send = async (then: "complete" | "score") => {
+    setError(null);
+    if (!files.length) return setError("Choose the RFP and its forms first.");
+    setBusy(then);
+    try {
+      const first = await uploadFile("rfp", files[0].file, { organizationId: currentOrgId, employee: empKind, role: files[0].role });
+      for (const p of files.slice(1)) await uploadFile("rfp", p.file, { organizationId: currentOrgId, employee: empKind, role: p.role, opportunityId: first.id });
+      if (then === "complete") await start.mutateAsync({ organizationId: currentOrgId, opportunityId: first.id });
+      await Promise.all([utils.opps.list.invalidate(), utils.applications.list.invalidate()]);
+      if (then === "complete") onStarted();
+      else onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div style={{ background: "var(--ld-hover)", padding: "16px 18px", borderBottom: "1px solid #e3e9e6", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+        <span className="ld-st">{empKind === "speaking" ? "Upload a call for proposals" : "Upload an RFP, grant or competition"}</span>
+        <div
+          className={`ld-drop ${over ? "over" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(e) => { e.preventDefault(); setOver(false); pick(e.dataTransfer.files); }}
+        >
+          <input ref={fileRef} type="file" multiple className="ld-sr" id="up-files" accept=".pdf,.docx,.xlsx,.doc,.xls,.pptx,.txt,.md" onChange={(e) => { pick(e.target.files); e.target.value = ""; }} />
+          <span>
+            Drop the RFP or rules and every form that came with it, or{" "}
+            <button type="button" className="ld-linkbtn" onClick={() => fileRef.current?.click()}>choose files</button>.
+          </span>
+          {files.length > 0 && (
+            <div className="ld-drop-list">
+              {files.map((p) => (
+                <div key={`${p.file.name}-${p.file.size}`} className="ld-drop-file">
+                  <span className="ld-clip">{p.file.name}</span>
+                  <span className={`ld-pill ${p.role === "rfp" ? "gray" : "blue"}`}>{p.role === "rfp" ? "The RFP" : "Form to fill"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <span className="ld-small ld-muted">{empKind === "speaking" ? "Taylor reads the requirements and writes the proposal." : "Morgan reads the requirements, fills each form from the Brain, and writes the narrative. A full grant uses 8 work hours; a pitch competition or accelerator uses 3."}</span>
+        {hoursAsk.question("upload")}
+        {error && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>{error}</span>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <button type="button" className="ld-btn p" disabled={!!busy || hoursAsk.asking("upload")} onClick={() => hoursAsk.confirm("upload", `${BIG_JOB.grant} (a pitch competition or accelerator uses 3)`, () => void send("complete"))}>{busy === "complete" ? "Uploading..." : "Complete it"}</button>
+        <button type="button" className="ld-btn" disabled={!!busy} onClick={() => void send("score")}>{busy === "score" ? "Reading..." : "Score fit first"}</button>
+        <button type="button" className="ld-btn" disabled={!!busy} onClick={onDone}>Cancel</button>
       </div>
     </div>
   );
@@ -524,6 +602,9 @@ function AppExpand({ a, qs, base }: { a: AppRow; qs: Question[]; base: string })
   const [confirmation, setConfirmation] = React.useState("");
   const mark = trpc.applications.markSubmitted.useMutation({ onSuccess: async () => { setMarking(false); await utils.applications.list.invalidate(); } });
   const [deciding, setDeciding] = React.useState(false);
+  const m = materialsOf(a, qs);
+
+  if (m.items.length) return <MaterialsExpand a={a} m={m} base={base} marking={marking} setMarking={setMarking} deciding={deciding} setDeciding={setDeciding} />;
 
   return (
     <div className="ld-expand" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
@@ -581,6 +662,112 @@ function AppExpand({ a, qs, base }: { a: AppRow; qs: Question[]; base: string })
       {deciding && <DecisionEditor a={a} onDone={() => setDeciding(false)} />}
       <div style={{ gridColumn: "1 / -1" }}>
         <ErrorLine error={dl.error || mark.error} />
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// The application's materials: the host's forms, the narrative, pitch materials
+// ==========================================
+
+type FormEntry = { fileId: number; name: string; kind: string; status: "filled" | "word_copy" | "needs_signature" | "signed" | "failed"; filledUrl: string | null; signedUrl: string | null; note: string };
+type Extras = { deck?: { title: string }[]; videoScript?: string; videoUrl?: string | null; financials?: string };
+type Item = { name: string; pill: string; tone: "green" | "amber" | "red" };
+const FORM_PILL: Record<FormEntry["status"], [string, Item["tone"]]> = { filled: ["Filled", "green"], word_copy: ["Filled in Word", "green"], needs_signature: ["Needs your signature", "amber"], signed: ["Signed", "green"], failed: ["Couldn't fill", "red"] };
+
+/** Everything the application is made of, each with its state, for the row. Empty when there's nothing beyond the answers. */
+function materialsOf(a: AppRow, qs: Question[]) {
+  const forms = parseJson<FormEntry[]>((a as AppRow & { forms?: string | null }).forms ?? null, []);
+  const extras = parseJson<Extras>(a.extras, {});
+  const kind = a.opp?.kind;
+  const pitch = kind === "pitch" || kind === "accelerator";
+  const items: Item[] = [];
+  const host = forms.filter((f) => f.fileId !== -1);
+  if (!host.length && !pitch && !forms.length) return { items, pitch, toSign: null as FormEntry | null, needsVideo: false, notes: [] as string[] };
+  const answered = qs.filter((q) => q.answer.trim()).length;
+  const answers: Item = { name: `${pitch ? "Application answers" : "Project narrative"} (${qs.length} ${qs.length === 1 ? "question" : "questions"})`, pill: answered === qs.length && qs.length ? "Written" : `${answered} of ${qs.length}`, tone: answered === qs.length && qs.length ? "green" : "amber" };
+  if (pitch) items.push(answers);
+  for (const f of host) {
+    const [pill, tone] = FORM_PILL[f.status] ?? ["Filled", "green"];
+    items.push({ name: pitch ? `${f.name} (from the host)` : f.name, pill, tone });
+  }
+  if (!pitch) items.push(answers);
+  if (pitch) {
+    if (extras.deck?.length) items.push({ name: `Pitch deck, ${extras.deck.length} slides`, pill: "Ready", tone: "green" });
+    if (extras.videoScript) items.push({ name: `Pitch video script, ${Math.max(1, Math.round(extras.videoScript.split(/\s+/).length / 145))} ${Math.round(extras.videoScript.split(/\s+/).length / 145) > 1 ? "minutes" : "minute"}`, pill: "Written", tone: "green" });
+    items.push({ name: "Pitch video", pill: extras.videoUrl ? "Added" : "Needs you", tone: extras.videoUrl ? "green" : "amber" });
+    if (extras.financials) items.push({ name: "Financial summary", pill: "Written", tone: "green" });
+  }
+  if (forms.some((f) => f.fileId === -1)) items.push({ name: "Capability statement", pill: "Attached", tone: "green" });
+  const toSign = host.find((f) => f.status === "needs_signature") ?? null;
+  const notes = host.filter((f) => f.status === "word_copy" || f.status === "failed").map((f) => `${f.name}: ${f.note}`);
+  return { items, pitch, toSign, needsVideo: pitch && !extras.videoUrl, notes };
+}
+
+function MaterialsExpand({ a, m, base, marking, setMarking, deciding, setDeciding }: { a: AppRow; m: ReturnType<typeof materialsOf>; base: string; marking: boolean; setMarking: (v: boolean) => void; deciding: boolean; setDeciding: (v: boolean) => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const dl = trpc.applications.download.useMutation({ onSuccess: openDownload });
+  const [confirmation, setConfirmation] = React.useState("");
+  const mark = trpc.applications.markSubmitted.useMutation({ onSuccess: async () => { setMarking(false); await utils.applications.list.invalidate(); } });
+  const fileRef = React.useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState<string | null>(null);
+  const upload = async (f: File) => {
+    setErr(null);
+    setBusy(true);
+    try {
+      if (m.toSign) await uploadFile("hostform", f, { organizationId: currentOrgId, applicationId: a.id, fileId: m.toSign.fileId });
+      else await uploadFile("video", f, { organizationId: currentOrgId, applicationId: a.id });
+      await utils.applications.list.invalidate();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pitchDay = m.pitch && a.opp?.eventDate ? ` Pitch day is ${a.opp.eventDate}.` : "";
+  const hint = m.toSign ? `Sign ${m.toSign.name}, add it here${m.needsVideo ? ", add your pitch video" : ""}, and the package is complete.` : m.needsVideo ? `Record yourself reading the script on your phone and add it here.${pitchDay}` : a.status === "submitted" ? `Submitted ${fmtDate(a.submittedAt)}${a.confirmation ? `, confirmation ${a.confirmation}` : ""}.` : a.blockers.length ? `Before Submit: ${a.blockers.join(". ")}.` : "";
+
+  return (
+    <div className="ld-expand ld-mat">
+      <div className="ld-mat-main">
+        <span className="ld-lbl">{m.pitch ? "Application and pitch materials" : "Forms from the host"}</span>
+        <div className="ld-mat-list">
+          {m.items.map((it) => (
+            <React.Fragment key={it.name}>
+              <span className="ld-clip">{it.name}</span>
+              <span className={`ld-pill ${it.tone === "green" ? "green" : it.tone === "amber" ? "amber" : "red"}`}>{it.pill}</span>
+            </React.Fragment>
+          ))}
+        </div>
+        {hint && <span className="ld-small ld-muted">{hint}</span>}
+        {m.notes.map((n) => <span key={n} className="ld-small ld-muted">{n}</span>)}
+        {marking && (
+          <div className="ld-card editing" style={{ padding: "12px 14px", display: "grid", gridTemplateColumns: "minmax(0,320px) auto auto", gap: 10, alignItems: "end", justifyContent: "start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label className="ld-lbl" htmlFor={`conf-${a.id}`}>Confirmation number (optional)</label>
+              <input id={`conf-${a.id}`} className="ld-in" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} />
+            </div>
+            <button type="button" className="ld-btn p sm" disabled={mark.isPending} onClick={() => mark.mutate({ organizationId: currentOrgId, id: a.id, confirmation })}>Save</button>
+            <button type="button" className="ld-btn sm" onClick={() => setMarking(false)}>Cancel</button>
+          </div>
+        )}
+        {deciding && <DecisionEditor a={a} onDone={() => setDeciding(false)} />}
+        <ErrorLine error={dl.error || mark.error || (err ? new Error(err) : null)} />
+      </div>
+      <div className="ld-mat-btns">
+        <button type="button" className="ld-btn p" disabled={dl.isPending} onClick={() => dl.mutate({ organizationId: currentOrgId, id: a.id, what: "zip" })}>{dl.isPending ? "Zipping..." : "Download all"}</button>
+        <Link href={`${base}/app/${a.id}`} className="ld-btn">Open</Link>
+        {(m.toSign || m.needsVideo) && (
+          <>
+            <input ref={fileRef} type="file" className="ld-sr" accept={m.toSign ? ".pdf,.docx,.xlsx,.jpg,.jpeg,.png" : "video/*"} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void upload(f); }} />
+            <button type="button" className="ld-btn" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? "Uploading..." : m.toSign ? "Add signed" : "Add video"}</button>
+          </>
+        )}
+        {a.status === "approved" && !marking && <button type="button" className="ld-btn" onClick={() => setMarking(true)}>Mark sent</button>}
+        {a.status === "submitted" && !deciding && <button type="button" className="ld-btn" onClick={() => setDeciding(true)}>Record result</button>}
       </div>
     </div>
   );
