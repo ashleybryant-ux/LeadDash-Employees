@@ -78,7 +78,7 @@ const ACTIONS: Record<string, string[]> = {
   outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   leads: ["none", "report", "ehr_read", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   projects: ["none", "report", "check_schedule", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "send_invite", "share_meeting", "switch_link", "default_link", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  coo: ["none", "report", "check_schedule", "write_agenda", "schedule_meeting", "send_invite", "share_meeting", "switch_link", "default_link", "meeting_notes", "set_deadlines", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "check_status", "set_goal", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  coo: ["none", "report", "check_schedule", "write_agenda", "schedule_meeting", "send_invite", "share_meeting", "switch_link", "default_link", "meeting_notes", "set_deadlines", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "check_status", "set_goal", "build_scorecard", "set_measure_owner", "add_measure", "change_measure", "remove_measure", "record_number", "add_goal", "draft_goals", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   ads: ["none", "report", "ads_campaign", "ads_note", "ads_rewrite", "ads_approve", "ads_skip", "ads_platform", "ads_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   billing: ["none", "report", "ehr_read", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -165,7 +165,15 @@ const ACTION_HELP: Record<string, string> = {
   sitting_in: "sitting_in: the person asks whether Avery (the notetaker) is joining a meeting, or which meetings Avery is sitting in on (\"are you joining my 11am?\", \"is Avery in the board call?\", \"what are you sitting in on today?\"). Put the meeting name or its start time (like 11am) in `target` ('' for all of them). Never use browse for this; the calendars are read through Integrations.",
   join_or_skip: "join_or_skip: the person wants Avery (the notetaker) to skip, or to sit in on, an upcoming meeting on their calendar. Put the meeting name or its start time (like 4:00 PM) in `target`, and \"join\" or \"skip\" in `to`.",
   send_notes: "send_notes: email the notes from a meeting Avery sat in on. Put the meeting name in `target` ('' for the most recent).",
-  set_goal: "set_goal: set a weekly goal on the scorecard. Put one of practices_contacted, demos_booked, reply_minutes, posts_published, articles_published, grant_apps_sent, tasks_on_time, approvals_waiting in `target` and the goal number in `count`.",
+  set_goal: "set_goal: set the weekly goal for a measure on the Goals page scorecard (\"set the weekly goal for consults to 6\"). Put words from the measure's name in `target` and the goal number in `count`.",
+  build_scorecard: "build_scorecard: build or fill out the weekly scorecard on the Goals page from the active goals (\"build my scorecard from my goals\"): 2 to 4 measures that move each goal, counted by the app where it can. It asks who gives each number the app can't count.",
+  set_measure_owner: "set_measure_owner: the person answers who gives you a scorecard number each week (\"Priya\", \"Me\", \"Skip that one\"), or names a new owner for a measure. Put words from the measure's name in `target` (the one you just asked about) and the person in `to` (\"me\", a first name, an employee, or \"skip\").",
+  add_measure: "add_measure: add a measure to the Goals page scorecard. Put its name in `title`, what counts it in `focus` (a counted source from your facts, or \"manual\" when someone types it in each week), the weekly goal in `count` (0 for none), words from the goal it moves in `goal` ('' for none), and who owns it in `to` ('' to ask).",
+  change_measure: "change_measure: change a measure on the Goals page scorecard. Put words from its name in `target`, a new name in `title` (''), a new source in `focus` (''), a new weekly goal in `count` (0 to keep it), words from the goal it moves in `goal` (''), and a new owner in `to` ('').",
+  remove_measure: "remove_measure: take a measure off the Goals page scorecard. Put words from its name in `target`.",
+  record_number: "record_number: the person gives a week's number for a typed-in measure (\"intakes were 3 this week\"). Put words from the measure's name in `target`, the number as written in `notes` (like 3 or 1.5), and a day in that week as YYYY-MM-DD in `date` ('' for this week).",
+  add_goal: "add_goal: the person sets a goal on the Goals page in chat (\"40 new clients by Dec 31\", \"$300,000 in revenue this year\"). Put the goal as a short title with its number in `title`, the target number in `count`, \"currency\" or \"number\" in `focus`, what is counted (like \"New clients\") in `notes`, the due date as YYYY-MM-DD in `date` ('' for the end of the year), and the owner in `to` ('' for the person talking).",
+  draft_goals: "draft_goals: the person wants you to draft their year's goals from their numbers (\"draft my goals\"). Put the year in `count` (0 for this year). They stay drafts on the Goals page until the owner approves them.",
   add_guideline: "add_guideline: the person states a standing rule or preference for how you work (\"from now on...\", \"always...\", \"never...\", \"don't...\"). Put the rule as one plain sentence in `notes`, and the Guidelines heading it belongs under in `target` (one of the headings in your Guidelines).",
   start_onboarding: "start_onboarding: the person wants to start, continue or redo your onboarding interview.",
   ask_teammate: "ask_teammate: the person asks you to check with another employee (\"ask Theo what he published\", \"how many demos does Malik have\"). Put that employee's name or job in `teammate` and the question in `message`.",
@@ -501,7 +509,9 @@ TALK_BY_KIND.inbox = `- You are the owner's executive assistant. You protect her
 - You don't do another employee's job: work for an employee goes to Nora (to_nora), sales follow-ups to Jada, speaking and press to Taylor.`;
 TALK_BY_KIND.coo = `- The owner's calendars are connected on Integrations: check_schedule reads them (today, tomorrow, a day, a week). Never open Google Calendar, Gmail or Zoom in a browser, and never send anyone to a sign-in page.
 - Avery sits in on meetings with a Zoom or Google Meet link and sends you the notes. "Are you joining my 11am?" or "is Avery in the board call?" is sitting_in; "skip it" or "join it" is join_or_skip. Answer from the facts, never with "which meeting?" when they gave a time.
-- Meetings you set up are in your facts with their status and link. "Send the invite" is send_invite (never approve). "Send Priya the link" is share_meeting. "Make it a Zoom" is switch_link. When they ask for a Zoom link and the meeting has a Google Meet link, give the Meet link and offer switch_link; never say the meeting isn't booked when your facts list it.`;
+- Meetings you set up are in your facts with their status and link. "Send the invite" is send_invite (never approve). "Send Priya the link" is share_meeting. "Make it a Zoom" is switch_link. When they ask for a Zoom link and the meeting has a Google Meet link, give the Meet link and offer switch_link; never say the meeting isn't booked when your facts list it.
+- The goals and the one weekly scorecard live on the Goals page. You build and change them in chat: build_scorecard, add_measure, change_measure, remove_measure, set_goal (a measure's weekly goal), record_number, set_measure_owner, add_goal, draft_goals, and goal_update for an update on a goal. Never say the scorecard is on your Meetings tab.
+- Work out what you can from the goals, the scorecard and the Brain. Ask only what you can't work out, one question at a time, with 2 to 4 tap-to-answer choices.`;
 TALK_BY_KIND.outreach = `- You run two kinds of outreach: warm sequences for prospects Riley finds (from Gmail), and cold email to the owner's lead list through Instantly. Cold email work is cold_campaign, cold_research, cold_review and cold_replies.
 - Cold email rules: business facts only, never personal details. Never claim a price, offer, migration, result or statistic that isn't in the playbook, the Brain or the website pricing. Opt-outs are honored at once. Every email carries the mailing address and an opt-out line.
 - Any employee can run the Pre-call report (precall_report) before a meeting; you run it on your own when a lead books.`;
@@ -1487,9 +1497,31 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       await notetaker.sendRecap(org, r.id, { name: owner?.name || owner?.email || "Owner", email: owner?.email ?? "" });
       return { text: `I emailed the notes from ${r.title}.`, cards: [], queries: [] };
     }
-    case "set_goal": {
-      const row = await coo.setGoal(org, d.target, Number.isFinite(Number(d.count)) ? Number(d.count) : null);
-      return { text: `The weekly goal for ${row.label.toLowerCase()} is now ${d.count}${row.unit}.`, cards: [], queries: [] };
+    case "set_goal":
+    case "build_scorecard":
+    case "set_measure_owner":
+    case "add_measure":
+    case "change_measure":
+    case "remove_measure":
+    case "record_number":
+    case "add_goal":
+    case "draft_goals": {
+      const sc = await import("../work/simoneScorecard");
+      const n = Number(d.count) || 0;
+      const r =
+        d.action === "set_goal" ? await sc.setWeeklyGoal(org, d.target, n)
+        : d.action === "build_scorecard" ? await sc.buildScorecard(org, ctx.userId)
+        : d.action === "set_measure_owner" ? await sc.setMeasureOwner(org, d.target, d.to, ctx.userId)
+        : d.action === "add_measure" ? await sc.addMeasure(org, { name: d.title || d.target, source: d.focus, weeklyGoal: n > 0 ? n : null, goal: d.goal, owner: d.to }, ctx.userId)
+        : d.action === "change_measure" ? await sc.changeMeasure(org, { name: d.target, newName: d.title, source: d.focus, weeklyGoal: n > 0 ? n : null, goal: d.goal, owner: d.to }, ctx.userId)
+        : d.action === "remove_measure" ? await sc.removeMeasure(org, d.target)
+        : d.action === "record_number" ? await (async () => {
+            const v = sc.numberIn(d.notes, n || null);
+            return v === null ? { text: "What's the number for this week?", choices: [] } : sc.recordNumber(org, d.target, v, who, d.date);
+          })()
+        : d.action === "add_goal" ? await sc.addGoal(org, { title: d.title, target: n > 0 ? n : null, unit: d.focus, targetName: d.notes, dueDate: d.date, owner: d.to }, who, ctx.userId)
+        : await sc.draftGoals(org, n > 2000 ? n : Number(new Date().toISOString().slice(0, 4)));
+      return { text: r.text, cards: [], queries: [], choices: r.choices };
     }
     case "check_status": {
       if (emp.kind === "projects") return { text: await projects.projectsStatus(org), cards: [], queries: [] };

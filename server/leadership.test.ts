@@ -215,13 +215,11 @@ describe("Simone (COO)", () => {
     expect(calls.some((x) => x.url.includes("gmail.googleapis.com"))).toBe(true);
   });
 
-  it("keeps a scorecard with goals set from chat", async () => {
+  it("has no scorecard of her own: her status reads the Goals page scorecard", async () => {
     const { orgId, owner } = await makeWorkspace("coo-score");
-    await coo.setGoal(orgId, "demos_booked", 4);
-    const card = await caller(owner).coo.scorecard({ organizationId: orgId, weeksBack: 0 });
-    const demos = card.rows.find((r) => r.key === "demos_booked")!;
-    expect(demos.goal).toBe(4);
-    expect(demos.thisWeek).toBe(0);
-    expect(demos.met).toBe(false);
+    expect("scorecard" in coo).toBe(false);
+    expect("setGoal" in coo).toBe(false);
+    await caller(owner).goals.saveScorecard({ organizationId: orgId, rows: [{ name: "Calls booked", ownerType: null, ownerId: null, weeklyGoal: 4, unit: "number", direction: "up", kind: "leading", source: "demos_booked", goalId: null }] });
+    expect(await coo.cooStatus(orgId)).toMatch(/Goals page scorecard, this week: Calls booked 0 against 4/);
   });
 });
