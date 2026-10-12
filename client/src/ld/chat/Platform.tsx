@@ -48,7 +48,7 @@ export function WebTaskCard({ id, empName }: { id: number; empName: string }) {
           {pill}
         </div>
         {t.screenshotUrl && (
-          <div style={{ border: "1px solid #cfd9d4", borderRadius: 10, overflow: "hidden", background: "var(--ld-surface)" }}>
+          <div style={{ border: "1px solid var(--ld-line3)", borderRadius: 10, overflow: "hidden", background: "var(--ld-surface)" }}>
             <div style={{ display: "flex", alignItems: "center", padding: "8px 10px", background: "var(--ld-line2)", borderBottom: "1px solid #dbe4df" }}>
               <span style={{ flex: 1, background: "var(--ld-surface)", border: "1px solid #dbe4df", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "var(--ld-text2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{shortUrl(t.lastUrl) || t.title}</span>
             </div>

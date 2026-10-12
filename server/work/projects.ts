@@ -677,6 +677,8 @@ async function tellWatchers(orgId: number, t: PjTask, by: Actor, body: string, s
 // ==========================================
 
 async function closed(orgId: number, t: PjTask, by: Actor) {
+  // Its time on the calendar is done too.
+  (await import("./taskTimes")).markDone(orgId, t.id);
   // A task that repeats when done makes its next one.
   const r = t.repeat ? parse<Repeat | null>(t.repeat, null) : null;
   if (r && r.mode === "done" && !r.spawned) await spawnNext(orgId, t, by);

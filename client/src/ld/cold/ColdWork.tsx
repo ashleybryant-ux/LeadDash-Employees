@@ -88,7 +88,7 @@ function KV({ rows }: { rows: [string, React.ReactNode][] }) {
 }
 function Box({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: "var(--ld-surface)", border: "1px solid #e3e9e6", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+    <div style={{ background: "var(--ld-surface)", border: "1px solid var(--ld-line)", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
       {label && <span className="ld-lbl">{label}</span>}
       {children}
     </div>
@@ -105,9 +105,9 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
 }
 function Seg<T extends string | number>({ value, options, onChange, label }: { value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; label: string }) {
   return (
-    <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", alignSelf: "flex-start", flexWrap: "wrap" }}>
+    <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid var(--ld-line3)", borderRadius: 8, overflow: "hidden", alignSelf: "flex-start", flexWrap: "wrap" }}>
       {options.map((o) => (
-        <button key={String(o.key)} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid #e3e9e6", background: value === o.key ? "var(--ld-accent-bg)" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
+        <button key={String(o.key)} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid var(--ld-line)", background: value === o.key ? "var(--ld-accent-bg)" : "var(--ld-surface)", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
           {o.label}
         </button>
       ))}
@@ -130,7 +130,7 @@ function Bar({ value, max, warn }: { value: number; max: number; warn?: boolean 
 }
 function Step({ title, when, children }: { title: string; when?: string; children: React.ReactNode }) {
   return (
-    <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ border: "1px solid var(--ld-line)", borderRadius: 10, background: "var(--ld-surface)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
         <b style={{ fontSize: 14 }}>{title}</b>
         {when && <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{when}</span>}
@@ -547,7 +547,7 @@ function LeadList() {
       >
         <div className="ld-cold-grid" style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: 12 }}>
           {tiers.map((t) => (
-            <button key={t.key} type="button" onClick={() => { setTier(tier === t.key ? "" : t.key); setPage(0); }} aria-pressed={tier === t.key} style={{ textAlign: "left", font: "inherit", background: tier === t.key ? "var(--ld-accent-bg)" : "#fff", border: `1px solid ${tier === t.key ? "var(--ld-accent)" : "var(--ld-line)"}`, borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer", color: "var(--ld-ink)" }}>
+            <button key={t.key} type="button" onClick={() => { setTier(tier === t.key ? "" : t.key); setPage(0); }} aria-pressed={tier === t.key} style={{ textAlign: "left", font: "inherit", background: tier === t.key ? "var(--ld-accent-bg)" : "var(--ld-surface)", border: `1px solid ${tier === t.key ? "var(--ld-accent)" : "var(--ld-line)"}`, borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer", color: "var(--ld-ink)" }}>
               <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{t.label}</span>
               <b style={{ fontSize: 20 }}>{n(t.value)}</b>
               <span className="ld-small" style={{ color: "var(--ld-muted)" }}>{t.sub}</span>
@@ -795,7 +795,7 @@ function CampaignRow({ c, open, onToggle, cols, segments }: { c: Campaign; open:
                   {segments.map((sg) => {
                     const on = edit.segments.includes(sg.key);
                     return (
-                      <button key={sg.key} type="button" aria-pressed={on} className="ld-btn" style={{ width: "auto", height: 30, fontSize: 12, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : undefined }} onClick={() => setEdit({ ...edit, segments: on ? edit.segments.filter((x) => x !== sg.key) : [...edit.segments, sg.key].slice(0, 6) })}>
+                      <button key={sg.key} type="button" aria-pressed={on} className="ld-btn" style={{ width: "auto", height: 30, fontSize: 12, background: on ? "var(--ld-accent-bg)" : "var(--ld-surface)", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : undefined }} onClick={() => setEdit({ ...edit, segments: on ? edit.segments.filter((x) => x !== sg.key) : [...edit.segments, sg.key].slice(0, 6) })}>
                         {sg.label}
                       </button>
                     );

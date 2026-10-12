@@ -88,11 +88,11 @@ export function Tree({ orgId, tree, where, onPick, onPickView, refresh, onNewTas
   const favQ = trpc.pj.favorites.useQuery({ organizationId: orgId }, { enabled: orgId > 0 && !tree?.guest });
   const [more, setMore] = React.useState(false);
   const shownNav = (navQ.data?.shown ?? ["home", "mine", "everything", "docs", "portfolios", "dash"]) as NavKey[];
-  const moreNav = (navQ.data?.more ?? NAV.map((n) => n.key).filter((k) => !shownNav.includes(k))) as NavKey[];
+  const moreNav = (navQ.data?.more ?? NAV.map((n) => n.key).filter((k) => !shownNav.includes(k) && k !== "all")) as NavKey[];
   const navWhere = (k: NavKey): Where | null =>
-    k === "home" ? { scope: "home" } : k === "mine" ? { scope: "mine" } : k === "everything" ? { scope: "everything" } : k === "docs" ? { scope: "docs" } : k === "portfolios" ? { scope: "portfolios" } : k === "dash" ? { scope: "dash" } : k === "time" ? { scope: "time" } : k === "templates" ? { scope: "templates" } : k === "boards" ? { scope: "docs", tab: "boards" } : k === "forms" ? { scope: "docs", tab: "forms" } : k === "import" ? { scope: "import" } : null;
+    k === "home" ? { scope: "home" } : k === "mine" ? { scope: "mine" } : k === "all" ? { scope: "all" } : k === "everything" ? { scope: "everything" } : k === "docs" ? { scope: "docs" } : k === "portfolios" ? { scope: "portfolios" } : k === "dash" ? { scope: "dash" } : k === "time" ? { scope: "time" } : k === "templates" ? { scope: "templates" } : k === "boards" ? { scope: "docs", tab: "boards" } : k === "forms" ? { scope: "docs", tab: "forms" } : k === "import" ? { scope: "import" } : null;
   const navOn = (k: NavKey) =>
-    k === "home" ? where.scope === "home" : k === "mine" ? where.scope === "mine" : k === "everything" ? where.scope === "everything" : k === "docs" ? where.scope === "docs" && !where.tab : k === "portfolios" ? where.scope === "portfolios" || where.scope === "portfolio" : k === "dash" ? where.scope === "dash" : k === "time" ? where.scope === "time" : k === "templates" ? where.scope === "templates" : k === "boards" ? where.scope === "docs" && where.tab === "boards" : k === "forms" ? where.scope === "docs" && where.tab === "forms" : k === "import" ? where.scope === "import" : false;
+    k === "home" ? where.scope === "home" : k === "mine" ? where.scope === "mine" : k === "all" ? where.scope === "all" : k === "everything" ? where.scope === "everything" : k === "docs" ? where.scope === "docs" && !where.tab : k === "portfolios" ? where.scope === "portfolios" || where.scope === "portfolio" : k === "dash" ? where.scope === "dash" : k === "time" ? where.scope === "time" : k === "templates" ? where.scope === "templates" : k === "boards" ? where.scope === "docs" && where.tab === "boards" : k === "forms" ? where.scope === "docs" && where.tab === "forms" : k === "import" ? where.scope === "import" : false;
   const goNav = (k: NavKey) => {
     setMore(false);
     if (k === "goals") { go("/goals"); return; }

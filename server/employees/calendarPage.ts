@@ -20,11 +20,12 @@ const MIN = 60_000;
 export const TASK_COLOR = "#b4610f";
 export const TEAM_COLOR = "#5b6b64";
 export const FOCUS_COLOR = "#7c8a84";
+export const TASKTIME_COLOR = "#3c5bd6";
 
 export type CalItem = {
   key: string;
-  /** event: a calendar event or a meeting Simone set. task: a due date. team: what an employee has on. focus: focus time from Avery's rules. */
-  kind: "event" | "task" | "team" | "focus";
+  /** event: a calendar event or a meeting Simone set. task: a due date. team: what an employee has on. focus: focus time from Avery's rules. tasktime: a time the person set aside for one of their tasks (Find time). */
+  kind: "event" | "task" | "team" | "focus" | "tasktime";
   /** Which checkbox shows it: "cal:<id>", "tasks", "team" or "focus". */
   source: string;
   title: string;
@@ -46,6 +47,8 @@ export type CalItem = {
   notes: { id: number; status: string; choice: string; locked: boolean } | null;
   precallId: number | null;
   late: boolean;
+  /** A task time: the task, whether it is done, and the status that checks it off. */
+  task?: { id: number; closed: boolean; doneStatus: string | null };
 };
 
 export type Source = { key: string; name: string; color: string };
@@ -289,17 +292,35 @@ async function focusIn(orgId: number, fromYmd: string, days: number, tz: string)
   return out;
 }
 
+/** The signed-in person's task times (Find time), each with its checkbox. */
+async function taskTimesIn(orgId: number, userId: number | null, from: Date, to: Date) {
+  if (!userId) return [];
+  const { timesBetween } = await import("../work/taskTimes");
+  const { statusesOf } = await import("../work/projects");
+  const out: CalItem[] = [];
+  for (const tt of timesBetween(orgId, userId, from, to)) {
+    const t = db.work.tasks.get(orgId, tt.taskId);
+    if (!t) continue;
+    const list = db.work.lists.get(orgId, t.listId);
+    const st = list ? statusesOf(list) : [];
+    const done = st.find((x) => x.type === "done") ?? st.find((x) => x.type === "closed") ?? null;
+    out.push(base({ key: `tt:${tt.id}`, kind: "tasktime", source: "mytasks", title: t.name, start: new Date(tt.start), end: new Date(tt.end), allDay: false, calendar: "My task times", color: TASKTIME_COLOR, link: `/projects?task=${t.id}`, task: { id: t.id, closed: !!t.closedAt || tt.status === "done", doneStatus: done?.name ?? null } }));
+  }
+  return out;
+}
+
 /** Everything for the days shown, from a YYYY-MM-DD for 1 to 42 days. */
-export async function calendarRange(orgId: number, fromYmd: string, days: number, now = new Date()) {
+export async function calendarRange(orgId: number, fromYmd: string, days: number, now = new Date(), userId: number | null = null) {
   const tz = await tzOf(orgId);
   const n = Math.max(1, Math.min(42, Math.round(days)));
   const from = midnight(fromYmd, 0, tz);
   const to = midnight(fromYmd, n, tz);
-  const [ev, due, team, focus, notetaker] = await Promise.all([eventsIn(orgId, from, to), dueIn(orgId, from, to, now), teamIn(orgId, from, to), focusIn(orgId, fromYmd, n, tz), db.listNotetaker(orgId)]);
+  const [ev, due, team, focus, notetaker, mine] = await Promise.all([eventsIn(orgId, from, to), dueIn(orgId, from, to, now), teamIn(orgId, from, to), focusIn(orgId, fromYmd, n, tz), db.listNotetaker(orgId), taskTimesIn(orgId, userId, from, to)]);
   decorate(orgId, ev.items, ev.extras, notetaker);
-  const items = [...ev.items, ...focus, ...due, ...team].sort((a, b) => a.start.getTime() - b.start.getTime() || Number(b.allDay) - Number(a.allDay));
+  const items = [...ev.items, ...focus, ...mine, ...due, ...team].sort((a, b) => a.start.getTime() - b.start.getTime() || Number(b.allDay) - Number(a.allDay));
   const sources: Source[] = [...ev.sources];
   if (focus.length) sources.push({ key: "focus", name: "Focus time", color: FOCUS_COLOR });
+  if (mine.length) sources.push({ key: "mytasks", name: "My task times", color: TASKTIME_COLOR });
   sources.push({ key: "tasks", name: "Tasks and deadlines", color: TASK_COLOR }, { key: "team", name: "Team work", color: TEAM_COLOR });
   return { tz, today: ymdOf(now, tz), from, to, items, sources, failed: ev.failed, connected: ev.connected };
 }

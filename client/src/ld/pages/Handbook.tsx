@@ -61,7 +61,7 @@ export default function Handbook() {
               {isOpen && (
                 <div className="ld-expand" style={{ display: "flex", flexDirection: "column", gap: 14, paddingTop: 14 }}>
                   <section className="ld-card">
-                    <div style={{ padding: "12px 16px", borderBottom: "1px solid #e3e9e6", display: "flex", flexDirection: "column", gap: 2 }}>
+                    <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--ld-line)", display: "flex", flexDirection: "column", gap: 2 }}>
                       <span className="ld-strong">LeadDash base</span>
                       <span className="ld-small ld-muted">Updates reach you on their own.</span>
                     </div>
@@ -98,7 +98,7 @@ function Additions({ orgId, part, canEdit }: { orgId: number; part: Row; canEdit
   };
   return (
     <section className={`ld-card ${editing ? "editing" : ""}`} style={editing ? { outline: "2px solid #1b6b4a" } : undefined}>
-      <div className="ld-between" style={{ padding: "12px 16px", borderBottom: "1px solid #e3e9e6" }}>
+      <div className="ld-between" style={{ padding: "12px 16px", borderBottom: "1px solid var(--ld-line)" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <span className="ld-strong">Your additions</span>
           <span className="ld-small ld-muted">Where they disagree with the base, yours win.</span>

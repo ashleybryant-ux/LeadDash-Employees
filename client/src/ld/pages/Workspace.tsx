@@ -208,7 +208,7 @@ export default function Workspace() {
             height: 64,
             borderRadius: 14,
             background: "var(--ld-surface)",
-            border: "1px solid #e3e9e6",
+            border: "1px solid var(--ld-line)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -343,7 +343,7 @@ export default function Workspace() {
               <span className="ld-row" style={{ flexWrap: "wrap", gap: 8 }}>
                 {swatches.map((c, i) => (
                   <span key={`${c}-${i}`} className="ld-row" style={{ gap: 8, marginLeft: i ? 10 : 0 }}>
-                    <span style={{ width: 22, height: 22, borderRadius: 6, background: c, border: "1px solid #e3e9e6" }} />
+                    <span style={{ width: 22, height: 22, borderRadius: 6, background: c, border: "1px solid var(--ld-line)" }} />
                     {c}
                   </span>
                 ))}

@@ -25,7 +25,7 @@ export default function More() {
   return (
     <Page rail="more">
       <h1 className="ld-h1">More</h1>
-      <Link href="/account" className="ld-card" style={{ ...row, borderBottom: 0, borderRadius: 12, border: "1px solid #e3e9e6" }}>
+      <Link href="/account" className="ld-card" style={{ ...row, borderBottom: 0, borderRadius: 12, border: "1px solid var(--ld-line)" }}>
         <PersonAvatar name={user?.name || user?.email || "?"} src={user?.avatarUrl} size={40} />
         <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <span>{user?.name || "My account"}</span>

@@ -3593,3 +3593,29 @@ export const complianceReminders = sqliteTable(
   (t) => [index("compliance_reminders_org_idx").on(t.organizationId, t.status)]
 );
 export type ComplianceReminder = typeof complianceReminders.$inferSelect;
+
+/**
+ * A time on someone's calendar to do a task (2026-10-12). Found from their
+ * work hours, their other task times and, for the workspace owner, the
+ * connected calendars. A time that ends with the task still open moves to
+ * the next open time (moves counts how often; movedFrom is where it was).
+ */
+export const pjTaskTimes = sqliteTable(
+  "pj_task_times",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    taskId: integer("taskId").notNull(),
+    userId: integer("userId").notNull(),
+    start: integer("start", { mode: "timestamp" }).notNull(),
+    end: integer("end", { mode: "timestamp" }).notNull(),
+    minutes: integer("minutes").notNull().default(60),
+    status: text("status", { enum: ["planned", "done", "cancelled"] }).notNull().default("planned"),
+    moves: integer("moves").notNull().default(0),
+    movedFrom: integer("movedFrom", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("pj_task_times_user_idx").on(t.organizationId, t.userId, t.status), index("pj_task_times_task_idx").on(t.organizationId, t.taskId)]
+);
+export type PjTaskTime = typeof pjTaskTimes.$inferSelect;

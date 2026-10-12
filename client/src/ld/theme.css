@@ -6,7 +6,7 @@
 :root {
   --ld-surface: #ffffff; --ld-page: #f8fafb; --ld-ink: #000000; --ld-text2: #16201c; --ld-muted: #34413b; --ld-soft: #66746e; --ld-soft2: #5f6d67; --ld-soft3: #5c6573;
   --ld-line: #e3e9e6; --ld-line2: #eef2f0; --ld-line3: #dbe4df; --ld-line4: #cfd9d4; --ld-hover: #f4f8f6; --ld-hover2: #f8fbf9; --ld-faint: #fafbfb; --ld-faint2: #f0f3f2;
-  --ld-accent: #1b6b4a; --ld-accent-dark: #0f5535; --ld-accent-bg: #e3f3ea; --ld-accent-line: #b9d8c8; --ld-accent-text: #0f7a45;
+  --ld-accent: #1b6b4a; --ld-accent-hover: #155c3e; --ld-accent-dark: #0f5535; --ld-accent-bg: #e3f3ea; --ld-accent-line: #b9d8c8; --ld-accent-text: #0f7a45;
   --ld-warn-bg: #fff1cc; --ld-warn: #7a4f00; --ld-bad-bg: #ffe5e5; --ld-bad: #c40000; --ld-red: #d90020; --ld-info-bg: #e8eefc; --ld-info: #1736a8;
   --ld-shadow: var(--ld-shadow);
   color-scheme: light;
@@ -14,7 +14,7 @@
 html[data-theme="dark"] {
   --ld-surface: #1b211e; --ld-page: #121715; --ld-ink: #ffffff; --ld-text2: #f4f7f5; --ld-muted: #d6dfdb; --ld-soft: #aebbb5; --ld-soft2: #b8c4bf; --ld-soft3: #b3bcc8;
   --ld-line: #34403a; --ld-line2: #2a332f; --ld-line3: #3d4943; --ld-line4: #4a5850; --ld-hover: #242d29; --ld-hover2: #212925; --ld-faint: #1e2522; --ld-faint2: #262e2a;
-  --ld-accent: #22a865; --ld-accent-dark: #4dff9a; --ld-accent-bg: #123d26; --ld-accent-line: #2a7a4f; --ld-accent-text: #4dff9a;
+  --ld-accent: #22a865; --ld-accent-hover: #1c9157; --ld-accent-dark: #4dff9a; --ld-accent-bg: #123d26; --ld-accent-line: #2a7a4f; --ld-accent-text: #4dff9a;
   --ld-warn-bg: #3d2f08; --ld-warn: #ffd23f; --ld-bad-bg: #4a1214; --ld-bad: #ff5a5a; --ld-red: #ff4040; --ld-info-bg: #1b2a52; --ld-info: #a8c0ff;
   --ld-shadow: rgba(0, 0, 0, 0.5); --ld-inverse: #2d3a35;
   color-scheme: dark;
@@ -54,7 +54,7 @@ html[data-theme="dark"] img.ld-logo-dark { filter: brightness(0.9); }
 .ld a.ld-btn { color: var(--ld-ink); }
 .ld-btn:hover { background: var(--ld-hover); }
 .ld-btn.p, .ld a.ld-btn.p { background: var(--ld-accent); border-color: var(--ld-accent); color: #fff; }
-.ld-btn.p:hover { background: var(--ld-accent-dark); }
+.ld-btn.p:hover { background: var(--ld-accent-hover); border-color: var(--ld-accent-hover); }
 .ld-btn.sm { width: 96px; height: 34px; }
 .ld-btn.danger { color: var(--ld-bad); }
 .ld-btn:disabled { opacity: 0.6; cursor: default; }
@@ -387,7 +387,7 @@ html.ld-next .ld-switcher-pop { top: 48px !important; }
 
 /* One-on-one in a chat */
 .ld-talk { height: 34px; padding: 0 14px; border-radius: 9px; border: 0; background: var(--ld-accent); color: #fff; font: inherit; font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
-.ld-talk:hover:not(:disabled) { background: var(--ld-accent-dark); }
+.ld-talk:hover:not(:disabled) { background: var(--ld-accent-hover); }
 .ld-talk:disabled { opacity: .6; cursor: default; }
 .ld-1on1 { background: var(--ld-surface); border: 1px solid var(--ld-accent-line); border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 0 0 3px var(--ld-accent-bg); }
 div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: var(--ld-line); }
@@ -2293,3 +2293,34 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 @media (max-width: 760px) {
   .ld-rule-row .ld-chip { white-space: normal; height: auto; min-height: 32px; padding: 6px 12px; text-align: left; }
 }
+
+/* Projects Home: your tasks with Find time (2026-10-12). Rows: checkbox, task, when and its time, one 128px button. */
+.gp-hrw { grid-template-columns: 16px minmax(0, 1fr) 190px 128px; }
+.gp-hrw .gp-hrd { display: flex; flex-direction: column; gap: 3px; }
+.gp-hrw.done .gp-ell { text-decoration: line-through; color: var(--ld-muted); }
+.gp-hbtn { width: 128px; }
+.gp-slot { display: inline-block; width: fit-content; font-size: 12px; font-weight: 800; color: var(--ld-info); background: var(--ld-info-bg); border-radius: 6px; padding: 2px 8px; }
+.gp-moved { font-size: 12px; font-weight: 700; color: var(--ld-warn); white-space: normal; }
+.gp-ft { display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 16px; padding: 14px 16px 16px 44px; background: var(--ld-hover2); border-bottom: 1px solid var(--ld-faint2); cursor: default; }
+.gp-ft-f { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px 14px; align-items: center; min-width: 0; }
+.gp-ft-c { display: flex; flex-wrap: wrap; gap: 6px; }
+.gp-ft-found { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; background: var(--ld-surface); border: 1px solid var(--ld-line); border-radius: 10px; padding: 10px 12px; min-height: 44px; font-size: 13px; color: var(--ld-text2); }
+.gp-ft-found b { color: var(--ld-ink); font-size: 14px; }
+.gp-ft-b { display: flex; flex-direction: column; gap: 8px; }
+.gp-ft-b .ld-btn { width: 128px; }
+@media (max-width: 760px) {
+  .gp-hrw { grid-template-columns: 16px minmax(0, 1fr); }
+  .gp-hrw .gp-hrd { display: flex; grid-column: 2; }
+  .gp-hrw .gp-hbtn { grid-column: 2; }
+  .gp-ft { grid-template-columns: minmax(0, 1fr); padding-left: 16px; }
+  .gp-ft-f { grid-template-columns: minmax(0, 1fr); }
+  .gp-ft-b { flex-direction: row; flex-wrap: wrap; }
+}
+
+/* Calendar: my task times, with a checkbox that checks the task off. */
+.ld-cal-tt { flex-direction: row; align-items: flex-start; gap: 6px; cursor: default; }
+.ld-cal-tt .gp-ck { margin-top: 1px; }
+.ld-cal-tt-b { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ld-cal-tt-b b, .ld-cal-tt-b span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ld-cal-tt-b span { color: var(--ld-text2); }
+.ld-cal-tt.done .ld-cal-tt-b b { text-decoration: line-through; }

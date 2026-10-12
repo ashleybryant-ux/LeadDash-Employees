@@ -378,6 +378,23 @@ function Chip({ item, sel, onPick }: { item: Item; sel: boolean; onPick: (k: str
   );
 }
 
+/** A time set aside for one of my tasks: its checkbox checks the task off in Projects too. */
+function TaskTimeEv({ item, task, sel, short, tz, onPick, style }: { item: Item; task: NonNullable<Item["task"]>; sel: boolean; short: boolean; tz: string; onPick: (k: string) => void; style: React.CSSProperties }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const done = trpc.pj.update.useMutation({ onSuccess: () => Promise.all([utils.calendar.invalidate(), utils.pj.home.invalidate()]) });
+  const closed = task.closed || done.isSuccess;
+  return (
+    <div className={`ld-cal-ev ld-cal-tt ${sel ? "sel" : ""} ${closed ? "done" : ""}`} style={{ ...style, background: tint(item.color), borderLeftColor: item.color }}>
+      <button type="button" className={`gp-ck ${closed ? "on" : ""}`} aria-label={closed ? `${item.title} is done` : `Mark ${item.title} done`} disabled={closed || !task.doneStatus || done.isPending} onClick={() => task.doneStatus && done.mutate({ organizationId: currentOrgId, id: task.id, patch: { status: task.doneStatus } })}>{closed ? "✓" : ""}</button>
+      <button type="button" className="ld-cal-tt-b" onClick={() => onPick(item.key)}>
+        <b>{item.title}</b>
+        {!short && <span>{rangeText(item.start, item.end, tz)}</span>}
+      </button>
+    </div>
+  );
+}
+
 function TimeGrid({ days, today, tz, items, sel, onPick, onDay: openDay }: { days: string[]; today: string; tz: string; items: Item[]; sel: string | null; onPick: (k: string) => void; onDay: (ymd: string) => void }) {
   const now = useNow(60_000);
   const timed = items.filter((i) => !i.allDay && days.some((d) => onDay(i, d, tz)));
@@ -426,6 +443,8 @@ function TimeGrid({ days, today, tz, items, sel, onPick, onDay: openDay }: { day
             {place(timed.filter((i) => onDay(i, d, tz)), tz, d, first).map((p) => {
               const i = p.item;
               const short = p.height < 40;
+              if (i.kind === "tasktime" && i.task)
+                return <TaskTimeEv key={i.key} item={i} task={i.task} sel={sel === i.key} short={short} tz={tz} onPick={onPick} style={{ top: p.top, height: p.height, left: `calc(${(100 / p.cols) * p.col}% + 3px)`, width: `calc(${100 / p.cols}% - 6px)` }} />;
               return (
                 <button
                   type="button"

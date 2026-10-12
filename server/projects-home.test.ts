@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { caller, makeUser, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
-import { healthOf, nextWeekday, suggestFor } from "./work/pjHome";
+import { attention, healthOf, nextWeekday, suggestFor } from "./work/pjHome";
 import { todayYmd, zoneOf } from "./work/goals";
 
 afterEach(() => vi.restoreAllMocks());
@@ -35,13 +35,15 @@ describe("Projects Home, needs attention, and many tasks at once", () => {
     expect(h.week.map((t) => t.name)).toContain("Reminder emails");
     expect(h.later.map((t) => t.name)).toEqual(["Landing page"]);
     expect(h.undated).toBe(1);
-    // Needs attention: the late task with no owner, and the one with no date.
-    expect(h.attention.map((t) => [t.name, t.why])).toEqual([
+    // Home is the owner's own work: their task with no date needs them; the late task nobody owns is on All tasks, not here.
+    expect(h.attention.map((t) => [t.name, t.why])).toEqual([["Approve the outline", "No date"]]);
+    const all = attention(orgId, { kind: "member", userId: owner.id, role: "owner", name: "Owner pj-home" }, today(), ab);
+    expect(all.tasks.map((t) => [t.name, t.why])).toEqual([
       ["Book the booth", "No owner, Overdue"],
       ["Approve the outline", "No date"],
     ]);
     // Nora suggests the person who holds the most open tasks here, and the next weekday.
-    const booth = h.attention.find((t) => t.id === late.id)!;
+    const booth = all.tasks.find((t) => t.id === late.id)!;
     expect(booth.suggestion?.patch.assignees).toEqual([ab]);
     expect(booth.suggestion?.patch.dueDate).toBe(nextWeekday(today()));
     expect(booth.suggestion?.say).toMatch(/^give it to Owner pj-home, move it to/);
@@ -52,7 +54,8 @@ describe("Projects Home, needs attention, and many tasks at once", () => {
     // The AI team is listed with what each did last.
     expect(h.team.length).toBeGreaterThan(0);
     expect(h.team.every((e) => typeof e.line === "string" && typeof e.active === "boolean")).toBe(true);
-    expect(h.mineOnly).toBe(false);
+    expect(h.mineOnly).toBe(true);
+    expect(h.manager).toBe(true);
 
     // Let Nora fix these: she applies her suggestions and says so on each task.
     const r = await me.pj.fixAttention({ organizationId: orgId, ids: null });

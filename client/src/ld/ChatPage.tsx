@@ -624,7 +624,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
       <div className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
         <span className="ld-lbl">{card.title}</span>
         {card.subtitle && <span className="ld-small ld-muted">{card.subtitle}</span>}
-        <button type="button" className="ld-imgbtn" onClick={() => setViewing(true)} aria-label="View full size"><img src={card.imageUrl} alt="The page shown after Submit" style={{ width: "100%", maxWidth: 640, borderRadius: 8, border: "1px solid #e3e9e6" }} /></button>
+        <button type="button" className="ld-imgbtn" onClick={() => setViewing(true)} aria-label="View full size"><img src={card.imageUrl} alt="The page shown after Submit" style={{ width: "100%", maxWidth: 640, borderRadius: 8, border: "1px solid var(--ld-line)" }} /></button>
         {viewer}
       </div>
     );
@@ -645,7 +645,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
           <span className="ld-lbl">{card.title}</span>
           <a className="ld-btn" href={card.imageUrl} download>Download</a>
         </div>
-        <button type="button" className="ld-imgbtn" onClick={() => setViewing(true)} aria-label="View full size"><img src={card.imageUrl} alt={card.title} style={{ width: "100%", maxWidth: 760, borderRadius: 8, border: "1px solid #e3e9e6" }} /></button>
+        <button type="button" className="ld-imgbtn" onClick={() => setViewing(true)} aria-label="View full size"><img src={card.imageUrl} alt={card.title} style={{ width: "100%", maxWidth: 760, borderRadius: 8, border: "1px solid var(--ld-line)" }} /></button>
         {viewer}
       </div>
     );
@@ -653,7 +653,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
     return (
       <div className="ld-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
         <span className="ld-lbl">{card.title}</span>
-        <a href={card.imageUrl} target="_blank" rel="noreferrer noopener"><img src={card.imageUrl} alt={card.title} style={{ width: "100%", maxWidth: 640, borderRadius: 8, border: "1px solid #e3e9e6" }} /></a>
+        <a href={card.imageUrl} target="_blank" rel="noreferrer noopener"><img src={card.imageUrl} alt={card.title} style={{ width: "100%", maxWidth: 640, borderRadius: 8, border: "1px solid var(--ld-line)" }} /></a>
       </div>
     );
 
@@ -815,7 +815,7 @@ function ScheduleCard({ events }: { events: NonNullable<Card["events"]> }) {
         if (e.day) lastDay = e.day;
         return (
           <React.Fragment key={i}>
-            {header && <div style={{ padding: "10px 16px 6px", fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: "0.06em", borderTop: i ? "1px solid #e3e9e6" : 0 }}>{header}</div>}
+            {header && <div style={{ padding: "10px 16px 6px", fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: "0.06em", borderTop: i ? "1px solid var(--ld-line)" : 0 }}>{header}</div>}
             <div className="ld-sched" style={{ display: "grid", gridTemplateColumns: "170px minmax(0,1fr) 200px", gap: 14, padding: "11px 16px", borderBottom: i < events.length - 1 ? "1px solid #eef2f0" : 0, fontSize: 14, alignItems: "center", background: e.clash ? "#fdf6ee" : undefined }}>
               <b>{e.when}</b>
               <span style={{ overflowWrap: "anywhere" }}>{e.title}{e.clash ? <span className="ld-small" style={{ color: "var(--ld-warn)", marginLeft: 8, fontWeight: 700 }}>Overlaps</span> : null}</span>
@@ -851,7 +851,7 @@ function CodeCard({ card }: { card: Card }) {
         <span style={{ fontWeight: 800, fontSize: 15 }}>{card.title}</span>
         {card.subtitle && <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>{card.subtitle}</span>}
         {card.imageUrl && (
-          <a href={card.imageUrl} target="_blank" rel="noreferrer noopener"><img src={card.imageUrl} alt="What the site showed" style={{ width: "100%", maxWidth: 480, borderRadius: 8, border: "1px solid #e3e9e6", marginTop: 4 }} /></a>
+          <a href={card.imageUrl} target="_blank" rel="noreferrer noopener"><img src={card.imageUrl} alt="What the site showed" style={{ width: "100%", maxWidth: 480, borderRadius: 8, border: "1px solid var(--ld-line)", marginTop: 4 }} /></a>
         )}
         {m.isSuccess ? (
           <span className="ld-pill green" style={{ alignSelf: "flex-start" }}>Got it. Signing in now</span>
@@ -942,7 +942,7 @@ function BrowserCard({ card }: { card: Card }) {
             {card.title.replace(/'s browser$/, "")} is paused. Click and type right in the page. What you type goes straight to the site and isn't saved.
           </div>
         )}
-        <div style={{ border: control ? "2px solid #1d4ed8" : "1px solid #cfd9d4", boxShadow: control ? "0 0 0 4px #dbe6fd" : undefined, borderRadius: 10, overflow: "hidden", background: "var(--ld-surface)" }}>
+        <div style={{ border: control ? "2px solid #1d4ed8" : "1px solid var(--ld-line3)", boxShadow: control ? "0 0 0 4px #dbe6fd" : undefined, borderRadius: 10, overflow: "hidden", background: "var(--ld-surface)" }}>
           <div style={{ display: "flex", alignItems: "center", padding: "8px 10px", background: "var(--ld-line2)", borderBottom: "1px solid #dbe4df" }}>
             <span style={{ flex: 1, background: "var(--ld-surface)", border: "1px solid #dbe4df", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "var(--ld-text2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {mine && v.url ? v.url.replace(/^https?:\/\//, "") : "Opening..."}

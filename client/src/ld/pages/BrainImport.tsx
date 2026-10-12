@@ -58,7 +58,7 @@ export default function BrainImport() {
 
   return (
     <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
-      <div className="ld-av-set" style={{ border: "1px solid #e3e9e6", borderRadius: 12, background: "var(--ld-surface)" }}>
+      <div className="ld-av-set" style={{ border: "1px solid var(--ld-line)", borderRadius: 12, background: "var(--ld-surface)" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
           <span className="ld-lbl">Import from Claude or ChatGPT</span>
           {imp ? (

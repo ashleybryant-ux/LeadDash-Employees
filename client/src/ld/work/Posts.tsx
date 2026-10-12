@@ -417,9 +417,9 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
       )}
 
       <div className="ld-calwrap" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 250px", gap: 16, alignItems: "start" }}>
-        <div className="ld-cal ld-keep" style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", borderLeft: "1px solid #e3e9e6", borderTop: "1px solid #e3e9e6", background: "var(--ld-surface)" }}>
+        <div className="ld-cal ld-keep" style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", borderLeft: "1px solid var(--ld-line)", borderTop: "1px solid var(--ld-line)", background: "var(--ld-surface)" }}>
           {DOW.map((d) => (
-            <div key={d} style={{ fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: ".06em", padding: 8, borderRight: "1px solid #e3e9e6", borderBottom: "1px solid #e3e9e6", background: "var(--ld-page)" }}>{d}</div>
+            <div key={d} style={{ fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: ".06em", padding: 8, borderRight: "1px solid var(--ld-line)", borderBottom: "1px solid var(--ld-line)", background: "var(--ld-page)" }}>{d}</div>
           ))}
           {days.map((day) => {
             const key = day.y * 10000 + day.m * 100 + day.d;
@@ -442,7 +442,7 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
                   setSelected(null);
                   setCreating(dateText(day.y, day.m, day.d));
                 }}
-                style={{ minHeight: view === "week" ? 320 : 118, borderRight: "1px solid #e3e9e6", borderBottom: "1px solid #e3e9e6", padding: 6, display: "flex", flexDirection: "column", gap: 4, boxSizing: "border-box", minWidth: 0, background: dragOver === key ? "var(--ld-accent-bg)" : past && !day.out ? "#fcfdfc" : "#fff" }}
+                style={{ minHeight: view === "week" ? 320 : 118, borderRight: "1px solid var(--ld-line)", borderBottom: "1px solid var(--ld-line)", padding: 6, display: "flex", flexDirection: "column", gap: 4, boxSizing: "border-box", minWidth: 0, background: dragOver === key ? "var(--ld-accent-bg)" : past && !day.out ? "#fcfdfc" : "#fff" }}
               >
                 <span style={{ fontSize: 12, fontWeight: 700, color: day.out ? "#b3c0ba" : "var(--ld-text2)", ...(isToday ? { background: "var(--ld-accent)", color: "#fff", borderRadius: 999, width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center" } : {}) }}>
                   {view === "week" ? `${day.m}/${day.d}` : day.d}

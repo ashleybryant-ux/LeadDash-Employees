@@ -180,6 +180,7 @@ describe("Customize view, the Dashboards hub and the sidebar", () => {
     const out = await her.pj.setNav({ organizationId: orgId, shown: ["mine", "home", "time", "bogus", "mine"] });
     expect(out).toEqual({ shown: ["mine", "home", "time"], more: ["everything", "docs", "portfolios", "dash", "templates", "boards", "forms", "goals", "import"] });
     expect((await her.pj.nav({ organizationId: orgId })).shown).toEqual(["mine", "home", "time"]);
-    expect((await me.pj.nav({ organizationId: orgId })).shown).toEqual(["home", "mine", "everything", "docs", "portfolios", "dash"]);
+    // The owner also gets All tasks, everyone's work by owner.
+    expect((await me.pj.nav({ organizationId: orgId })).shown).toEqual(["home", "mine", "all", "everything", "docs", "portfolios", "dash"]);
   });
 });

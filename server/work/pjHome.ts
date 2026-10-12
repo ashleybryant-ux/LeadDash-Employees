@@ -153,7 +153,12 @@ export async function fixAttention(orgId: number, v: Viewer, ids: number[] | nul
 
 const fmtWhen = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
 
-/** The Home page: what needs a person, the open tasks by when, what the AI team is on, and each project's health. */
+/**
+ * The Home page: the signed-in person's own tasks (what needs them, then by
+ * when), each with its time on their calendar, what the AI team is on, and
+ * each project's health. Everyone's tasks, by owner, are on All tasks for
+ * owners and admins (2026-10-12).
+ */
 export async function home(orgId: number, v: Viewer) {
   mustMember(v);
   const tz = await zoneOf(orgId);
@@ -165,21 +170,43 @@ export async function home(orgId: number, v: Viewer) {
   const all = db.work.tasks.all(orgId).filter((t) => visIds.has(t.listId));
   const open = all.filter((t) => !t.closedAt && !t.parentId);
   const manager = v.kind === "member" && (v.role === "owner" || v.role === "admin");
-  // Owners and admins see everyone's work by when; everyone else sees their own.
-  const mine = manager ? open : open.filter((t) => me && who(t).some((a) => a.type === me.type && a.id === me.id));
+  const isMine = (t: PjTask) => !!me && who(t).some((a) => a.type === me.type && a.id === me.id);
+  // Home is the person's own work; owners and admins see everyone's on All tasks.
+  const mine = open.filter(isMine);
   const weekEnd = addDaysYmd(today, 7);
+  // Each task's time on the person's calendar, if Find time gave it one.
+  const tt = await import("./taskTimes");
+  const doneToday = all.filter((t) => t.closedAt && !t.parentId && isMine(t) && new Date(t.closedAt).toLocaleDateString("en-CA", { timeZone: tz }) === today);
+  const times = me ? await tt.timesFor(orgId, me.id, [...mine, ...doneToday].map((t) => t.id)) : new Map();
   const row = (t: PjTask) => {
     const l = vis.find((x) => x.list.id === t.listId)!.list;
-    return { id: t.id, name: t.name, listId: t.listId, listName: l.name, status: t.status, priority: t.priority, dueDate: t.dueDate, assignees: who(t), closed: !!t.closedAt };
+    return { id: t.id, name: t.name, listId: t.listId, listName: l.name, status: t.status, priority: t.priority, dueDate: t.dueDate, assignees: who(t), closed: !!t.closedAt, time: times.get(t.id) ?? null };
   };
   const byDue = (a: PjTask, b: PjTask) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") || a.id - b.id;
-  const need = attention(orgId, v, today, me);
+  const all8 = attention(orgId, v, today, me);
+  // A task whose time moved three times needs the person too.
+  const movedIds = new Set(mine.filter((t) => (times.get(t.id)?.moves ?? 0) >= 3).map((t) => t.id));
+  const needTasks = all8.tasks
+    .filter((a) => mine.some((t) => t.id === a.id))
+    .map((a) => (movedIds.has(a.id) ? { ...a, why: `${a.why}, Moved 3 times` } : a))
+    .concat(
+      mine
+        .filter((t) => movedIds.has(t.id) && !all8.tasks.some((a) => a.id === t.id))
+        .map((t) => {
+          const l = vis.find((x) => x.list.id === t.listId)!.list;
+          return { id: t.id, name: t.name, listId: t.listId, listName: l.name, folderName: l.folderId ? folders.get(l.folderId)?.name ?? null : null, status: t.status, priority: t.priority, dueDate: t.dueDate, assignees: who(t), reasons: [] as Reason[], why: "Moved 3 times", suggestion: null };
+        })
+    )
+    .map((a) => ({ ...a, time: times.get(a.id) ?? null }));
+  const need = { tasks: needTasks, total: needTasks.length };
   const shownNeed = new Set(need.tasks.slice(0, 8).map((t) => t.id));
   const dated = mine.filter((t) => t.dueDate).sort(byDue);
-  // Today holds what is due today and anything late that Needs attention above did not already show.
-  const todayRows = dated.filter((t) => t.dueDate! <= today && !shownNeed.has(t.id));
-  const weekRows = dated.filter((t) => t.dueDate! > today && t.dueDate! <= weekEnd);
-  const laterRows = dated.filter((t) => t.dueDate! > weekEnd);
+  // Today holds what is due today, anything late that Needs attention above did not already show, and what was checked off today.
+  // A task with a time today is today's work whatever its due date.
+  const timedToday = (t: PjTask) => times.get(t.id)?.day === today;
+  const todayRows = [...dated.filter((t) => (t.dueDate! <= today || timedToday(t)) && !shownNeed.has(t.id)), ...mine.filter((t) => !t.dueDate && timedToday(t) && !shownNeed.has(t.id)), ...doneToday];
+  const weekRows = dated.filter((t) => t.dueDate! > today && t.dueDate! <= weekEnd && !timedToday(t));
+  const laterRows = dated.filter((t) => t.dueDate! > weekEnd && !timedToday(t));
   // What each employee did last, and whether it is on something now.
   const emps = await db.listEmployeesByOrg(orgId);
   const acts = await db.listActivity(orgId, 300);
@@ -216,7 +243,8 @@ export async function home(orgId: number, v: Viewer) {
     projects,
     people: await owners(orgId),
     lists: vis.map((x) => ({ id: x.list.id, name: x.list.name, statuses: statusesOf(x.list), level: x.level })),
-    mineOnly: !manager,
+    mineOnly: true,
+    manager,
   };
 }
 

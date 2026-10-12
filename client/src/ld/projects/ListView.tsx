@@ -183,8 +183,15 @@ export function groupsOf(c: PjCtx): Group[] {
   if (c.group === "priority")
     return order(["urgent", "high", "normal", "low", ""].map((p) => ({ key: p || "none", label: p ? PRIORITY_TEXT[p] : "No priority", color: p ? { urgent: "#c2253c", high: "#d97706", normal: "#2563eb", low: "var(--ld-soft)" }[p]! : "var(--ld-soft3)", tasks: t.filter((x) => (x.priority ?? "") === p) })).filter((g) => g.tasks.length || keepEmpty));
   if (c.group === "assignee") {
-    const names = Array.from(new Set(t.flatMap((x) => x.assignees.map((a) => a.name))));
-    return order([...names.map((n) => ({ key: n, label: n, color: "#475569", tasks: t.filter((x) => x.assignees.some((a) => a.name === n)) })), { key: "", label: "Unassigned", color: "var(--ld-soft3)", tasks: t.filter((x) => !x.assignees.length) }].filter((g) => g.tasks.length || keepEmpty));
+    // By owner: tasks nobody owns first, then each person and employee, each with how many are open and late.
+    const note = (tasks: TaskRow[]) => {
+      const open = tasks.filter((x) => !x.closed);
+      const late = open.filter((x) => x.dueDate && x.dueDate < today).length;
+      return `${open.length} open${late ? ` · ${late} late` : ""}`;
+    };
+    const names = Array.from(new Set(t.flatMap((x) => x.assignees.map((a) => a.name)))).sort((a, b) => a.localeCompare(b));
+    const nobody = t.filter((x) => !x.assignees.length);
+    return order([{ key: "", label: "No owner", color: "var(--ld-soft3)", note: note(nobody), tasks: nobody }, ...names.map((n) => { const tasks = t.filter((x) => x.assignees.some((a) => a.name === n)); return { key: n, label: n, color: "#475569", note: note(tasks), tasks }; })].filter((g) => g.tasks.length || keepEmpty));
   }
   return [{ key: "all", label: "All tasks", color: "#475569", tasks: t }];
 }
@@ -341,7 +348,7 @@ export function ListView({ c }: { c: PjCtx }) {
               ) : (
                 <>
                   <span className="gp-sgp" style={{ background: g.color }}>{g.label}</span>
-                  <span className="ld-small ld-muted">{g.tasks.length}</span>
+                  <span className="ld-small ld-muted">{g.note ?? g.tasks.length}</span>
                   {c.opts.estimates && <span className="ld-small ld-muted" title="Time estimates in this group">Σ {hours(g.tasks.reduce((n, t) => n + (t.timeEstimate ?? 0), 0))}</span>}
                   {c.group === "status" && c.listId && c.level === "full" && g.status && (
                     <Menu label={`Status ${g.label}`} align="left">

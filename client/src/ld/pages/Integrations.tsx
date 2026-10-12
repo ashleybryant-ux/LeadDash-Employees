@@ -124,7 +124,7 @@ export default function Integrations() {
         placeholder="Search integrations"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ height: 44, border: "1px solid #cfd9d4", borderRadius: 10, padding: "0 14px", font: "inherit", fontSize: 14, background: "var(--ld-surface)", boxSizing: "border-box" }}
+        style={{ height: 44, border: "1px solid var(--ld-line3)", borderRadius: 10, padding: "0 14px", font: "inherit", fontSize: 14, background: "var(--ld-surface)", boxSizing: "border-box" }}
       />
 
       <FolderTabs
@@ -682,9 +682,9 @@ type CalEdit = { id: number; name: string; include: string[]; detail: "full" | "
 
 function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; label: string }) {
   return (
-    <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", alignSelf: "flex-start", justifySelf: "start" }}>
+    <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid var(--ld-line3)", borderRadius: 8, overflow: "hidden", alignSelf: "flex-start", justifySelf: "start" }}>
       {options.map((o) => (
-        <button key={o.key} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, background: value === o.key ? "var(--ld-accent-bg)" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
+        <button key={o.key} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, background: value === o.key ? "var(--ld-accent-bg)" : "var(--ld-surface)", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
           {o.label}
         </button>
       ))}
@@ -907,7 +907,7 @@ function SendingAddresses() {
                   {SENDERS.map((x) => {
                     const on = edit.sendsFor.includes(x.kind);
                     return (
-                      <button key={x.kind} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setEdit({ ...edit, sendsFor: on ? edit.sendsFor.filter((k) => k !== x.kind) : [...edit.sendsFor, x.kind] })}>
+                      <button key={x.kind} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "var(--ld-surface)", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setEdit({ ...edit, sendsFor: on ? edit.sendsFor.filter((k) => k !== x.kind) : [...edit.sendsFor, x.kind] })}>
                         {nameOf(x.kind)}
                       </button>
                     );

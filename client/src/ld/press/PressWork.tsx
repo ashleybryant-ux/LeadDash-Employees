@@ -86,9 +86,9 @@ function KV({ rows }: { rows: [string, React.ReactNode][] }) {
 
 function Seg<T extends string | number>({ value, options, onChange, label }: { value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; label: string }) {
   return (
-    <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", justifySelf: "start", alignSelf: "flex-start", flexWrap: "wrap" }}>
+    <div role="radiogroup" aria-label={label} style={{ display: "inline-flex", border: "1px solid var(--ld-line3)", borderRadius: 8, overflow: "hidden", justifySelf: "start", alignSelf: "flex-start", flexWrap: "wrap" }}>
       {options.map((o) => (
-        <button key={String(o.key)} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid #e3e9e6", background: value === o.key ? "var(--ld-accent-bg)" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
+        <button key={String(o.key)} type="button" role="radio" aria-checked={value === o.key} onClick={() => onChange(o.key)} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid var(--ld-line)", background: value === o.key ? "var(--ld-accent-bg)" : "var(--ld-surface)", font: "inherit", fontSize: 13, fontWeight: 700, color: value === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
           {o.label}
         </button>
       ))}
@@ -269,7 +269,7 @@ function Newsroom({ v, onSpeaking }: { v: View; onSpeaking: () => void }) {
           <span className="ld-lbl">This week, {fmt(new Date())}</span>
           <div className="ld-press-desks" style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, v.counts.length)}, minmax(0,1fr))`, gap: 12 }}>
             {v.counts.map((c) => (
-              <div key={c.orgId} style={{ border: "1px solid #e3e9e6", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div key={c.orgId} style={{ border: "1px solid var(--ld-line)", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
                 <DeskPill id={c.orgId} desks={v.desks} />
                 <span style={{ fontSize: 13, lineHeight: 1.7 }}>
                   {c.stories} open {c.stories === 1 ? "story" : "stories"}<br />
@@ -384,7 +384,7 @@ function PressSettings({ v }: { v: View }) {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {all.map((w) => {
                   const on = edit.shared.includes(w.id) || w.id === orgId;
-                  return <button key={w.id} type="button" aria-pressed={on} disabled={w.id === orgId} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setEdit({ ...edit, shared: on ? edit.shared.filter((x) => x !== w.id) : [...edit.shared, w.id] })}>{w.name}</button>;
+                  return <button key={w.id} type="button" aria-pressed={on} disabled={w.id === orgId} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "var(--ld-surface)", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setEdit({ ...edit, shared: on ? edit.shared.filter((x) => x !== w.id) : [...edit.shared, w.id] })}>{w.name}</button>;
                 })}
               </div>
               <Field id="pr-cool" label="Cooling period"><div style={{ display: "flex", gap: 8, alignItems: "center" }}><input id="pr-cool" className="ld-in" style={{ width: 80 }} inputMode="numeric" value={edit.coolingDays} onChange={(e) => setEdit({ ...edit, coolingDays: e.target.value.replace(/\D/g, "") })} /><span>days between desks pitching the same reporter</span></div></Field>
@@ -1075,7 +1075,7 @@ function Library() {
                 {desks.map((d) => {
                   const list = (e.meta.desks as number[] | undefined) ?? [];
                   const on = list.includes(d.id);
-                  return <button key={d.id} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setE(e, { meta: { ...e.meta, desks: on ? list.filter((x) => x !== d.id) : [...list, d.id] } })}>{d.name}</button>;
+                  return <button key={d.id} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "var(--ld-surface)", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setE(e, { meta: { ...e.meta, desks: on ? list.filter((x) => x !== d.id) : [...list, d.id] } })}>{d.name}</button>;
                 })}
               </div>
             </>

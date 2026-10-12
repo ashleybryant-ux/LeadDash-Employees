@@ -132,7 +132,7 @@ function GuidelineSections({ emp }: { emp: EmployeeRow }) {
             <span style={{ fontWeight: 800 }}>{`${emp.name} found guidelines that disagree`}</span>
           </div>
           {g.conflicts.map((c) => (
-            <div key={c.id} style={{ border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div key={c.id} style={{ border: "1px solid var(--ld-line)", borderRadius: 10, background: "var(--ld-surface)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
               <span style={{ fontSize: 14, lineHeight: 1.5 }}>{c.text}</span>
               <div className="ld-row" style={{ gap: 8, flexWrap: "wrap" }}>
                 {c.options.map((o, i) => (

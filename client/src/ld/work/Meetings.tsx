@@ -550,7 +550,7 @@ export function NotesDetail({ r, tz, onClose }: { r: NT; tz: string; onClose?: (
         )}
         {facts.length > 0 && <span className="ld-small ld-muted" style={{ paddingTop: 6 }}>{facts.join(" · ")}</span>}
         {showText && (
-          <div className="ld-body" style={{ whiteSpace: "pre-line", maxHeight: 320, overflowY: "auto", border: "1px solid #e3e9e6", borderRadius: 8, padding: "10px 12px", background: "var(--ld-surface)", fontSize: 13 }}>
+          <div className="ld-body" style={{ whiteSpace: "pre-line", maxHeight: 320, overflowY: "auto", border: "1px solid var(--ld-line)", borderRadius: 8, padding: "10px 12px", background: "var(--ld-surface)", fontSize: 13 }}>
             {transcript.isLoading ? "Loading..." : transcript.data?.transcript || "No transcript."}
           </div>
         )}

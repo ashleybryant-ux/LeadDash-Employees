@@ -243,7 +243,7 @@ function TodayTab({ t, empKind, onDecide }: { t: Today; empKind: string; onDecid
               {open && (
                 <div className="ld-expand">
                   {h.lines.slice(0, 30).map((l, i) => (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: "150px 120px minmax(0,1fr)", gap: 12, fontSize: 13, padding: "6px 0", borderBottom: "1px solid #e3e9e6" }}>
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "150px 120px minmax(0,1fr)", gap: 12, fontSize: 13, padding: "6px 0", borderBottom: "1px solid var(--ld-line)" }}>
                       <span style={{ color: "var(--ld-muted)" }}>{fmtDate(l.at)}, {fmtTime(l.at)}</span>
                       <b>{l.who}</b>
                       <span>{l.text}</span>

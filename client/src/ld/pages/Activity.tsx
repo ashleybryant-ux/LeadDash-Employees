@@ -94,7 +94,7 @@ export default function Activity() {
         {shown.length === 0 && <div className="ld-empty">{feed.isLoading ? "Loading..." : tab === "you" ? "Nothing needs you right now." : "Nothing here yet. Your employees' handoffs and finished work show up here."}</div>}
         {groups.map((g) => (
           <React.Fragment key={g.label}>
-            <div style={{ padding: "10px 18px", fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: ".06em", background: "var(--ld-page)", borderBottom: "1px solid #e3e9e6" }}>{g.label}</div>
+            <div style={{ padding: "10px 18px", fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: ".06em", background: "var(--ld-page)", borderBottom: "1px solid var(--ld-line)" }}>{g.label}</div>
             {g.rows.map((r) => {
               const emp = employees.find((e) => e.id === r.employeeId);
               const tag = TAGS[r.tag];
@@ -150,10 +150,10 @@ function PeopleTab({ tz }: { tz: string }) {
   }
   return (
     <>
-      <div style={{ padding: "12px 18px", borderBottom: "1px solid #e3e9e6", display: "flex", justifyContent: "flex-end" }}>
-        <div role="radiogroup" aria-label="Whose work" style={{ display: "inline-flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", flexWrap: "wrap" }}>
+      <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--ld-line)", display: "flex", justifyContent: "flex-end" }}>
+        <div role="radiogroup" aria-label="Whose work" style={{ display: "inline-flex", border: "1px solid var(--ld-line3)", borderRadius: 8, overflow: "hidden", flexWrap: "wrap" }}>
           {[{ key: null as string | null, label: "Everyone" }, ...list.map((p) => ({ key: p.name, label: p.name.split(" ")[0] }))].map((o) => (
-            <button key={o.key ?? "all"} type="button" role="radio" aria-checked={person === o.key} onClick={() => { setPerson(o.key); setOpen(null); }} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid #e3e9e6", background: person === o.key ? "var(--ld-accent-bg)" : "#fff", font: "inherit", fontSize: 13, fontWeight: 700, color: person === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
+            <button key={o.key ?? "all"} type="button" role="radio" aria-checked={person === o.key} onClick={() => { setPerson(o.key); setOpen(null); }} style={{ height: 32, padding: "0 14px", border: 0, borderRight: "1px solid var(--ld-line)", background: person === o.key ? "var(--ld-accent-bg)" : "var(--ld-surface)", font: "inherit", fontSize: 13, fontWeight: 700, color: person === o.key ? "var(--ld-accent-dark)" : "var(--ld-text2)", cursor: "pointer", whiteSpace: "nowrap" }}>
               {o.label}
             </button>
           ))}
@@ -162,7 +162,7 @@ function PeopleTab({ tz }: { tz: string }) {
       {rows.length === 0 && <div className="ld-empty">{q.isLoading ? "Loading..." : "Nothing yet. What people do in the app shows up here."}</div>}
       {groups.map((g) => (
         <React.Fragment key={g.label}>
-          <div style={{ padding: "10px 18px", fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: ".06em", background: "var(--ld-page)", borderBottom: "1px solid #e3e9e6" }}>{g.label}</div>
+          <div style={{ padding: "10px 18px", fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: ".06em", background: "var(--ld-page)", borderBottom: "1px solid var(--ld-line)" }}>{g.label}</div>
           {g.rows.map((r) => {
             const isOpen = open === r.id;
             const expandable = !!r.before;

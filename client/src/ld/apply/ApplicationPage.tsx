@@ -476,7 +476,7 @@ function ReviewView({ d, base }: { d: AppDetail; base: string }) {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 20, alignItems: "start" }}>
           <div className="ld-card" style={{ overflow: "hidden" }}>
-            <div className="ld-between" style={{ padding: "16px 18px", borderBottom: "1px solid #e3e9e6", alignItems: "baseline" }}>
+            <div className="ld-between" style={{ padding: "16px 18px", borderBottom: "1px solid var(--ld-line)", alignItems: "baseline" }}>
               <span className="ld-lbl">Estimated score</span>
               <span style={{ fontSize: 28, fontWeight: 800 }}>{review.score} <span style={{ fontSize: 15, color: "var(--ld-muted)", fontWeight: 700 }}>of {review.total}</span></span>
             </div>
@@ -496,7 +496,7 @@ function ReviewView({ d, base }: { d: AppDetail; base: string }) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div className="ld-card" style={{ overflow: "hidden" }}>
-              <div style={{ padding: "14px 18px", borderBottom: "1px solid #e3e9e6" }}><span className="ld-lbl">Fix before submitting ({open.length})</span></div>
+              <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--ld-line)" }}><span className="ld-lbl">Fix before submitting ({open.length})</span></div>
               {open.length === 0 && <div className="ld-empty">Nothing left to fix.</div>}
               {open.map((f, i) => {
                 const needsYou = f.kind === "attachment" || f.kind === "video";

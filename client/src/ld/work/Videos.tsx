@@ -183,7 +183,7 @@ function PlanView({
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 320px", gap: 20, alignItems: "start" }}>
       <div className="ld-card" style={{ overflow: "hidden" }}>
-        <div className="ld-between" style={{ padding: "16px 18px", borderBottom: "1px solid #e3e9e6" }}>
+        <div className="ld-between" style={{ padding: "16px 18px", borderBottom: "1px solid var(--ld-line)" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontWeight: 800, fontSize: 17 }}>{p.title || item.title}</span>
             <span className="ld-small ld-muted">{meta}</span>
@@ -200,8 +200,8 @@ function PlanView({
             <button type="button" className="ld-btn" onClick={copyScript}>{copied ? "Copied" : "Copy script"}</button>
           </div>
         </div>
-        {hours.question(`plan-${item.id}`) && <div style={{ padding: "12px 18px", borderBottom: "1px solid #e3e9e6" }}>{hours.question(`plan-${item.id}`)}</div>}
-        <div style={{ padding: "14px 18px", borderBottom: "1px solid #e3e9e6", display: "flex", flexDirection: "column", gap: 4 }}>
+        {hours.question(`plan-${item.id}`) && <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--ld-line)" }}>{hours.question(`plan-${item.id}`)}</div>}
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--ld-line)", display: "flex", flexDirection: "column", gap: 4 }}>
           <span className="ld-lbl">Hook (first 2 seconds)</span>
           <span style={{ fontSize: 15, fontWeight: 700 }}>{p.hook || "Not written."}</span>
         </div>

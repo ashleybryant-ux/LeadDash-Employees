@@ -166,7 +166,7 @@ function AddPanel({ empKind, onDone }: { empKind: EmpKind; onDone: () => void })
   };
 
   return (
-    <div style={{ background: "var(--ld-hover)", padding: "16px 18px", borderBottom: "1px solid #e3e9e6", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
+    <div style={{ background: "var(--ld-hover)", padding: "16px 18px", borderBottom: "1px solid var(--ld-line)", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <span className="ld-st">{empKind === "speaking" ? "Add an event or media request" : "Add an opportunity"}</span>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 640 }}>
@@ -234,7 +234,7 @@ function UploadPanel({ empKind, onDone, onStarted }: { empKind: EmpKind; onDone:
   };
 
   return (
-    <div style={{ background: "var(--ld-hover)", padding: "16px 18px", borderBottom: "1px solid #e3e9e6", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
+    <div style={{ background: "var(--ld-hover)", padding: "16px 18px", borderBottom: "1px solid var(--ld-line)", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 24, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
         <span className="ld-st">{empKind === "speaking" ? "Upload a call for proposals" : "Upload an RFP, grant or competition"}</span>
         <div
@@ -784,11 +784,11 @@ function DecisionEditor({ a, onDone }: { a: AppRow; onDone: () => void }) {
   const [comments, setComments] = React.useState("");
   const [reapply, setReapply] = React.useState("");
   const decide = trpc.applications.decide.useMutation({ onSuccess: async () => { await utils.applications.list.invalidate(); onDone(); } });
-  const seg = (on: boolean): React.CSSProperties => ({ height: 32, padding: "0 16px", border: 0, borderRight: "1px solid #cfd9d4", background: on ? "var(--ld-accent-bg)" : "#fff", color: on ? "var(--ld-accent-dark)" : "var(--ld-text2)", font: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" });
+  const seg = (on: boolean): React.CSSProperties => ({ height: 32, padding: "0 16px", border: 0, borderRight: "1px solid var(--ld-line3)", background: on ? "var(--ld-accent-bg)" : "var(--ld-surface)", color: on ? "var(--ld-accent-dark)" : "var(--ld-text2)", font: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" });
   return (
     <div className="ld-card editing" style={{ gridColumn: "1 / -1", padding: "14px 16px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 16 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div role="group" aria-label="Result" style={{ display: "flex", border: "1px solid #cfd9d4", borderRadius: 8, overflow: "hidden", width: "max-content" }}>
+        <div role="group" aria-label="Result" style={{ display: "flex", border: "1px solid var(--ld-line3)", borderRadius: 8, overflow: "hidden", width: "max-content" }}>
           <button type="button" style={seg(result === "awarded")} onClick={() => setResult("awarded")}>Awarded</button>
           <button type="button" style={{ ...seg(result === "declined"), borderRight: 0 }} onClick={() => setResult("declined")}>Declined</button>
         </div>

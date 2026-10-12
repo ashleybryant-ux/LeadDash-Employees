@@ -55,12 +55,12 @@ export type PreviewInput = {
   when: string | null;
 };
 
-const post: React.CSSProperties = { border: "1px solid #e3e9e6", borderRadius: 10, background: "var(--ld-surface)", fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", color: "#1c1e21", overflow: "hidden" };
+const post: React.CSSProperties = { border: "1px solid var(--ld-line)", borderRadius: 10, background: "var(--ld-surface)", fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", color: "#1c1e21", overflow: "hidden" };
 const ph: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", padding: "12px 14px" };
 const pn: React.CSSProperties = { fontWeight: 700, fontSize: 14 };
 const pm: React.CSSProperties = { fontSize: 12, color: "#65676b" };
 const pt: React.CSSProperties = { padding: "0 14px 12px", fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "anywhere" };
-const pbar: React.CSSProperties = { display: "flex", justifyContent: "space-around", borderTop: "1px solid #e3e9e6", padding: "9px 0", fontSize: 13, color: "#65676b", fontWeight: 600 };
+const pbar: React.CSSProperties = { display: "flex", justifyContent: "space-around", borderTop: "1px solid var(--ld-line)", padding: "9px 0", fontSize: 13, color: "#65676b", fontWeight: 600 };
 
 function Pa({ name, size = 36 }: { name: string; size?: number }) {
   return <div style={{ width: size, height: size, borderRadius: 999, background: "#0d3b2e", color: "#fff", fontWeight: 800, fontSize: Math.round(size / 3), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials(name) || "LF"}</div>;

@@ -168,6 +168,14 @@ async function pjViewer(ctx: TrpcContext & { user: User }, organizationId: numbe
   }
 }
 const pjActor = (ctx: { user: User }) => ({ type: "user" as const, id: ctx.user.id, name: personName(ctx.user) });
+/** A task this person can see in Projects, or not found. */
+async function pjTaskVisible(ctx: TrpcContext & { user: User }, orgId: number, taskId: number) {
+  const v = await pjViewer(ctx, orgId);
+  const t = db.work.tasks.get(orgId, taskId);
+  const { visibleLists } = await import("./work/pjAccess");
+  if (!t || !visibleLists(orgId, v).some((x) => x.list.id === t.listId)) throw new TRPCError({ code: "NOT_FOUND", message: "That task isn't in your Projects." });
+  return t;
+}
 
 /** The app reviewer can look around the demo workspace but cannot change its team. */
 function blockReviewer(ctx: TrpcContext & { user: User }) {
@@ -2234,6 +2242,34 @@ export const appRouter = router({
       const v = await pjViewer(ctx, input.organizationId);
       return (await import("./work/pjHome")).home(input.organizationId, v);
     }),
+    /** Find time: a time to show for one task, before anything is saved. */
+    findTime: protectedProcedure
+      .input(orgInput.extend({ taskId: z.number().int(), minutes: z.number().int().min(15).max(480), when: z.enum(["first", "tomorrow", "next_week"]), after: z.date().nullable().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await pjTaskVisible(ctx, input.organizationId, input.taskId);
+        return (await import("./work/taskTimes")).suggest(input.organizationId, ctx.user.id, input);
+      }),
+    saveTime: protectedProcedure.input(orgInput.extend({ taskId: z.number().int(), start: z.date(), minutes: z.number().int().min(15).max(480) })).mutation(async ({ ctx, input }) => {
+      await pjTaskVisible(ctx, input.organizationId, input.taskId);
+      const tt = await import("./work/taskTimes");
+      tt.saveTime(input.organizationId, ctx.user.id, input);
+      return { ok: true };
+    }),
+    clearTime: protectedProcedure.input(orgInput.extend({ taskId: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await pjTaskVisible(ctx, input.organizationId, input.taskId);
+      return (await import("./work/taskTimes")).clearTime(input.organizationId, ctx.user.id, input.taskId);
+    }),
+    findTimeSettings: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./work/taskTimes")).settingsFor(input.organizationId, ctx.user.id);
+    }),
+    saveFindTimeSettings: protectedProcedure
+      .input(orgInput.extend({ mode: z.enum(["ask", "auto"]), minutes: z.number().int(), from: z.string().regex(/^\d{2}:\d{2}$/), to: z.string().regex(/^\d{2}:\d{2}$/), days: z.array(z.number().int().min(0).max(6)).max(7) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const { organizationId, ...rest } = input;
+        return (await import("./work/taskTimes")).saveSettings(organizationId, ctx.user.id, rest);
+      }),
     fixAttention: protectedProcedure.input(orgInput.extend({ ids: z.array(z.number().int()).max(200).nullable().default(null) })).mutation(async ({ ctx, input }) => {
       const v = await pjViewer(ctx, input.organizationId);
       return (await import("./work/pjHome")).fixAttention(input.organizationId, v, input.ids, pjActor(ctx));
@@ -2817,7 +2853,7 @@ export const appRouter = router({
   calendar: router({
     range: protectedProcedure.input(orgInput.extend({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), days: z.number().int().min(1).max(42) })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return (await import("./employees/calendarPage")).calendarRange(input.organizationId, input.from, input.days);
+      return (await import("./employees/calendarPage")).calendarRange(input.organizationId, input.from, input.days, new Date(), ctx.user.id);
     }),
     next: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

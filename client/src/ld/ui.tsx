@@ -114,7 +114,7 @@ export function OrgLogo({ name, src, size = 36 }: { name: string; src?: string |
   const box: React.CSSProperties = { width: size, height: size, borderRadius: Math.round(size * 0.25), flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" };
   if (src && !broken) {
     return (
-      <span style={{ ...box, background: "var(--ld-surface)", border: "1px solid #e3e9e6", padding: Math.max(2, Math.round(size * 0.08)) }}>
+      <span style={{ ...box, background: "var(--ld-surface)", border: "1px solid var(--ld-line)", padding: Math.max(2, Math.round(size * 0.08)) }}>
         <img src={src} alt={`${name} logo`} onError={() => setBroken(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
       </span>
     );
@@ -483,7 +483,7 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
   const [switcher, setSwitcher] = React.useState(false);
   const sorted = [...list].sort((a, b) => KIND_ORDER.indexOf(a.kind as Kind) - KIND_ORDER.indexOf(b.kind as Kind) || a.id - b.id);
   return (
-    <aside className="ld-chatlist" style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "var(--ld-surface)", borderRight: "1px solid #e3e9e6", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
+    <aside className="ld-chatlist" style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "var(--ld-surface)", borderRight: "1px solid var(--ld-line)", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
       <div style={{ padding: "18px 18px 12px 18px", position: "relative" }} className="ld-between">
         <button type="button" onClick={() => setSwitcher((v) => !v)} title={elsewhere.elsewhere ? `${elsewhere.elsewhere} unread in your other workspaces` : undefined} style={{ display: "flex", alignItems: "center", gap: 10, border: 0, background: "none", font: "inherit", fontSize: 16, fontWeight: 800, color: "var(--ld-ink)", cursor: "pointer", padding: 0, minWidth: 0, textAlign: "left" }}>
           {currentOrg && <OrgLogo name={currentOrg.name} src={currentOrg.logoUrl} size={32} />}
@@ -665,7 +665,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
     boxShadow: on ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
   });
   return (
-    <header className="ld-emphead" style={{ boxSizing: "border-box", minHeight: 72, padding: "8px 24px", background: "var(--ld-surface)", borderBottom: "1px solid #e3e9e6", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 16px", position: "sticky", top: 0, zIndex: 10 }}>
+    <header className="ld-emphead" style={{ boxSizing: "border-box", minHeight: 72, padding: "8px 24px", background: "var(--ld-surface)", borderBottom: "1px solid var(--ld-line)", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 16px", position: "sticky", top: 0, zIndex: 10 }}>
       <div className="ld-row ld-emphead-who" style={{ gap: 12 }}>
         <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "var(--ld-ink)", display: "flex" }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>

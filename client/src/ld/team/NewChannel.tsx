@@ -74,7 +74,7 @@ export function NewChannel({ onClose, onMade, editing }: { onClose: () => void; 
   return createPortal(
     <div className="gp-modal" role="dialog" aria-modal="true" aria-label={editing ? "Change the channel" : "New channel"} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="gp-mbox tc-dlg">
-        <div className="ld-between gp-mhead" style={{ padding: "16px 20px", borderBottom: "1px solid #e3e9e6" }}>
+        <div className="ld-between gp-mhead" style={{ padding: "16px 20px", borderBottom: "1px solid var(--ld-line)" }}>
           <b style={{ fontSize: 16 }}>{editing ? "Change the channel" : "New channel"}</b>
           <button type="button" className="ld-btn sm" onClick={onClose}>Close</button>
         </div>

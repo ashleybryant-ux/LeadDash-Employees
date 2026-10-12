@@ -35,6 +35,7 @@ export default function Account() {
           )}
           {a.staff && <ReviewCard />}
           <AppearanceCard />
+          {!chatOnly && <FindTimeCard />}
           <PushCard pushReady={a.pushReady} vapid={a.vapidPublicKey} devices={a.devices} />
           {!chatOnly && <ConnectorCard />}
           <PrefsCard prefs={a.prefs as Prefs} sound={a.sound as Sound} events={chatOnly ? a.events.filter((e) => e.key === "team_message") : a.events} />
@@ -50,6 +51,79 @@ export default function Account() {
 }
 
 const THEME_LABEL: Record<Theme, string> = { light: "Light", dark: "Dark", system: "Match my device" };
+
+const FT_MODES = [{ k: "ask", label: "When I press Find time" }, { k: "auto", label: "Every new task with a due date" }] as const;
+const FT_LENGTHS = [{ m: 15, label: "15 min" }, { m: 30, label: "30 min" }, { m: 60, label: "1 hour" }, { m: 120, label: "2 hours" }] as const;
+const FT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const FT_TIMES = Array.from({ length: 33 }, (_, i) => {
+  const mins = 5 * 60 + i * 30;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return { v: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`, label: `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}` };
+});
+const ftTime = (v: string) => FT_TIMES.find((t) => t.v === v)?.label ?? v;
+const ftDays = (d: number[]) => (d.join() === "1,2,3,4,5" ? "Monday to Friday" : d.map((x) => FT_DAYS[x]).join(", "));
+type FindSettings = { mode: "ask" | "auto"; minutes: number; from: string; to: string; days: number[] };
+
+/** Find time for my tasks: when the app finds a time on my calendar, how long, and my work hours. */
+function FindTimeCard() {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.pj.findTimeSettings.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [draft, setDraft] = React.useState<FindSettings | null>(null);
+  const save = trpc.pj.saveFindTimeSettings.useMutation({ onSuccess: async () => { setDraft(null); await utils.pj.findTimeSettings.invalidate(); } });
+  const s = q.data;
+  if (!s) return null;
+  const set = (patch: Partial<FindSettings>) => setDraft((d) => (d ? { ...d, ...patch } : d));
+  return (
+    <section className={`ld-card ${draft ? "editing" : ""}`}>
+      <div className="ld-sh">
+        <span className="ld-st">Find time for my tasks</span>
+        {draft ? (
+          <span className="ld-row">
+            <button type="button" className="ld-btn sm" onClick={() => setDraft(null)}>Cancel</button>
+            <button type="button" className="ld-btn p sm" disabled={save.isPending} onClick={() => save.mutate({ organizationId: currentOrgId, ...draft })}>Save</button>
+          </span>
+        ) : (
+          <button type="button" className="ld-btn sm" onClick={() => setDraft({ ...s, days: [...s.days] })}>Edit</button>
+        )}
+      </div>
+      <div className="ld-kv">
+        <span className="ld-k">Find time</span>
+        {draft ? (
+          <span className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>{FT_MODES.map((m) => <button key={m.k} type="button" className={`ld-chip ${draft.mode === m.k ? "on" : ""}`} aria-pressed={draft.mode === m.k} onClick={() => set({ mode: m.k })}>{m.label}</button>)}</span>
+        ) : (
+          <span>{FT_MODES.find((m) => m.k === s.mode)?.label}</span>
+        )}
+        <span className="ld-k">Length</span>
+        {draft ? (
+          <span className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>{FT_LENGTHS.map((l) => <button key={l.m} type="button" className={`ld-chip ${draft.minutes === l.m ? "on" : ""}`} aria-pressed={draft.minutes === l.m} onClick={() => set({ minutes: l.m })}>{l.label}</button>)}</span>
+        ) : (
+          <span>{FT_LENGTHS.find((l) => l.m === s.minutes)?.label}</span>
+        )}
+        <span className="ld-k">Work hours</span>
+        {draft ? (
+          <span className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>
+            <select className="ld-in xs" style={{ width: "auto" }} aria-label="Start" value={draft.from} onChange={(e) => set({ from: e.target.value })}>{FT_TIMES.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}</select>
+            <span>to</span>
+            <select className="ld-in xs" style={{ width: "auto" }} aria-label="End" value={draft.to} onChange={(e) => set({ to: e.target.value })}>{FT_TIMES.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}</select>
+          </span>
+        ) : (
+          <span>{ftTime(s.from)} to {ftTime(s.to)}</span>
+        )}
+        <span className="ld-k">Work days</span>
+        {draft ? (
+          <span className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>{FT_DAYS.map((d, i) => { const on = draft.days.includes(i); return <button key={d} type="button" className={`ld-chip ${on ? "on" : ""}`} aria-pressed={on} onClick={() => set({ days: on ? draft.days.filter((x) => x !== i) : [...draft.days, i].sort() })}>{d}</button>; })}</span>
+        ) : (
+          <span>{ftDays(s.days)}</span>
+        )}
+      </div>
+      <div style={{ padding: "0 18px 12px" }}>
+        <ErrorLine error={save.error ?? q.error} />
+      </div>
+    </section>
+  );
+}
 
 /** Appearance: light, dark, or match the device. Saved on the account so every device follows it. */
 function AppearanceCard() {

@@ -242,7 +242,7 @@ function PartEditor({ part, workspaces, onDone }: { part: Row; workspaces: numbe
         <label className="ld-hb-sub" htmlFor={`lead-${part.key}`}>Opening line</label>
         <textarea id={`lead-${part.key}`} className="ld-ta" rows={2} value={lead} onChange={(e) => setLead(e.target.value)} />
         {sections.map((s, i) => (
-          <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, paddingTop: 10, borderTop: i ? "1px solid #e3e9e6" : 0, marginTop: i ? 8 : 0 }}>
+          <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, paddingTop: 10, borderTop: i ? "1px solid var(--ld-line)" : 0, marginTop: i ? 8 : 0 }}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 8, alignItems: "center" }}>
               <input className="ld-in" style={{ fontWeight: 800 }} value={s.title} aria-label={`Section ${i + 1} title`} onChange={(e) => setSec(i, { ...s, title: e.target.value })} placeholder="Section title" />
               <button type="button" className="ld-btn" onClick={() => setSections(sections.filter((_, k) => k !== i))}>Remove section</button>

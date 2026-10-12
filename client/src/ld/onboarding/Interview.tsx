@@ -107,7 +107,7 @@ export function Examples({ value, onChange }: { value: Example[]; onChange: (v: 
   return (
     <div style={col}>
       {value.map((e, i) => (
-        <div key={i} className="ld-keep" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px", gap: 8, alignItems: "start", border: "1px solid #e3e9e6", borderRadius: 10, padding: "8px 10px", background: "var(--ld-surface)" }}>
+        <div key={i} className="ld-keep" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px", gap: 8, alignItems: "start", border: "1px solid var(--ld-line)", borderRadius: 10, padding: "8px 10px", background: "var(--ld-surface)" }}>
           <span style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
             <span className={`ld-pill ${e.liked ? "green" : "amber"}`} style={{ alignSelf: "flex-start" }}>{e.liked ? "Liked" : "Didn't like"}</span>
             <span style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{e.text.length > 400 ? `${e.text.slice(0, 400)}...` : e.text}</span>

@@ -830,7 +830,7 @@ function Activity({ orgId, d, onClose, panel }: { orgId: number; d: Detail; onCl
   return (
     <div className="tmr">
       {preview && <FilePreview orgId={orgId} file={preview} onClose={() => setPreview(null)} />}
-      <div className="ld-between" style={{ padding: "14px 16px", borderBottom: "1px solid #e3e9e6" }}>
+      <div className="ld-between" style={{ padding: "14px 16px", borderBottom: "1px solid var(--ld-line)" }}>
         <b>Activity</b>
         {!panel && <button type="button" className="gp-x big" aria-label="Close" onClick={onClose}>×</button>}
       </div>

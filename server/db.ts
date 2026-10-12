@@ -2593,7 +2593,7 @@ export const team = {
 // ==========================================
 
 /** Insert, read, change and remove rows of one workspace-owned table, always filtered by workspace. */
-function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports | typeof schema.pjLinks | typeof schema.pjTime | typeof schema.pjTemplates | typeof schema.pjDocs | typeof schema.pjDocComments | typeof schema.pjBoards | typeof schema.pjForms | typeof schema.pjFormAnswers | typeof schema.pjDashboards | typeof schema.pjShares | typeof schema.pjSettings | typeof schema.pjViews | typeof schema.pjDocShares | typeof schema.pjStars | typeof schema.pjPrefs | typeof schema.pjPortfolios | typeof schema.pjPortfolioItems | typeof schema.pjStatusUpdates>(t: T) {
+function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof schema.goalTargets | typeof schema.goalUpdates | typeof schema.measures | typeof schema.measureValues | typeof schema.goalReads | typeof schema.itemFiles | typeof schema.pjFolders | typeof schema.pjLists | typeof schema.pjTasks | typeof schema.pjComments | typeof schema.pjAutomations | typeof schema.pjImports | typeof schema.pjLinks | typeof schema.pjTime | typeof schema.pjTemplates | typeof schema.pjDocs | typeof schema.pjDocComments | typeof schema.pjBoards | typeof schema.pjForms | typeof schema.pjFormAnswers | typeof schema.pjDashboards | typeof schema.pjShares | typeof schema.pjSettings | typeof schema.pjViews | typeof schema.pjDocShares | typeof schema.pjStars | typeof schema.pjPrefs | typeof schema.pjPortfolios | typeof schema.pjPortfolioItems | typeof schema.pjStatusUpdates | typeof schema.pjTaskTimes>(t: T) {
   type Row = T["$inferSelect"];
   type Ins = T["$inferInsert"];
   const tt = t as any;
@@ -2621,6 +2621,18 @@ function crud<T extends typeof schema.goals | typeof schema.goalFolders | typeof
 }
 
 /** Lists shared with a person as a guest, across workspaces (a guest signs in to these only). */
+/** Planned task times whose end has passed, every workspace. */
+export function taskTimesEnded(now: Date) {
+  const t = schema.pjTaskTimes;
+  return getDb().select().from(t).where(and(eq(t.status, "planned"), lte(t.end, now))).all();
+}
+
+/** Every person who chose a Find time setting, every workspace. */
+export function findTimePrefs() {
+  const t = schema.pjPrefs;
+  return getDb().select().from(t).where(eq(t.key, "findTime")).all();
+}
+
 export function guestSharesForUser(userId: number) {
   const t = schema.pjShares;
   return getDb().select().from(t).where(and(eq(t.userId, userId), eq(t.kind, "guest"))).all();
@@ -2681,6 +2693,7 @@ export const work = {
   docShares: crud(schema.pjDocShares),
   stars: crud(schema.pjStars),
   prefs: crud(schema.pjPrefs),
+  taskTimes: crud(schema.pjTaskTimes),
   portfolios: crud(schema.pjPortfolios),
   portfolioItems: crud(schema.pjPortfolioItems),
   statusUpdates: crud(schema.pjStatusUpdates),

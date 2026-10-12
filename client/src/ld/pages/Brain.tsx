@@ -40,7 +40,7 @@ type Entry = {
 
 const cardStyle: React.CSSProperties = {
   background: "var(--ld-surface)",
-  border: "1px solid #e3e9e6",
+  border: "1px solid var(--ld-line)",
   borderRadius: 12,
   padding: "16px 18px",
   display: "flex",

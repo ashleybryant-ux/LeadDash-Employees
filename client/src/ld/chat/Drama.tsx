@@ -339,7 +339,7 @@ function ShotList({ e }: { e: Ep }) {
         const key = s.clipUrl ? "done" : s.status === "making" ? "making" : s.stillUrl ? "todo" : s.status ?? "todo";
         const [sc, sl] = s.stillUrl && !s.clipUrl && key !== "making" ? ["gray", "Keyframe"] : SHOT_STATUS[key] ?? SHOT_STATUS.todo;
         return (
-          <div key={s.n} className="ld-shot" style={{ display: "grid", gridTemplateColumns: "28px 72px minmax(0,1fr) 150px", gap: 12, alignItems: "start", background: "var(--ld-surface)", border: "1px solid #e3e9e6", borderRadius: 10, padding: 10 }}>
+          <div key={s.n} className="ld-shot" style={{ display: "grid", gridTemplateColumns: "28px 72px minmax(0,1fr) 150px", gap: 12, alignItems: "start", background: "var(--ld-surface)", border: "1px solid var(--ld-line)", borderRadius: 10, padding: 10 }}>
             <b style={{ fontSize: 13 }}>{s.n}</b>
             <Frame shot={s} w={72} />
             <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14, lineHeight: 1.5, minWidth: 0 }}>
@@ -495,7 +495,7 @@ function Timeline({ e }: { e: Ep }) {
   let t = 0;
   const fmt = (x: number) => `${Math.floor(x / 60)}:${String(Math.round(x % 60)).padStart(2, "0")}`;
   return (
-    <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, overflow: "hidden", background: "var(--ld-surface)" }}>
+    <div style={{ border: "1px solid var(--ld-line)", borderRadius: 10, overflow: "hidden", background: "var(--ld-surface)" }}>
       <div className="ld-tl" style={{ display: "grid", gridTemplateColumns: "100px minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1fr)", gap: 12, padding: "9px 16px", fontSize: 11, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #eef2f0" }}>
         <span>Time</span><span>Shot</span><span>Voice-over and caption</span><span>Sound</span>
       </div>
@@ -596,7 +596,7 @@ function OwnerPack() {
             const on = picked.includes(p.id);
             return (
               <label key={p.id} style={{ display: "flex", flexDirection: "column", gap: 4, width: 88, fontSize: 12, cursor: "pointer" }}>
-                <img src={p.url} alt={p.title} style={{ width: 88, height: 110, objectFit: "cover", borderRadius: 8, outline: on ? "3px solid #1b6b4a" : "1px solid #e3e9e6" }} />
+                <img src={p.url} alt={p.title} style={{ width: 88, height: 110, objectFit: "cover", borderRadius: 8, outline: on ? "3px solid #1b6b4a" : "1px solid var(--ld-line)" }} />
                 <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   <input type="checkbox" checked={on} style={{ margin: 0, accentColor: "var(--ld-accent)" }} onChange={(ev) => setIds(ev.target.checked ? [...picked, p.id] : picked.filter((x) => x !== p.id))} />
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</span>
@@ -764,7 +764,7 @@ export function StyleTab() {
                 {LIKES.map((l) => {
                   const on = edit.likes.includes(l);
                   return (
-                    <button key={l} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "#fff", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setEdit({ ...edit, likes: on ? edit.likes.filter((x) => x !== l) : [...edit.likes, l] })}>{l}</button>
+                    <button key={l} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "var(--ld-surface)", borderColor: on ? "var(--ld-accent)" : undefined, color: on ? "var(--ld-accent-dark)" : "var(--ld-ink)" }} onClick={() => setEdit({ ...edit, likes: on ? edit.likes.filter((x) => x !== l) : [...edit.likes, l] })}>{l}</button>
                   );
                 })}
               </div>

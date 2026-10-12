@@ -8,7 +8,7 @@ import { ErrorLine } from "../ui";
  * Each person has their own order.
  */
 
-export type NavKey = "home" | "mine" | "everything" | "docs" | "portfolios" | "dash" | "time" | "templates" | "boards" | "forms" | "goals" | "import";
+export type NavKey = "home" | "mine" | "all" | "everything" | "docs" | "portfolios" | "dash" | "time" | "templates" | "boards" | "forms" | "goals" | "import";
 const I = (d: React.ReactNode) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {d}
@@ -18,6 +18,7 @@ const I = (d: React.ReactNode) => (
 export const NAV_ICONS: Record<NavKey | "more" | "settings", React.ReactNode> = {
   home: I(<><path d="M4 11l8-7 8 7" /><path d="M6 10v10h12V10" /><path d="M10 20v-6h4v6" /></>),
   mine: I(<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" />),
+  all: I(<><circle cx="9" cy="8" r="3.2" /><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" /><circle cx="17" cy="9" r="2.6" /><path d="M16 14.6c3 .2 5 2.2 5 5.4" /></>),
   everything: I(<><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="4" cy="6" r="1" fill="currentColor" /><circle cx="4" cy="12" r="1" fill="currentColor" /><circle cx="4" cy="18" r="1" fill="currentColor" /></>),
   docs: I(<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h6" /></>),
   portfolios: I(<><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18" /></>),
@@ -34,6 +35,7 @@ export const NAV_ICONS: Record<NavKey | "more" | "settings", React.ReactNode> = 
 export const NAV: { key: NavKey; label: string }[] = [
   { key: "home", label: "Home" },
   { key: "mine", label: "My tasks" },
+  { key: "all", label: "All tasks" },
   { key: "everything", label: "Everything" },
   { key: "docs", label: "Docs" },
   { key: "portfolios", label: "Portfolios" },

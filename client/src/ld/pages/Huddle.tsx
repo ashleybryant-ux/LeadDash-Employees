@@ -333,7 +333,7 @@ export default function Huddle() {
               <ErrorLine error={say.error || bring.error || takeOut.error || members.error} />
             </div>
             <aside className="ld-hud-side">
-              <div style={{ padding: "14px 16px", borderBottom: "1px solid #e3e9e6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--ld-line)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontWeight: 800 }}>Transcript</span>
                 <span className="ld-small ld-muted">Saved when you end</span>
               </div>

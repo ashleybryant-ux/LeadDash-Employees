@@ -58,6 +58,7 @@ export type Where =
   | { scope: "folder"; folderId: number; tab?: "overview" }
   | { scope: "everything" }
   | { scope: "mine" }
+  | { scope: "all" }
   | { scope: "import" }
   | { scope: "docs"; tab?: "boards" | "forms" }
   | { scope: "doc"; id: number }
@@ -128,6 +129,8 @@ function readUrl(): { where: Where; view: View; savedId: number | null; task: nu
               ? { scope: "folder", folderId: folder, tab: p.get("tab") === "overview" || !p.get("view") ? "overview" : undefined }
               : p.get("scope") === "mine"
                 ? { scope: "mine" }
+                : p.get("scope") === "all"
+                  ? { scope: "all" }
                 : p.get("scope") === "everything" || p.get("view") || p.get("saved") || p.get("task")
                   ? { scope: "everything" }
                   : { scope: "home" };
@@ -178,7 +181,7 @@ export default function Projects() {
   const isFolder = where.scope === "folder";
   const folderId = isFolder ? where.folderId : null;
   const overview = isFolder && where.tab === "overview";
-  const isList = where.scope === "list" || where.scope === "everything" || where.scope === "mine" || (isFolder && !overview);
+  const isList = where.scope === "list" || where.scope === "everything" || where.scope === "mine" || where.scope === "all" || (isFolder && !overview);
   const view = cur.kind;
   const v = trpc.pj.view.useQuery(
     {
@@ -206,7 +209,7 @@ export default function Projects() {
       p.set("folder", String(where.folderId));
       if (where.tab === "overview") p.set("tab", "overview");
     }
-    if (where.scope === "mine" || where.scope === "everything") p.set("scope", where.scope);
+    if (where.scope === "mine" || where.scope === "everything" || where.scope === "all") p.set("scope", where.scope);
     if (where.scope === "import") p.set("import", "1");
     if ((PAGES as readonly string[]).includes(where.scope)) {
       p.set("page", where.scope);
@@ -230,7 +233,8 @@ export default function Projects() {
   const saved = cur.savedId ? views.data?.saved.find((s) => s.id === cur.savedId) ?? null : null;
   React.useEffect(() => {
     const s: ViewSettings | undefined = saved ? saved.settings : views.data?.builtin[view];
-    setGroup(s?.group ?? (where.scope === "list" ? "status" : "project"));
+    // All tasks is everyone's work by owner.
+    setGroup(where.scope === "all" ? "assignee" : s?.group ?? (where.scope === "list" ? "status" : "project"));
     setDir(s?.dir ?? "asc");
     setSort((s?.sort as PjCtx["sort"]) ?? "manual");
     setSortDir(s?.sortDir ?? "asc");
@@ -340,7 +344,7 @@ export default function Projects() {
   const beside = !!taskId && wide && !taskFull && isList;
   const ctx: PjCtx | null = data ? { orgId: currentOrgId, data, tasks, open: openTask, refresh, group, dir, sort, sortDir, subtaskMode, subtasks: data.subtasks, opts, listId: where.scope === "list" ? where.listId : null, level, columns, setColumns, autoColumns: !pickedColumns, selected, toggle, clearSelected, compact: beside, openId: taskId } : null;
   const folderRow = folderId ? tree.data?.folders.find((f) => f.id === folderId) : null;
-  const title = where.scope === "list" ? data?.list?.name ?? "" : where.scope === "mine" ? "My tasks" : where.scope === "home" ? "Home" : where.scope === "import" ? "Import from ClickUp" : isFolder ? folderRow?.name ?? data?.folder?.name ?? "" : "Everything";
+  const title = where.scope === "list" ? data?.list?.name ?? "" : where.scope === "mine" ? "My tasks" : where.scope === "all" ? "All tasks" : where.scope === "home" ? "Home" : where.scope === "import" ? "Import from ClickUp" : isFolder ? folderRow?.name ?? data?.folder?.name ?? "" : "Everything";
   const crumb = where.scope === "list" && data?.list?.folderName ? `${data.list.folderName} /` : isFolder ? `${currentOrg?.name ?? ""} /` : "";
   const assignees = Array.from(new Map((data?.tasks ?? []).flatMap((t) => t.assignees).map((a) => [`${a.type}:${a.id}:${a.name}`, a])).values());
   const pick = (w: Where) => {

@@ -47,7 +47,7 @@ export default function Welcome() {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {shown.map((e) => (
-              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid #e3e9e6", borderRadius: 10, padding: "10px 12px" }}>
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--ld-line)", borderRadius: 10, padding: "10px 12px" }}>
                 <Avatar name={e.name} kind={e.kind} src={e.avatar} size={36} />
                 <div style={{ minWidth: 0 }}>
                   <b style={{ display: "block", fontSize: 14 }}>{e.name}</b>
@@ -56,7 +56,7 @@ export default function Welcome() {
               </div>
             ))}
             {team.length > shown.length && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #e3e9e6", borderRadius: 10, padding: "10px 12px", color: "var(--ld-muted)", fontWeight: 700 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--ld-line)", borderRadius: 10, padding: "10px 12px", color: "var(--ld-muted)", fontWeight: 700 }}>
                 and {team.length - shown.length} more
               </div>
             )}

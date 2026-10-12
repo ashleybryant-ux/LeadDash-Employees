@@ -198,7 +198,7 @@ function FileCard({ id, title, subtitle, kind }: { id: number; title: string; su
         </span>
       </div>
       {open && (
-        <div style={{ borderTop: "1px solid #e3e9e6" }}>
+        <div style={{ borderTop: "1px solid var(--ld-line)" }}>
           <ErrorLine error={q.error} />
           {!f ? <p className="ld-small ld-muted" style={{ padding: 16, margin: 0 }}>Opening</p> : kind === "deck" ? <DeckView raw={f.text} fileId={f.id} url={f.url} name={f.name} /> : <DocView text={f.text} />}
         </div>
@@ -216,7 +216,7 @@ export function DeckCard({ id, title, subtitle }: { id: number; title: string; s
   const f = q.data;
   return (
     <div className="ld-card" style={{ overflow: "hidden" }}>
-      <div className="ld-talk-head" style={{ gridTemplateColumns: "44px minmax(0, 1fr)", borderBottom: "1px solid #e3e9e6" }}>
+      <div className="ld-talk-head" style={{ gridTemplateColumns: "44px minmax(0, 1fr)", borderBottom: "1px solid var(--ld-line)" }}>
         <span className="ld-talk-ic" style={{ background: "var(--ld-warn-bg)", color: "var(--ld-warn)" }}>PPT</span>
         <span style={{ minWidth: 0 }}>
           <span className="ld-strong" style={{ display: "block" }}>{title}</span>

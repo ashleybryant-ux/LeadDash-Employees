@@ -178,7 +178,7 @@ function PagePanel({ id, status, progress }: { id: number; status: string; progr
             )}
             <Details id={id} html={d.html} buttonUrl={d.page.buttonUrl ?? ""} embedCode={d.page.embedCode ?? ""} onSaved={refresh} />
             <section className="ld-card">
-              <div style={{ padding: "12px 16px", borderBottom: "1px solid #e3e9e6" }} className="ld-strong">Versions</div>
+              <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--ld-line)" }} className="ld-strong">Versions</div>
               <div style={{ padding: "4px 16px 10px 16px" }}>
                 {d.versions.map((v) => (
                   <div key={v.version} className="ld-pg-ver">
@@ -218,7 +218,7 @@ function Details({ id, html, buttonUrl, embedCode, onSaved }: { id: number; html
   const images = (html.match(/<img\b/gi) ?? []).length;
   return (
     <section className={`ld-card ${editing ? "editing" : ""}`} style={editing ? { outline: "2px solid #1b6b4a" } : undefined}>
-      <div className="ld-between" style={{ padding: "12px 16px", borderBottom: "1px solid #e3e9e6" }}>
+      <div className="ld-between" style={{ padding: "12px 16px", borderBottom: "1px solid var(--ld-line)" }}>
         <span className="ld-strong">Page details</span>
         {editing ? (
           <span className="ld-row">

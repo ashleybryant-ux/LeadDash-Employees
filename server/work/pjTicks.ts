@@ -7,7 +7,8 @@ import { doAction, parse, runAutomations, spawnNext, type Action, type Repeat, t
  * The Projects checks the scheduler runs every few minutes:
  * - due-date and overdue automations (each fires once per task),
  * - scheduled automations (every day, weekday, or a day of the week at a time),
- * - repeating tasks set to repeat on schedule, made when their date arrives.
+ * - repeating tasks set to repeat on schedule, made when their date arrives,
+ * - task times that ended with the task still open (Find time).
  */
 export async function projectsTicks(now = new Date()) {
   for (const orgId of db.orgsWithProjects()) {
@@ -16,6 +17,12 @@ export async function projectsTicks(now = new Date()) {
     } catch (err) {
       console.warn("[projects] check failed:", err instanceof Error ? err.message : err);
     }
+  }
+  // Task times that ended with the task open move to the next open time; "Every new task" gets its times.
+  try {
+    await (await import("./taskTimes")).taskTimesTick(now);
+  } catch (err) {
+    console.warn("[projects] task times failed:", err instanceof Error ? err.message : err);
   }
 }
 

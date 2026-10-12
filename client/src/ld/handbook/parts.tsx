@@ -29,7 +29,7 @@ export function RuleList({ rules }: { rules: string[] }) {
 function TableView({ table }: { table: HbTable }) {
   const cols = `repeat(${table.columns.length}, minmax(0,1fr))`;
   return (
-    <div style={{ border: "1px solid #e3e9e6", borderRadius: 10, overflow: "hidden", margin: "6px 0", overflowX: "auto" }}>
+    <div style={{ border: "1px solid var(--ld-line)", borderRadius: 10, overflow: "hidden", margin: "6px 0", overflowX: "auto" }}>
       <div className="ld-hd" style={{ gridTemplateColumns: cols, minWidth: 520 }}>
         {table.columns.map((c) => (
           <span key={c}>{c}</span>
