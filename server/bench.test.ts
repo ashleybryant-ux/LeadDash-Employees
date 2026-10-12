@@ -12,7 +12,7 @@ vi.mock("./_core/llm", async (orig) => {
   };
 });
 
-import { caller, makeWorkspace } from "./test/helpers";
+import { caller, makeUser, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
 import * as hours from "./workHours";
 import * as interview from "./employees/interview";
@@ -203,5 +203,22 @@ describe("The bench", () => {
     await db.updateEmployee(morgan.id, orgId, { status: "active" });
     expect(await bench.benchUnused(orgId)).toEqual([]);
     expect((await db.getEmployeeForOrg(morgan.id, orgId))!.status).toBe("active");
+  });
+
+  it("leaves interviews and every decision about who is on the team to owners and admins", async () => {
+    const { orgId, owner } = await makeWorkspace("bench-roles");
+    await caller(owner).setup.finish({ organizationId: orgId, bench: true });
+    const staff = await makeUser("member@bench-roles.test", "user", "Team Member");
+    await db.addOrganizationMember({ organizationId: orgId, userId: staff.id, role: "member" });
+    const them = caller(staff);
+    const malik = (await db.getEmployeeByKind(orgId, "leads"))!;
+    expect((await them.bench.view({ organizationId: orgId })).employees.length).toBeGreaterThan(0);
+    const no = /Your role in this workspace cannot do that/;
+    await expect(them.bench.interview({ organizationId: orgId, employeeId: malik.id })).rejects.toThrow(no);
+    await expect(them.bench.bringOn({ organizationId: orgId, employeeId: malik.id })).rejects.toThrow(no);
+    await expect(them.employees.toggleStatus({ organizationId: orgId, id: malik.id, status: "active" })).rejects.toThrow(no);
+    await caller(owner).bench.bringOn({ organizationId: orgId, employeeId: malik.id });
+    await expect(them.bench.vacation({ organizationId: orgId, employeeId: malik.id, back: "2099-01-01" })).rejects.toThrow(no);
+    await expect(them.bench.terminate({ organizationId: orgId, employeeId: malik.id, reason: "" })).rejects.toThrow(no);
   });
 });

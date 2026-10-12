@@ -32,6 +32,13 @@ export function onboarded(emp: { interview?: string | null }) {
 
 export const BEACH = "/brand/beach.webp";
 
+/** Personnel decisions about the AI employees (interview, bring on, vacation, terminate) are for owners and admins. */
+export function useCanManage() {
+  const { currentOrg } = useTenant();
+  const r = currentOrg?.role;
+  return !r || r === "owner" || r === "admin";
+}
+
 export function LeaveBox({ emp, mode, setMode, onClose }: { emp: Emp; mode: LeaveMode; setMode: (m: LeaveMode) => void; onClose: () => void }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();

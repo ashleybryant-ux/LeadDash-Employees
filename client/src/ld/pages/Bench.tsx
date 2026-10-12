@@ -1,12 +1,12 @@
 import React from "react";
-import { Link, useLocation, useParams, useSearch } from "wouter";
+import { Link, Redirect, useLocation, useParams, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { BottomNav, ErrorLine, FolderTabs, Page, Rail } from "../ui";
 import { DictateButton, appendText } from "../Dictate";
 import { AVATAR_FILES, DEPARTMENT_ORDER, EHR_GROUP, KIND_META, KIND_ORDER, type Kind } from "../meta";
 import type { Outputs } from "../types";
-import { BEACH, dayText } from "../bench/Leave";
+import { BEACH, dayText, useCanManage } from "../bench/Leave";
 
 /**
  * The bench: every employee waits here until the owner brings them on. Each
@@ -77,12 +77,15 @@ function limitText(v: View, e: Emp) {
 
 export default function Bench() {
   const params = useParams<{ kind?: string }>();
-  if (params.kind) return <InterviewPage kind={params.kind} />;
+  const manage = useCanManage();
+  // Interviews use work hours and lead to a hire: owners and admins only.
+  if (params.kind) return manage ? <InterviewPage kind={params.kind} /> : <Redirect to="/bench" />;
   return <BenchPage />;
 }
 
 function BenchPage() {
   const { currentOrg } = useTenant();
+  const manage = useCanManage();
   const { q, bring, orgId } = useBench();
   const search = useSearch();
   const [, navigate] = useLocation();
@@ -123,8 +126,8 @@ function BenchPage() {
         <b>{e.name}</b>
         <span className="r">{e.roleTitle}</span>
         <span className="l">{e.bio.support[0] ?? ""}</span>
-        <button type="button" className="ld-btn p bring" disabled={bring.isPending} onClick={() => onBring(e)}>{PLUS}{`Bring on ${e.name}`}</button>
-        <button type="button" className="ld-btn" onClick={() => navigate(`/bench/${e.kind === "custom" ? `e${e.id}` : e.kind}`)}>{MIC}Interview</button>
+        {manage && <button type="button" className="ld-btn p bring" disabled={bring.isPending} onClick={() => onBring(e)}>{PLUS}{`Bring on ${e.name}`}</button>}
+        {manage && <button type="button" className="ld-btn" onClick={() => navigate(`/bench/${e.kind === "custom" ? `e${e.id}` : e.kind}`)}>{MIC}Interview</button>}
         <button type="button" className="ld-btn" onClick={() => setBio(e.kind)}>Read bio</button>
       </div>
     </div>
@@ -137,7 +140,7 @@ function BenchPage() {
         <div>
           <h1 className="ld-h1" style={{ fontSize: 28 }}>The bench</h1>
           <p className="ld-body" style={{ margin: "4px 0 0", color: "var(--ld-text2)" }}>
-            {v?.ehrStart ? "Your plan includes the three who work with LeadDash EHR. Interview anyone." : `Interview anyone. Bring on the ones you want.${v?.startLimit ? ` Start with up to ${v.startLimit}.` : ""}`}
+            {!manage ? "Everyone who can join the team. Read any bio." : v?.ehrStart ? "Your plan includes the three who work with LeadDash EHR. Interview anyone." : `Interview anyone. Bring on the ones you want.${v?.startLimit ? ` Start with up to ${v.startLimit}.` : ""}`}
           </p>
         </div>
         {v && (
@@ -163,14 +166,14 @@ function BenchPage() {
         </div>
       )}
       <ErrorLine error={q.error || bring.error} />
-      {v && <span className="ld-bench-hours">Interviews use work hours. Bios are free to read.</span>}
+      {v && <span className="ld-bench-hours">{manage ? "Interviews use work hours. Bios are free to read." : "Owners and admins interview and bring on employees. You can read every bio."}</span>}
       {onVacation.length > 0 && (
         <section className="ld-bench-vac" style={{ backgroundImage: `linear-gradient(180deg, rgba(3, 28, 46, .78) 0%, rgba(3, 28, 46, .35) 45%, rgba(3, 28, 46, .1) 100%), url(${BEACH})` }}>
           <div>
             <h2><span aria-hidden="true">🏖️</span> On vacation</h2>
             <p>No jobs, no work hours, no spot on the team.</p>
           </div>
-          <div className="ld-bench-grid">{onVacation.map((e) => <AwayCard key={e.id} e={e} onBring={() => onBring(e)} onBio={() => setBio(e.kind)} busy={bring.isPending} />)}</div>
+          <div className="ld-bench-grid">{onVacation.map((e) => <AwayCard key={e.id} e={e} manage={manage} onBring={() => onBring(e)} onBio={() => setBio(e.kind)} busy={bring.isPending} />)}</div>
         </section>
       )}
       {terminated.length > 0 && (
@@ -179,7 +182,7 @@ function BenchPage() {
             <h2>Terminated</h2>
             <p>{`Stored, not deleted. Rehirable ${v?.terminateDays ?? 90} days after they leave.`}</p>
           </div>
-          <div className="ld-bench-grid">{terminated.map((e) => <AwayCard key={e.id} e={e} onBring={() => onBring(e)} onBio={() => setBio(e.kind)} busy={bring.isPending} />)}</div>
+          <div className="ld-bench-grid">{terminated.map((e) => <AwayCard key={e.id} e={e} manage={manage} onBring={() => onBring(e)} onBio={() => setBio(e.kind)} busy={bring.isPending} />)}</div>
         </section>
       )}
       {ehr.length > 0 && (
@@ -204,13 +207,13 @@ function BenchPage() {
       )}
       {v && benched.length === 0 && onVacation.length === 0 && terminated.length === 0 && <div className="ld-empty">Everyone is on your team.</div>}
       {!v && q.isLoading && <div className="ld-empty">Loading...</div>}
-      {open && <BioBox e={open} onClose={() => setBio(null)} onBring={() => { setBio(null); onBring(open); }} busy={bring.isPending} />}
+      {open && <BioBox e={open} manage={manage} onClose={() => setBio(null)} onBring={() => { setBio(null); onBring(open); }} busy={bring.isPending} />}
     </Page>
   );
 }
 
 /** A card in On vacation or Terminated: when they can come back, and the button for it. */
-function AwayCard({ e, onBring, onBio, busy }: { e: Emp; onBring: () => void; onBio: () => void; busy: boolean }) {
+function AwayCard({ e, manage, onBring, onBio, busy }: { e: Emp; manage: boolean; onBring: () => void; onBio: () => void; busy: boolean }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const a = e.away!;
@@ -231,12 +234,12 @@ function AwayCard({ e, onBring, onBio, busy }: { e: Emp; onBring: () => void; on
         <b>{e.name}</b>
         <span className="r">{e.roleTitle}</span>
         <span className="l">{line}</span>
-        {a.canReturn ? (
+        {a.canReturn && manage ? (
           <button type="button" className={`ld-btn ${vac ? "gold" : "p"}`} disabled={busy} onClick={onBring}>{vac ? `Bring ${e.name} back` : `Rehire ${e.name}`}</button>
         ) : (
-          <button type="button" className="ld-btn" disabled>{vac ? `Back ${dayText(a.returnFrom)}` : `Rehirable ${dayText(a.until)}`}</button>
+          <button type="button" className="ld-btn" disabled>{vac ? `Back ${dayText(a.canReturn ? a.until : a.returnFrom)}` : a.canReturn ? "Rehirable now" : `Rehirable ${dayText(a.until)}`}</button>
         )}
-        {vac ? (
+        {vac && manage ? (
           editing ? (
             <div className="ld-bench-date">
               <input type="date" className="ld-in" aria-label="Back on" min={earliest} value={date} onChange={(ev) => setDate(ev.target.value)} />
@@ -257,7 +260,7 @@ function AwayCard({ e, onBring, onBio, busy }: { e: Emp; onBring: () => void; on
   );
 }
 
-function BioBox({ e, onClose, onBring, busy }: { e: Emp; onClose: () => void; onBring: () => void; busy: boolean }) {
+function BioBox({ e, manage, onClose, onBring, busy }: { e: Emp; manage: boolean; onClose: () => void; onBring: () => void; busy: boolean }) {
   const [, navigate] = useLocation();
   React.useEffect(() => {
     const key = (ev: KeyboardEvent) => ev.key === "Escape" && onClose();
@@ -289,7 +292,7 @@ function BioBox({ e, onClose, onBring, busy }: { e: Emp; onClose: () => void; on
           <div className="ld-row" style={{ flexWrap: "wrap", marginTop: 14 }}>
             {e.onTeam ? (
               <Link href={chatHref(e)} className="ld-btn p">Open chat</Link>
-            ) : e.away && !e.away.canReturn ? (
+            ) : !manage ? null : e.away && !e.away.canReturn ? (
               <button type="button" className="ld-btn" style={{ width: "auto", padding: "0 16px" }} disabled>{e.away.kind === "vacation" ? `Back ${dayText(e.away.returnFrom)}` : `Rehirable ${dayText(e.away.until)}`}</button>
             ) : e.away ? (
               <button type="button" className="ld-btn p" style={{ width: "auto", padding: "0 16px" }} disabled={busy} onClick={onBring}>{e.away.kind === "vacation" ? `Bring ${e.name} back` : `Rehire ${e.name}`}</button>
@@ -354,7 +357,10 @@ function InterviewPage({ kind }: { kind: string }) {
     ask.mutate({ organizationId: orgId, employeeId: e.id });
   }, [e?.id]);
   React.useEffect(() => () => audio.current?.pause(), []);
-  React.useEffect(() => bottom.current?.scrollIntoView({ block: "end" }), [lines.length, ask.isPending]);
+  // A block body: an effect must return nothing or a cleanup function. Some browsers and extensions make scrollIntoView return a value, and React then calls it as a cleanup ("is not a function").
+  React.useEffect(() => {
+    bottom.current?.scrollIntoView({ block: "end" });
+  }, [lines.length, ask.isPending]);
 
   const send = (text: string) => {
     const t = text.trim();

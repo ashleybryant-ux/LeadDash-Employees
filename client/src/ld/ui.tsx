@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { NextUpBar } from "./NextUp";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { BEACH, LeaveBox, dayText as leaveDay, type LeaveMode } from "./bench/Leave";
+import { BEACH, LeaveBox, dayText as leaveDay, useCanManage, type LeaveMode } from "./bench/Leave";
 import { AVATAR_FILES, KIND_META, KIND_ORDER, fmtWhen, initials, type Kind, DEPARTMENT_ORDER, worksWithClientInfo } from "./meta";
 import { Menu } from "./goals/shared";
 import { applyTheme, useTheme, type Theme } from "./theme";
@@ -675,6 +675,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
   const { currentOrgId, currentOrg } = useTenant();
   const utils = trpc.useUtils();
   const [leave, setLeave] = React.useState<LeaveMode | null>(null);
+  const manage = useCanManage();
   const work = KIND_META[(emp.kind as Kind) ?? "custom"].work;
   const clientInfo = worksWithClientInfo(emp.kind, currentOrg?.orgType);
   // Client names on this person's screen: Show, Initial (A. Price) or Hide (a black box). Chat and the Work tabs follow it at once.
@@ -737,7 +738,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
       )}
       <div className="ld-row ld-emphead-status" style={{ marginLeft: clientInfo ? 0 : "auto" }}>
         <span className={`ld-pill ${paused ? "gray" : "green"}`}>{paused ? "On the bench" : emp.status === "working" ? "Working" : "Ready"}</span>
-        {!paused && (
+        {!paused && manage && (
           <>
             <button type="button" className="ld-btn sm" style={{ width: 120 }} aria-pressed={leave === "vacation"} onClick={() => setLeave(leave === "vacation" ? null : "vacation")}>
               <span aria-hidden="true">🏖️</span>Vacation
@@ -749,7 +750,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
         )}
       </div>
     </header>
-    {leave && !paused && <LeaveBox emp={emp} mode={leave} setMode={setLeave} onClose={() => setLeave(null)} />}
+    {leave && !paused && manage && <LeaveBox emp={emp} mode={leave} setMode={setLeave} onClose={() => setLeave(null)} />}
     </>
   );
 }

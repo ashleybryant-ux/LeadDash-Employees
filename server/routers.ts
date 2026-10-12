@@ -714,7 +714,7 @@ export const appRouter = router({
     toggleStatus: protectedProcedure
       .input(z.object({ id: z.number(), organizationId: z.number(), status: z.enum(["active", "idle", "working", "paused"]) }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
+        await requireMember(ctx, input.organizationId, "admin");
         // Off the bench goes through the same limits as Bring on.
         const before = await db.getEmployeeForOrg(input.id, input.organizationId);
         if (before?.status === "paused" && input.status !== "paused") {
@@ -5043,20 +5043,20 @@ export const appRouter = router({
     }),
     /** One click: the employee joins the team and offers to start onboarding in their chat. */
     bringOn: protectedProcedure.input(orgInput.extend({ employeeId: z.number().int() })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      await requireMember(ctx, input.organizationId, "admin");
       const emp = await (await import("./employees/bench")).bringOn(input.organizationId, input.employeeId);
       await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Brought an employee on from the bench", details: emp.name });
       return { id: emp.id, kind: emp.kind, name: emp.name };
     }),
     /** Vacation: onboarded employees, back on a day at least 30 days out. */
     vacation: protectedProcedure.input(orgInput.extend({ employeeId: z.number().int(), back: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      await requireMember(ctx, input.organizationId, "admin");
       const emp = await (await import("./employees/bench")).sendOnVacation(input.organizationId, input.employeeId, input.back);
       await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Sent an employee on vacation", details: `${emp.name}, back ${input.back}` });
       return { id: emp.id };
     }),
     changeReturn: protectedProcedure.input(orgInput.extend({ employeeId: z.number().int(), back: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).mutation(async ({ ctx, input }) => {
-      await requireMember(ctx, input.organizationId, "member");
+      await requireMember(ctx, input.organizationId, "admin");
       const emp = await (await import("./employees/bench")).changeReturn(input.organizationId, input.employeeId, input.back);
       await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Changed a vacation return date", details: `${emp.name}, back ${input.back}` });
       return { id: emp.id };
@@ -5072,7 +5072,7 @@ export const appRouter = router({
     interview: protectedProcedure
       .input(orgInput.extend({ employeeId: z.number().int(), question: z.string().max(1000).default(""), history: z.array(z.object({ me: z.boolean(), text: z.string().max(2000) })).max(30).default([]) }))
       .mutation(async ({ ctx, input }) => {
-        await requireMember(ctx, input.organizationId, "member");
+        await requireMember(ctx, input.organizationId, "admin");
         const r = await (await import("./employees/bench")).interviewAnswer(input.organizationId, input.employeeId, input.history, input.question);
         const healthcare = (await db.getOrganizationById(input.organizationId))?.orgType === "healthcare";
         const id = await huddle.speak(r.emp.kind, r.text, "", { clientInfo: healthcare, orgId: input.organizationId });
