@@ -202,7 +202,7 @@ export function EmployeeLookRow({ v, e, single }: { v: Options; e: Emp; single?:
                   {staff ? `${PROVIDER_NAME[p]} · ${v.prices[p].perMinute.replace("about ", "")}` : CUSTOMER_NAME[p]}
                 </button>
               ))}
-              {!v.hasElevenLabs && <span className="ld-small ld-muted">{staff ? "ElevenLabs is not set up on the server." : "Premium voices aren't turned on yet."}</span>}
+              {!v.hasElevenLabs && <span className="ld-small ld-muted">{staff ? "ElevenLabs is not set up on the server." : "Premium voices use your own ElevenLabs account. Connect it under Integrations."}</span>}
             </div>
             {provider === "elevenlabs" && v.elevenError && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{staff ? v.elevenError : "Premium voices couldn't load. Try again in a minute."}</span>}
             <div className="ld-look-voices">

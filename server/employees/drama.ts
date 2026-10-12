@@ -281,7 +281,7 @@ export async function writeEpisodes(orgId: number, input: { brief: string; count
   const series = row?.premise ? row : null;
   const cast = db.listDramaCast(orgId);
   const eps = db.listDramaEpisodes(orgId).filter((e) => e.kind === "drama");
-  const voiceList = await avatar.voices();
+  const voiceList = await avatar.voices(orgId);
   const count = input.replace ? 1 : Math.max(1, Math.min(10, input.count || 3));
   const sys = await (await import("./tasks")).systemPromptAbout(emp, input.brief, `You are ${emp.name}, the owner's video producer and showrunner. You write cinematic micro dramas.\n${STYLE}`);
   const out = await generateJson<Written>({
@@ -533,16 +533,11 @@ async function download(url: string) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function speak(voiceId: string, text: string) {
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
-    method: "POST",
-    headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
-    body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_AVATAR_MODEL || "eleven_multilingual_v2" }),
-    signal: AbortSignal.timeout(90_000),
-  });
-  if (!res.ok) throw new Error(`ElevenLabs didn't read the line (${res.status}): ${(await res.text()).slice(0, 200)}`);
-  return Buffer.from(await res.arrayBuffer());
-}
+/** A line read aloud in this workspace's voice for the character (never another workspace's account). */
+const speak = (orgId: number, voiceId: string, text: string) => avatar.speech(orgId, voiceId, text);
+
+/** This workspace's ElevenLabs key, for room tone and music ("" leaves them out). */
+const elevenKey = (orgId: number) => import("../elevenlabs").then((m) => m.keyFor(orgId));
 
 // ==========================================
 // Making an episode
@@ -562,20 +557,14 @@ export async function castFromDescription(orgId: number, who: string) {
   const m = text.match(/^([A-Z][\w'-]{1,30}(?:\s[A-Z][\w'-]{1,30})?)\s*[:,]\s*(.+)$/);
   const name = (m ? m[1] : `Creator ${existing.length + 1}`).slice(0, 80);
   const look = (m ? m[2] : text).slice(0, 500);
-  const voice = await stockVoiceFor(look);
+  const voice = await stockVoiceFor(orgId, look);
   return db.createDramaCast({ organizationId: orgId, name, role: "On camera", kind: "made_up", look, photoUrl: null, voiceId: voice?.id ?? null, voiceName: voice?.name ?? null });
 }
 
-/** A stock ElevenLabs voice that fits a description: by the gender it reads, else any stock voice. */
-async function stockVoiceFor(look: string) {
-  let list: { id: string; name: string; gender: string; own: boolean }[] = [];
-  try {
-    list = await (await import("./huddle")).listVoices();
-  } catch {
-    return null;
-  }
-  // Never the owner's own cloned voice for someone who is not her.
-  const stock = list.filter((v) => !v.own);
+/** A stock voice that fits a description: by the gender it reads, else any stock voice (this workspace's own voices only). */
+async function stockVoiceFor(orgId: number, look: string) {
+  // Never anyone's own cloned voice for someone who is not them.
+  const stock = await avatar.castVoices(orgId);
   const wantsF = /\b(she|her|woman|female|mom|mother|lady|girl)\b/i.test(look);
   const wantsM = /\b(he|him|his|man|male|dad|father|guy|boy)\b/i.test(look);
   const fit = stock.filter((v) => (wantsF ? /female/i.test(v.gender) : wantsM ? /^male/i.test(v.gender) : true));
@@ -676,7 +665,7 @@ export async function startEpisode(orgId: number, id: number) {
     if (changed) plan.approved = false;
   }
   const animating = Boolean(plan.approved);
-  if (animating && shots.some((s) => !s.takeUrl && !s.clipUrl && (s.line || s.vo)) && !ENV.elevenLabsKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Voices aren't connected yet: ELEVENLABS_API_KEY is missing on the server." });
+  if (animating && shots.some((s) => !s.takeUrl && !s.clipUrl && (s.line || s.vo)) && !ENV.openAiKey && !(await avatar.hasElevenLabs(orgId))) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Voices aren't set up on the server yet." });
   const needsOwner = shots.some((s) => s.vo || s.cast.some((n) => cast.find((c) => c.name.toLowerCase() === n.toLowerCase())?.kind === "owner")) || (ep.kind === "drama" && cast.some((c) => c.kind === "owner"));
   const owner = cast.find((c) => c.kind === "owner");
   if (needsOwner) {
@@ -685,7 +674,7 @@ export async function startEpisode(orgId: number, id: number) {
     if (owner && !owner.photoUrl) db.updateDramaCast(owner.id, orgId, { photoUrl: pic });
   }
   const s0 = avatar.settingsOf(emp);
-  const ownVoice = s0.voiceId ? { id: s0.voiceId, name: s0.voiceName } : (await avatar.voices()).find((v) => v.own) ?? null;
+  const ownVoice = s0.voiceId ? { id: s0.voiceId, name: s0.voiceName } : (await avatar.voices(orgId)).find((v) => v.own) ?? null;
   if (owner && !owner.voiceId && ownVoice) db.updateDramaCast(owner.id, orgId, { voiceId: ownVoice.id, voiceName: ownVoice.name ?? null });
   if (animating) {
     for (const s of shots) if (s.line && !s.takeUrl && !db.listDramaCast(orgId).find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${s.line.who} doesn't have a voice yet. Pick one on the Cast tab.` });
@@ -801,7 +790,7 @@ async function refsFor(orgId: number, s: Shot, look: string) {
  */
 async function lipSync(clip: string, audio: Buffer, s: Shot, total: number, waiting: (what: string) => FalWait) {
   const audioIn = dataUri(audio, "audio/mpeg");
-  const secs = (audio.length * 8) / 128_000;
+  const secs = avatar.mp3Tenths(audio) / 10;
   const tries: { model: string; input: Record<string, unknown> }[] = [
     { model: MODELS.lipsync, input: { video_url: clip, audio_url: audioIn, sync_mode: "cut_off" } },
     // Kling's lip sync needs at least 2 seconds of speech.
@@ -885,7 +874,7 @@ export async function makeEpisode(orgId: number, id: number) {
 
   // 3. Animation, voice-over and lip sync, shot by shot (the video model moves the camera and the people, nothing else).
   const cast = db.listDramaCast(orgId);
-  const ownerVoice = cast.find((c) => c.kind === "owner")?.voiceId ?? avatar.settingsOf(emp).voiceId ?? (await avatar.voices()).find((v) => v.own)?.id ?? null;
+  const ownerVoice = cast.find((c) => c.kind === "owner")?.voiceId ?? avatar.settingsOf(emp).voiceId ?? (await avatar.voices(orgId)).find((v) => v.own)?.id ?? null;
   for (const s of shots) {
     if (s.clipUrl) continue;
     s.status = "making";
@@ -914,16 +903,16 @@ export async function makeEpisode(orgId: number, id: number) {
       if (!audio) {
         const voice = cast.find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId;
         if (!voice) throw new Error(`${s.line.who} doesn't have a voice yet`);
-        audio = await speak(voice, s.line.text);
+        audio = await speak(orgId, voice, s.line.text);
         s.lineUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-line${s.n}.mp3`, audio, "audio/mpeg")).url;
       }
-      seconds = Math.max(seconds, Math.ceil((audio.length * 8) / 128_000) + 1);
+      seconds = Math.max(seconds, Math.ceil(avatar.mp3Tenths(audio) / 10) + 1);
     }
     if (s.vo && !s.voUrl) {
       if (!ownerVoice) throw new Error("Pick your voice under Your avatar first");
-      const vo = await speak(ownerVoice, s.vo);
+      const vo = await speak(orgId, ownerVoice, s.vo);
       s.voUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-vo${s.n}.mp3`, vo, "audio/mpeg")).url;
-      seconds = Math.max(seconds, Math.ceil((vo.length * 8) / 128_000) + 1);
+      seconds = Math.max(seconds, Math.ceil(avatar.mp3Tenths(vo) / 10) + 1);
     }
     seconds = Math.max(3, Math.min(10, seconds));
     const engine = engineFor(s);
@@ -975,11 +964,11 @@ export async function makeEpisode(orgId: number, id: number) {
   // 4. Music, sound, the cut, captions, the call to action, and the export versions.
   save("Scoring, cutting and captioning");
   const total = shots.reduce((t, x) => t + x.seconds, 0);
-  const music = ep.music ? await score(ep.music, total).catch((err) => (console.warn("[drama] score skipped:", err instanceof Error ? err.message : err), null)) : null;
+  const music = ep.music ? await score(await elevenKey(orgId), ep.music, total).catch((err) => (console.warn("[drama] score skipped:", err instanceof Error ? err.message : err), null)) : null;
   const beds: Record<string, Buffer> = {};
   for (const key of Array.from(new Set(shots.map(sceneOf)))) {
     const inScene = shots.filter((x) => sceneOf(x) === key);
-    const bed = await ambience(inScene[0].setting, inScene.map((x) => x.sound).filter(Boolean).join("; "), inScene.reduce((t, x) => t + x.seconds, 0)).catch((err) => (console.warn("[drama] room tone skipped:", err instanceof Error ? err.message : err), null));
+    const bed = await ambience(await elevenKey(orgId), inScene[0].setting, inScene.map((x) => x.sound).filter(Boolean).join("; "), inScene.reduce((t, x) => t + x.seconds, 0)).catch((err) => (console.warn("[drama] room tone skipped:", err instanceof Error ? err.message : err), null));
     if (bed) beds[key] = bed;
   }
   const versions = await stitch(orgId, `${ep.kind}-${ep.id}`, shots, { music, cta: ep.kind === "campaign" ? plan.cta ?? "" : "", versions: ep.kind === "campaign", beds });
@@ -1020,11 +1009,11 @@ function fontsDir() {
 
 /** The episode's score from ElevenLabs Music, instrumental, as long as the episode. */
 /** One continuous room tone for a scene (ElevenLabs sound effects), looped under its shots. */
-async function ambience(setting: string, sounds: string, seconds: number) {
-  if (!ENV.elevenLabsKey || !setting.trim()) return null;
+async function ambience(key: string, setting: string, sounds: string, seconds: number) {
+  if (!key || !setting.trim()) return null;
   const res = await fetch("https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128", {
     method: "POST",
-    headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
+    headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
     body: JSON.stringify({ text: `Quiet continuous room tone and ambience for: ${setting}.${sounds ? ` Faint background: ${sounds}.` : ""} No music, no voices, no sudden sounds.`.slice(0, 900), duration_seconds: Math.max(5, Math.min(30, Math.round(seconds))), loop: true, prompt_influence: 0.4 }),
     signal: AbortSignal.timeout(120_000),
   });
@@ -1032,11 +1021,11 @@ async function ambience(setting: string, sounds: string, seconds: number) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function score(prompt: string, seconds: number) {
-  if (!ENV.elevenLabsKey) return null;
+async function score(key: string, prompt: string, seconds: number) {
+  if (!key) return null;
   const res = await fetch("https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128", {
     method: "POST",
-    headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
+    headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
     body: JSON.stringify({ prompt: `${prompt}. Cinematic film score under dialogue, instrumental, no vocals.`.slice(0, 4000), music_length_ms: Math.max(10_000, Math.min(180_000, Math.round(seconds * 1000))), force_instrumental: true }),
     signal: AbortSignal.timeout(240_000),
   });

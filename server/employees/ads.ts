@@ -664,21 +664,29 @@ function firstLine(spec: Spec, content: Content) {
   return "";
 }
 
-/** The audio spot as an MP3 in the workspace's files, read by an ElevenLabs voice. */
+/** The audio spot as an MP3 in the workspace's files: this workspace's ElevenLabs voice, else a standard voice. */
 async function speakToFile(orgId: number, text: string) {
   if (process.env.NODE_ENV === "test") throw new Error("Voices are off in tests.");
-  if (!ENV.elevenLabsKey) throw new Error("Voices are not set up: ELEVENLABS_API_KEY is missing on the server.");
-  const { elevenVoiceFor } = await import("./huddle");
-  const voice = await elevenVoiceFor("ads");
-  if (!voice) throw new Error("Your ElevenLabs account has no voices to use.");
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
-    method: "POST",
-    headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
-    body: JSON.stringify({ text: text.slice(0, 1500), model_id: ENV.elevenLabsModel }),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!res.ok) throw new Error(`ElevenLabs didn't make the audio (${res.status}).`);
-  const saved = await storagePut(`org-${orgId}/ads/spot.mp3`, Buffer.from(await res.arrayBuffer()), "audio/mpeg");
+  const huddle = await import("./huddle");
+  const key = await huddle.elevenKeyFor(orgId);
+  let audio: Buffer;
+  if (key) {
+    const voice = await huddle.elevenVoiceFor("ads", key);
+    if (!voice) throw new Error("Your ElevenLabs account has no voices to use.");
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
+      method: "POST",
+      headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
+      body: JSON.stringify({ text: text.slice(0, 1500), model_id: ENV.elevenLabsModel }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) throw new Error(`ElevenLabs didn't make the audio (${res.status}).`);
+    audio = Buffer.from(await res.arrayBuffer());
+  } else {
+    const buf = await huddle.openAiAudio("ads", text.slice(0, 1500), "Read this like a friendly, confident radio ad: clear, warm and upbeat, at a natural pace.");
+    if (!buf) throw new Error(huddle.lastSpeechError() ?? "The voice didn't come back.");
+    audio = buf;
+  }
+  const saved = await storagePut(`org-${orgId}/ads/spot.mp3`, audio, "audio/mpeg");
   return saved.url;
 }
 

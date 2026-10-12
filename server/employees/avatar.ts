@@ -7,7 +7,8 @@ import type { AIEmployee, AvatarVideo } from "../../drizzle/schema";
 /**
  * Videos of the owner made by AI from her photo and her own voice (Elena).
  * 1. Elena writes the words; a draft holds the script, the photo and the voice.
- * 2. Make it: ElevenLabs reads the script in the owner's voice, then fal.ai's
+ * 2. Make it: the voice reads the script (ElevenLabs for LeadDash's own workspaces and
+ *    workspaces that connected their own ElevenLabs account, else a standard voice), then fal.ai's
  *    Kling talking-avatar model animates her photo to that audio. fal bills per
  *    second of video with no subscription.
  * 3. The finished MP4 is saved on this server (fal's links expire) and Elena
@@ -57,14 +58,92 @@ export async function photos(orgId: number) {
   return (await db.listKnowledgeByOrg(orgId)).filter((k) => k.kind === "image" && k.fileUrl).map((k) => ({ id: k.id, title: k.title, url: k.fileUrl!, note: k.content || "" }));
 }
 
-/** The ElevenLabs voices on the account, the owner's own (cloned) voices first. */
-export async function voices() {
-  if (!ENV.elevenLabsKey || process.env.NODE_ENV === "test") return [] as { id: string; name: string; own: boolean }[];
-  const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": ENV.elevenLabsKey }, signal: AbortSignal.timeout(15_000) });
-  if (!res.ok) return [];
+export type VideoVoice = { id: string; name: string; own: boolean; standard: boolean };
+
+/** Standard voices are saved with this in front of their id, so a video knows which service reads it. */
+export const STANDARD = "openai:";
+export const isStandard = (voiceId: string | null | undefined) => !!voiceId && voiceId.startsWith(STANDARD);
+
+/** The standard voices every workspace can use, with no account of its own. */
+export async function standardVoices() {
+  const { OPENAI_VOICES } = await import("./huddle");
+  return OPENAI_VOICES.map((v) => ({ id: `${STANDARD}${v.id}`, name: v.name, note: v.note }));
+}
+
+/** This workspace's ElevenLabs key: LeadDash's own workspaces use the server's account, others only their own. */
+const elevenKey = (orgId: number) => import("../elevenlabs").then((m) => m.keyFor(orgId));
+
+/**
+ * The voices for this workspace's videos: its ElevenLabs account's voices (the owner's own cloned
+ * voices first) when it has one, then the standard voices.
+ */
+export async function voices(orgId: number): Promise<VideoVoice[]> {
+  const standard = (await standardVoices()).map((v) => ({ id: v.id, name: v.name, own: false, standard: true }));
+  const key = await elevenKey(orgId);
+  if (!key || process.env.NODE_ENV === "test") return standard;
+  const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": key }, signal: AbortSignal.timeout(15_000) }).catch(() => null);
+  if (!res?.ok) return standard;
   const data = (await res.json()) as { voices?: { voice_id: string; name: string; category?: string }[] };
-  const list = (data.voices ?? []).map((v) => ({ id: v.voice_id, name: v.name, own: ["cloned", "professional", "generated"].includes(v.category ?? "") }));
-  return list.sort((a, b) => Number(b.own) - Number(a.own) || a.name.localeCompare(b.name));
+  const list = (data.voices ?? []).map((v) => ({ id: v.voice_id, name: v.name, own: ["cloned", "professional", "generated"].includes(v.category ?? ""), standard: false }));
+  return [...list.sort((a, b) => Number(b.own) - Number(a.own) || a.name.localeCompare(b.name)), ...standard];
+}
+
+/** Whether this workspace has its own voices (LeadDash's account, or its own connected ElevenLabs). */
+export async function hasElevenLabs(orgId: number) {
+  return !!(await elevenKey(orgId));
+}
+
+/**
+ * The script read aloud, as MP3: a standard voice, or an ElevenLabs voice on this workspace's
+ * own account. A workspace never uses LeadDash's ElevenLabs account unless it is LeadDash's own.
+ */
+export async function speech(orgId: number, voiceId: string, text: string): Promise<Buffer> {
+  if (isStandard(voiceId)) {
+    const huddle = await import("./huddle");
+    const buf = await huddle.openAiAudio({ voice: voiceId.slice(STANDARD.length) }, text, "Speak straight to the camera like a real person talking to a friend: natural pace, warm, conversational, never robotic.");
+    if (!buf) throw new Error(huddle.lastSpeechError() ?? "The voice didn't come back.");
+    return buf;
+  }
+  const key = await elevenKey(orgId);
+  if (!key) throw new Error("That voice is from ElevenLabs, which isn't connected in this workspace. Connect it under Integrations, or pick a standard voice.");
+  return tts(key, voiceId, text);
+}
+
+/** How long an MP3 plays, in tenths of a second, from its frames (128 kbps if it can't be read). */
+export function mp3Tenths(buf: Buffer) {
+  const KBPS = [
+    [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],
+    [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
+  ];
+  const RATES = [[44100, 48000, 32000], [22050, 24000, 16000], [11025, 12000, 8000]];
+  let i = 0;
+  if (buf.length > 10 && buf.toString("latin1", 0, 3) === "ID3") i = 10 + ((buf[6] & 0x7f) << 21) + ((buf[7] & 0x7f) << 14) + ((buf[8] & 0x7f) << 7) + (buf[9] & 0x7f);
+  let seconds = 0;
+  let frames = 0;
+  while (i + 4 <= buf.length) {
+    if (buf[i] !== 0xff || (buf[i + 1] & 0xe0) !== 0xe0) {
+      i++;
+      continue;
+    }
+    const ver = (buf[i + 1] >> 3) & 3; // 3 = MPEG 1, 2 = MPEG 2, 0 = MPEG 2.5
+    const layer = (buf[i + 1] >> 1) & 3; // 1 = Layer III
+    const bIdx = buf[i + 2] >> 4;
+    const rIdx = (buf[i + 2] >> 2) & 3;
+    if (ver === 1 || layer !== 1 || bIdx === 0 || bIdx === 15 || rIdx === 3) {
+      i++;
+      continue;
+    }
+    const v1 = ver === 3;
+    const rate = RATES[v1 ? 0 : ver === 2 ? 1 : 2][rIdx];
+    const kbps = KBPS[v1 ? 0 : 1][bIdx];
+    const pad = (buf[i + 2] >> 1) & 1;
+    const len = Math.floor(((v1 ? 144 : 72) * kbps * 1000) / rate) + pad;
+    if (len < 4) break;
+    seconds += (v1 ? 1152 : 576) / rate;
+    frames++;
+    i += len;
+  }
+  return frames > 10 ? Math.max(10, Math.round(seconds * 10)) : Math.max(10, Math.round(((buf.length * 8) / 128_000) * 10));
 }
 
 export const estimateTenths = (script: string) => Math.max(30, Math.round((script.trim().split(/\s+/).filter(Boolean).length / WORDS_PER_SECOND) * 10));
@@ -81,9 +160,14 @@ export async function spentThisMonth(orgId: number) {
     .reduce((sum, v) => sum + v.costCents, 0);
 }
 
-/** Elena's script becomes a draft with the current photo and voice. */
-/** Whether "who" means the owner herself. */
-export const isOwner = (who?: string | null) => !who || /^(me|myself|the owner|owner|you|her|ashley)$/i.test(who.trim());
+/** Whether "who" means the owner: no one named, a word for them, or their own name (the workspace's signer). */
+export const isOwner = (who?: string | null, ownerName?: string | null) => {
+  if (!who) return true;
+  const w = who.trim().toLowerCase();
+  if (/^(me|myself|the owner|owner|you|her|him|them)$/.test(w)) return true;
+  const name = (ownerName ?? "").trim().toLowerCase();
+  return !!name && (w === name || w === name.split(/\s+/)[0]);
+};
 
 /**
  * A script to make. On camera: the owner (her photo and her cloned voice), or a made-up person
@@ -95,7 +179,7 @@ export async function draft(orgId: number, input: { title: string; script: strin
   const script = input.script.trim().slice(0, 2400);
   const tenths = estimateTenths(script);
   const title = input.title.trim().slice(0, 120) || "Video";
-  if (!isOwner(input.who)) {
+  if (!isOwner(input.who, (await db.getOrganizationById(orgId))?.signerName)) {
     const drama = await import("./drama");
     const cast = await drama.castFromDescription(orgId, input.who!);
     // Their portrait is made now, so the card shows who is on camera before anything is animated.
@@ -119,12 +203,19 @@ export async function newLook(orgId: number, id: number) {
   return v;
 }
 
-/** The stock voices a made-up person can use, with a sample to play (never the owner's own cloned voices). */
-export async function castVoices() {
+/**
+ * The voices a made-up person can use, with a sample to play: the stock voices on this workspace's
+ * ElevenLabs account (never anyone's own cloned voice), then the standard voices.
+ */
+export async function castVoices(orgId: number) {
+  const standard = (await standardVoices()).map((v) => ({ id: v.id, name: v.name, gender: "", accent: "", description: v.note, previewUrl: null as string | null, standard: true }));
+  const key = await elevenKey(orgId);
+  if (!key) return standard;
   try {
-    return (await (await import("./huddle")).listVoices()).filter((v) => !v.own).map((v) => ({ id: v.id, name: v.name, gender: v.gender, accent: v.accent, description: v.description, previewUrl: v.previewUrl }));
+    const stock = (await (await import("./huddle")).listVoices(key)).filter((v) => !v.own).map((v) => ({ id: v.id, name: v.name, gender: v.gender, accent: v.accent, description: v.description, previewUrl: v.previewUrl, standard: false }));
+    return [...stock, ...standard];
   } catch {
-    return [];
+    return standard;
   }
 }
 
@@ -135,8 +226,8 @@ export async function setCastVoice(orgId: number, id: number, voiceId: string) {
   const cast = castOf(v);
   if (!cast) throw new TRPCError({ code: "BAD_REQUEST", message: "This video is in your own voice; change it under Your avatar." });
   if (v.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
-  const voice = (await castVoices()).find((x) => x.id === voiceId);
-  if (!voice) throw new TRPCError({ code: "NOT_FOUND", message: "That voice is not on the account." });
+  const voice = (await castVoices(orgId)).find((x) => x.id === voiceId);
+  if (!voice) throw new TRPCError({ code: "NOT_FOUND", message: "That voice isn't available in this workspace." });
   db.updateDramaCast(cast.id, orgId, { voiceId: voice.id, voiceName: voice.name });
   return db.updateAvatarVideo(id, orgId, { voiceId: voice.id, voiceName: voice.name })!;
 }
@@ -170,10 +261,10 @@ async function readStored(fileUrl: string) {
   return fs.promises.readFile(path.join(uploadsRoot(), fileUrl.replace(/^\/files\//, "")));
 }
 
-async function tts(voiceId: string, text: string) {
+async function tts(key: string, voiceId: string, text: string) {
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
     method: "POST",
-    headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
+    headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
     // The multilingual model sounds most like a cloned voice.
     body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_AVATAR_MODEL || "eleven_multilingual_v2" }),
     signal: AbortSignal.timeout(90_000),
@@ -220,7 +311,6 @@ export async function make(orgId: number, id: number): Promise<AvatarVideo> {
   if (v.status === "making") return v;
   if (v.status === "ready") return again(orgId, id);
   if (!ENV.falKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Making videos isn't connected yet: FAL_KEY is missing on the server." });
-  if (!ENV.elevenLabsKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Your voice isn't connected yet: ELEVENLABS_API_KEY is missing on the server." });
   const emp = await elena(orgId);
   const s = settingsOf(emp);
   const cast = castOf(v);
@@ -232,7 +322,7 @@ export async function make(orgId: number, id: number): Promise<AvatarVideo> {
     const drama = await import("./drama");
     photo = { id: null, url: await drama.portraitFor(orgId, cast, "") };
     if (!voiceId) {
-      const stock = (await voices()).find((x) => !x.own);
+      const stock = (await voices(orgId)).find((x) => !x.own);
       if (!stock) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `No stock voice is available for ${cast.name}.` });
       voiceId = stock.id;
       voiceName = stock.name;
@@ -243,12 +333,14 @@ export async function make(orgId: number, id: number): Promise<AvatarVideo> {
     photo = pics.find((p) => p.id === v.imageId) ?? pics.find((p) => p.id === s.imageId) ?? pics[0];
     if (!photo) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Add a photo of yourself to the Brain (or attach one in Elena's chat) first." });
     if (!voiceId) {
-      const own = (await voices()).find((x) => x.own);
+      const own = (await voices(orgId)).find((x) => x.own);
       if (!own) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Pick your voice under Your avatar on Elena's Videos tab first." });
       voiceId = own.id;
       voiceName = own.name;
     }
   }
+  if (!isStandard(voiceId) && !(await hasElevenLabs(orgId))) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${voiceName ?? "That voice"} is from ElevenLabs, which isn't connected in this workspace. Pick a standard voice${cast ? ` for ${cast.name}` : " under Your avatar"}, or connect ElevenLabs under Integrations.` });
+  if (isStandard(voiceId) && !ENV.openAiKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Standard voices aren't set up on the server yet." });
   const quality = (v.quality as Quality) ?? s.quality;
   const estimate = costFor(estimateTenths(v.script), quality);
   const metered = hours.meteredSync(orgId);
@@ -259,9 +351,9 @@ export async function make(orgId: number, id: number): Promise<AvatarVideo> {
   }
   db.updateAvatarVideo(id, orgId, { status: "making", error: null, imageId: photo.id, voiceId, voiceName, quality, costCents: estimate, madeAt: new Date() });
   try {
-    const audio = await tts(voiceId, v.script);
-    // MP3 at 128 kbps: the length of the audio is the length of the video, and what fal bills.
-    const tenths = Math.max(10, Math.round((audio.length * 8) / 128_000 * 10));
+    const audio = await speech(orgId, voiceId, v.script);
+    // The length of the audio is the length of the video, and what fal bills.
+    const tenths = mp3Tenths(audio);
     const image = await readStored(photo.url);
     const sub = await fal(`https://queue.fal.run/${MODEL[quality]}`, { method: "POST", body: { image_url: dataUri(image, mimeOf(photo.url)), audio_url: dataUri(audio, "audio/mpeg"), prompt: cast ? PROMPT_CAST : PROMPT } });
     if (!sub.request_id) throw new Error("fal.ai didn't start the video.");

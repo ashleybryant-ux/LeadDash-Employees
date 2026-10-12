@@ -136,17 +136,25 @@ export async function providerFor(orgId: number): Promise<VoiceProvider> {
   const org = await db.getOrganizationById(orgId);
   const want = org?.voiceProvider ?? "auto";
   if (want === "openai") return "openai";
-  if (want === "elevenlabs") return ENV.elevenLabsKey ? "elevenlabs" : "openai";
-  return ENV.elevenLabsKey ? "elevenlabs" : "openai";
+  return (await elevenKeyFor(orgId)) ? "elevenlabs" : "openai";
+}
+
+/**
+ * The ElevenLabs key a workspace speaks with: LeadDash's own workspaces use the server's
+ * account, every other workspace only the account it connected itself ("" for none).
+ */
+export async function elevenKeyFor(orgId?: number | null) {
+  return (await import("../elevenlabs")).keyFor(orgId);
 }
 
 /** The voice an employee speaks with in this workspace: its own pick, else the workspace provider's default for the role. */
 export async function voiceFor(orgId: number, kind: string): Promise<VoiceChoice> {
   const emp = await db.getEmployeeByKind(orgId, kind as never).catch(() => null);
   const provider = await providerFor(orgId);
-  if (emp?.voiceProvider && emp.voiceId && (emp.voiceProvider === "openai" || ENV.elevenLabsKey)) return { provider: emp.voiceProvider, id: emp.voiceId, name: emp.voiceName ?? emp.voiceId };
+  const key = await elevenKeyFor(orgId);
+  if (emp?.voiceProvider && emp.voiceId && (emp.voiceProvider === "openai" || key)) return { provider: emp.voiceProvider, id: emp.voiceId, name: emp.voiceName ?? emp.voiceId };
   if (provider === "elevenlabs") {
-    const id = await elevenVoiceFor(kind).catch(() => null);
+    const id = await elevenVoiceFor(kind, key).catch(() => null);
     return { provider, id, name: id ? elevenNames.get(id) ?? db.rosterDefaults.get(kind)?.voiceName ?? "" : "" };
   }
   const id = VOICES[kind] ?? "alloy";
@@ -159,11 +167,12 @@ const elevenNames = new Map<string, string>();
 export async function voiceOptions(orgId: number) {
   const org = await db.getOrganizationById(orgId);
   const provider = await providerFor(orgId);
+  const key = await elevenKeyFor(orgId);
   let eleven: Awaited<ReturnType<typeof listVoices>> | null = null;
   let elevenError: string | null = null;
-  if (ENV.elevenLabsKey) {
+  if (key) {
     try {
-      eleven = await listVoices();
+      eleven = await listVoices(key);
       for (const v of eleven) elevenNames.set(v.id, v.name);
     } catch (err) {
       elevenError = err instanceof Error ? err.message : String(err);
@@ -177,7 +186,7 @@ export async function voiceOptions(orgId: number) {
   return {
     setting: org?.voiceProvider ?? "auto",
     provider,
-    hasElevenLabs: !!ENV.elevenLabsKey,
+    hasElevenLabs: !!key,
     hasOpenAi: !!ENV.openAiKey,
     openai: OPENAI_VOICES,
     elevenlabs: eleven,
@@ -213,9 +222,10 @@ export async function previewVoice(orgId: number, provider: VoiceProvider, voice
   const text = speakable(SAMPLE(who.name, who.roleTitle), org?.name ?? "");
   let id: string | null;
   if (provider === "elevenlabs") {
-    if (!ENV.elevenLabsKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "ElevenLabs is not set up on the server." });
+    const key = await elevenKeyFor(orgId);
+    if (!key) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Premium voices aren't turned on in this workspace." });
     try {
-      id = keepAudio(await elevenSpeak({ voiceId }, text));
+      id = keepAudio(await elevenSpeak({ voiceId }, text, key));
     } catch (err) {
       throw new TRPCError({ code: "BAD_GATEWAY", message: err instanceof Error ? err.message : String(err) });
     }
@@ -280,12 +290,13 @@ export function assignVoices(voices: ElevenVoice[], overrides: Record<string, st
   return out;
 }
 
-let elevenCache: { at: number; map: Record<string, string> } | null = null;
+/** Each ElevenLabs account's voices matched to the employees, for an hour. */
+const elevenCache = new Map<string, { at: number; map: Record<string, string> }>();
 
 /** The voices on the ElevenLabs account, for choosing one per employee on the EHR's agency screen. */
-export async function listVoices() {
-  if (!ENV.elevenLabsKey) throw new Error("Voices are not set up on the LeadDash Employees server yet (ELEVENLABS_API_KEY).");
-  const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": ENV.elevenLabsKey }, signal: AbortSignal.timeout(15_000) });
+export async function listVoices(key = ENV.elevenLabsKey) {
+  if (!key) throw new Error("Voices are not set up on the LeadDash Employees server yet (ELEVENLABS_API_KEY).");
+  const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": key }, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`ElevenLabs didn't list voices (${res.status}): ${(await res.text()).slice(0, 200)}`);
   const data = (await res.json()) as { voices?: (ElevenVoice & { preview_url?: string })[] };
   return (data.voices ?? []).filter((v) => v.voice_id).map((v) => ({ id: v.voice_id, name: v.name, gender: v.labels?.gender ?? "", accent: v.labels?.accent ?? "", description: v.labels?.description ?? "", previewUrl: v.preview_url ?? null, own: ["cloned", "professional", "generated"].includes((v as { category?: string }).category ?? "") }));
@@ -293,15 +304,16 @@ export async function listVoices() {
 
 /** After a voice is chosen for an employee, the next answer uses it. */
 export function forgetVoices() {
-  elevenCache = null;
+  elevenCache.clear();
 }
 
-export async function elevenVoiceFor(kind: string) {
-  // A voice chosen for everyone (LeadDash staff, from the EHR's agency screen) comes first.
-  const chosen = db.rosterDefaults.get(kind)?.voiceId;
+export async function elevenVoiceFor(kind: string, key = ENV.elevenLabsKey) {
+  // A voice chosen for everyone (LeadDash staff, from the EHR's agency screen) is on LeadDash's account, so only that account uses it.
+  const chosen = key === ENV.elevenLabsKey ? db.rosterDefaults.get(kind)?.voiceId : null;
   if (chosen) return chosen;
-  if (!elevenCache || Date.now() - elevenCache.at > 60 * 60_000) {
-    const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": ENV.elevenLabsKey }, signal: AbortSignal.timeout(15_000) });
+  let cached = elevenCache.get(key);
+  if (!cached || Date.now() - cached.at > 60 * 60_000) {
+    const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": key }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`ElevenLabs didn't list voices (${res.status}): ${(await res.text()).slice(0, 200)}`);
     const data = (await res.json()) as { voices?: ElevenVoice[] };
     let overrides: Record<string, string> = {};
@@ -310,17 +322,18 @@ export async function elevenVoiceFor(kind: string) {
     } catch {
       overrides = {};
     }
-    elevenCache = { at: Date.now(), map: assignVoices(data.voices ?? [], overrides) };
+    cached = { at: Date.now(), map: assignVoices(data.voices ?? [], key === ENV.elevenLabsKey ? overrides : {}) };
+    elevenCache.set(key, cached);
   }
-  return elevenCache.map[kind] ?? elevenCache.map.custom ?? null;
+  return cached.map[kind] ?? cached.map.custom ?? null;
 }
 
-async function elevenSpeak(voiceOrKind: { voiceId: string } | string, text: string) {
-  const voice = typeof voiceOrKind === "string" ? await elevenVoiceFor(voiceOrKind) : voiceOrKind.voiceId;
+async function elevenSpeak(voiceOrKind: { voiceId: string } | string, text: string, key = ENV.elevenLabsKey) {
+  const voice = typeof voiceOrKind === "string" ? await elevenVoiceFor(voiceOrKind, key) : voiceOrKind.voiceId;
   if (!voice) throw new Error("Your ElevenLabs account has no voices to use. Add voices in ElevenLabs, My Voices.");
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
     method: "POST",
-    headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json", accept: "audio/mpeg" },
+    headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
     body: JSON.stringify({ text: text.slice(0, 1600), model_id: ENV.elevenLabsModel }),
     signal: AbortSignal.timeout(30_000),
   });
@@ -370,16 +383,17 @@ export function speakable(text: string, company = "") {
 export async function speak(kind: string, words: string, company = "", opts: { clientInfo?: boolean; orgId?: number } = {}): Promise<string | null> {
   if (process.env.NODE_ENV === "test") return null;
   const text = speakable(words, company);
-  const v = opts.orgId ? await voiceFor(opts.orgId, kind) : { provider: ENV.elevenLabsKey ? ("elevenlabs" as const) : ("openai" as const), id: ENV.elevenLabsKey ? null : VOICES[kind] ?? "alloy", name: "" };
+  const key = opts.orgId ? await elevenKeyFor(opts.orgId) : ENV.elevenLabsKey;
+  const v = opts.orgId ? await voiceFor(opts.orgId, kind) : { provider: key ? ("elevenlabs" as const) : ("openai" as const), id: key ? null : VOICES[kind] ?? "alloy", name: "" };
   const openAiVoice = v.provider === "openai" && v.id ? { voice: v.id } : kind;
   if (opts.clientInfo && !carriesClientInfo("elevenlabs")) {
     if (carriesClientInfo("openai")) return openAiSpeak(openAiVoice, text);
     speechError = "Voices are off in this workspace: no voice provider is under a BAA for client information.";
     return null;
   }
-  if (v.provider === "elevenlabs" && ENV.elevenLabsKey) {
+  if (v.provider === "elevenlabs" && key) {
     try {
-      const id = keepAudio(await elevenSpeak(v.id ? { voiceId: v.id } : kind, text));
+      const id = keepAudio(await elevenSpeak(v.id ? { voiceId: v.id } : kind, text, key));
       speechError = null;
       return id;
     } catch (err) {
@@ -398,6 +412,12 @@ export async function speak(kind: string, words: string, company = "", opts: { c
 }
 
 async function openAiSpeak(voiceOrKind: { voice: string } | string, text: string): Promise<string | null> {
+  const buf = await openAiAudio(voiceOrKind, text.slice(0, 1600));
+  return buf ? keepAudio(buf) : null;
+}
+
+/** Speech from OpenAI's voices as MP3, or null with the reason in lastSpeechError(). Long text is read whole (up to 4,000 characters). */
+export async function openAiAudio(voiceOrKind: { voice: string } | string, text: string, how = "Speak like a warm, confident colleague in a team meeting: natural pace, conversational, never robotic."): Promise<Buffer | null> {
   const voice = typeof voiceOrKind === "string" ? VOICES[voiceOrKind] ?? "alloy" : voiceOrKind.voice;
   if (!ENV.openAiKey) {
     speechError = "Voices are not set up: OPENAI_API_KEY is missing on the server.";
@@ -410,11 +430,11 @@ async function openAiSpeak(voiceOrKind: { voice: string } | string, text: string
       body: JSON.stringify({
         model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
         voice,
-        input: text.slice(0, 1600),
-        instructions: "Speak like a warm, confident colleague in a team meeting: natural pace, conversational, never robotic.",
+        input: text.slice(0, 4000),
+        instructions: how,
         response_format: "mp3",
       }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(90_000),
     });
     if (!res.ok) {
       const body = (await res.text()).slice(0, 300);
@@ -429,7 +449,7 @@ async function openAiSpeak(voiceOrKind: { voice: string } | string, text: string
       return null;
     }
     speechError = null;
-    return keepAudio(Buffer.from(await res.arrayBuffer()));
+    return Buffer.from(await res.arrayBuffer());
   } catch (err) {
     speechError = `The voice didn't come back in time: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300);
     console.warn("[huddle] speech failed:", err instanceof Error ? err.message : err);

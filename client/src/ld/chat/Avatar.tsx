@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { BIG_JOB, useHoursAsk } from "../HoursAsk";
@@ -101,19 +102,23 @@ function ScriptEditor({ v, onDone }: { v: View; onDone: () => void }) {
 function CastVoice({ v, a }: { v: View; a: ReturnType<typeof useAvatarActions> }) {
   const { currentOrgId } = useTenant();
   const voices = trpc.avatar.castVoices.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, staleTime: 300_000 });
+  const preview = trpc.voices.preview.useMutation();
   const audio = React.useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = React.useState<string | null>(null);
   const [picked, setPicked] = React.useState<string>("");
   const current = voices.data?.find((x) => x.name === v.voiceName) ?? null;
   const chosen = picked || current?.id || "";
-  const play = () => {
+  const play = async () => {
     const voice = voices.data?.find((x) => x.id === chosen);
-    if (!voice?.previewUrl) return;
+    if (!voice) return;
     if (audio.current) { audio.current.pause(); audio.current = null; }
     if (playing === voice.id) { setPlaying(null); return; }
-    const el = new Audio(voice.previewUrl);
-    audio.current = el;
     setPlaying(voice.id);
+    // A standard voice has no sample file: it reads a short sample line instead.
+    const url = voice.previewUrl ?? (await preview.mutateAsync({ organizationId: currentOrgId, provider: "openai", voiceId: voice.id.replace(/^openai:/, "") }).then((r) => r.audioUrl).catch(() => null));
+    if (!url) { setPlaying(null); return; }
+    const el = new Audio(url);
+    audio.current = el;
     el.onended = () => setPlaying(null);
     void el.play().catch(() => setPlaying(null));
   };
@@ -125,7 +130,7 @@ function CastVoice({ v, a }: { v: View; a: ReturnType<typeof useAvatarActions> }
         {!current && v.voiceName && <option value="">{v.voiceName}</option>}
         {(voices.data ?? []).map((x) => <option key={x.id} value={x.id}>{label(x)}</option>)}
       </select>
-      <button type="button" className="ld-btn sm" disabled={!chosen || !voices.data?.find((x) => x.id === chosen)?.previewUrl} onClick={play}>{playing && playing === chosen ? "Stop" : "Play"}</button>
+      <button type="button" className="ld-btn sm" disabled={!chosen || preview.isPending} onClick={() => void play()}>{playing && playing === chosen ? "Stop" : "Play"}</button>
       {chosen && chosen !== current?.id && v.status !== "making" && (
         <button type="button" className="ld-btn sm p" disabled={a.setVoice.isPending} onClick={() => a.setVoice.mutate({ organizationId: a.orgId, id: v.id, voiceId: chosen }, { onSuccess: () => setPicked("") })}>
           {a.setVoice.isPending ? "Saving..." : "Use it"}
@@ -269,11 +274,20 @@ function SettingsCard() {
             <select id="av-voice" className="ld-in" style={{ maxWidth: 360 }} value={form.voiceId ?? ""} onChange={(e) => setForm({ ...form, voiceId: e.target.value || null })}>
               <option value="">Pick your voice</option>
               {s.voiceId && !s.voices.some((v) => v.id === s.voiceId) && <option value={s.voiceId}>{s.voiceName ?? "Your saved voice"}</option>}
-              {s.voices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}{v.own ? " (your voice)" : ""}
-                </option>
-              ))}
+              {s.voices.some((v) => !v.standard) && (
+                <optgroup label="Your ElevenLabs voices">
+                  {s.voices.filter((v) => !v.standard).map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}{v.own ? " (your voice)" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="Standard voices">
+                {s.voices.filter((v) => v.standard).map((v) => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </optgroup>
             </select>
             <span className="ld-strong">Quality</span>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -296,6 +310,11 @@ function SettingsCard() {
           </div>
         )}
         {missing && <span className="ld-small" style={{ color: "#8a4510" }}>Making videos isn't set up yet. LeadDash support can turn it on.</span>}
+        {!missing && s.ready.canConnect && (
+          <span className="ld-small ld-muted">
+            Want videos in your own voice? Connect ElevenLabs under <Link href="/integrations">Integrations</Link>.
+          </span>
+        )}
         <ErrorLine error={save.error} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

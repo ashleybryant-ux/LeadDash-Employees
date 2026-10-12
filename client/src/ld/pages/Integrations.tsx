@@ -95,9 +95,14 @@ export default function Integrations() {
   const connOf = (p: Provider) => conns.find((c) => c.provider === p);
   const main = CATALOG.filter((c) => MAIN.includes(c.key));
   const isConnected = (c: CatalogItem) => connOf(c.provider)?.status === "connected";
-  const connectedCount = main.filter(isConnected).length;
+  // ElevenLabs: only in customer workspaces (LeadDash's own use LeadDash's account).
+  const eleven = trpc.elevenlabs.get.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const hasEleven = Boolean(eleven.data && !eleven.data.internal);
+  const elevenOn = Boolean(eleven.data?.connected);
+  const connectedCount = main.filter(isConnected).length + (hasEleven && elevenOn ? 1 : 0);
   const needle = search.trim().toLowerCase();
   const shown = main.filter((c) => (tab === "all" || (tab === "connected" && isConnected(c))) && (!needle || c.name.toLowerCase().includes(needle)));
+  const showEleven = hasEleven && (tab === "all" || (tab === "connected" && elevenOn)) && (!needle || "elevenlabs".includes(needle.replace(/\s+/g, "")));
 
   return (
     <Page rail="integrations" maxWidth={1140}>
@@ -126,7 +131,7 @@ export default function Integrations() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { key: "all", label: `All (${main.length})` },
+          { key: "all", label: `All (${main.length + (hasEleven ? 1 : 0)})` },
           { key: "connected", label: `Connected (${connectedCount})` },
           { key: "applying", label: "Applying (5)" },
         ]}
@@ -135,7 +140,7 @@ export default function Integrations() {
           <Applying conns={conns} open={open} setOpen={setOpen} ready={info.data?.apps} />
         ) : (
           <div className="ld-intgrid" style={{ padding: 18, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, alignItems: "start" }}>
-            {shown.length === 0 && (
+            {shown.length === 0 && !showEleven && (
               <div className="ld-empty" style={{ gridColumn: "1 / -1" }}>
                 {q.isLoading ? "Loading..." : tab === "connected" ? "Nothing is connected yet." : "No integrations match."}
               </div>
@@ -150,6 +155,7 @@ export default function Integrations() {
                 </div>
               )
             )}
+            {showEleven && <ElevenLabs isOpen={open === "elevenlabs"} toggle={() => setOpen(open === "elevenlabs" ? null : "elevenlabs")} />}
           </div>
         )}
       </FolderTabs>
@@ -419,6 +425,70 @@ function GrantsGov({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) 
             <button type="button" className="ld-btn p" disabled={saveReg.isPending} onClick={save}>Save</button>
             <button type="button" className="ld-btn" onClick={toggle}>Cancel</button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The workspace's own ElevenLabs account: Elena's videos and the employees' voices use its voices,
+ * including a voice the owner cloned there. Without it, they use the standard voices.
+ */
+function ElevenLabs({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.elevenlabs.get.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const done = () => Promise.all([utils.elevenlabs.get.invalidate(), utils.avatar.settings.invalidate(), utils.voices.options.invalidate()]);
+  const [editing, setEditing] = React.useState(false);
+  const [key, setKey] = React.useState("");
+  const connect = trpc.elevenlabs.connect.useMutation({ onSuccess: async () => { setEditing(false); setKey(""); await done(); } });
+  const disconnect = trpc.elevenlabs.disconnect.useMutation({ onSuccess: done });
+  const v = q.data;
+  const on = Boolean(v?.connected);
+  const startEdit = () => { setKey(""); setEditing(true); if (!isOpen) toggle(); };
+  const cancel = () => { setEditing(false); setKey(""); connect.reset(); };
+  const desc = on
+    ? `Connected. ${v!.voices} ${v!.voices === 1 ? "voice" : "voices"}${v!.own.length ? `, ${v!.own.length} of them yours` : ""}.`
+    : "Optional. Use your own ElevenLabs account and cloned voice for Elena's videos and your employees' voices.";
+  const right = on ? (
+    <button type="button" style={okTile} onClick={toggle} aria-expanded={isOpen}>Connected</button>
+  ) : editing ? (
+    <span />
+  ) : (
+    <button type="button" className="ld-btn p" onClick={startEdit} aria-expanded={isOpen}>Connect</button>
+  );
+  return (
+    <div style={tileBox(isOpen || editing)}>
+      <TileHead logo="11" color="#111111" name="ElevenLabs" desc={desc} right={right} />
+      {(isOpen || editing) && (editing || on) && (
+        <div style={{ borderTop: "1px solid #eef2f0", paddingTop: 12, display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 14, alignItems: "start" }}>
+          {editing ? (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                <label htmlFor="el-key" className="ld-lbl">API key</label>
+                <input id="el-key" className="ld-in" type="password" autoComplete="new-password" placeholder={on ? "Saved" : undefined} value={key} onChange={(e) => setKey(e.target.value)} />
+                <span className="ld-small ld-muted">From elevenlabs.io, Developers, API keys. Checked with ElevenLabs, then saved encrypted. Voice use is billed on your ElevenLabs account.</span>
+                <ErrorLine error={connect.error} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button type="button" className="ld-btn p" disabled={connect.isPending || !key.trim()} onClick={() => connect.mutate({ organizationId: currentOrgId, apiKey: key.trim() })}>{connect.isPending ? "Checking..." : "Save"}</button>
+                <button type="button" className="ld-btn" onClick={cancel}>Cancel</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14, minWidth: 0 }}>
+                <span>{v!.own.length ? <>Your voices: <b>{v!.own.join(", ")}</b></> : "No voices of your own yet. Clone one in ElevenLabs, My Voices, and it shows up here."}</span>
+                {v!.connectedAt && <span className="ld-small ld-muted">Connected {fmtDate(v!.connectedAt)}</span>}
+                <ErrorLine error={disconnect.error} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button type="button" className="ld-btn" onClick={startEdit}>Edit</button>
+                <button type="button" className="ld-btn danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate({ organizationId: currentOrgId })}>Disconnect</button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

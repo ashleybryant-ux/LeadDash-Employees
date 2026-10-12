@@ -3330,10 +3330,12 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId);
       const emp = await db.getEmployeeByKind(input.organizationId, "video");
       const s = emp ? avatar.settingsOf(emp) : avatar.settingsOf({ studio: null });
-      const [photos, voices, spent] = await Promise.all([avatar.photos(input.organizationId), avatar.voices(), avatar.spentThisMonth(input.organizationId)]);
+      const [photos, voices, spent, eleven] = await Promise.all([avatar.photos(input.organizationId), avatar.voices(input.organizationId), avatar.spentThisMonth(input.organizationId), (await import("./elevenlabs")).view(input.organizationId)]);
+      // Voices: LeadDash's own workspaces and workspaces with their own ElevenLabs have premium voices; the rest can connect theirs.
+      const ready = { fal: !!ENV.falKey, voice: !!ENV.openAiKey || eleven.internal || eleven.connected, canConnect: !eleven.internal && !eleven.connected };
       // On a plan, videos use work hours: no dollar amounts go to the workspace.
-      if ((await import("./workHours")).meteredSync(input.organizationId)) return { ...s, photos, voices, spentCents: 0, rates: { standard: 0, pro: 0 }, metered: true, ready: { fal: !!ENV.falKey, voice: !!ENV.elevenLabsKey } };
-      return { ...s, photos, voices, spentCents: spent, rates: avatar.RATE_CENTS, metered: false, ready: { fal: !!ENV.falKey, voice: !!ENV.elevenLabsKey } };
+      if ((await import("./workHours")).meteredSync(input.organizationId)) return { ...s, photos, voices, spentCents: 0, rates: { standard: 0, pro: 0 }, metered: true, ready };
+      return { ...s, photos, voices, spentCents: spent, rates: avatar.RATE_CENTS, metered: false, ready };
     }),
     saveSettings: protectedProcedure
       .input(orgInput.extend({ imageId: z.number().int().nullable(), voiceId: z.string().max(80).nullable(), voiceName: z.string().max(120).nullable(), quality: z.enum(["standard", "pro"]), limitCents: z.number().int().min(0).max(1_000_000) }))
@@ -3361,7 +3363,7 @@ export const appRouter = router({
     /** Stock voices for a made-up person on camera, each with a sample to play. */
     castVoices: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      return avatar.castVoices();
+      return avatar.castVoices(input.organizationId);
     }),
     /** A different voice for the made-up person on camera. */
     setCastVoice: protectedProcedure.input(orgInput.extend({ id: z.number().int(), voiceId: z.string().min(1).max(80) })).mutation(async ({ ctx, input }) => {
@@ -4844,6 +4846,26 @@ export const appRouter = router({
         const id = await huddle.previewVoice(input.organizationId, input.provider, input.voiceId, { name: emp?.name ?? "Simone", roleTitle: emp?.roleTitle ?? "Chief Operating Officer" });
         return { audioUrl: `/api/voice/audio/${id}` };
       }),
+  }),
+
+  /** A workspace's own ElevenLabs account, for its own (cloned) voices. LeadDash's own workspaces use the server's account. */
+  elevenlabs: router({
+    get: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./elevenlabs")).view(input.organizationId);
+    }),
+    connect: protectedProcedure.input(orgInput.extend({ apiKey: z.string().min(1).max(200) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const r = await (await import("./elevenlabs")).connect(input.organizationId, input.apiKey);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Connected ElevenLabs", details: `Key checked with ElevenLabs and saved encrypted. ${r.voices} voices.` });
+      return r;
+    }),
+    disconnect: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const r = await (await import("./elevenlabs")).disconnect(input.organizationId);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Disconnected ElevenLabs", details: "Back to the standard voices." });
+      return r;
+    }),
   }),
 
   /** Set up your team, once: the business, who starts first, say hello. */

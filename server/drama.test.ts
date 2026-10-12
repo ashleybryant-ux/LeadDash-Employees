@@ -21,8 +21,15 @@ vi.mock("./_core/llm", async (orig) => {
   };
 });
 
-import { caller, makeWorkspace } from "./test/helpers";
+import { caller, makeWorkspace as makeCustomer } from "./test/helpers";
 import * as db from "./db";
+
+/** LeadDash's own workspace: its videos use the server's ElevenLabs account. */
+async function makeWorkspace(slug: string) {
+  const w = await makeCustomer(slug);
+  await db.updateOrganization(w.orgId, { internal: true });
+  return w;
+}
 import * as drama from "./employees/drama";
 import { storagePut } from "./storage";
 import { ENV } from "./_core/env";
