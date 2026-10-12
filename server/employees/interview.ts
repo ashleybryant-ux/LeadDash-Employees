@@ -36,6 +36,8 @@ export type InterviewState = {
   welcomedAt?: string;
   /** When the owner brought this employee on from the bench. */
   hiredAt?: string;
+  /** When the one-time sweep of workspaces already in use looked at this employee (2026-10-12). */
+  sweptAt?: string;
   /** Off the team for a while: on vacation (back on `until`) or terminated (rehirable on `until`). Dates are YYYY-MM-DD in the workspace time zone. */
   away?: Away;
   remindAt?: string;
@@ -67,7 +69,7 @@ const nowIso = () => new Date().toISOString();
 
 export function readState(emp: Pick<AIEmployee, "interview">): InterviewState {
   const s = parse<Partial<InterviewState>>(emp.interview, {});
-  return { step: Number.isInteger(s.step) ? Math.max(0, s.step!) : 0, done: !!s.done, doneAt: s.doneAt, welcomedAt: s.welcomedAt, hiredAt: s.hiredAt, away: s.away && (s.away.kind === "vacation" || s.away.kind === "terminated") && s.away.since && s.away.until ? s.away : undefined, remindAt: s.remindAt, samples: Array.isArray(s.samples) ? s.samples : undefined, examples: Array.isArray(s.examples) ? s.examples : [], followups: Array.isArray(s.followups) ? s.followups : [], followupsAsked: !!s.followupsAsked, plan: s.plan && typeof s.plan === "object" && s.plan.answers ? s.plan : undefined };
+  return { step: Number.isInteger(s.step) ? Math.max(0, s.step!) : 0, done: !!s.done, doneAt: s.doneAt, welcomedAt: s.welcomedAt, hiredAt: s.hiredAt, sweptAt: s.sweptAt, away: s.away && (s.away.kind === "vacation" || s.away.kind === "terminated") && s.away.since && s.away.until ? s.away : undefined, remindAt: s.remindAt, samples: Array.isArray(s.samples) ? s.samples : undefined, examples: Array.isArray(s.examples) ? s.examples : [], followups: Array.isArray(s.followups) ? s.followups : [], followupsAsked: !!s.followupsAsked, plan: s.plan && typeof s.plan === "object" && s.plan.answers ? s.plan : undefined };
 }
 
 export function readAnswers(emp: Pick<AIEmployee, "onboarding">): Record<string, Answer> {
@@ -510,6 +512,11 @@ export async function welcome(emp: AIEmployee) {
   });
   await saveState(emp, { welcomedAt: nowIso() });
   return msg;
+}
+
+/** Marks an employee as looked at by the one-time bench sweep. */
+export function markSwept(emp: AIEmployee) {
+  return saveState(emp, { sweptAt: nowIso() });
 }
 
 /** Vacation or terminated: set (or clear with undefined) why the employee is off the team. */

@@ -30,6 +30,8 @@ async function startServer() {
   await markStuckApplications();
   markStuckPages();
   await ensureAllRosters();
+  // Once: in workspaces already in use, employees never onboarded and not in use go to the bench.
+  await import("../employees/bench").then((m) => m.benchUnusedAll()).catch((err) => console.error("[bench] sweep failed:", err));
   startNotifications();
   // Once per workspace: earlier AI costs are matched to the person whose chat message started them.
   import("../aiLimits").then((m) => m.backfillAll()).catch((err) => console.error("[ai limits] back-count failed:", err));

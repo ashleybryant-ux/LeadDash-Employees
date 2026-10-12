@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { hideProviders } from "./_core/providers";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { and, desc, eq, inArray, lt, lte, gt, isNull, like, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, lte, gt, gte, isNull, isNotNull, like, or, sql } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "../drizzle/schema";
@@ -1111,6 +1111,18 @@ export function setMemberAiLimit(organizationId: number, userId: number, mode: "
 }
 
 /** True once anyone in the workspace has written to an employee (the workspace is in use). */
+/** True when a person (not a scheduled task) has written to this employee since `since`. */
+export function personWroteTo(orgId: number, employeeId: number, since: Date) {
+  return Boolean(
+    getDb()
+      .select({ id: chatMessages.id })
+      .from(chatMessages)
+      .where(and(eq(chatMessages.organizationId, orgId), eq(chatMessages.employeeId, employeeId), eq(chatMessages.role, "user"), isNotNull(chatMessages.userId), gte(chatMessages.createdAt, since)))
+      .limit(1)
+      .get()
+  );
+}
+
 export function hasAnyChat(orgId: number) {
   return Boolean(getDb().select({ id: chatMessages.id }).from(chatMessages).where(and(eq(chatMessages.organizationId, orgId), eq(chatMessages.role, "user"))).limit(1).get());
 }

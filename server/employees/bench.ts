@@ -311,6 +311,48 @@ export async function vacationTick(orgId: number) {
   }
 }
 
+/** Days without a message from a person, and no scheduled work, before an employee counts as not in use. */
+export const UNUSED_DAYS = 60;
+
+/**
+ * Once, for workspaces already in use when the bench arrived (2026-10-12):
+ * employees who were never onboarded and aren't in use go to the bench. In
+ * use means a person wrote to them in the last 60 days, or they have
+ * scheduled work turned on. Onboarded employees, anyone brought on from the
+ * bench, and the three on the LeadDash EHR start stay. Each employee is looked
+ * at once (sweptAt), so a later restart changes nothing.
+ */
+export async function benchUnused(orgId: number, now = new Date()) {
+  const org = await db.getOrganizationById(orgId);
+  if (!org || (!org.setupAt && !db.hasAnyChat(orgId))) return [] as string[];
+  const l = await limits(orgId);
+  const since = new Date(now.getTime() - UNUSED_DAYS * 86_400_000);
+  const tasks = (await db.listScheduledTasks(orgId)).filter((t) => t.enabled);
+  const benched: string[] = [];
+  for (const e of await db.listEmployeesByOrg(orgId)) {
+    const st = interview.readState(e);
+    if (st.sweptAt || e.status === "paused") continue;
+    const keep = st.done || !!st.hiredAt || (l.ehrStart && EHR_KINDS.includes(e.kind)) || db.personWroteTo(orgId, e.id, since) || tasks.some((t) => t.employeeId === e.id);
+    if (!keep) {
+      await db.updateEmployee(e.id, orgId, { status: "paused" });
+      benched.push(e.name);
+    }
+    await interview.markSwept((await db.getEmployeeForOrg(e.id, orgId))!);
+  }
+  if (benched.length) await db.logAction({ organizationId: orgId, actorType: "system", actorName: "LeadDash Employees", action: "Moved employees not in use to the bench", details: namesText(benched) });
+  return benched;
+}
+
+export async function benchUnusedAll() {
+  for (const id of await db.listAllOrganizationIds()) {
+    const names = await benchUnused(id).catch((err) => {
+      console.warn(`[bench] sweep failed for workspace ${id}:`, err instanceof Error ? err.message : err);
+      return [] as string[];
+    });
+    if (names.length) console.log(`[bench] workspace ${id}: moved ${names.length} not in use to the bench`);
+  }
+}
+
 export async function vacationTicks() {
   for (const id of await db.listAllOrganizationIds()) await vacationTick(id).catch((err) => console.warn("[bench] vacation tick failed:", err instanceof Error ? err.message : err));
 }

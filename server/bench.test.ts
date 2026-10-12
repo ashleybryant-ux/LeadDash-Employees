@@ -175,4 +175,33 @@ describe("The bench", () => {
     card = (await me.bench.view({ organizationId: orgId })).employees.find((e) => e.kind === "social")!;
     expect(card.away).toBeNull();
   });
+
+  it("once, in a workspace already in use, moves employees never onboarded and not in use to the bench and keeps the rest", async () => {
+    const { orgId, owner } = await makeWorkspace("bench-sweep");
+    const me = caller(owner);
+    // A workspace in use from before the bench: everyone active.
+    await db.updateOrganization(orgId, { setupAt: new Date() });
+    const get = async (k: string) => (await db.getEmployeeByKind(orgId, k as any))!;
+    const avery = await get("inbox"); // onboarded
+    await db.updateEmployee(avery.id, orgId, { interview: JSON.stringify({ ...interview.readState(avery), done: true }) });
+    const sienna = await get("social"); // someone wrote to her
+    await me.chat.send({ organizationId: orgId, employeeId: sienna.id, text: "Plan this week's posts." }).catch(() => null);
+    const nora = await get("projects"); // scheduled work on
+    await db.createScheduledTask({ organizationId: orgId, createdBy: "Owner", employeeId: nora.id, title: "Status", instructions: "Weekly status.", repeat: "weekly", time: "09:00", weekday: 1, monthDay: null, onDate: null, enabled: true, nextRunAt: new Date(Date.now() + 86_400_000), notify: "push" });
+    const morgan = await get("grants"); // never used, never onboarded
+
+    const moved = await bench.benchUnused(orgId);
+    expect(moved).toContain("Morgan");
+    expect(moved).not.toContain("Avery");
+    expect(moved).not.toContain("Nora");
+    expect((await db.getEmployeeForOrg(morgan.id, orgId))!.status).toBe("paused");
+    expect((await db.getEmployeeForOrg(avery.id, orgId))!.status).not.toBe("paused");
+    expect((await db.getEmployeeForOrg(nora.id, orgId))!.status).not.toBe("paused");
+    if ((await db.listChatMessages(orgId, sienna.id)).some((m) => m.role === "user" && m.userId)) expect(moved).not.toContain("Sienna");
+
+    // Only once: bringing Morgan back on and running it again changes nothing.
+    await db.updateEmployee(morgan.id, orgId, { status: "active" });
+    expect(await bench.benchUnused(orgId)).toEqual([]);
+    expect((await db.getEmployeeForOrg(morgan.id, orgId))!.status).toBe("active");
+  });
 });
