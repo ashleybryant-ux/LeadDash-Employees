@@ -28,6 +28,7 @@ import Launches from "./work/Launches";
 import Meetings from "./work/Meetings";
 import Changes, { DevChangeCard } from "./work/Changes";
 import Workflows from "./work/Workflows";
+import People from "./work/People";
 import { FindingsCard, PlatformPageCard, WebTaskCard } from "./chat/Platform";
 import { CampaignDirectionsCard, DramaEpisodeCard, DramaKeyframesCard, DramaSeasonCard } from "./chat/Drama";
 import { LaunchPlanCard, MeetingAgendaCard, MeetingNotesCard } from "./lead/Cards";
@@ -63,6 +64,7 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
   projects: Launches,
   coo: Meetings,
   developer: Changes,
+  onboarding: People,
   platform: Workflows,
   ads: AdsWork,
   billing: Billing,

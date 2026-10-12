@@ -2243,4 +2243,28 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-mv-btns { flex-direction: row; flex-wrap: wrap; }
   .ld-mv-btns .ld-btn { flex: 1 1 120px; }
   .ld-av-card .ld-mv-player, .ld-mv-exp .ld-mv-player { width: 100% !important; max-width: 300px; }
+
+/* ==========================================
+ * Imani: People tab (new hires, leaving, customers)
+ * ========================================== */
+.im-prog { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.im-bar { display: block; height: 6px; border-radius: 999px; background: var(--ld-line2); overflow: hidden; }
+.im-bar i { display: block; height: 100%; background: var(--ld-accent); }
+.im-exp { display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 20px; padding-top: 14px; }
+.im-exp.editing .im-col { outline: 1px solid var(--ld-accent); outline-offset: 8px; border-radius: 4px; }
+.im-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.im-btns { display: flex; flex-direction: column; gap: 8px; }
+.im-kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 14px; align-items: center; font-size: 14px; }
+.im-kv label { display: block; }
+.im-date { max-width: 160px; }
+.im-list { display: grid; grid-template-columns: minmax(0, 1fr) 170px; gap: 8px 14px; align-items: center; margin-top: 6px; font-size: 14px; }
+.im-list.edit { grid-template-columns: minmax(0, 1fr) 140px; gap: 6px 10px; }
+@media (max-width: 760px) {
+  .im-exp { grid-template-columns: minmax(0, 1fr); }
+  .im-btns { flex-direction: row; flex-wrap: wrap; }
+  .im-btns .ld-btn { flex: 1; min-width: 120px; }
+  .im-kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .im-kv > span, .im-kv > input { margin-bottom: 8px; }
+  .im-list { grid-template-columns: minmax(0, 1fr) auto; }
+  .im-list.edit { grid-template-columns: minmax(0, 1fr) 96px; }
 }

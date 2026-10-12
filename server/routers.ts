@@ -5314,6 +5314,64 @@ export const appRouter = router({
   }),
 
   // ==========================================
+  // People (Imani): new hires, people leaving, customers
+  // ==========================================
+  people: (() => {
+    /** One checklist on a new hire or someone leaving. Never client names. */
+    const checklistInput = z.array(z.object({ item: z.string().trim().max(120), detail: z.string().max(200), status: z.enum(["to_do", "waiting", "pending", "done", "stuck"]) })).max(40);
+    return router({
+      list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        return (await import("./employees/people")).view(input.organizationId);
+      }),
+
+      onboardHire: protectedProcedure
+        .input(orgInput.extend({ personId: z.number().optional(), name: z.string().trim().max(120).optional(), role: z.string().trim().max(120).optional(), startDate: z.string().trim().max(20).optional(), email: z.string().trim().max(200).optional() }))
+        .mutation(async ({ ctx, input }) => {
+          await requireMember(ctx, input.organizationId, "member");
+          const { organizationId, ...rest } = input;
+          const r = await (await import("./employees/people")).onboardHire(organizationId, rest);
+          return { person: r.person, emailQueued: r.emailQueued, planned: !!r.plan };
+        }),
+
+      offboard: protectedProcedure
+        .input(orgInput.extend({ name: z.string().trim().min(1).max(120), lastDay: z.string().trim().max(20), reason: z.string().trim().max(300).optional(), caseload: z.boolean().nullable().optional(), role: z.string().trim().max(120).optional() }))
+        .mutation(async ({ ctx, input }) => {
+          await requireMember(ctx, input.organizationId, "member");
+          const { organizationId, ...rest } = input;
+          const r = await (await import("./employees/people")).offboard(organizationId, rest);
+          return { person: r.person, ask: r.ask };
+        }),
+
+      saveOnboarding: protectedProcedure
+        .input(orgInput.extend({ id: z.number(), lists: z.object({ paperwork: checklistInput.optional(), credentialing: checklistInput.optional(), accounts: checklistInput.optional() }) }))
+        .mutation(async ({ ctx, input }) => {
+          await requireMember(ctx, input.organizationId, "member");
+          return (await import("./employees/people")).saveOnboarding(input.organizationId, input.id, input.lists);
+        }),
+
+      saveOffboarding: protectedProcedure
+        .input(
+          orgInput.extend({
+            id: z.number(),
+            lists: z.object({ clients: checklistInput.optional(), access: checklistInput.optional(), pay: checklistInput.optional() }),
+            reason: z.string().max(300).optional(),
+            exitInterview: z.string().regex(/^(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})?$/, "Type the date as MM/DD/YYYY").nullable().optional(),
+          })
+        )
+        .mutation(async ({ ctx, input }) => {
+          await requireMember(ctx, input.organizationId, "member");
+          return (await import("./employees/people")).saveOffboarding(input.organizationId, input.id, { lists: input.lists, reason: input.reason, exitInterview: input.exitInterview });
+        }),
+
+      remind: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        return (await import("./employees/people")).remindHire(input.organizationId, input.id);
+      }),
+    });
+  })(),
+
+  // ==========================================
   // Activity
   // ==========================================
   /** Hours saved and estimated AI cost for a month. */

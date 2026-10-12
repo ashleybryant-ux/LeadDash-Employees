@@ -794,7 +794,18 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
   onboarding: build(
     [],
     [
-      job("What should I do for new customers?", ["Welcome emails", "Setup checklists", "Kickoff calls", "Training", "Check-ins after go-live"], "plan"),
+      job("What should I take care of?", ["New hire onboarding", "Offboarding", "Welcome emails", "Setup checklists", "Kickoff calls", "Training", "Check-ins after go-live"], "team"),
+      {
+        key: "team",
+        title: "New hires and people leaving",
+        intro: "How someone joins your team, and how they leave.",
+        questions: [
+          { key: "hireFirstDay", label: "Your first-day plan for a new hire", type: "text", placeholder: "Tour, meet the team, set up accounts, handbook review, lunch with me", short: "First day", guide: "team" },
+          { key: "hireAccounts", label: "Accounts every new hire needs", type: "text", placeholder: "Email and calendar, practice software, phone system, payroll app", short: "Accounts", guide: "team" },
+          { key: "hireTraining", label: "Training every new hire does", type: "text", placeholder: "HIPAA training, the software videos, shadow two sessions", short: "Hire training", guide: "team" },
+          { key: "leaveSteps", label: "Steps when someone leaves", type: "text", placeholder: "Exit interview, laptop and keys returned, final paycheck, benefits letter", short: "Leaving", guide: "team" },
+        ],
+      },
       {
         key: "plan",
         title: "Your onboarding",
@@ -809,6 +820,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
       voice("voice"),
     ],
     [
+      { key: "team", title: "How do new hires start and people leave?" },
       { key: "plan", title: "How do new customers get set up?" },
       { key: "voice", title: "How should my emails sound?" },
       { key: "rules", title: "What should I never promise?" },

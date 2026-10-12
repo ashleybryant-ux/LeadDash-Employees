@@ -74,7 +74,8 @@ ${HUMAN_EMAIL}`
 
 /** Who Imani is onboarding right now, for her chat. */
 export async function customersFacts(orgId: number) {
-  const list = (await db.listLaunches(orgId)).filter((l) => / onboarding$/i.test(l.name) && l.status !== "dropped");
+  // New hire plans are named "<Name> onboarding" too; those are on the New hires tab.
+  const list = await (await import("./people")).customerLaunches(orgId);
   if (!list.length) return "\nCustomers being onboarded: none yet.";
   const org = await db.getOrganizationById(orgId);
   const tz = org?.timezone || "America/Chicago";
