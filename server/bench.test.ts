@@ -17,6 +17,8 @@ import * as db from "./db";
 import * as hours from "./workHours";
 import * as interview from "./employees/interview";
 import { ensureRoster } from "./employees/roster-sync";
+import * as bench from "./employees/bench";
+import * as runner from "./employees/runner";
 
 const onTeam = async (orgId: number) => (await db.listEmployeesByOrg(orgId)).filter((e) => e.status !== "paused").map((e) => e.kind).sort();
 
@@ -64,20 +66,30 @@ describe("The bench", () => {
     await me.bench.bringOn({ organizationId: orgId, employeeId: jordan.id });
     expect(await onTeam(orgId)).toContain("website");
 
-    // Send to bench: off the team, out of huddles, nothing deleted.
-    await me.bench.sendToBench({ organizationId: orgId, employeeId: avery.id });
+    // Terminate: off the team, out of huddles, nothing deleted, rehirable in 90 days.
+    await me.bench.terminate({ organizationId: orgId, employeeId: avery.id, reason: "Not a fit" });
     expect(await onTeam(orgId)).not.toContain("inbox");
     const h = await me.huddle.start({ organizationId: orgId });
     expect(h.kinds).not.toContain("inbox");
     expect(h.kinds).toContain("coo");
     expect((await db.listChatMessages(orgId, avery.id)).length).toBeGreaterThan(0);
+    let card = (await me.bench.view({ organizationId: orgId })).employees.find((e) => e.kind === "inbox")!;
+    expect(card.away).toMatchObject({ kind: "terminated", reason: "Not a fit", canReturn: false });
+    expect(card.canBringOn).toBe(false);
+    await expect(me.bench.bringOn({ organizationId: orgId, employeeId: avery.id })).rejects.toThrow(/Avery will be rehirable on [A-Z][a-z]{2} \d{1,2}, \d{4}\./);
+    await expect(me.employees.toggleStatus({ organizationId: orgId, id: avery.id, status: "active" })).rejects.toThrow(/rehirable/);
 
-    // Back on after onboarding: a short hello, no onboarding card. (Jordan finished onboarding too, so nobody holds the next one up.)
-    for (const id of [avery.id, jordan.id]) await db.updateEmployee(id, orgId, { interview: JSON.stringify({ ...interview.readState((await db.getEmployeeForOrg(id, orgId))!), done: true }) });
+    // 90 days later: rehired with everything kept, a hello and no onboarding card.
+    const st = interview.readState((await db.getEmployeeForOrg(avery.id, orgId))!);
+    await db.updateEmployee(avery.id, orgId, { interview: JSON.stringify({ ...st, done: true, away: { ...st.away!, since: bench.addDays(st.away!.since, -91), until: bench.addDays(st.away!.until, -91) } }) });
+    await db.updateEmployee(jordan.id, orgId, { interview: JSON.stringify({ ...interview.readState((await db.getEmployeeForOrg(jordan.id, orgId))!), done: true }) });
+    card = (await me.bench.view({ organizationId: orgId })).employees.find((e) => e.kind === "inbox")!;
+    expect(card.away!.canReturn).toBe(true);
     await me.bench.bringOn({ organizationId: orgId, employeeId: avery.id });
     const back = (await db.listChatMessages(orgId, avery.id)).at(-1)!;
     expect(back.content).toMatch(/^Thank you for bringing me back onto the team!/);
     expect(back.cards).toBeNull();
+    expect(interview.readState((await db.getEmployeeForOrg(avery.id, orgId))!).away).toBeUndefined();
   });
 
   it("uses work hours for every interview answer: the pitch first, then answers in the employee's own words", async () => {
@@ -121,5 +133,46 @@ describe("The bench", () => {
     await db.updateOrganization(orgId, { workHours: JSON.stringify({ plan: "practice_growth" }) });
     await me.bench.bringOn({ organizationId: orgId, employeeId: avery.id });
     expect(await onTeam(orgId)).toContain("inbox");
+  });
+
+  it("sends an onboarded employee on vacation for at least 30 days, frees the spot, skips scheduled work and brings them back on the date", async () => {
+    const { orgId, owner } = await makeWorkspace("bench-vacation");
+    const me = caller(owner);
+    await me.setup.finish({ organizationId: orgId, bench: true });
+    const sienna = (await db.getEmployeeByKind(orgId, "social"))!;
+    await me.bench.bringOn({ organizationId: orgId, employeeId: sienna.id });
+    const today = (await me.bench.view({ organizationId: orgId })).today;
+
+    // Only after onboarding, and never sooner than 30 days.
+    await expect(me.bench.vacation({ organizationId: orgId, employeeId: sienna.id, back: bench.addDays(today, 40) })).rejects.toThrow(/after onboarding/);
+    await db.updateEmployee(sienna.id, orgId, { interview: JSON.stringify({ ...interview.readState((await db.getEmployeeForOrg(sienna.id, orgId))!), done: true }) });
+    await expect(me.bench.vacation({ organizationId: orgId, employeeId: sienna.id, back: bench.addDays(today, 10) })).rejects.toThrow(/Pick a return date on or after/);
+    await me.bench.vacation({ organizationId: orgId, employeeId: sienna.id, back: bench.addDays(today, 30) });
+    expect(await onTeam(orgId)).not.toContain("social");
+    let card = (await me.bench.view({ organizationId: orgId })).employees.find((e) => e.kind === "social")!;
+    expect(card.away).toMatchObject({ kind: "vacation", until: bench.addDays(today, 30), canReturn: false });
+    await expect(me.bench.bringOn({ organizationId: orgId, employeeId: sienna.id })).rejects.toThrow(/on vacation and can come back on/);
+
+    // The date moves later, not earlier.
+    await expect(me.bench.changeReturn({ organizationId: orgId, employeeId: sienna.id, back: bench.addDays(today, 20) })).rejects.toThrow(/on or after/);
+    await me.bench.changeReturn({ organizationId: orgId, employeeId: sienna.id, back: bench.addDays(today, 45) });
+
+    // Her scheduled work doesn't run while she's away: the task moves to its next time.
+    const task = await db.createScheduledTask({ organizationId: orgId, createdBy: "Owner", employeeId: sienna.id, title: "Weekly posts", instructions: "Plan this week's posts.", repeat: "daily", time: "09:00", weekday: null, monthDay: null, onDate: null, enabled: true, nextRunAt: new Date(Date.now() - 60_000), notify: "push" });
+    await runner.tick(new Date());
+    const after = (await db.listScheduledTasks(orgId)).find((x) => x.id === task.id)!;
+    expect(after.lastRunAt).toBeNull();
+    expect(new Date(after.nextRunAt!).getTime()).toBeGreaterThan(Date.now());
+    expect((await db.listChatMessages(orgId, sienna.id)).some((m) => m.authorName === "Scheduled task: Weekly posts")).toBe(false);
+
+    // On the return date she's back on her own, with a hello.
+    const st = interview.readState((await db.getEmployeeForOrg(sienna.id, orgId))!);
+    await db.updateEmployee(sienna.id, orgId, { interview: JSON.stringify({ ...st, away: { ...st.away!, since: bench.addDays(today, -45), until: today } }) });
+    await bench.vacationTick(orgId);
+    expect(await onTeam(orgId)).toContain("social");
+    const hello = (await db.listChatMessages(orgId, sienna.id)).at(-1)!;
+    expect(hello.content).toMatch(/^I'm back from vacation!/);
+    card = (await me.bench.view({ organizationId: orgId })).employees.find((e) => e.kind === "social")!;
+    expect(card.away).toBeNull();
   });
 });

@@ -2465,3 +2465,61 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-hud-dept { grid-template-columns: 26px minmax(0, 1fr); }
   .ld-hud-dept .faces { grid-column: 2; }
 }
+
+/* ==========================================
+   Vacation and Terminate (2026-10-12)
+   ========================================== */
+.ld-btn.danger.fill { background: var(--ld-red); border-color: var(--ld-red); color: #fff; }
+.ld-btn.sm.danger { border-color: var(--ld-red); }
+.ld-btn.gold { background: #ffb020; border-color: #ffb020; color: #1a1209; }
+.ld-btn.gold:hover { background: #ffbf47; }
+.ld-btn.light { background: #fff; border-color: #fff; color: #000; }
+.ld-leave { padding: 14px 24px; background: var(--ld-surface); border-bottom: 1px solid var(--ld-line); display: flex; flex-direction: column; gap: 12px; }
+.ld-leave-beach { border-radius: 14px; padding: 16px 18px; background-size: cover; background-position: center 60%; color: #fff; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: end; }
+.ld-leave-beach .t { font-size: 16px; color: #fff; }
+.ld-leave-beach ul { margin: 8px 0 12px; padding-left: 18px; line-height: 1.6; color: #fff; }
+.ld-leave-beach p { margin: 6px 0 0; color: #fff; line-height: 1.55; }
+.ld-leave-field { display: flex; flex-direction: column; gap: 4px; max-width: 260px; }
+.ld-leave-field label { font-size: 12px; font-weight: 800; color: #bfe9ff; text-transform: uppercase; letter-spacing: .05em; }
+.ld-leave-field input { height: 34px; background: #fff; color: #000; border-color: #fff; }
+.ld-leave-field small { color: #fff; font-weight: 700; font-size: 12px; }
+.ld-leave-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.ld-leave-btns.col { flex-direction: column; }
+.ld-leave-btns .ld-btn { width: 180px; }
+.ld-leave-warn { background: var(--ld-warn-bg); border-radius: 12px; padding: 14px 16px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; }
+.ld-leave-warn b { font-size: 15px; color: var(--ld-ink); }
+.ld-leave-warn p { margin: 4px 0 0; color: var(--ld-text2); line-height: 1.5; font-size: 14px; }
+.ld-leave-ask { font-size: 17px; font-weight: 800; color: var(--ld-ink); }
+.ld-leave-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ld-leave-choice > div { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+.ld-leave-term { border-radius: 14px; padding: 16px 18px; background: var(--ld-bad-bg); border: 1px solid var(--ld-red); display: grid; gap: 12px; }
+.ld-leave-term .t { font-size: 16px; color: var(--ld-ink); }
+.ld-leave-term p { margin: 6px 0 0; color: var(--ld-text2); line-height: 1.55; }
+.ld-leave-lbl { display: block; margin: 10px 0 6px; font-size: 12px; font-weight: 800; color: var(--ld-muted); text-transform: uppercase; letter-spacing: .05em; }
+.ld-bench-vac { border-radius: 18px; padding: 18px; background-size: cover; background-position: center 62%; display: flex; flex-direction: column; gap: 14px; min-height: 260px; }
+.ld-bench-vac h2 { margin: 0; font-size: 19px; font-weight: 800; color: #fff; }
+.ld-bench-vac p { margin: 2px 0 0; color: #fff; font-size: 14px; }
+.ld-bench-vac .ld-bench-card { box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+.ld-bench-term { border: 1px solid var(--ld-line); background: var(--ld-surface); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.ld-bench-term h2 { margin: 0; font-size: 19px; font-weight: 800; }
+.ld-bench-term p { margin: 2px 0 0; color: var(--ld-text2); font-size: 14px; }
+.ld-bench-card.gone .ld-bench-photo img { filter: grayscale(1); }
+.ld-bench-photo { position: relative; }
+.ld-bench-tag { position: absolute; left: 10px; top: 10px; width: auto !important; height: auto !important; font-weight: 800; font-size: 12px; border-radius: 999px; padding: 4px 10px; }
+.ld-bench-tag.gold { background: #ffb020; color: #1a1209; }
+.ld-bench-tag.red { background: var(--ld-red); color: #fff; }
+.ld-bench-date { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.ld-bench-date .ld-in { height: 34px; }
+.ld-bench-date .ld-row .ld-btn { flex: 1; width: auto; }
+.ld-benchrow.vac { background-size: cover; background-position: center 62%; border: 0; }
+.ld-benchrow.vac .tx { color: #fff; }
+@media (max-width: 760px) {
+  .ld-leave { padding: 12px 14px; }
+  .ld-emphead-status { flex-shrink: 0; gap: 6px !important; }
+  .ld-emphead-status .ld-btn { width: auto !important; padding: 0 10px; height: 32px; }
+  .ld-emphead-who { min-width: 0; overflow: hidden; }
+  .ld-leave-beach, .ld-leave-warn { grid-template-columns: minmax(0, 1fr); }
+  .ld-leave-choice { grid-template-columns: minmax(0, 1fr); }
+  .ld-leave-btns.col { flex-direction: row; }
+  .ld-leave-btns .ld-btn { width: auto; flex: 1; }
+}

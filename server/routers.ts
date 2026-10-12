@@ -718,9 +718,8 @@ export const appRouter = router({
         // Off the bench goes through the same limits as Bring on.
         const before = await db.getEmployeeForOrg(input.id, input.organizationId);
         if (before?.status === "paused" && input.status !== "paused") {
-          const bench = await import("./employees/bench");
-          const l = await bench.limits(input.organizationId);
-          if (!l.canBringOn(before.kind)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: bench.limitMessage(l, before.name) });
+          // Vacation and termination dates and the team limits all hold; the hello is posted in the chat.
+          await (await import("./employees/bench")).bringOn(input.organizationId, before.id);
         }
         const emp = await db.updateEmployee(input.id, input.organizationId, { status: input.status });
         if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "Employee not found in this workspace." });
@@ -5049,10 +5048,24 @@ export const appRouter = router({
       await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Brought an employee on from the bench", details: emp.name });
       return { id: emp.id, kind: emp.kind, name: emp.name };
     }),
-    sendToBench: protectedProcedure.input(orgInput.extend({ employeeId: z.number().int() })).mutation(async ({ ctx, input }) => {
+    /** Vacation: onboarded employees, back on a day at least 30 days out. */
+    vacation: protectedProcedure.input(orgInput.extend({ employeeId: z.number().int(), back: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
-      const emp = await (await import("./employees/bench")).sendToBench(input.organizationId, input.employeeId);
-      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Sent an employee to the bench", details: emp.name });
+      const emp = await (await import("./employees/bench")).sendOnVacation(input.organizationId, input.employeeId, input.back);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Sent an employee on vacation", details: `${emp.name}, back ${input.back}` });
+      return { id: emp.id };
+    }),
+    changeReturn: protectedProcedure.input(orgInput.extend({ employeeId: z.number().int(), back: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const emp = await (await import("./employees/bench")).changeReturn(input.organizationId, input.employeeId, input.back);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Changed a vacation return date", details: `${emp.name}, back ${input.back}` });
+      return { id: emp.id };
+    }),
+    /** Terminate: off the team now, everything stored, rehirable in 90 days. */
+    terminate: protectedProcedure.input(orgInput.extend({ employeeId: z.number().int(), reason: z.string().max(60) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      const emp = await (await import("./employees/bench")).terminate(input.organizationId, input.employeeId, input.reason);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Terminated an employee", details: `${emp.name}${input.reason ? `: ${input.reason}` : ""}` });
       return { id: emp.id };
     }),
     /** One answer in an interview, said out loud in the employee's voice. Each answer uses work hours. */

@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { NextUpBar } from "./NextUp";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { BEACH, LeaveBox, dayText as leaveDay, type LeaveMode } from "./bench/Leave";
 import { AVATAR_FILES, KIND_META, KIND_ORDER, fmtWhen, initials, type Kind, DEPARTMENT_ORDER, worksWithClientInfo } from "./meta";
 import { Menu } from "./goals/shared";
 import { applyTheme, useTheme, type Theme } from "./theme";
@@ -485,7 +486,16 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
   const [switcher, setSwitcher] = React.useState(false);
   // Chats holds only the people brought on from the bench.
   const sorted = list.filter((e) => e.status !== "paused").sort((a, b) => KIND_ORDER.indexOf(a.kind as Kind) - KIND_ORDER.indexOf(b.kind as Kind) || a.id - b.id);
-  const benched = list.filter((e) => e.status === "paused");
+  const awayOf = (e: { interview?: string | null }) => {
+    try {
+      return (JSON.parse(e.interview || "{}").away ?? null) as { kind: string; until: string } | null;
+    } catch {
+      return null;
+    }
+  };
+  const onVacation = list.filter((e) => e.status === "paused" && awayOf(e)?.kind === "vacation");
+  const benched = list.filter((e) => e.status === "paused" && awayOf(e)?.kind !== "vacation");
+  const soonest = onVacation.map((e) => awayOf(e)!.until).sort()[0];
   return (
     <aside className="ld-chatlist" style={{ width: 340, flexShrink: 0, boxSizing: "border-box", background: "var(--ld-surface)", borderRight: "1px solid var(--ld-line)", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflowY: "auto" }}>
       <div style={{ padding: "18px 18px 12px 18px", position: "relative" }} className="ld-between">
@@ -535,6 +545,13 @@ export function ChatList({ activeKind }: { activeKind: string | null }) {
           </div>
         );
       })}
+      {!chatOnly && onVacation.length > 0 && (
+        <Link href="/bench" className="ld-benchrow vac" style={{ backgroundImage: `linear-gradient(90deg, rgba(3, 28, 46, .85), rgba(3, 28, 46, .45)), url(${BEACH})` }}>
+          <span className="faces">{onVacation.slice(0, 4).map((e) => <Avatar key={e.id} name={e.name} kind={e.kind} src={e.avatar} size={28} />)}</span>
+          <span className="tx">{`🏖️ ${onVacation.length} on vacation, back ${leaveDay(soonest)}`}</span>
+          <span className="ld-btn sm light">Vacation</span>
+        </Link>
+      )}
       {!chatOnly && benched.length > 0 && (
         <Link href="/bench" className="ld-benchrow">
           <span className="faces">{benched.slice(0, 4).map((e) => <Avatar key={e.id} name={e.name} kind={e.kind} src={e.avatar} size={28} />)}</span>
@@ -641,13 +658,12 @@ function TeamGroup({ activeKind }: { activeKind: string | null }) {
 // Employee header (Chat | Work | Guidelines)
 // ==========================================
 
-type Emp = { id: number; name: string; roleTitle: string; kind: string; status: string; avatar: string | null };
+type Emp = { id: number; name: string; roleTitle: string; kind: string; status: string; avatar: string | null; interview?: string | null };
 
 export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines"; base: string }) {
   const { currentOrgId, currentOrg } = useTenant();
   const utils = trpc.useUtils();
-  const [, navigate] = useLocation();
-  const toBench = trpc.bench.sendToBench.useMutation({ onSuccess: async () => { await Promise.all([utils.employees.list.invalidate(), utils.bench.view.invalidate()]); navigate("/bench"); } });
+  const [leave, setLeave] = React.useState<LeaveMode | null>(null);
   const work = KIND_META[(emp.kind as Kind) ?? "custom"].work;
   const clientInfo = worksWithClientInfo(emp.kind, currentOrg?.orgType);
   // Client names on this person's screen: Show, Initial (A. Price) or Hide (a black box). Chat and the Work tabs follow it at once.
@@ -677,6 +693,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
     boxShadow: on ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
   });
   return (
+    <>
     <header className="ld-emphead" style={{ boxSizing: "border-box", minHeight: 72, padding: "8px 24px", background: "var(--ld-surface)", borderBottom: "1px solid var(--ld-line)", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 16px", position: "sticky", top: 0, zIndex: 10 }}>
       <div className="ld-row ld-emphead-who" style={{ gap: 12 }}>
         <Link href="/chats?list=1" className="ld-mobile-only" aria-label="Back to chats" style={{ color: "var(--ld-ink)", display: "flex" }}>
@@ -708,12 +725,19 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
       <div className="ld-row ld-emphead-status" style={{ marginLeft: clientInfo ? 0 : "auto" }}>
         <span className={`ld-pill ${paused ? "gray" : "green"}`}>{paused ? "On the bench" : emp.status === "working" ? "Working" : "Ready"}</span>
         {!paused && (
-          <button type="button" className="ld-btn sm" style={{ width: 128 }} disabled={toBench.isPending} onClick={() => toBench.mutate({ organizationId: currentOrgId, employeeId: emp.id })}>
-            Send to bench
-          </button>
+          <>
+            <button type="button" className="ld-btn sm" style={{ width: 120 }} aria-pressed={leave === "vacation"} onClick={() => setLeave(leave === "vacation" ? null : "vacation")}>
+              <span aria-hidden="true">🏖️</span>Vacation
+            </button>
+            <button type="button" className="ld-btn sm danger" style={{ width: 120 }} aria-pressed={leave === "terminate"} onClick={() => setLeave(leave === "terminate" ? null : "terminate")}>
+              Terminate
+            </button>
+          </>
         )}
       </div>
     </header>
+    {leave && !paused && <LeaveBox emp={emp} mode={leave} setMode={setLeave} onClose={() => setLeave(null)} />}
+    </>
   );
 }
 

@@ -6,6 +6,7 @@ import { BottomNav, ErrorLine, FolderTabs, Page, Rail } from "../ui";
 import { DictateButton, appendText } from "../Dictate";
 import { AVATAR_FILES, DEPARTMENT_ORDER, EHR_GROUP, KIND_META, KIND_ORDER, type Kind } from "../meta";
 import type { Outputs } from "../types";
+import { BEACH, dayText } from "../bench/Leave";
 
 /**
  * The bench: every employee waits here until the owner brings them on. Each
@@ -91,7 +92,9 @@ function BenchPage() {
   const v = q.data;
   const orgType = currentOrg?.orgType ?? "business";
   const order = (a: Emp, b: Emp) => KIND_ORDER.indexOf(a.kind as Kind) - KIND_ORDER.indexOf(b.kind as Kind) || a.id - b.id;
-  const benched = (v?.employees ?? []).filter((e) => !e.onTeam).sort(order);
+  const benched = (v?.employees ?? []).filter((e) => !e.onTeam && !e.away).sort(order);
+  const onVacation = (v?.employees ?? []).filter((e) => e.away?.kind === "vacation").sort((a, b) => (a.away!.until < b.away!.until ? -1 : 1));
+  const terminated = (v?.employees ?? []).filter((e) => e.away?.kind === "terminated").sort((a, b) => (a.away!.until < b.away!.until ? -1 : 1));
   const team = (v?.employees ?? []).filter((e) => e.onTeam).sort(order);
   const ehr = benched.filter((e) => v?.ehrKinds.includes(e.kind));
   const rest = benched.filter((e) => !v?.ehrKinds.includes(e.kind));
@@ -99,6 +102,11 @@ function BenchPage() {
   const shown = tab === "All" ? rest : rest.filter((e) => e.department === tab);
   const onBring = (e: Emp) => {
     if (!v) return;
+    if (e.away) {
+      if (!e.away.canReturn) return;
+      bring.mutate({ organizationId: orgId, employeeId: e.id });
+      return;
+    }
     if (!e.canBringOn) {
       setWarn(e);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -137,7 +145,7 @@ function BenchPage() {
             <span className="faces">{team.slice(0, 6).map((e) => <Photo key={e.id} e={e} />)}</span>
             <span>
               <b>{v.startLimit ? `${team.length} of ${Math.max(v.startLimit, team.length)}` : team.length}</b>
-              <small>on your team</small>
+              <small>{onVacation.length ? `on your team · ${onVacation.length} on vacation` : "on your team"}</small>
             </span>
           </Link>
         )}
@@ -156,6 +164,24 @@ function BenchPage() {
       )}
       <ErrorLine error={q.error || bring.error} />
       {v && <span className="ld-bench-hours">Interviews use work hours. Bios are free to read.</span>}
+      {onVacation.length > 0 && (
+        <section className="ld-bench-vac" style={{ backgroundImage: `linear-gradient(180deg, rgba(3, 28, 46, .78) 0%, rgba(3, 28, 46, .35) 45%, rgba(3, 28, 46, .1) 100%), url(${BEACH})` }}>
+          <div>
+            <h2><span aria-hidden="true">🏖️</span> On vacation</h2>
+            <p>No jobs, no work hours, no spot on the team.</p>
+          </div>
+          <div className="ld-bench-grid">{onVacation.map((e) => <AwayCard key={e.id} e={e} onBring={() => onBring(e)} onBio={() => setBio(e.kind)} busy={bring.isPending} />)}</div>
+        </section>
+      )}
+      {terminated.length > 0 && (
+        <section className="ld-bench-term">
+          <div>
+            <h2>Terminated</h2>
+            <p>{`Stored, not deleted. Rehirable ${v?.terminateDays ?? 90} days after they leave.`}</p>
+          </div>
+          <div className="ld-bench-grid">{terminated.map((e) => <AwayCard key={e.id} e={e} onBring={() => onBring(e)} onBio={() => setBio(e.kind)} busy={bring.isPending} />)}</div>
+        </section>
+      )}
       {ehr.length > 0 && (
         <section className="ld-bench-ehr">
           <div className="ld-bench-ehrhead">
@@ -176,10 +202,58 @@ function BenchPage() {
           </FolderTabs>
         </section>
       )}
-      {v && benched.length === 0 && <div className="ld-empty">Everyone is on your team. Send someone to the bench from their chat.</div>}
+      {v && benched.length === 0 && onVacation.length === 0 && terminated.length === 0 && <div className="ld-empty">Everyone is on your team.</div>}
       {!v && q.isLoading && <div className="ld-empty">Loading...</div>}
       {open && <BioBox e={open} onClose={() => setBio(null)} onBring={() => { setBio(null); onBring(open); }} busy={bring.isPending} />}
     </Page>
+  );
+}
+
+/** A card in On vacation or Terminated: when they can come back, and the button for it. */
+function AwayCard({ e, onBring, onBio, busy }: { e: Emp; onBring: () => void; onBio: () => void; busy: boolean }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const a = e.away!;
+  const [editing, setEditing] = React.useState(false);
+  const [date, setDate] = React.useState(a.until);
+  const change = trpc.bench.changeReturn.useMutation({ onSuccess: async () => { setEditing(false); await utils.bench.view.invalidate(); } });
+  const vac = a.kind === "vacation";
+  const earliest = vac ? [a.returnFrom, new Date().toISOString().slice(0, 10)].sort()[1] : a.until;
+  const tag = vac ? (a.waiting ? "Back when there's room" : `Back ${dayText(a.until)}`) : a.canReturn ? "Rehirable now" : `Rehirable ${dayText(a.until)}`;
+  const line = vac ? `Left ${dayText(a.since)}.${a.canReturn ? " Can come back now." : ""}` : `Terminated ${dayText(a.since)}.${a.reason ? ` ${a.reason}.` : ""}`;
+  return (
+    <div className={`ld-bench-card ${vac ? "" : "gone"}`}>
+      <button type="button" className="ld-bench-photo" aria-label={`Read ${e.name}'s bio`} onClick={onBio}>
+        <Photo e={e} />
+        <span className={`ld-bench-tag ${vac ? "gold" : "red"}`}>{tag}</span>
+      </button>
+      <div className="ld-bench-body">
+        <b>{e.name}</b>
+        <span className="r">{e.roleTitle}</span>
+        <span className="l">{line}</span>
+        {a.canReturn ? (
+          <button type="button" className={`ld-btn ${vac ? "gold" : "p"}`} disabled={busy} onClick={onBring}>{vac ? `Bring ${e.name} back` : `Rehire ${e.name}`}</button>
+        ) : (
+          <button type="button" className="ld-btn" disabled>{vac ? `Back ${dayText(a.returnFrom)}` : `Rehirable ${dayText(a.until)}`}</button>
+        )}
+        {vac ? (
+          editing ? (
+            <div className="ld-bench-date">
+              <input type="date" className="ld-in" aria-label="Back on" min={earliest} value={date} onChange={(ev) => setDate(ev.target.value)} />
+              <div className="ld-row">
+                <button type="button" className="ld-btn p" disabled={change.isPending || date < earliest} onClick={() => change.mutate({ organizationId: currentOrgId, employeeId: e.id, back: date })}>Save</button>
+                <button type="button" className="ld-btn" onClick={() => { setEditing(false); setDate(a.until); }}>Cancel</button>
+              </div>
+              <ErrorLine error={change.error} />
+            </div>
+          ) : (
+            <button type="button" className="ld-btn" onClick={() => setEditing(true)}>Change date</button>
+          )
+        ) : (
+          <button type="button" className="ld-btn" onClick={onBio}>Read bio</button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -215,6 +289,10 @@ function BioBox({ e, onClose, onBring, busy }: { e: Emp; onClose: () => void; on
           <div className="ld-row" style={{ flexWrap: "wrap", marginTop: 14 }}>
             {e.onTeam ? (
               <Link href={chatHref(e)} className="ld-btn p">Open chat</Link>
+            ) : e.away && !e.away.canReturn ? (
+              <button type="button" className="ld-btn" style={{ width: "auto", padding: "0 16px" }} disabled>{e.away.kind === "vacation" ? `Back ${dayText(e.away.returnFrom)}` : `Rehirable ${dayText(e.away.until)}`}</button>
+            ) : e.away ? (
+              <button type="button" className="ld-btn p" style={{ width: "auto", padding: "0 16px" }} disabled={busy} onClick={onBring}>{e.away.kind === "vacation" ? `Bring ${e.name} back` : `Rehire ${e.name}`}</button>
             ) : (
               <>
                 <button type="button" className="ld-btn p" style={{ width: "auto", padding: "0 16px" }} disabled={busy} onClick={onBring}>{PLUS}{`Bring on ${e.name}`}</button>
@@ -288,7 +366,7 @@ function InterviewPage({ kind }: { kind: string }) {
   };
   const onBring = () => {
     if (!e) return;
-    if (!e.canBringOn && !e.onTeam) return setWarn(true);
+    if (!e.canBringOn && !e.onTeam && !e.away) return setWarn(true);
     audio.current?.pause();
     bring.mutate({ organizationId: orgId, employeeId: e.id });
   };
@@ -322,6 +400,10 @@ function InterviewPage({ kind }: { kind: string }) {
           <div className="ld-iv-btns">
             {e.onTeam ? (
               <Link href={chatHref(e)} className="ld-btn p">Open chat</Link>
+            ) : e.away && !e.away.canReturn ? (
+              <button type="button" className="ld-btn" style={{ width: "auto", padding: "0 16px" }} disabled>{e.away.kind === "vacation" ? `Back ${dayText(e.away.returnFrom)}` : `Rehirable ${dayText(e.away.until)}`}</button>
+            ) : e.away ? (
+              <button type="button" className="ld-btn p" style={{ width: "auto", padding: "0 16px" }} disabled={bring.isPending} onClick={onBring}>{e.away.kind === "vacation" ? `Bring ${e.name} back` : `Rehire ${e.name}`}</button>
             ) : (
               <button type="button" className="ld-btn p" disabled={bring.isPending} onClick={onBring}>{PLUS}{`Bring on ${e.name}`}</button>
             )}

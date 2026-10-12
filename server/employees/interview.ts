@@ -36,6 +36,8 @@ export type InterviewState = {
   welcomedAt?: string;
   /** When the owner brought this employee on from the bench. */
   hiredAt?: string;
+  /** Off the team for a while: on vacation (back on `until`) or terminated (rehirable on `until`). Dates are YYYY-MM-DD in the workspace time zone. */
+  away?: Away;
   remindAt?: string;
   samples?: { label: string; text: string }[];
   examples?: Example[];
@@ -44,6 +46,7 @@ export type InterviewState = {
   /** "How I will work": answers the employee drafted from the Brain, for the owner to approve instead of the full interview. */
   plan?: Plan;
 };
+export type Away = { kind: "vacation" | "terminated"; since: string; until: string; reason?: string; waiting?: boolean };
 export type Plan = { answers: Record<string, Answer>; guesses: string[]; at: string };
 
 export type GSource = "interview" | "chat" | "learned" | "you" | "settled";
@@ -64,7 +67,7 @@ const nowIso = () => new Date().toISOString();
 
 export function readState(emp: Pick<AIEmployee, "interview">): InterviewState {
   const s = parse<Partial<InterviewState>>(emp.interview, {});
-  return { step: Number.isInteger(s.step) ? Math.max(0, s.step!) : 0, done: !!s.done, doneAt: s.doneAt, welcomedAt: s.welcomedAt, hiredAt: s.hiredAt, remindAt: s.remindAt, samples: Array.isArray(s.samples) ? s.samples : undefined, examples: Array.isArray(s.examples) ? s.examples : [], followups: Array.isArray(s.followups) ? s.followups : [], followupsAsked: !!s.followupsAsked, plan: s.plan && typeof s.plan === "object" && s.plan.answers ? s.plan : undefined };
+  return { step: Number.isInteger(s.step) ? Math.max(0, s.step!) : 0, done: !!s.done, doneAt: s.doneAt, welcomedAt: s.welcomedAt, hiredAt: s.hiredAt, away: s.away && (s.away.kind === "vacation" || s.away.kind === "terminated") && s.away.since && s.away.until ? s.away : undefined, remindAt: s.remindAt, samples: Array.isArray(s.samples) ? s.samples : undefined, examples: Array.isArray(s.examples) ? s.examples : [], followups: Array.isArray(s.followups) ? s.followups : [], followupsAsked: !!s.followupsAsked, plan: s.plan && typeof s.plan === "object" && s.plan.answers ? s.plan : undefined };
 }
 
 export function readAnswers(emp: Pick<AIEmployee, "onboarding">): Record<string, Answer> {
@@ -507,6 +510,23 @@ export async function welcome(emp: AIEmployee) {
   });
   await saveState(emp, { welcomedAt: nowIso() });
   return msg;
+}
+
+/** Vacation or terminated: set (or clear with undefined) why the employee is off the team. */
+export function setAway(emp: AIEmployee, away: Away | undefined) {
+  return saveState(emp, { away });
+}
+
+/** Back from vacation, or rehired: a hello in the chat. Everything from onboarding is still there. */
+export async function welcomeBack(emp: AIEmployee, from: "vacation" | "terminated") {
+  await db.createChatMessage({
+    organizationId: emp.organizationId,
+    employeeId: emp.id,
+    role: "employee",
+    authorName: emp.name,
+    content: from === "vacation" ? "I'm back from vacation! 🏖️ I still have everything from my onboarding, and my scheduled work starts again." : "Thank you for bringing me back onto the team! I still have everything from before, so I can pick up right where I left off.",
+  });
+  return saveState(emp, { away: undefined });
 }
 
 /** Brought on from the bench: thanks in the chat and the onboarding card (Start or Later). Back on the team after onboarding: a short hello. */

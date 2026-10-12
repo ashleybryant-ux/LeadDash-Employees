@@ -102,6 +102,13 @@ export async function tick(now = new Date()) {
   const due = await db.dueScheduledTasks(now);
   // One at a time keeps memory and API use flat on a small server.
   for (const task of due) {
+    // Someone on the bench, on vacation or terminated does no scheduled work: the task moves to its next time without running.
+    const emp = await db.getEmployeeForOrg(task.employeeId, task.organizationId);
+    if (emp?.status === "paused") {
+      const tz = await timezoneFor(task.organizationId);
+      await db.updateScheduledTask(task.id, task.organizationId, { nextRunAt: nextRun(task, tz, new Date(now.getTime() + 60_000)), enabled: task.repeat === "once" ? false : task.enabled });
+      continue;
+    }
     await runTaskNow(task);
   }
   return due.length;
@@ -145,6 +152,8 @@ export function startScheduler() {
       await followUps();
       // New employees reach out first; "Later" reminders come due.
       await interviewTicks();
+      // Vacations whose return date has come end, when there's room on the team.
+      await (await import("./bench")).vacationTicks();
       // BidPrime: once a day after 7:00 in each workspace's time zone.
       await (await import("./bids")).bidsTick();
       // Elena's avatar videos: save each one fal.ai has finished.

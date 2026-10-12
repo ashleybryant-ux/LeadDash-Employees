@@ -25,6 +25,19 @@ import * as interview from "./interview";
 export const EHR_KINDS: EmployeeKind[] = ["leads", "billing", "compliance"];
 export const EHR_GROUP = "Works with LeadDash EHR";
 export const START_LIMIT = 5;
+/** Vacation lasts at least this long; a terminated employee is rehirable after TERMINATE_DAYS. */
+export const VACATION_MIN_DAYS = 30;
+export const TERMINATE_DAYS = 90;
+export const TERMINATE_REASONS = ["Not a fit", "Don't need this work", "Costs too much", "Other"] as const;
+
+/** Today as YYYY-MM-DD in a time zone. */
+export const todayIn = (tz: string, now = new Date()) => now.toLocaleDateString("en-CA", { timeZone: tz });
+export const addDays = (day: string, n: number) => {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+export const dayText = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
 
 export type Bio = { pitch: string[]; support: string[]; works: string };
 
@@ -160,6 +173,7 @@ export async function limits(orgId: number) {
   });
   const startFull = !org.internal && !ehrStart && team.length >= START_LIMIT && onboarding.length > 0;
   return {
+    tz: org.timezone || "America/Chicago",
     internal: !!org.internal,
     healthcare: org.orgType === "healthcare",
     ehrStart,
@@ -185,7 +199,12 @@ export async function benchView(orgId: number) {
   const { withPortrait } = await import("../ehrLink");
   const { JOBS } = await import("../workHours");
   const emps = (await db.listEmployeesByOrg(orgId)).map(withPortrait);
+  const today = todayIn(l.tz);
   return {
+    today,
+    vacationMinDays: VACATION_MIN_DAYS,
+    terminateDays: TERMINATE_DAYS,
+    reasons: TERMINATE_REASONS,
     healthcare: l.healthcare,
     ehrStart: l.ehrStart,
     ehrKinds: l.healthcare ? EHR_KINDS : [],
@@ -201,7 +220,9 @@ export async function benchView(orgId: number) {
       department: e.department,
       avatar: e.avatar,
       onTeam: hired(e),
-      canBringOn: !hired(e) && l.canBringOn(e.kind),
+      canBringOn: !hired(e) && !interview.readState(e).away && l.canBringOn(e.kind),
+      onboarded: interview.readState(e).done,
+      away: awayView(e, today),
       bio: bioOf(e),
     })),
   };
@@ -213,15 +234,85 @@ export async function bringOn(orgId: number, employeeId: number) {
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
   if (hired(emp)) return emp;
   const l = await limits(orgId);
+  const away = interview.readState(emp).away;
+  if (away) {
+    const a = awayView(emp, todayIn(l.tz))!;
+    if (!a.canReturn) throw new TRPCError({ code: "PRECONDITION_FAILED", message: away.kind === "vacation" ? `${emp.name} is on vacation and can come back on ${dayText(a.returnFrom)}.` : `${emp.name} will be rehirable on ${dayText(away.until)}.` });
+  }
   if (!l.canBringOn(emp.kind)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: limitMessage(l, emp.name) });
   const on = (await db.updateEmployee(emp.id, orgId, { status: "active" }))!;
+  if (away) return interview.welcomeBack(on, away.kind);
   return interview.welcomeFromBench(on);
 }
 
-export async function sendToBench(orgId: number, employeeId: number) {
-  const emp = await db.updateEmployee(employeeId, orgId, { status: "paused" });
+/** Where an away employee stands: back or rehirable on which day, and whether they can come back today. */
+export function awayView(emp: AIEmployee, today: string) {
+  const a = interview.readState(emp).away;
+  if (!a) return null;
+  // A vacation can end early once 30 days have passed; a termination ends on its rehirable day.
+  const returnFrom = a.kind === "vacation" ? addDays(a.since, VACATION_MIN_DAYS) : a.until;
+  return { kind: a.kind, since: a.since, until: a.until, reason: a.reason ?? "", waiting: !!a.waiting, returnFrom, canReturn: today >= returnFrom };
+}
+
+async function onTeamOrThrow(orgId: number, employeeId: number) {
+  const emp = await db.getEmployeeForOrg(employeeId, orgId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
-  return emp;
+  if (!hired(emp)) throw new TRPCError({ code: "BAD_REQUEST", message: `${emp.name} isn't on your team.` });
+  const org = await db.getOrganizationById(orgId);
+  return { emp, today: todayIn(org?.timezone || "America/Chicago") };
+}
+
+/** Vacation: onboarded employees only, back on a day at least 30 days out. Off Chats and Huddle, no scheduled work, no spot on the team. */
+export async function sendOnVacation(orgId: number, employeeId: number, back: string) {
+  const { emp, today } = await onTeamOrThrow(orgId, employeeId);
+  if (!interview.readState(emp).done) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${emp.name} can go on vacation after onboarding.` });
+  const earliest = addDays(today, VACATION_MIN_DAYS);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(back) || back < earliest) throw new TRPCError({ code: "BAD_REQUEST", message: `Pick a return date on or after ${dayText(earliest)}.` });
+  const off = (await db.updateEmployee(emp.id, orgId, { status: "paused" }))!;
+  return interview.setAway(off, { kind: "vacation", since: today, until: back });
+}
+
+/** A new return date: later anytime, earlier only once 30 days have passed (never before today). */
+export async function changeReturn(orgId: number, employeeId: number, back: string) {
+  const emp = await db.getEmployeeForOrg(employeeId, orgId);
+  const away = emp ? interview.readState(emp).away : undefined;
+  if (!emp || away?.kind !== "vacation") throw new TRPCError({ code: "BAD_REQUEST", message: "That employee isn't on vacation." });
+  const org = await db.getOrganizationById(orgId);
+  const today = todayIn(org?.timezone || "America/Chicago");
+  const earliest = [addDays(away.since, VACATION_MIN_DAYS), today].sort().at(-1)!;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(back) || back < earliest) throw new TRPCError({ code: "BAD_REQUEST", message: `Pick a return date on or after ${dayText(earliest)}.` });
+  return interview.setAway(emp, { ...away, until: back, waiting: false });
+}
+
+/** Terminate: off the team now, everything stored, rehirable in 90 days. */
+export async function terminate(orgId: number, employeeId: number, reason: string) {
+  const { emp, today } = await onTeamOrThrow(orgId, employeeId);
+  const off = (await db.updateEmployee(emp.id, orgId, { status: "paused" }))!;
+  return interview.setAway(off, { kind: "terminated", since: today, until: addDays(today, TERMINATE_DAYS), reason: reason.slice(0, 60) });
+}
+
+/** Every minute: vacations whose return date has come end, when there's room on the team. */
+export async function vacationTick(orgId: number) {
+  const l = await limits(orgId);
+  const today = todayIn(l.tz);
+  for (const e of await db.listEmployeesByOrg(orgId)) {
+    const a = interview.readState(e).away;
+    if (e.status !== "paused" || a?.kind !== "vacation" || a.until > today) continue;
+    if ((await limits(orgId)).canBringOn(e.kind)) {
+      const on = (await db.updateEmployee(e.id, orgId, { status: "active" }))!;
+      await interview.welcomeBack(on, "vacation");
+      await db.logAction({ organizationId: orgId, actorType: "system", actorName: e.name, action: "Back from vacation", details: e.name });
+    } else if (!a.waiting) {
+      await interview.setAway(e, { ...a, waiting: true });
+      await db.logAction({ organizationId: orgId, actorType: "system", actorName: e.name, action: "Back from vacation when there's room on the team", details: e.name });
+      const { notify } = await import("../notify");
+      await notify(orgId, "report", { title: `${e.name} is back from vacation`, body: `Your team is full, so ${e.name} waits on the bench. Make room to bring ${e.name} back.`, url: "/bench", tag: `vacation-${e.id}` }).catch(() => null);
+    }
+  }
+}
+
+export async function vacationTicks() {
+  for (const id of await db.listAllOrganizationIds()) await vacationTick(id).catch((err) => console.warn("[bench] vacation tick failed:", err instanceof Error ? err.message : err));
 }
 
 export type InterviewLine = { me: boolean; text: string };
