@@ -133,6 +133,8 @@ export function startScheduler() {
       await tick();
       await remindRegistrations();
       await hiringDaily();
+      // Quinn: applicants from outside job channels, once an hour.
+      await (await import("./jobs")).jobsTick();
       await sweepExpired();
       await cooTicks();
       await morningChecks();

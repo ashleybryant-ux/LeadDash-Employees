@@ -903,6 +903,14 @@ export const hrRoles = sqliteTable(
     post: text("post"),
     /** JSON [{name, status, url}]: where the post goes. */
     targets: text("targets").notNull().default("[]"),
+    /** JSON {schedule, duties, howToApply}: the job description Quinn wrote (title, must have and nice to have are the columns above). */
+    jd: text("jd"),
+    /** The job page's address on the workspace's careers page (/careers/<workspace>/<slug>). */
+    slug: text("slug"),
+    /** When the job went live. Null while it is not published. */
+    publishedAt: integer("publishedAt", { mode: "timestamp" }),
+    /** JSON {frappe?: "<Job Opening name>"}: the job's ids on outside channels. Server only, never sent to the screen. */
+    channels: text("channels"),
     status: text("status", { enum: ["open", "closed"] }).notNull().default("open"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -934,6 +942,8 @@ export const hrPeople = sqliteTable(
     sourceUrl: text("sourceUrl"),
     /** A work email: from the applicant, or published on the person's practice site. */
     email: text("email"),
+    /** The phone an applicant gave on the job page or an outside channel. */
+    phone: text("phone"),
     resumeUrl: text("resumeUrl"),
     resumeText: text("resumeText"),
     fitScore: integer("fitScore").notNull().default(0),

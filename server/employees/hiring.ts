@@ -34,7 +34,6 @@ const arr = (items: JsonSchema): JsonSchema => ({ type: "array", items });
 
 export type MustHave = { item: string; met: "yes" | "no" | "unknown"; kind: "must" | "nice" };
 export type Check = { name: string; detail: string; status: "clear" | "flag" | "manual" | "needs_setup"; url: string | null; checkedAt: string };
-export type Target = { name: string; status: "ready" | "posted"; url: string | null };
 export type ChecklistItem = { item: string; detail: string; status: "to_do" | "waiting" | "pending" | "done" | "stuck" };
 export type NewHire = { offerLetter?: string; paperwork: ChecklistItem[]; credentialing: ChecklistItem[] };
 
@@ -47,7 +46,7 @@ export function parse<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
-const FAIR = `Fair hiring rules you always follow:
+export const FAIR = `Fair hiring rules you always follow:
 - Score only against the role's must-haves and nice-to-haves. Never consider or mention age, race, color, gender, sexual orientation, pregnancy, disability, religion, national origin, marital or family status, or any other protected trait, and never guess at them from names, photos, schools or dates.
 - Ignore gaps in work history.
 - Use only work facts. Never record a home address, personal phone number, family details or personal social accounts.`;
@@ -59,7 +58,7 @@ async function quinn(orgId: number) {
   return employeeFor(orgId, "hiring");
 }
 
-function roleSummary(role: HrRole) {
+export function roleSummary(role: HrRole) {
   const licenses = parse<string[]>(role.licenses, []);
   return [
     `Role: ${role.title}`,
@@ -87,39 +86,7 @@ async function post(emp: AIEmployee, content: string, cards: unknown[] = []) {
 // Roles and job posts
 // ==========================================
 
-const STANDARD_TARGETS: Target[] = [
-  { name: "Indeed", status: "ready", url: "https://employers.indeed.com/" },
-  { name: "LinkedIn Jobs", status: "ready", url: "https://www.linkedin.com/job-posting/" },
-];
-
-export async function writeJobPost(orgId: number, roleId: number) {
-  const role = await db.getHrRole(roleId, orgId);
-  if (!role) throw new TRPCError({ code: "NOT_FOUND", message: "That role is not in this workspace." });
-  const emp = await quinn(orgId);
-  return working(emp, async () => {
-    const answers = await onboardingAnswers(emp);
-    const { system } = await systemPromptFor(
-      emp,
-      `Your job: write a job post for this role, and name the best places to post it.
-- Title line, then 2 short paragraphs and a short list of what the person will do and what they need. Plain and specific: real pay, real hours, real setting, from the role and the Brain.
-- Do not promise benefits the Brain does not list.
-- Places to post: besides Indeed and LinkedIn Jobs, name 2 or 3 places that fit this role and region (for a clinician: graduate counseling program career offices nearby, the state counseling or social work association job board). Give each a page URL only if you are sure of it, otherwise "".
-${FAIR}`
-    );
-    const out = await generateJson<{ title: string; post: string; places: { name: string; url: string }[] }>({
-      system,
-      prompt: `${roleSummary(role)}${answers.greatFit ? `\nWhat makes someone a great fit: ${answers.greatFit}` : ""}`,
-      schemaName: "job_post",
-      schema: obj({ title: str, post: str, places: arr(obj({ name: str, url: str })) }),
-    });
-    const extra: Target[] = (out.places ?? []).slice(0, 3).map((p) => ({ name: p.name.slice(0, 120), status: "ready", url: /^https?:\/\//.test(p.url) ? p.url : null }));
-    const old = parse<Target[]>(role.targets, []);
-    const targets = [...STANDARD_TARGETS, ...extra].map((t) => old.find((o) => o.name === t.name) ?? t);
-    const saved = await db.updateHrRole(roleId, orgId, { post: `${out.title}\n\n${out.post}`.trim(), targets: JSON.stringify(targets) });
-    await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: "Wrote job post", details: role.title });
-    return saved!;
-  }, { job: "doc", label: "Job post" });
-}
+// The job description, publishing and the careers page live in jobs.ts and ../careers.ts.
 
 // ==========================================
 // Outreach

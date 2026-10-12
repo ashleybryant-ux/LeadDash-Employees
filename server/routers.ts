@@ -53,6 +53,7 @@ import { sendEmail } from "./_core/email";
 import { ENV } from "./_core/env";
 import { REPEATS, HR_STAGES, EMPLOYEE_KINDS } from "../drizzle/schema";
 import * as hiring from "./employees/hiring";
+import * as jobs from "./employees/jobs";
 import { TEMPLATES, progress as onboardingProgress, writeDayToDay } from "./employees/onboarding";
 import * as interview from "./employees/interview";
 import * as integrations from "./integrations";
@@ -5105,8 +5106,12 @@ export const appRouter = router({
   hiring: router({
     roles: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      const [roles, people] = await Promise.all([db.listHrRoles(input.organizationId), db.listHrPeople(input.organizationId, "applicant")]);
-      return roles.map((r) => ({ ...r, applicants: people.filter((p) => p.roleId === r.id).length }));
+      const [roles, people, org] = await Promise.all([db.listHrRoles(input.organizationId), db.listHrPeople(input.organizationId, "applicant"), db.getOrganizationById(input.organizationId)]);
+      // Where a job is posted stays on the server: the screen gets only whether it is live, since when, applicants and the job page.
+      return roles.map(({ targets: _t, channels: _c, slug: _s, publishedAt: _p, ...r }) => {
+        const applicants = people.filter((p) => p.roleId === r.id).length;
+        return { ...r, applicants, job: jobs.jobView(org!, { slug: _s, publishedAt: _p, status: r.status }, applicants) };
+      });
     }),
 
     saveRole: protectedProcedure
@@ -5132,25 +5137,51 @@ export const appRouter = router({
         const role = id ? await db.updateHrRole(id, organizationId, data) : await db.createHrRole({ organizationId, ...data });
         if (!role) throw new TRPCError({ code: "NOT_FOUND", message: "That role is not in this workspace." });
         await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: id ? "Edited role" : "Added role", details: role.title });
-        return role;
+        const { channels: _c, targets: _t, ...shown } = role;
+        return shown;
       }),
 
     setRoleStatus: protectedProcedure.input(orgInput.extend({ id: z.number(), status: z.enum(["open", "closed"]) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
-      return db.updateHrRole(input.id, input.organizationId, { status: input.status });
+      // A closed role comes off the careers page and every job channel.
+      if (input.status === "closed") await jobs.unpublish(input.organizationId, input.id);
+      await db.updateHrRole(input.id, input.organizationId, { status: input.status });
+      return { success: true };
     }),
 
     writePost: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
-      return hiring.writeJobPost(input.organizationId, input.id);
+      await jobs.writeJobDescription(input.organizationId, input.id);
+      return { success: true };
     }),
 
-    markPosted: protectedProcedure.input(orgInput.extend({ id: z.number(), target: z.string().max(120), posted: z.boolean() })).mutation(async ({ ctx, input }) => {
+    saveDescription: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number(),
+          title: z.string().trim().min(2).max(120),
+          schedule: z.string().trim().max(200),
+          duties: z.string().trim().max(4000),
+          mustHave: z.string().trim().max(1000),
+          niceToHave: z.string().trim().max(1000),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "member");
+        const { organizationId, id, ...rest } = input;
+        await jobs.saveDescription(organizationId, id, rest);
+        await db.logAction({ organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Edited job description", details: rest.title });
+        return { success: true };
+      }),
+
+    publish: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
-      const role = await db.getHrRole(input.id, input.organizationId);
-      if (!role) throw new TRPCError({ code: "NOT_FOUND", message: "That role is not in this workspace." });
-      const targets = hiring.parse<hiring.Target[]>(role.targets, []).map((t) => (t.name === input.target ? { ...t, status: input.posted ? ("posted" as const) : ("ready" as const) } : t));
-      return db.updateHrRole(input.id, input.organizationId, { targets: JSON.stringify(targets) });
+      return jobs.publish(input.organizationId, input.id);
+    }),
+
+    unpublish: protectedProcedure.input(orgInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      return jobs.unpublish(input.organizationId, input.id);
     }),
 
     people: protectedProcedure.input(orgInput.extend({ source: z.enum(["applicant", "prospect"]).optional() })).query(async ({ ctx, input }) => {

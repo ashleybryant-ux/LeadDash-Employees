@@ -86,6 +86,10 @@ export const ENV = {
   // Hiring checks
   /** SAM.gov public API key (free, from a SAM.gov account). Used for the exclusion check. */
   samApiKey: process.env.SAM_API_KEY || "",
+  /** Frappe HR (LeadDash's own server): job openings go there on Publish and its applicants come back. All three set, or it is off. */
+  frappeUrl: (process.env.FRAPPE_URL || "").replace(/\/+$/, ""),
+  frappeApiKey: process.env.FRAPPE_API_KEY || "",
+  frappeApiSecret: process.env.FRAPPE_API_SECRET || "",
 
   // Secrets at rest
   /** 32-byte key, base64 or hex. Encrypts connection secrets in the database. */

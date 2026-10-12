@@ -412,7 +412,7 @@ export function registerOAuth(app: Express) {
 
   // Meta checks robots.txt before it fetches a Reel from this server.
   app.get("/robots.txt", (_req, res) => {
-    res.type("text/plain").send("User-agent: *\nAllow: /\n");
+    res.type("text/plain").send(`User-agent: *\nAllow: /\nSitemap: ${ENV.appUrl}/careers/sitemap.xml\n`);
   });
 
   // Images for Instagram and Facebook: Meta fetches them from a public link, so
