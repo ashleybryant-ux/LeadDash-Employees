@@ -48,11 +48,12 @@ export const IMAGE_PRICE: Record<string, number> = { "1024x1024": 0.053, "1024x1
 /** Recall.ai: recording plus its own transcription, per hour. */
 export const MEETING_PRICE_PER_HOUR = 0.5 + 0.15;
 
-export function tokenCost(model: string, input: number, output: number, cacheRead = 0) {
+/** Cache reads cost a tenth of input; cache writes a quarter more than input. */
+export function tokenCost(model: string, input: number, output: number, cacheRead = 0, cacheWrite = 0) {
   const m = model.toLowerCase();
   const row = TOKEN_PRICES.find(([re]) => re.test(m)) ?? TOKEN_PRICES[TOKEN_PRICES.length - 3];
   const [inP, outP] = [row[1], row[2]];
-  return (input * inP + cacheRead * inP * 0.1 + output * outP) / 1_000_000;
+  return (input * inP + cacheRead * inP * 0.1 + cacheWrite * inP * 1.25 + output * outP) / 1_000_000;
 }
 
 // ---------- Recording ----------
@@ -76,9 +77,9 @@ async function insert(type: (typeof usageEvents.$inferInsert)["type"], costUsd: 
   }
 }
 
-export function recordTokens(model: string, input: number, output: number, cacheRead = 0) {
-  if (!input && !output) return Promise.resolve();
-  return insert("writing", tokenCost(model, input, output, cacheRead), 0, { model, input, output, cacheRead });
+export function recordTokens(model: string, input: number, output: number, cacheRead = 0, cacheWrite = 0) {
+  if (!input && !output && !cacheRead && !cacheWrite) return Promise.resolve();
+  return insert("writing", tokenCost(model, input, output, cacheRead, cacheWrite), 0, { model, input, output, cacheRead, cacheWrite });
 }
 
 export function recordSearch(model: string, input: number, output: number, searches: number, cacheRead = 0) {

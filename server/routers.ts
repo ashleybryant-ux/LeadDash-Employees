@@ -5219,7 +5219,13 @@ export const appRouter = router({
   hours: router({
     get: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "chat");
-      return (await import("./workHours")).balance(input.organizationId);
+      return { ...(await (await import("./workHours")).balance(input.organizationId)), cardReady: (await import("./stripeHours")).stripeReady() };
+    }),
+    /** Owners and admins buy an hour pack by card: Stripe's checkout page, then straight back to the app. */
+    buy: protectedProcedure.input(orgInput.extend({ hours: z.number().int().min(1).max(1000) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "admin");
+      return (await import("./stripeHours")).checkout(input.organizationId, input.hours, ctx.user.email ?? null);
     }),
     recent: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

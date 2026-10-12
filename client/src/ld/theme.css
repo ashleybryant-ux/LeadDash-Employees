@@ -2172,3 +2172,4 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-job-row { grid-template-columns: 28px minmax(0, 1fr) 56px !important; }
   .ld-job-row > span.ld-small { display: none; }
 }
+.ld-hours-buy { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; padding: 12px; border: 1px solid var(--ld-line); border-radius: 10px; background: var(--ld-hover2); font-size: 13.5px; line-height: 1.45; }

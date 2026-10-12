@@ -2,7 +2,7 @@ import { carriesClientInfo } from "../_core/baa";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import type { AIEmployee, EmployeeKind } from "../../drizzle/schema";
-import { generateJson, generateText, searchJson, type JsonSchema } from "../_core/llm";
+import { CACHE_MARK, generateJson, generateText, searchJson, type JsonSchema } from "../_core/llm";
 import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
 import { BASE_RULES, rosterEntry, CLIENT_INFO_KINDS, ROSTER, worksWithClientInfo } from "./roster";
@@ -51,7 +51,8 @@ export async function systemPromptFor(emp: AIEmployee, job: string, about?: stri
     clientInfoRules(emp, brain.org?.orgType);
   return {
     brain,
-    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${handbookText(emp.organizationId)}${playbookText(emp.kind) ? `\n\n${playbookText(emp.kind)}` : ""}\n\n# The task in front of you\n${job}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${await passagesFor(emp, about, job)}`,
+    // What stays the same from one message to the next comes first, so it can be cached; the task and passages come after the mark.
+    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${handbookText(emp.organizationId)}${playbookText(emp.kind) ? `\n\n${playbookText(emp.kind)}` : ""}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${CACHE_MARK}# The task in front of you\n${job}${await passagesFor(emp, about, job)}`,
   };
 }
 

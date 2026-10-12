@@ -37,9 +37,9 @@ export type JobKey = keyof typeof JOBS;
 export const ASK_FIRST_MINUTES = 180;
 
 export const PLANS = {
-  starter: { name: "Starter", hours: 50, monthly: 49, yearly: 34, healthcare: false },
-  growth: { name: "Growth", hours: 120, monthly: 99, yearly: 69, healthcare: false },
-  pro: { name: "Pro", hours: 300, monthly: 199, yearly: 139, healthcare: false },
+  starter: { name: "Starter", hours: 50, monthly: 49, yearly: 42, healthcare: false },
+  growth: { name: "Growth", hours: 120, monthly: 99, yearly: 84, healthcare: false },
+  pro: { name: "Pro", hours: 200, monthly: 199, yearly: 169, healthcare: false },
   practice_starter: { name: "Practice Starter", hours: 50, monthly: 99, yearly: 99, healthcare: true },
   practice_growth: { name: "Practice Growth", hours: 120, monthly: 199, yearly: 199, healthcare: true },
   practice_pro: { name: "Practice Pro", hours: 300, monthly: 349, yearly: 349, healthcare: true },

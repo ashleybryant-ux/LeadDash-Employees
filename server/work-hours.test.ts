@@ -21,6 +21,10 @@ import * as hours from "./workHours";
 import { working } from "./employees/tasks";
 import { bigJobText } from "./employees/chat";
 import { withUsage } from "./usage";
+import crypto from "node:crypto";
+import * as stripe from "./stripeHours";
+import { CACHE_MARK, cachedSystem } from "./_core/llm";
+import { systemPromptFor } from "./employees/tasks";
 
 describe("Work hours", () => {
   it("charges each finished job its fixed hours, plan hours first, then bought hours, and stops work at 0", async () => {
@@ -112,5 +116,40 @@ describe("Work hours", () => {
     expect(hours.hoursText(30)).toBe("30 min");
     expect(hours.hoursText(90)).toBe("1.5 hr");
     expect(hours.hoursText(480)).toBe("8 hr");
+  });
+
+  it("adds a pack once when Stripe says a card checkout is paid, and checks Stripe's signature", async () => {
+    const { orgId, owner } = await makeWorkspace("wh-stripe");
+    // Without keys, buying by card says so (the app then opens the pricing page).
+    await expect(caller(owner).hours.buy({ organizationId: orgId, hours: 10 })).rejects.toThrow(/Card payments aren't set up yet/);
+    expect((await caller(owner).hours.get({ organizationId: orgId })).cardReady).toBe(false);
+
+    const raw = Buffer.from(JSON.stringify({ hello: 1 }));
+    const t = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac("sha256", "whsec_test").update(`${t}.${raw.toString()}`).digest("hex");
+    expect(stripe.verifySignature(raw, `t=${t},v1=${sig}`, "whsec_test")).toBe(true);
+    expect(stripe.verifySignature(raw, `t=${t},v1=${sig}`, "whsec_other")).toBe(false);
+    expect(stripe.verifySignature(raw, `t=${t - 900},v1=${sig}`, "whsec_test")).toBe(false);
+
+    const event = { type: "checkout.session.completed", data: { object: { id: "cs_test_1", payment_status: "paid", amount_total: 4500, metadata: { kind: "work_hours", orgId: String(orgId), hours: "50" } } } };
+    expect(await stripe.handleEvent(event)).toEqual({ added: true });
+    expect(await stripe.handleEvent(event)).toEqual({ added: false }); // Stripe sends it again: added once
+    expect(await stripe.handleEvent({ ...event, data: { object: { ...event.data.object, id: "cs_test_2", payment_status: "unpaid" } } })).toEqual({ added: false });
+    expect((await hours.balance(orgId)).packMinutes).toBe(3000);
+    expect(hours.packsFor(orgId)[0].note).toBe("Paid by card $45.00. Stripe cs_test_1");
+  });
+
+  it("puts what stays the same first in every prompt, so it's cached, and the task after it", async () => {
+    const { orgId } = await makeWorkspace("wh-cache");
+    const theo = (await db.getEmployeeByKind(orgId, "blog"))!;
+    const { system } = await systemPromptFor(theo, "Write a post about intake. Right now it is Oct 11, 2026.");
+    const [head, tail] = system.split(CACHE_MARK);
+    expect(head).toContain("# Brain");
+    expect(head).not.toContain("Right now it is");
+    expect(tail).toMatch(/^# The task in front of you\nWrite a post about intake/);
+    const blocks = cachedSystem(system) as any[];
+    expect(blocks[0]).toMatchObject({ type: "text", cache_control: { type: "ephemeral" } });
+    expect(blocks[1].text).not.toContain("<<cache>>");
+    expect(cachedSystem("no mark here")).toBe("no mark here");
   });
 });

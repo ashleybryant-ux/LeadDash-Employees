@@ -74,6 +74,10 @@ export const ENV = {
   openAiKey: process.env.OPENAI_API_KEY || "",
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",
 
+  // Card payments for extra work hours (Stripe Checkout). The webhook adds the hours once Stripe says it's paid.
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+
   // Push notifications (Web Push). Generate once with: npx web-push generate-vapid-keys
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || "",
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || "",

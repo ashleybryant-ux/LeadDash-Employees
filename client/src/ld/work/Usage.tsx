@@ -2,6 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { Avatar, ErrorLine, FolderTabs, PersonAvatar } from "../ui";
+import { useBuyHours } from "../HoursAsk";
 
 type Tab = "this" | "last" | "person";
 const num1 = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
@@ -24,6 +25,21 @@ export function UsageCard() {
   const q = trpc.usage.summary.useQuery({ organizationId: currentOrgId, back: tab === "last" ? 1 : 0 }, { enabled: currentOrgId > 0 && tab !== "person" });
   const h = trpc.hours.get.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const recent = trpc.hours.recent.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && tab === "this" });
+  const [adding, setAdding] = React.useState(false);
+  const buyer = useBuyHours();
+  // Back from Stripe: the hours land when Stripe's notice arrives, usually within seconds.
+  const [paid] = React.useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("hours") === "added");
+  React.useEffect(() => {
+    if (!paid) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    let n = 0;
+    const t = setInterval(() => {
+      void h.refetch();
+      if (++n >= 12) clearInterval(t);
+    }, 5_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paid]);
   const u = q.data;
   const b = h.data;
   const rows = (u?.employees ?? []).filter((e) => e.tasks > 0);
@@ -55,15 +71,29 @@ export function UsageCard() {
                     {num1((b.planLeftMinutes ?? 0) / 60)} of {num1((b.planMinutes ?? 0) / 60)} work hours left
                   </b>
                   {manager && (
-                    <a className="ld-btn" style={{ width: 110, textDecoration: "none", color: "var(--ld-ink)", display: "inline-flex", alignItems: "center", justifyContent: "center" }} href={`${b.pricingUrl}#hours${b.healthcare ? "-healthcare" : ""}`} target="_blank" rel="noreferrer">
-                      Add hours
-                    </a>
+                    <button type="button" className="ld-btn" style={{ width: 110 }} aria-expanded={adding} onClick={() => setAdding(!adding)}>
+                      {adding ? "Close" : "Add hours"}
+                    </button>
                   )}
                 </div>
                 <div className="ld-hours-bar" role="progressbar" aria-label="Work hours left" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(((b.planLeftMinutes ?? 0) / Math.max(1, b.planMinutes ?? 0)) * 100)}>
                   <i style={{ width: `${Math.min(100, Math.round(((b.planLeftMinutes ?? 0) / Math.max(1, b.planMinutes ?? 0)) * 100))}%` }} />
                 </div>
                 {b.packMinutes > 0 && <span className="ld-small ld-muted">Plus {num1(b.packMinutes / 60)} bought hours, good through {b.packsGoodThrough}</span>}
+                {adding && (
+                  <div className="ld-hours-buy">
+                    <span>Pay by card on a secure Stripe page, then come right back. Hours are added as soon as it's paid and last 12 months.</span>
+                    <span className="ld-row" style={{ gap: 8 }}>
+                      {buyer.packs.map((t, i) => (
+                        <button key={t.hours} type="button" className={`ld-btn ${i === buyer.packs.length - 1 ? "p" : ""}`} style={{ width: 150 }} disabled={buyer.pending} onClick={() => buyer.start(t.hours)}>
+                          {t.hours} hours, ${t.price}
+                        </button>
+                      ))}
+                    </span>
+                    <ErrorLine error={buyer.error} />
+                  </div>
+                )}
+                {paid && <span className="ld-small" style={{ color: "var(--ld-accent)", fontWeight: 700 }}>Payment received. Your hours show here within a minute.</span>}
               </div>
             )}
             <div className="ld-usage-tiles ld-keep" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>

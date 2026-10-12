@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
+import { useBuyHours } from "./HoursAsk";
 
 /**
  * Next up: a slim bar across the top of every page with the next appointment
@@ -25,6 +26,7 @@ export function NextUpBar() {
   const role = (currentOrg as { role?: string } | null)?.role;
   const manager = role === "owner" || role === "admin";
   const hq = trpc.hours.get.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && manager, refetchInterval: 120_000, staleTime: 60_000 });
+  const buyer = useBuyHours();
   const start = trpc.calendar.start.useMutation();
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
@@ -47,9 +49,9 @@ export function NextUpBar() {
         <span className="ld-nextbar-t">Paused until {h.resetsOn}. Chat still works.</span>
         <span className="ld-nextbar-sp" />
         {h.topUps.map((t, i) => (
-          <a key={t.hours} className={`ld-nextbar-b ${i === h.topUps.length - 1 ? "p" : ""}`} style={{ width: 96, justifyContent: "center" }} href={`${h.pricingUrl}#hours${h.healthcare ? "-healthcare" : ""}`} target="_blank" rel="noreferrer">
+          <button key={t.hours} type="button" className={`ld-nextbar-b ${i === h.topUps.length - 1 ? "p" : ""}`} style={{ width: 96, justifyContent: "center" }} disabled={buyer.pending} onClick={() => buyer.start(t.hours)}>
             {t.hours} hr, ${t.price}
-          </a>
+          </button>
         ))}
       </div>
     );

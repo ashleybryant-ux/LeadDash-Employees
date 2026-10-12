@@ -27,6 +27,24 @@ export type JsonSchema = Record<string, unknown>;
 
 type GatewayMessage = { role: "system" | "user" | "assistant"; content: string };
 
+/**
+ * Prompt caching: everything before this mark in a system prompt (the handbook,
+ * playbook, rules, guidelines and Brain) is the same from one message to the
+ * next, so Anthropic keeps it cached and reads it back at a tenth of the price.
+ * The task and passages after the mark change every time. Routes without
+ * caching just see a paragraph break.
+ */
+export const CACHE_MARK = "\n\n<<cache>>\n\n";
+const plainSystem = (system: string) => system.split(CACHE_MARK).join("\n\n");
+/** The system prompt as Anthropic blocks, with the cached part marked. */
+export function cachedSystem(system: string): string | { type: "text"; text: string; cache_control?: { type: "ephemeral" } }[] {
+  const i = system.indexOf(CACHE_MARK);
+  if (i < 0) return system;
+  const head = system.slice(0, i);
+  const tail = plainSystem(system.slice(i + CACHE_MARK.length));
+  return tail.trim() ? [{ type: "text", text: head, cache_control: { type: "ephemeral" } }, { type: "text", text: tail }] : [{ type: "text", text: head, cache_control: { type: "ephemeral" } }];
+}
+
 async function callGateway(body: Record<string, unknown>, timeoutMs = 120_000) {
   if (!ENV.assemblyAiKey) {
     throw new AiNotConfiguredError("Writing is not set up yet: ASSEMBLYAI_API_KEY is missing on the server.");
@@ -60,7 +78,7 @@ export async function generateText(opts: {
   timeoutMs?: number;
 }): Promise<string> {
   const messages: GatewayMessage[] = [
-    { role: "system", content: opts.system },
+    { role: "system", content: plainSystem(opts.system) },
     { role: "user", content: opts.prompt },
   ];
   const out = await callGateway(
@@ -102,7 +120,7 @@ export async function generateJson<T>(opts: {
     }
   }
   const messages: GatewayMessage[] = [
-    { role: "system", content: opts.system },
+    { role: "system", content: plainSystem(opts.system) },
     { role: "user", content: opts.prompt },
   ];
   const ask = (maxTokens: number) =>
@@ -145,7 +163,7 @@ async function reasonJson<T>(opts: { system: string; prompt: string; schema: Jso
     body: JSON.stringify({
       model: ENV.chatModel,
       max_tokens: Math.max(16_000, opts.maxTokens ?? 0),
-      system: opts.system,
+      system: cachedSystem(opts.system),
       messages: [{ role: "user", content: opts.prompt }],
       thinking: { type: "adaptive" },
       output_config: { effort: ENV.chatEffort, format: { type: "json_schema", schema: opts.schema } },
@@ -156,7 +174,7 @@ async function reasonJson<T>(opts: { system: string; prompt: string; schema: Jso
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${raw.slice(0, 300)}`);
   const data = JSON.parse(raw);
   const u = data.usage ?? {};
-  await recordTokens(ENV.chatModel, Number(u.input_tokens) || 0, Number(u.output_tokens) || 0, Number(u.cache_read_input_tokens) || 0);
+  await recordTokens(ENV.chatModel, Number(u.input_tokens) || 0, Number(u.output_tokens) || 0, Number(u.cache_read_input_tokens) || 0, Number(u.cache_creation_input_tokens) || 0);
   const text = (data.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
   const parsed = extractJson(text);
   if (parsed === undefined) throw new Error(`no JSON in the answer (stop: ${data.stop_reason})`);
@@ -304,7 +322,7 @@ async function searchOpenAi(system: string, opts: SearchOpts): Promise<Found> {
     headers: { authorization: `Bearer ${ENV.openAiKey}`, "content-type": "application/json" },
     body: JSON.stringify({
       model: ENV.openAiSearchModel,
-      instructions: system,
+      instructions: plainSystem(system),
       input: opts.prompt,
       max_output_tokens: opts.maxTokens ?? 8000,
       tools: [{ type: "web_search", search_context_size: "medium" }],
@@ -360,7 +378,7 @@ async function searchAnthropic(system: string, opts: SearchOpts, maxUses: number
       body: JSON.stringify({
         model: ENV.anthropicModel,
         max_tokens: opts.maxTokens ?? 8000,
-        system,
+        system: cachedSystem(system),
         messages,
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxUses }],
       }),
@@ -372,6 +390,8 @@ async function searchAnthropic(system: string, opts: SearchOpts, maxUses: number
     used.input += Number(data.usage?.input_tokens) || 0;
     used.output += Number(data.usage?.output_tokens) || 0;
     used.cacheRead += Number(data.usage?.cache_read_input_tokens) || 0;
+    // Writing the cache costs a quarter more than plain input, once.
+    used.input += Math.round((Number(data.usage?.cache_creation_input_tokens) || 0) * 1.25);
     used.searches += Number(data.usage?.server_tool_use?.web_search_requests) || 0;
 
     for (const block of data.content ?? []) {

@@ -57,3 +57,24 @@ export function useHoursAsk() {
     ) : null;
   return { confirm, question, asking: (key: string) => ask?.key === key };
 }
+
+/**
+ * Buying an hour pack by card: Stripe's checkout page opens in this tab and
+ * comes straight back to the Workspace page. Without card payments set up, it
+ * opens the pricing page instead.
+ */
+export function useBuyHours() {
+  const { currentOrgId } = useTenant();
+  const q = trpc.hours.get.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, staleTime: 30_000 });
+  const buy = trpc.hours.buy.useMutation({ onSuccess: (r) => { window.location.href = r.url; } });
+  const start = (hours: number) => {
+    const h = q.data;
+    if (!h) return;
+    if (!h.cardReady) {
+      window.open(`${h.pricingUrl}#hours${h.healthcare ? "-healthcare" : ""}`, "_blank", "noopener");
+      return;
+    }
+    buy.mutate({ organizationId: currentOrgId, hours });
+  };
+  return { start, pending: buy.isPending, error: buy.error, packs: q.data?.topUps ?? [] };
+}

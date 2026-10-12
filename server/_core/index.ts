@@ -54,6 +54,9 @@ async function startServer() {
   // Team huddles: spoken answers, the meeting bot's page and its transcript webhook.
   registerVoice(app);
 
+  // Stripe's payment notices need the raw body to check their signature.
+  (await import("../stripeHours")).registerStripe(app);
+
   app.use(express.json({ limit: "16mb" })); // Brain uploads arrive as base64
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
   // The door from LeadDash EHR: a practice opens this app from its Settings, and the EHR's agency screen sets portraits and voices.

@@ -91,7 +91,7 @@ const PLAN_OPTIONS: { key: string; label: string }[] = [
   { key: "", label: "No plan (not limited)" },
   { key: "starter", label: "Starter, 50 hours, $49" },
   { key: "growth", label: "Growth, 120 hours, $99" },
-  { key: "pro", label: "Pro, 300 hours, $199" },
+  { key: "pro", label: "Pro, 200 hours, $199" },
   { key: "practice_starter", label: "Practice Starter, 50 hours, $99" },
   { key: "practice_growth", label: "Practice Growth, 120 hours, $199" },
   { key: "practice_pro", label: "Practice Pro, 300 hours, $349" },
