@@ -3616,6 +3616,7 @@ export const appRouter = router({
           title: z.string().trim().min(5).max(255),
           category: z.string().max(100).default("Practice insights"),
           outlineNotes: z.string().max(5000).optional(),
+          keyword: z.string().trim().max(80).optional(),
           generateBannerFlag: z.boolean().default(true),
         })
       )

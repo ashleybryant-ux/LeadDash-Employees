@@ -2,7 +2,7 @@ import { carriesClientInfo } from "../_core/baa";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
 import type { AIEmployee, EmployeeKind } from "../../drizzle/schema";
-import { CACHE_MARK, generateJson, generateText, searchJson, type JsonSchema } from "../_core/llm";
+import { CACHE_MARK, generateJson, searchJson, type JsonSchema } from "../_core/llm";
 import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
 import { BASE_RULES, rosterEntry, CLIENT_INFO_KINDS, ROSTER, worksWithClientInfo } from "./roster";
@@ -663,9 +663,11 @@ export async function writeSocialBatch(organizationId: number, channel: string, 
 
 export async function writeBlogArticle(
   organizationId: number,
-  input: { title: string; category: string; outlineNotes?: string; generateBannerFlag: boolean }
+  input: { title: string; category: string; outlineNotes?: string; keyword?: string; generateBannerFlag: boolean }
 ) {
   const emp = await employeeFor(organizationId, "blog");
+  const { cleanKeyword, fitMetaDescription } = await import("./blogKeywords");
+  const keyword = cleanKeyword(input.keyword);
   const wp = await db.getConnectionByProvider(organizationId, "wordpress");
   return working(emp, async () => {
     const { system } = await systemPromptAbout(
@@ -673,14 +675,26 @@ export async function writeBlogArticle(
       `${input.title} ${input.outlineNotes ?? ""}`,
       `Your job: write a publication-ready blog article in markdown.
 - 900 to 1,500 words. Open with the point, not a warm-up. Use ## headings. End with practical takeaways.
-- No made-up studies or numbers. If a claim needs a source you do not have, leave it out.`
+- No made-up studies or numbers. If a claim needs a source you do not have, leave it out.
+- metaDescription: 150 to 160 characters, plain words, says what the reader gets.${keyword ? `
+- The main keyword is "${keyword}". Work it in naturally, never stuffed: in the article's title line, in the first paragraph, in one ## heading, and in metaDescription. Use its close variants elsewhere only where they read well.` : ""}
+- body: the article in markdown, starting with the first paragraph (the title is shown separately).`
     );
-    const body = await generateText({
+    const out = await generateJson<{ body: string; metaDescription: string }>({
       system,
-      prompt: `Title: ${input.title}\nCategory: ${input.category}\nPoints to cover: ${input.outlineNotes || "Use your judgment from the Brain."}`,
-      maxTokens: 4000,
+      prompt: `Title: ${input.title}\nCategory: ${input.category}${keyword ? `\nMain keyword: ${keyword}` : ""}\nPoints to cover: ${input.outlineNotes || "Use your judgment from the Brain."}`,
+      schemaName: "blog_article",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["body", "metaDescription"],
+        properties: { body: { type: "string" }, metaDescription: { type: "string" } },
+      } as JsonSchema,
+      maxTokens: 4500,
       temperature: 0.5,
     });
+    const body = (out?.body ?? "").trim();
+    const metaDescription = fitMetaDescription(out?.metaDescription);
 
     const bannerPrompt = `Editorial horizontal banner photograph for an article titled "${input.title}". Calm, natural light, real setting. No text, letters or logos.`;
     let imageUrl: string | null = null;
@@ -706,6 +720,8 @@ export async function writeBlogArticle(
       imageUrl,
       metadata: JSON.stringify({
         category: input.category,
+        keyword,
+        metaDescription,
         slug: input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
         statusOnWordPress: "draft",
         targetEndpoint: wp?.accountHandle || null,

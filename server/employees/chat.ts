@@ -202,7 +202,7 @@ const ACTION_HELP: Record<string, string> = {
   find_videos: "find_videos: search for current short-form video trends and plan videos. Put any focus in `focus`.",
   write_post: "write_post: write a social post. Put the subject in `topic` and the platforms (linkedin, instagram, facebook, x, threads) in `platforms`; default to linkedin and instagram.",
   schedule_posts: "schedule_posts: the person wants upcoming posts put on the calendar for an account (for example \"schedule the next 12 posts on Facebook\"). Put the one account in `platforms` (facebook, instagram, linkedin, x or threads) and how many posts in `count` (default 8). You suggest the days and time; they confirm with a button.",
-  write_article: "write_article: write a blog article. Put the title in `title` and points to cover in `notes`.",
+  write_article: "write_article: write a blog article. Put the title in `title`, points to cover in `notes`, and the main keyword (the search term it should rank for) in `target`: the person's exact term, \"No keyword\" when they chose none, or \"\" when they haven't said (then you ask them first).",
   plan_page: "plan_page: only when the person asks for a plan or outline of a page (not the page itself). Put the page name in `page` and its goal in `goal`.",
   site_audit: "site_audit: read a page of the owner's existing website (its real HTML, words, buttons and images) and write an audit of what to change, add and cut, as a document that opens in the chat. Use it for any website audit, review, critique or read-through, never browse. Put the page's address in `url` when it's in this conversation or on a handoff ('' to use the workspace's website and find the page from `topic`), which page or offer it is in `topic` (like \"299 dollar founding member offer page\"), and the audience in `target` (like \"cold therapist audience\").",
   mockup_site: "mockup_site: mock up a new version of a page of the owner's existing website (\"mock up my website\", \"mock it up\", \"redesign this page\", \"show me what the page should look like\"): you read the page's real HTML, words and images and build the new version as a live preview in the chat with the HTML to copy, using her images, photos from the Brain, and pictures and graphics you make. Put the address in `url` ('' for the page you audited last, else the workspace's website), the page or offer in `topic`, `landing` or `website` in `target`, \"audit\" in `focus` when they want the audit's changes made (always after an audit unless they say otherwise), and anything else they asked for in `notes`.",
@@ -489,6 +489,9 @@ TALK_BY_KIND.ads = `- You own paid acquisition for this brand: think like a perf
 - One platform at a time: a set waits in the chat until the person approves it, asks for another version, edits it or skips it. Never write two platforms in one message.
 - Never invent a result, a cost per click or a platform rule. The platforms' specs come from your training; a number the person did not give you is a question, not a guess.`;
 
+TALK_BY_KIND.blog = `- Every article has a main keyword: the search term it should rank for. When the person names one, put it in "target". When they haven't, still choose write_article with "target" empty: you ask "Which search term should this rank for?" with their saved search terms and your suggestions as choices.
+- When they answer that question, choose write_article for the same article with their answer in "target" exactly as they said it ("No keyword" when they chose none). Never ask about the keyword twice for one article.
+- The keyword goes in the title, the first paragraph, one heading and the meta description, written naturally. Never quote a search volume or promise a ranking.`;
 TALK_BY_KIND.social = `- You make the graphics yourself: every post gets a picture when you write it, and post_graphic makes or remakes one on request (a drawn picture with the headline set under it in the brand colors, or a scene with no words). A graphic always has a real visual idea in it (a visual metaphor, a small scene, a cartoon); words on a plain color only when they ask for just the words. Never say you can't build image files, never hand a graphic to Elena or a person, and never only describe a concept when they asked for the graphic.`;
 TALK_BY_KIND.inbox = `- You are the owner's executive assistant. You protect her time and attention: you sort what comes in, decide whether she needs it, and keep the one list of decisions for her and her team.
 - Lead with a recommendation, not a pile of options: "Nov 17 works and Nov 19 clashes with your board call. I suggest Nov 17 and can confirm it."
@@ -559,7 +562,7 @@ type ActionResult = {
   /** The employee answers from what this step found, even when it planned no more steps (an EHR read is data, not an answer). */
   answer?: boolean;
 };
-type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[]; said?: string; userId?: number | null; visible?: "all" | (number | null)[] };
+type RunCtx = { who?: string; files?: ChatFile[]; history?: ChatMessage[]; said?: string; userId?: number | null; visible?: "all" | (number | null)[]; /** A person is in the chat to answer a question (not a schedule or a teammate's handoff). */ canAsk?: boolean };
 
 async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promise<ActionResult> {
   const org = emp.organizationId;
@@ -1566,7 +1569,18 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       return { text: parts.filter(Boolean).join(" "), cards: [{ type: "schedule_plan", id: Date.now(), title: `${plural(plan.rows.length, `${name} post`)}${plan.account ? ` · ${plan.account}` : ""}`, plan }], queries: [] };
     }
     case "write_article": {
-      const a = await tasks.writeBlogArticle(org, { title: d.title || d.topic || "Untitled article", category: "Practice insights", outlineNotes: [d.notes, docText].filter(Boolean).join("\n\n") || undefined, generateBannerFlag: true });
+      const kw = await import("./blogKeywords");
+      let keyword = d.target?.trim() ?? "";
+      if (!keyword) {
+        // Every article has a main keyword: in chat Theo asks with choices; work from a teammate or a schedule takes the best fit.
+        const picks = await kw.keywordChoices(emp, [d.title, d.topic, d.notes].filter(Boolean).join(". ") || ctx.said || "");
+        if (ctx.canAsk) {
+          const choices = kw.keywordQuestionChoices(picks);
+          return { text: kw.KEYWORD_QUESTION, cards: [], queries: [], choices, facts: `Asked which search term the article should rank for, with these choices: ${choices.join("; ")}. Nothing is written until they answer; choose "none" and ask that same question with these choices.` };
+        }
+        keyword = picks.saved[0] ?? picks.suggested[0] ?? "";
+      }
+      const a = await tasks.writeBlogArticle(org, { title: d.title || d.topic || "Untitled article", category: "Practice insights", outlineNotes: [d.notes, docText].filter(Boolean).join("\n\n") || undefined, keyword, generateBannerFlag: true });
       return {
         text: "The article is drafted and waiting for your approval. The full text is on the Articles tab.",
         cards: [{ type: "article", id: a.id, title: a.title, body: (a.body ?? "").replace(/[#*_>]/g, "").slice(0, 280), imageUrl: a.imageUrl }],
@@ -2127,7 +2141,7 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
       hrs.setPending(opts.organizationId, emp.id, decision, firstAsk);
       return { user: userMsg, reply: await reply(`${await hrs.askText(opts.organizationId, firstAsk)}${learned}`, quick(["Go ahead", "Not now"])) };
     }
-    const ctx = { who: opts.authorName, files: sent.length ? sent : files, history, said: pasted ? pasted.words : opts.text, userId: opts.userId ?? null, visible };
+    const ctx = { who: opts.authorName, files: sent.length ? sent : files, history, said: pasted ? pasted.words : opts.text, userId: opts.userId ?? null, visible, canAsk: !scheduled && !opts.forwarded };
     const result = await runAction(emp, decision, ctx);
     if (!decision.plan?.trim() && !result.answer) {
       const cards = [...result.cards, ...quick(result.choices ?? decision.choices)];

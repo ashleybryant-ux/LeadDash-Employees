@@ -5,7 +5,7 @@ import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine, UnderlineTabs } from "../ui";
 import { fmtDate } from "../meta";
 
-const COLS = "minmax(0,2.6fr) minmax(0,1.2fr) 120px 128px";
+const COLS = "minmax(0,2fr) minmax(0,1.2fr) 140px 130px 128px";
 
 const STATUS: Record<string, string> = {
   drafting: "Drafting",
@@ -17,12 +17,23 @@ const STATUS: Record<string, string> = {
   blocked_connection: "Needs connection",
 };
 
+/** The main keyword and meta description Theo saved on the article. */
+function seo(metadata: string | null | undefined): { keyword: string; metaDescription: string } {
+  try {
+    const m = JSON.parse(metadata || "{}");
+    return { keyword: typeof m.keyword === "string" ? m.keyword : "", metaDescription: typeof m.metaDescription === "string" ? m.metaDescription : "" };
+  } catch {
+    return { keyword: "", metaDescription: "" };
+  }
+}
+
 /** Theo's Work tab: blog articles. */
 export default function Articles({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const [tab, setTab] = React.useState<"drafts" | "live">("drafts");
   const [title, setTitle] = React.useState("");
+  const [keyword, setKeyword] = React.useState("");
   const [points, setPoints] = React.useState("");
   const [open, setOpen] = React.useState<number | null>(null);
   const [editing, setEditing] = React.useState<number | null>(null);
@@ -33,6 +44,7 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
   const write = trpc.blog.draftWordPressArticle.useMutation({
     onSuccess: async (r) => {
       setTitle("");
+      setKeyword("");
       setPoints("");
       setTab("drafts");
       await refresh();
@@ -57,16 +69,20 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
     <main className="ld-main" style={{ padding: "28px 36px" }}>
       <form
         className="ld-card"
-        style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr) 128px", gap: 16, alignItems: "end" }}
+        style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.4fr) 128px", gap: 12, alignItems: "end" }}
         onSubmit={(e) => {
           e.preventDefault();
           if (!canWrite) return;
-          write.mutate({ organizationId: currentOrgId, title: title.trim(), outlineNotes: points.trim() || undefined, generateBannerFlag: true });
+          write.mutate({ organizationId: currentOrgId, title: title.trim(), keyword: keyword.trim() || undefined, outlineNotes: points.trim() || undefined, generateBannerFlag: true });
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label htmlFor="art-title" className="ld-lbl">Title</label>
           <input id="art-title" className="ld-in lg" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label htmlFor="art-keyword" className="ld-lbl">Main keyword</label>
+          <input id="art-keyword" className="ld-in lg" maxLength={80} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label htmlFor="art-points" className="ld-lbl">Points to cover</label>
@@ -94,6 +110,7 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
       <div className="ld-card" style={{ overflow: "hidden" }}>
         <div className="ld-hd" style={{ gridTemplateColumns: COLS }}>
           <span>Article</span>
+          <span>Keyword</span>
           <span>Status</span>
           <span>Created</span>
           <span />
@@ -107,6 +124,7 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
           const isOpen = open === a.id;
           const isEditing = editing === a.id;
           const editable = a.status !== "published";
+          const { keyword: kw, metaDescription } = seo(a.metadata);
           return (
             <React.Fragment key={a.id}>
               <div
@@ -120,6 +138,7 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
                 }}
               >
                 <span className="ld-strong">{a.title}</span>
+                <span className={kw ? undefined : "ld-muted"}>{kw || "None"}</span>
                 <span>{STATUS[a.status] ?? a.status}</span>
                 <span>{fmtDate(a.createdAt)}</span>
                 {editable ? (
@@ -148,6 +167,12 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
                     )}
                     <div style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 10, maxWidth: 720 }}>
                       <span style={{ fontSize: 22, fontWeight: 800 }}>{a.title}</span>
+                      {metaDescription && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <span className="ld-lbl">Meta description</span>
+                          <span className="ld-small ld-muted">{metaDescription}</span>
+                        </div>
+                      )}
                       {isEditing ? (
                         <>
                           <label className="ld-sr" htmlFor={`article-${a.id}`}>Article</label>
