@@ -74,7 +74,7 @@ const ACTIONS: Record<string, string[]> = {
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   onboarding: ["none", "report", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  prospecting: ["none", "report", "find_prospects", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  prospecting: ["none", "report", "find_prospects", "repeat_search", "start_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   outreach: ["none", "report", "cold_campaign", "cold_research", "cold_review", "cold_replies", "start_outreach", "rewrite_outreach", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   leads: ["none", "report", "ehr_read", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   projects: ["none", "report", "check_schedule", "plan_launch", "check_status", "move_launch", "send_report", "capture", "close_item", "start_task", "project_meeting", "write_agenda", "send_invite", "share_meeting", "switch_link", "default_link", "meeting_notes", "set_deadlines", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -169,7 +169,8 @@ const ACTION_HELP: Record<string, string> = {
   add_guideline: "add_guideline: the person states a standing rule or preference for how you work (\"from now on...\", \"always...\", \"never...\", \"don't...\"). Put the rule as one plain sentence in `notes`, and the Guidelines heading it belongs under in `target` (one of the headings in your Guidelines).",
   start_onboarding: "start_onboarding: the person wants to start, continue or redo your onboarding interview.",
   ask_teammate: "ask_teammate: the person asks you to check with another employee (\"ask Theo what he published\", \"how many demos does Malik have\"). Put that employee's name or job in `teammate` and the question in `message`.",
-  find_prospects: "find_prospects: search the web now for businesses (or referral partners) that fit. Put any area, type or size the person gave in `focus`.",
+  find_prospects: "find_prospects: search the web now for exactly who the person asked for. Put the who in their own words in `target` (\"family law attorneys who might refer clients to us\"; '' for the saved search), the where in `focus` (\"Denver metro\", \"Colorado\", \"within 25 miles of Denver, CO\"; '' for the saved area) and how many in `count` (0 for the saved number).",
+  repeat_search: "repeat_search: save a search so it runs again on its own (\"Every Monday\", \"do this every month\", \"stop repeating\"). Put `weekly`, `monthly` or `off` in `to`, the who of the search to repeat in `target` and its where in `focus` (the last search in this conversation unless they name another), and how many new each time in `count` (0 to keep the saved number).",
   rewrite_outreach: "rewrite_outreach: rewrite every email sequence still waiting for approval (when the owner says they sound off, robotic, like AI, or asks for a rewrite). Put what to change in `notes` ('' if they didn't say).",
   start_outreach: "start_outreach: pass prospects to outreach so email sequences start. Put a prospect's name in `target`, or '' for every new prospect scoring 70 or higher.",
   write_email: "write_email: the person wants a NEW email sent to someone (not a reply to a pasted message). Put the email address in `to`, the person's name if given in `from`, and everything the email should say or ask, with exact dates and times written out (for example Friday, October 2, 2026 at 3:00 PM), in `message`. It waits for their approval, then sends from their connected Gmail.",
@@ -406,6 +407,7 @@ async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "platform") return (await import("./platform")).platformFacts(emp.organizationId);
   if (emp.kind === "video") return (await import("./drama")).dramaFacts(emp.organizationId);
   if (emp.kind === "outreach") return (await import("./cold")).coldFacts(emp.organizationId);
+  if (emp.kind === "prospecting") return (await import("./prospecting")).prospectingFacts(emp.organizationId);
   if (emp.kind === "speaking") return `${(await import("./press")).pressFacts(emp.organizationId)}${await (await import("./newsroom")).newsroomFacts(emp.organizationId)}`;
   if (emp.kind === "billing" || emp.kind === "compliance") {
     const ehr = await import("../ehr");
@@ -503,6 +505,10 @@ TALK_BY_KIND.coo = `- The owner's calendars are connected on Integrations: check
 TALK_BY_KIND.outreach = `- You run two kinds of outreach: warm sequences for prospects Riley finds (from Gmail), and cold email to the owner's lead list through Instantly. Cold email work is cold_campaign, cold_research, cold_review and cold_replies.
 - Cold email rules: business facts only, never personal details. Never claim a price, offer, migration, result or statistic that isn't in the playbook, the Brain or the website pricing. Opt-outs are honored at once. Every email carries the mailing address and an opt-out line.
 - Any employee can run the Pre-call report (precall_report) before a meeting; you run it on your own when a lead books.`;
+TALK_BY_KIND.prospecting = `- You find whoever the owner asks for, in her words: customers, referral partners, vendors, venues, anyone. Search exactly what she asked (find_prospects with the who in "target"), never a narrower or different kind of business.
+- Before a search, if she did not say where and there is no saved area, choose "none", reply "Where should I look?" and put 3 choices built from this workspace: its city or metro (from the Brain, or the time zone's city), its state spelled out, and "Within 25 miles". When she did say where, search; don't ask.
+- Ask only what you truly need, one question at a time, with tap-to-answer choices. Never ask how many when she didn't say; use the saved number.
+- After a search, say how many you found, how many list a contact and where they are, in a sentence or two. "Every Monday" (or "every month", "stop repeating") after a search is repeat_search with that search's who and where. "Just this once" needs no action.`;
 TALK_BY_KIND.developer = `- You never write or change code yourself. Claude does, from your write-up, and the owner merges. Say that plainly when it matters.
 - Nothing goes live until the owner merges the change and runs the deploy. After a merge, give her the deploy command for that code from your list.
 - Keep it plain: what's broken, what changed, how to check. No jargon unless she uses it.`;
@@ -1026,12 +1032,31 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       return { text: answer ?? "That's me. What would you like to know?", cards: [], queries: [] };
     }
     case "find_prospects": {
-      const r = await sales.findProspects(org, { focus: d.focus || undefined });
+      const r = await sales.findProspects(org, { target: d.target || undefined, area: d.focus || undefined, count: d.count || undefined });
       const top = (await Promise.all(r.created.slice(0, 2).map((p) => db.getProspect(p.id, org)))).filter((p): p is NonNullable<typeof p> => !!p);
-      const text = r.created.length
-        ? `I ran ${plural(r.queries.length, "search", "searches")} and found ${plural(r.created.length, "new prospect")}. ${r.good} scored 70 or higher${r.passed ? ` and I passed ${r.passed === 1 ? "it" : "them"} to Jada` : ""}. ${top.length ? "The best are below; all of them are on Prospects with what I found about each." : ""}`.trim()
-        : `I ran ${plural(r.queries.length, "search", "searches")} and didn't find new ones beyond what's already on Prospects. Try another area or type.`;
-      return { text, cards: top.map((p) => sales.prospectCard(p) as ChatCard), queries: r.queries };
+      const { settings } = await sales.salesSettings(org);
+      const repeating = settings.repeat !== "off" && settings.target.trim().toLowerCase() === r.target.trim().toLowerCase() && settings.area.trim().toLowerCase() === r.area.trim().toLowerCase();
+      const ask = r.created.length && !repeating;
+      return {
+        text: `${sales.searchReply(r)}${ask ? " Want me to do this every Monday?" : ""}`,
+        cards: top.map((p) => sales.prospectCard(p) as ChatCard),
+        queries: r.queries,
+        choices: ask ? ["Every Monday", "Just this once"] : r.created.length ? [] : ["Search somewhere else"],
+        facts: `Searched for: ${r.target}; area: ${r.area || "none given"}; found ${r.created.length}.`,
+      };
+    }
+    case "repeat_search": {
+      const { settings } = await sales.salesSettings(org);
+      const repeat = (["weekly", "monthly", "off"] as const).find((x) => x === d.to.trim().toLowerCase()) ?? "weekly";
+      const target = d.target.trim() || settings.target;
+      if (repeat !== "off" && !target) return { text: "Who should I look for each time?", cards: [], queries: [] };
+      const count = d.count ? Math.max(10, Math.min(100, Math.round(d.count))) : settings.count;
+      const saved = await sales.saveSalesSettings(org, repeat === "off" ? { repeat } : { repeat, target, area: d.focus.trim() || settings.area, count });
+      return {
+        text: repeat === "off" ? "Done. I'll only search when you ask." : `Done. ${repeat === "weekly" ? "Every Monday morning" : "On the 1st of each month"} I'll look for ${saved.count} new ${saved.target.charAt(0).toLowerCase()}${saved.target.slice(1)}${saved.area ? ` in ${saved.area}` : ""}. You can change it on my Onboarding tab.`,
+        cards: [],
+        queries: [],
+      };
     }
     case "start_outreach": {
       const ps = (await db.listProspects(org)).filter((p) => p.stage === "new");

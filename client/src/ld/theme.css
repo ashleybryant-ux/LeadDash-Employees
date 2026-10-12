@@ -2216,3 +2216,13 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-cap-sheet, .ld-cap-ed, .ld-cap-pair { grid-template-columns: 1fr; }
   .ld-cap-l { padding-top: 0; }
 }
+
+/* ============ Riley: saved search card on Onboarding ============ */
+.ld-rs-kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 14px; align-items: start; font-size: 14px; line-height: 1.5; }
+.ld-rs-kv > b { font-weight: 700; }
+.ld-rs-ta { height: auto; padding: 6px 9px; resize: vertical; line-height: 1.45; }
+@media (max-width: 700px) {
+  .ld-rs-kv { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .ld-rs-kv > b, .ld-rs-kv > .ld-lbl { padding-top: 8px !important; }
+  .ld-rs-ta { min-height: 88px; }
+}

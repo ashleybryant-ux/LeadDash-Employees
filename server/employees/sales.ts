@@ -11,12 +11,14 @@ import { partsIn, zonedToUtc } from "./schedule";
 import { HUMAN_EMAIL, findTells } from "./human";
 import { actor, employeeFor, systemPromptAbout, systemPromptFor, withRealSource, working } from "./tasks";
 import { gate, handoff, logActivity, workLink } from "./team";
-import { NPI_HOST, npiKinds, npiPractices, parseArea, type NpiPractice } from "./npi";
+import { NPI_HOST, npiPractices, parseArea, type NpiPractice } from "./npi";
+import { kindFor, npiKindsFor, repeatPeriod, searchLabel, shortLabel } from "./prospecting";
+export { repeatText } from "./prospecting";
 
 /**
  * The sales team.
- * - Riley finds businesses that fit what the workspace sells (or referral
- *   partners for a practice) and passes good fits to Jada.
+ * - Riley finds whoever the owner asks for, in her words, and passes good
+ *   fits to Jada.
  * - Jada writes a 3-email sequence for each and sends it from Gmail. A
  *   sequence stops when they book through the link or someone presses Replied.
  * - Malik answers new leads from the lead form or a LeadDash platform
@@ -36,12 +38,24 @@ const arr = (items: JsonSchema): JsonSchema => ({ type: "array", items });
 // Settings
 // ==========================================
 
-export const PARTNER_TYPES = ["Schools", "Pediatric offices", "Primary care", "Employee assistance programs", "Family law attorneys", "Churches"] as const;
+/** The referral partner types the old two-mode settings offered; only read to carry old settings over. */
+const OLD_PARTNER_TYPES = ["Schools", "Pediatric offices", "Primary care", "Employee assistance programs", "Family law attorneys", "Churches"];
+
+export const REPEATS = ["off", "weekly", "monthly"] as const;
+export type Repeat = (typeof REPEATS)[number];
 
 export type SalesSettings = {
+  /** Whether new leads are people seeking care (Malik keeps their details out and always asks first) or businesses. */
   sells: "software" | "therapy";
-  partnerTypes: string[];
+  /** Who Riley looks for, in the owner's words. */
+  target: string;
   area: string;
+  /** Riley runs the saved search again on its own: Mondays (weekly) or the 1st (monthly). */
+  repeat: Repeat;
+  /** How many new prospects each search looks for, 10 to 100. */
+  count: number;
+  /** The period of the last scheduled search ("2026-10-12" week start or "2026-10"), so it runs once per period. */
+  lastRepeat: string;
   token: string;
   meetingMinutes: number;
   hoursFrom: string; // "09:00"
@@ -54,19 +68,33 @@ export type SalesSettings = {
 export type LinkedInSettings = { on: boolean; when: "next_day" | "same_day"; note: boolean };
 const LINKEDIN_DEFAULTS: LinkedInSettings = { on: true, when: "next_day", note: true };
 
-const DEFAULTS: Omit<SalesSettings, "token"> = { sells: "therapy", partnerTypes: ["Schools", "Pediatric offices"], area: "", meetingMinutes: 30, hoursFrom: "09:00", hoursTo: "16:00", days: [1, 2, 3, 4, 5], linkedin: LINKEDIN_DEFAULTS };
+const DEFAULTS: Omit<SalesSettings, "token"> = { sells: "therapy", target: "", area: "", repeat: "off", count: 25, lastRepeat: "", meetingMinutes: 30, hoursFrom: "09:00", hoursTo: "16:00", days: [1, 2, 3, 4, 5], linkedin: LINKEDIN_DEFAULTS };
+
+/** Settings saved before Riley took any target: "therapy" looked for referral partners, "software" for therapy practices. */
+function oldTarget(v: Record<string, unknown>) {
+  if (v.sells === "software") return "Therapy practices";
+  if (v.sells === "therapy") {
+    const types = Array.isArray(v.partnerTypes) ? v.partnerTypes.filter((x): x is string => typeof x === "string" && OLD_PARTNER_TYPES.includes(x)) : [];
+    return `Referral partners: ${(types.length ? types : ["Schools", "Pediatric offices"]).join(", ")}`;
+  }
+  return "";
+}
 
 export function readSales(raw: string | null | undefined): SalesSettings {
-  let v: Partial<SalesSettings> = {};
+  let v: Partial<SalesSettings> & Record<string, unknown> = {};
   try {
     v = JSON.parse(raw || "{}");
   } catch {
     v = {};
   }
+  const count = Math.round(Number(v.count));
   return {
     sells: v.sells === "software" ? "software" : DEFAULTS.sells,
-    partnerTypes: Array.isArray(v.partnerTypes) ? v.partnerTypes.filter((x) => (PARTNER_TYPES as readonly string[]).includes(x)) : DEFAULTS.partnerTypes,
+    target: typeof v.target === "string" ? v.target.slice(0, 500) : oldTarget(v),
     area: typeof v.area === "string" ? v.area : DEFAULTS.area,
+    repeat: (REPEATS as readonly string[]).includes(String(v.repeat)) ? (v.repeat as Repeat) : DEFAULTS.repeat,
+    count: Number.isFinite(count) && count >= 10 && count <= 100 ? count : DEFAULTS.count,
+    lastRepeat: typeof v.lastRepeat === "string" ? v.lastRepeat : "",
     token: typeof v.token === "string" ? v.token : "",
     meetingMinutes: [15, 30, 45].includes(Number(v.meetingMinutes)) ? Number(v.meetingMinutes) : DEFAULTS.meetingMinutes,
     hoursFrom: /^\d{2}:\d{2}$/.test(v.hoursFrom ?? "") ? v.hoursFrom! : DEFAULTS.hoursFrom,
@@ -92,8 +120,10 @@ export async function salesSettings(orgId: number) {
 }
 
 export async function saveSalesSettings(orgId: number, input: Partial<Omit<SalesSettings, "token">>) {
-  const { settings } = await salesSettings(orgId);
-  const next = readSales(JSON.stringify({ ...settings, ...input, token: settings.token }));
+  const { settings, tz } = await salesSettings(orgId);
+  // Turning a repeat on (or changing it) starts with the next Monday or 1st, not right now.
+  const restart = input.repeat && input.repeat !== settings.repeat && input.lastRepeat === undefined ? { lastRepeat: repeatPeriod(new Date(), tz, input.repeat)?.key ?? "" } : {};
+  const next = readSales(JSON.stringify({ ...settings, ...input, ...restart, token: settings.token }));
   if (input.hoursFrom && input.hoursTo && input.hoursFrom >= input.hoursTo) throw new TRPCError({ code: "BAD_REQUEST", message: "The end time must be after the start time." });
   await db.updateOrganization(orgId, { sales: JSON.stringify(next) });
   return next;
@@ -109,52 +139,57 @@ export function salesLinks(token: string) {
 
 type Found = { name: string; city: string; contactName: string; contactTitle: string; email: string; phone: string; website: string; foundOn: string; sourceUrl: string; size: string; partnerType: string; fitScore: number; fitReason: string; linkedin: string };
 
-export async function findProspects(orgId: number, opts: { focus?: string } = {}) {
+/**
+ * Riley searches for exactly who the owner asked for (`target`, in her words)
+ * in `area`. Without them, the saved search on the Onboarding tab. When the
+ * target is about health or therapy providers, the search starts from the
+ * federal NPI Registry.
+ */
+export async function findProspects(orgId: number, opts: { target?: string; area?: string; count?: number } = {}) {
   const emp = await employeeFor(orgId, "prospecting");
-  const { settings } = await salesSettings(orgId);
-  const referral = settings.sells === "therapy";
+  const { settings, org } = await salesSettings(orgId);
+  const target = opts.target?.trim() || settings.target.trim() || "Businesses that could buy what this workspace offers";
+  const area = opts.area?.trim() || settings.area.trim() || org.state?.trim() || "";
+  const count = Math.max(5, Math.min(100, Math.round(opts.count || settings.count)));
+  const kind = kindFor(target);
   const result = await working(emp, async () => {
-    // Start from licensed practices in the federal NPI Registry when the area names a state.
-    const org = await db.getOrganizationById(orgId);
-    const places = parseArea(opts.focus || settings.area || (referral ? org?.state ?? "" : ""));
+    // Start from licensed providers in the federal NPI Registry when the target is about them and the area names a state.
     const known = await db.listProspects(orgId);
     const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const npi: NpiPractice[] = (await npiPractices(places, npiKinds(settings.sells, settings.partnerTypes), 60).catch(() => [] as NpiPractice[]))
-      .filter((c) => !known.some((p) => normName(p.name) === normName(c.name)))
-      .slice(0, 30);
+    const kinds = npiKindsFor(target);
+    const npi: NpiPractice[] = kinds.length
+      ? (await npiPractices(parseArea(area), kinds, 60).catch(() => [] as NpiPractice[])).filter((c) => !known.some((p) => normName(p.name) === normName(c.name))).slice(0, 30)
+      : [];
     const npiList = npi.length
-      ? `\n\nStart from these licensed ${referral ? "offices" : "practices"} from the federal NPI Registry (name | city | phone | authorized official | specialty | NPI page). Pick the best fits, find each one's own website, and get the email from it:\n${npi.map((c) => `- ${c.name} | ${c.city} | ${c.phone || "no phone"} | ${[c.official, c.officialTitle].filter(Boolean).join(", ") || "no official listed"} | ${c.specialty} | ${c.url}`).join("\n")}\nIf you cannot find a practice's website, you may still return it with its NPI page as sourceUrl and its NPI phone.`
+      ? `\n\nStart from these licensed providers from the federal NPI Registry (name | city | phone | authorized official | specialty | NPI page). Pick the ones that match, find each one's own website, and get the email from it:\n${npi.map((c) => `- ${c.name} | ${c.city} | ${c.phone || "no phone"} | ${[c.official, c.officialTitle].filter(Boolean).join(", ") || "no official listed"} | ${c.specialty} | ${c.url}`).join("\n")}\nIf you cannot find one's website, you may still return it with its NPI page as sourceUrl and its NPI phone.`
       : "";
-    const { system, brain } = await systemPromptFor(
+    const { system } = await systemPromptFor(
       emp,
-      referral
-        ? `Your job: find referral partners for this practice: places whose people could send clients to it (${settings.partnerTypes.join(", ") || "schools, pediatric offices, primary care"}), near the practice.
-- Search one angle at a time: school district counseling pages, pediatric and primary care office sites, employee assistance program directories, family law firm sites, church staff pages.
-- For each: the organization's name, city, the best person to contact (a counselor, practice manager, office manager or attorney) and their title, a work email and phone only if printed on their own site (otherwise ""), its website, which page you found it on and that page's URL, the partner type, its size if stated, and that person's LinkedIn profile URL (linkedin.com/in/...) only if a search result showed it (otherwise "").
-- Score fit 0 to 100: how likely they see people this practice serves. Say why in one sentence using something real from their page.
-- Return up to 10, best first.`
-        : `Your job: find businesses that could buy what this workspace sells, from its Brain.
-- Search one angle at a time: group practice and clinic sites with "Our team" pages, therapist directories, the state licensing board's license lookup (for example the state counseling or social work board), practices posting job openings.
-- Check the owner on the state licensing board's lookup when you can, and say in foundOn which sources you used (for example "NPI Registry, Texas BHEC license lookup, practice website").
-- For each: the business name, city, the owner or decision maker and their title, a work email and phone only if printed on their own site or in the NPI Registry (otherwise ""), its website, which page you found it on and that page's URL, its size (how many clinicians) if stated, and the owner's LinkedIn profile URL (linkedin.com/in/...) only if a search result showed it (otherwise "").
-- Score fit 0 to 100 against what the workspace sells. Say why in one sentence using something real from their page (books by phone only, hiring, takes insurance...).
-- Return up to 10, best first.`
+      `Your job: find real businesses, organizations or people that match exactly who the owner asked for, in the area given. Search for what they asked, not something broader or something else.
+- Search one angle at a time: the kind of directories, association member lists, team and staff pages, licensing lookups and local listings where these people are found.
+- For each: the name, city, the best person to contact and their title, a work email and phone only if printed on their own site or an official listing (otherwise ""), its website, which page you found it on and that page's URL, its size if stated, what kind of business or role it is (partnerType), and that person's LinkedIn profile URL (linkedin.com/in/...) only if a search result showed it (otherwise "").
+- Never invent a business, a person, an email or a phone number. Every one comes from a page you found.
+- Score fit 0 to 100 against who the owner asked for and what the Brain says this workspace does and who it serves. Say why in one sentence using something real from their page.
+- label: a short name for this search, 2 to 5 words, like "Family law attorneys".
+- Return up to ${count}, best first.`
     );
-    const prompt = `${referral ? `Area: ${settings.area || brain.org?.state || "near the practice"}` : `Area: ${opts.focus ? "" : settings.area || "the United States"}`}${opts.focus ? `\nFocus on: ${opts.focus}` : ""}${npiList}`;
-    const res = await searchJson<{ items: Found[] }>({
+    const prompt = `Find: ${target}\nArea: ${area || "anywhere in the United States"}${npiList}`;
+    const res = await searchJson<{ items: Found[]; label?: string }>({
       system,
       prompt,
       schemaName: "prospects",
-      schema: obj({ items: arr(obj({ name: str, city: str, contactName: str, contactTitle: str, email: str, phone: str, website: str, foundOn: str, sourceUrl: str, size: str, partnerType: str, fitScore: int, fitReason: str, linkedin: str })) }),
-      maxUses: Math.max(ENV.searchMaxUses, 10),
+      schema: obj({ label: str, items: arr(obj({ name: str, city: str, contactName: str, contactTitle: str, email: str, phone: str, website: str, foundOn: str, sourceUrl: str, size: str, partnerType: str, fitScore: int, fitReason: str, linkedin: str })) }),
+      maxUses: Math.max(ENV.searchMaxUses, count > 25 ? 20 : 10),
     });
+    const label = res.data.label?.trim().replace(/[.,;:]+$/, "") || shortLabel(target);
+    const search = searchLabel(label, area);
     const existing = await db.listProspects(orgId);
     const norm = normName;
     const created: SalesProspect[] = [];
     const sources = npi.length ? [...res.sources, { url: `${NPI_HOST}/` }] : res.sources;
-    for (const found of withRealSource(res.data.items, sources)) {
-      if (!found.name?.trim() || existing.some((p) => norm(p.name) === norm(found.name))) continue;
-      // Fill what the website did not show from the practice's NPI Registry record.
+    for (const found of withRealSource(res.data.items, sources).slice(0, count)) {
+      if (!found.name?.trim() || existing.some((p) => norm(p.name) === norm(found.name)) || created.some((p) => norm(p.name) === norm(found.name))) continue;
+      // Fill what the website did not show from the provider's NPI Registry record.
       const n = npi.find((c) => norm(c.name) === norm(found.name) || (found.sourceUrl ?? "").includes(c.npi));
       const f = n
         ? { ...found, city: found.city || n.city, phone: found.phone || n.phone, contactName: found.contactName || n.official, contactTitle: found.contactTitle || n.officialTitle, foundOn: found.foundOn || "NPI Registry" }
@@ -163,8 +198,9 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
       created.push(
         await db.createProspect({
           organizationId: orgId,
-          kind: referral ? "referral" : "practice",
+          kind,
           stage: "new",
+          search,
           name: f.name.trim().slice(0, 200),
           city: f.city?.slice(0, 120) || null,
           contactName: f.contactName?.slice(0, 160) || null,
@@ -176,13 +212,13 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
           sourceUrl: f.sourceUrl,
           fitScore: Math.max(0, Math.min(100, Math.round(f.fitScore || 0))),
           fitReason: f.fitReason?.slice(0, 600) || null,
-          details: JSON.stringify({ size: f.size || "", partnerType: f.partnerType || "", ...(n ? { npi: n.npi, specialty: n.specialty } : {}), ...(linkedinUrl(f.linkedin) ? { linkedinUrl: linkedinUrl(f.linkedin), linkedinFoundBy: `${emp.name}, while researching the practice` } : {}) }),
+          details: JSON.stringify({ size: f.size || "", partnerType: f.partnerType || "", ...(n ? { npi: n.npi, specialty: n.specialty } : {}), ...(linkedinUrl(f.linkedin) ? { linkedinUrl: linkedinUrl(f.linkedin), linkedinFoundBy: `${emp.name}, while researching them` } : {}) }),
         })
       );
     }
-    await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: "Searched for prospects", details: `Ran ${res.queries.length} searches${npi.length ? ` from ${npi.length} NPI Registry practices` : ""} and added ${created.length}.` });
-    return { created: created.sort((a, b) => b.fitScore - a.fitScore), queries: res.queries };
-  }, { job: "lead", count: (r) => r.created.length });
+    await db.logAction({ organizationId: orgId, actorType: "employee", actorName: actor(emp), action: "Searched for prospects", details: `${search}: ran ${res.queries.length} searches${npi.length ? ` from ${npi.length} NPI Registry providers` : ""} and added ${created.length}.` });
+    return { created: created.sort((a, b) => b.fitScore - a.fitScore), queries: res.queries, label, search, area, target };
+  }, { job: "lead", count: (r) => r.created.length, label: (r) => r.search });
 
   // Good fits go to Jada on their own unless Riley is set to ask.
   const good = result.created.filter((p) => p.fitScore >= 70 && p.email);
@@ -192,6 +228,17 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
     await passToOutreach(orgId, good.map((p) => p.id), emp);
   }
   return { ...result, passed, good: good.length };
+}
+
+/** Riley's reply after a search: how many she found, how many list a contact, and where they are. */
+export function searchReply(r: Awaited<ReturnType<typeof findProspects>>) {
+  const n = r.created.length;
+  const where = r.area ? ` in ${r.area}` : "";
+  if (!n) return `I didn't find new ones${where} beyond what's already on my Prospects tab. Try another area or say it another way.`;
+  const contact = r.created.filter((p) => p.email || p.phone).length;
+  const what = /^[A-Z][a-z]/.test(r.label) ? r.label.charAt(0).toLowerCase() + r.label.slice(1) : r.label;
+  const listed = contact === 0 ? "None list a contact yet" : contact === n ? (n === 1 ? "It lists a contact" : "All of them list a contact") : `${contact} ${contact === 1 ? "lists" : "list"} a contact`;
+  return `Found ${n} ${n === 1 ? "match" : what || "prospects"}${where}. ${listed}${r.passed ? ` and I passed ${r.passed} good ${r.passed === 1 ? "fit" : "fits"} to Jada` : ""}. They're on my Prospects tab.`;
 }
 
 /** Riley hands prospects to Jada, who writes their sequences in the background. */

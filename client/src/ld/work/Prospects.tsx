@@ -15,14 +15,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "booked", label: "Booked" },
   { key: "not_fit", label: "Not a fit" },
 ];
-const STAGE: Record<Tab, { label: string; cls: string }> = {
-  new: { label: "New", cls: "gray" },
-  outreach: { label: "In outreach", cls: "amber" },
-  replied: { label: "Replied", cls: "green" },
-  booked: { label: "Booked", cls: "green" },
-  not_fit: { label: "Not a fit", cls: "gray" },
-};
-const COLS = "minmax(0,2fr) 150px 70px minmax(0,1.3fr) 128px 128px";
+const COLS = "minmax(0,2fr) 140px 70px minmax(0,1.3fr) 128px";
 
 function KV({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -33,7 +26,7 @@ function KV({ label, children }: { label: string; children: React.ReactNode }) {
   );
 }
 
-/** Riley's Work tab: the businesses (or referral partners) she found. */
+/** Riley's Work tab: who she found, each with the search it came from. */
 export default function Prospects({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
@@ -49,17 +42,15 @@ export default function Prospects({ emp }: { emp: EmployeeRow }) {
 
   const all = q.data ?? [];
   const shown = all.filter((p) => p.stage === tab);
-  const referral = all.some((p) => p.kind === "referral") && !all.some((p) => p.kind === "practice");
 
   return (
     <main className="ld-main" style={{ padding: "20px 32px" }}>
       <FolderTabs value={tab} onChange={(k) => { setTab(k); setOpen(null); setEditing(null); }} tabs={TABS.map((t) => ({ key: t.key, label: `${t.label} (${all.filter((p) => p.stage === t.key).length})` }))}>
         <div className="ld-hd" style={{ gridTemplateColumns: COLS }}>
-          <span>{referral ? "Partner" : "Practice"}</span>
+          <span>Prospect</span>
           <span>City</span>
           <span>Fit</span>
-          <span>{referral ? "Contact" : "Owner"}</span>
-          <span />
+          <span>Contact</span>
           <span />
         </div>
         {shown.length === 0 && <div className="ld-empty">{q.isLoading ? "Loading..." : tab === "new" ? `No new prospects. Ask ${emp.name} in Chat to find some.` : "Nothing here yet."}</div>}
@@ -70,20 +61,17 @@ export default function Prospects({ emp }: { emp: EmployeeRow }) {
           return (
             <React.Fragment key={p.id}>
               <div className={`ld-rw ${isOpen ? "open" : ""}`} style={{ gridTemplateColumns: COLS, cursor: "pointer" }} aria-expanded={isOpen} onClick={(e) => { if ((e.target as HTMLElement).closest("button,a,input")) return; setOpen(isOpen ? null : p.id); setEditing(null); }}>
-                <span className="ld-strong">{p.name}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span className="ld-strong">{p.name}</span>
+                  {p.search && <span className="ld-small ld-muted" style={{ display: "block" }}>{p.search}</span>}
+                </span>
                 <span>{p.city ?? ""}</span>
                 <span className={`ld-pill ${p.fitScore >= 70 ? "green" : "gray"}`}>{p.fitScore}</span>
-                <span>{p.contactName ?? <span className="ld-muted">Not found</span>}</span>
+                <span>{p.contactName ? [p.contactName, p.contactTitle].filter(Boolean).join(", ") : <span className="ld-muted">Not found</span>}</span>
                 {tab === "new" ? (
-                  <>
-                    <button type="button" className="ld-btn p" disabled={start.isPending} onClick={() => { if (!p.email) { setOpen(p.id); setEditing(p.id); setForm({ contactName: p.contactName ?? "", email: "", phone: p.phone ?? "" }); return; } start.mutate({ organizationId: currentOrgId, ids: [p.id] }); }}>Start outreach</button>
-                    <button type="button" className="ld-btn" disabled={notFit.isPending} onClick={() => notFit.mutate({ organizationId: currentOrgId, id: p.id })}>Not a fit</button>
-                  </>
+                  <button type="button" className="ld-btn p" disabled={start.isPending} onClick={() => { if (!p.email) { setOpen(p.id); setEditing(p.id); setForm({ contactName: p.contactName ?? "", email: "", phone: p.phone ?? "" }); return; } start.mutate({ organizationId: currentOrgId, ids: [p.id] }); }}>Start outreach</button>
                 ) : (
-                  <>
-                    <span className={`ld-pill ${STAGE[tab].cls}`}>{STAGE[tab].label}</span>
-                    <button type="button" className="ld-btn" onClick={() => { setOpen(isOpen ? null : p.id); setEditing(null); }}>{isOpen ? "Close" : "Open"}</button>
-                  </>
+                  <button type="button" className="ld-btn" onClick={() => { setOpen(isOpen ? null : p.id); setEditing(null); }}>{isOpen ? "Close" : "Open"}</button>
                 )}
               </div>
               {isOpen && (
@@ -98,14 +86,14 @@ export default function Prospects({ emp }: { emp: EmployeeRow }) {
                   </div>
                   {isEditing ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      <div className="ld-field"><label className="ld-lbl" htmlFor={`pc-${p.id}`}>{referral ? "Contact" : "Owner"}</label><input id={`pc-${p.id}`} className="ld-in" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} /></div>
+                      <div className="ld-field"><label className="ld-lbl" htmlFor={`pc-${p.id}`}>Contact</label><input id={`pc-${p.id}`} className="ld-in" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} /></div>
                       <div className="ld-field"><label className="ld-lbl" htmlFor={`pe-${p.id}`}>Email</label><input id={`pe-${p.id}`} className="ld-in" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
                       <div className="ld-field"><label className="ld-lbl" htmlFor={`pp-${p.id}`}>Phone</label><input id={`pp-${p.id}`} className="ld-in" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
                       <ErrorLine error={save.error} />
                     </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                      <KV label={referral ? "Contact" : "Owner"}>{[p.contactName, p.contactTitle].filter(Boolean).join(", ") || "Not found"}</KV>
+                      <KV label="Contact">{[p.contactName, p.contactTitle].filter(Boolean).join(", ") || "Not found"}</KV>
                       <KV label="Email">{p.email ?? "Not on their site"}</KV>
                       <KV label="Phone">{p.phone ?? "Not on their site"}</KV>
                     </div>
@@ -119,6 +107,7 @@ export default function Prospects({ emp }: { emp: EmployeeRow }) {
                     ) : (
                       <>
                         <button type="button" className="ld-btn" onClick={() => { setEditing(p.id); setForm({ contactName: p.contactName ?? "", email: p.email ?? "", phone: p.phone ?? "" }); }}>Edit</button>
+                        {tab === "new" && <button type="button" className="ld-btn" disabled={notFit.isPending} onClick={() => notFit.mutate({ organizationId: currentOrgId, id: p.id })}>Not a fit</button>}
                         <button type="button" className="ld-btn" onClick={() => setOpen(null)}>Close</button>
                       </>
                     )}

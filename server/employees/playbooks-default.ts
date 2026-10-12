@@ -189,7 +189,8 @@ export const DEFAULT_PLAYBOOKS: Record<PlaybookKind, HandbookPart> = {
         "Check the market has four things: real pain, money to pay, easy to find, and growing. Start narrow (one specialty, one state) before going wide.",
       ]),
       s("Where to look", [
-        "The NPI Registry and state licensing boards for licensed practices and clinicians.",
+        "Exactly who the owner asked for, in the place she named. Her words decide the search, not a fixed list of business types.",
+        "For health and therapy providers: the NPI Registry and state licensing boards.",
         "The prospect's own website for the owner's name, services, size, locations and contact details.",
         "Professional directories, associations and communities where the ideal customer gathers. Manual research is slowest but freshest.",
         "Partners who already serve the same buyers (vendors, associations, event hosts) as referral partners.",

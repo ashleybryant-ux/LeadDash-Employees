@@ -314,20 +314,18 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
   prospecting: build(
     [],
     [
-      job("Who am I finding?", ["Customers", "Referral partners", "Both"], "fit", [
+      job("Who am I finding?", ["Customers", "Referral partners", "Partners or vendors", "Someone else"], "fit", [
         { key: "often", label: "How often should I look?", type: "choice", options: OFTEN, short: "Look", guide: "fit" },
-        { key: "weekly", label: "Prospects a week", type: "choice", options: ["10", "25", "50", "100"], short: "Prospects a week", guide: "fit" },
+        { key: "weekly", label: "How many each time?", type: "choice", options: ["10", "25", "50", "100"], short: "How many each time", guide: "fit" },
       ]),
       {
         key: "fit",
-        title: "Ideal customer",
-        intro: "Who's a great fit.",
+        title: "Who to find",
+        intro: "Who I look for and where.",
         questions: [
-          { key: "size", label: "Smallest fit", type: "choice", options: ["Solo practices", "2 or more clinicians", "5 or more clinicians", "10 or more clinicians"], short: "Smallest fit", guide: "fit" },
-          { key: "specialty", label: "Specialties", type: "multi", options: ["Mental health", "Substance use", "ABA and autism", "Psychiatry", "Medical", "Any"], short: "Specialties", guide: "fit" },
-          { key: "payer", label: "Payer mix", type: "choice", options: ["Takes insurance", "Private pay", "Either"], short: "Payer mix", guide: "fit" },
-          { key: "states", label: "States or cities", type: "text", placeholder: "Colorado and Wyoming", short: "Where", guide: "fit" },
-          { key: "ideal", label: "What makes a great fit?", type: "text", placeholder: "Group practices that take insurance and book by phone", short: "Great fit", guide: "fit" },
+          { key: "ideal", label: "Who should I find?", type: "text", placeholder: "Family law attorneys who refer families to counseling", short: "Who to find", guide: "fit" },
+          { key: "states", label: "Where should I look?", type: "text", placeholder: "Denver metro", short: "Where", guide: "fit" },
+          { key: "size", label: "Smallest fit", type: "choice", options: ["Any size", "2 or more people", "5 or more people", "10 or more people"], short: "Smallest fit", guide: "fit" },
         ],
       },
       {
@@ -335,10 +333,9 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         title: "Signals and skips",
         intro: "What makes me move fast, and who I leave alone.",
         questions: [
-          { key: "signals", label: "Buying signals", type: "multi", options: ["Hiring clinicians", "Books by phone only", "No online paperwork", "Opening a new location", "Bad reviews about scheduling"], short: "Signals", guide: "signals" },
-          { key: "decider", label: "Who decides?", type: "multi", options: ["Owner", "Practice manager", "Clinical director", "Office manager"], short: "Reach", guide: "contact" },
-          { key: "skip", label: "Who should I skip?", type: "text", placeholder: "Hospital systems, current customers", short: "Skip", guide: "skip" },
-          { key: "competitors", label: "Systems they might use now", type: "text", placeholder: "SimplePractice, TherapyNotes", short: "Current systems", guide: "signals" },
+          { key: "signals", label: "What makes a great fit?", type: "multi", options: ["Mentions referrals on their site", "Serves the people we serve", "Growing or hiring", "Opening a new location", "In the news lately"], short: "Signals", guide: "signals" },
+          { key: "decider", label: "Who should I reach?", type: "multi", options: ["Owner", "Manager", "Director", "Whoever is listed"], short: "Reach", guide: "contact" },
+          { key: "skip", label: "Who should I skip?", type: "text", placeholder: "Large chains, current customers", short: "Skip", guide: "skip" },
         ],
       },
     ],
@@ -348,7 +345,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
       { key: "signals", title: "What buying signals matter?" },
       { key: "contact", title: "Who should I reach?" },
     ],
-    { label: "Find prospects now", prompt: "Find 10 prospects that fit and show me the best 3." }
+    { label: "Find prospects now", prompt: "Find 10 that fit what I told you and show me the best 3." }
   ),
 
   outreach: build(

@@ -55,7 +55,7 @@ describe("NPI Registry", () => {
       } as any;
     });
     const { orgId, owner } = await makeWorkspace("npi-riley");
-    await caller(owner).sales.saveSettings({ organizationId: orgId, sells: "software", area: "Texas" });
+    await caller(owner).sales.saveSettings({ organizationId: orgId, target: "Therapy practices", area: "Texas" });
     const r = await sales.findProspects(orgId);
     expect(prompt).toContain("NPI Registry");
     expect(prompt).toContain("Lone Star Counseling PLLC | Fort Worth, TX | 817-555-0100 | Jordan Hale, Owner");
