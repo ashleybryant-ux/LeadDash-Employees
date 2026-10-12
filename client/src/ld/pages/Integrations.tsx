@@ -1082,12 +1082,12 @@ function ConnectForm({ item, conn, onDone }: { item: CatalogItem; conn: Conn | u
           <input id={`${id}-label`} className="ld-in" type="text" value={label} onChange={(e) => setLabel(e.target.value)} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <label htmlFor={`${id}-handle`} className="ld-lbl">{isWp ? "Site API address" : "Handle or link"}</label>
+          <label htmlFor={`${id}-handle`} className="ld-lbl">{isWp ? "Site address" : "Handle or link"}</label>
           <input
             id={`${id}-handle`}
             className="ld-in"
             type="text"
-            placeholder={isWp ? "https://site.com/wp-json/wp/v2" : undefined}
+            placeholder={isWp ? "https://yoursite.com" : undefined}
             value={handle}
             onChange={(e) => setHandle(e.target.value)}
           />

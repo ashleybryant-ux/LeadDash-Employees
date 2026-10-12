@@ -17,6 +17,17 @@ const STATUS: Record<string, string> = {
   blocked_connection: "Needs connection",
 };
 
+/** Why the last try to put it on WordPress didn't work, or "". */
+function sendError(metadata: string | null | undefined): string {
+  try {
+    const d = JSON.parse(metadata || "{}").dispatch;
+    const bad = Array.isArray(d) ? d.find((r: { channel?: string; ok?: boolean; error?: string }) => r.channel === "wordpress" && !r.ok) : null;
+    return bad?.error ? String(bad.error) : "";
+  } catch {
+    return "";
+  }
+}
+
 /** The main keyword and meta description Theo saved on the article. */
 function seo(metadata: string | null | undefined): { keyword: string; metaDescription: string } {
   try {
@@ -125,6 +136,7 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
           const isEditing = editing === a.id;
           const editable = a.status !== "published";
           const { keyword: kw, metaDescription } = seo(a.metadata);
+          const failed = a.status === "approved" || a.status === "blocked_connection" ? sendError(a.metadata) : "";
           return (
             <React.Fragment key={a.id}>
               <div
@@ -139,7 +151,7 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
               >
                 <span className="ld-strong">{a.title}</span>
                 <span className={kw ? undefined : "ld-muted"}>{kw || "None"}</span>
-                <span>{STATUS[a.status] ?? a.status}</span>
+                <span>{failed && a.status === "approved" ? "Didn't go out" : STATUS[a.status] ?? a.status}</span>
                 <span>{fmtDate(a.createdAt)}</span>
                 {editable ? (
                   <button
@@ -190,6 +202,17 @@ export default function Articles({ emp }: { emp: EmployeeRow }) {
                           Save
                         </button>
                         <button type="button" className="ld-btn" onClick={() => setEditing(null)}>Cancel</button>
+                      </>
+                    ) : a.status === "published" && a.externalReference ? (
+                      <a className="ld-btn p" href={a.externalReference} target="_blank" rel="noreferrer noopener">
+                        Open draft
+                      </a>
+                    ) : failed ? (
+                      <>
+                        <button type="button" className="ld-btn p" disabled={review.isPending} onClick={() => review.mutate({ organizationId: currentOrgId, itemId: a.id, action: "retry" })}>
+                          Try again
+                        </button>
+                        <span className="ld-small ld-muted">{failed}</span>
                       </>
                     ) : (
                       a.status === "pending_approval" && (

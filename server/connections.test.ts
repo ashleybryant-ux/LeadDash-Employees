@@ -8,9 +8,8 @@ describe("connection credentials", () => {
     const { orgId, owner } = await makeWorkspace("conn");
     const saved = await caller(owner).publishing.updateConnection({
       organizationId: orgId,
-      provider: "wordpress",
-      accountLabel: "Practice blog",
-      accountHandle: "https://example.com/wp-json/wp/v2",
+      provider: "submittable",
+      accountLabel: "Grant portal",
       status: "connected",
       settings: JSON.stringify({ username: "editor", appPassword: "abcd efgh ijkl mnop" }),
     });
@@ -18,7 +17,7 @@ describe("connection credentials", () => {
     expect(JSON.stringify(saved)).not.toContain("abcd efgh");
     expect(saved?.savedSecrets).toEqual(["appPassword"]);
 
-    const row = await db.getConnectionByProvider(orgId, "wordpress");
+    const row = await db.getConnectionByProvider(orgId, "submittable");
     expect(row?.settings).not.toContain("abcd");
     expect(row?.secretsEncrypted).toMatch(/^v1\./);
     expect(decryptJson(row!.secretsEncrypted)).toEqual({ appPassword: "abcd efgh ijkl mnop" });
@@ -26,15 +25,15 @@ describe("connection credentials", () => {
     // Saving again with the masked value keeps the stored secret.
     await caller(owner).publishing.updateConnection({
       organizationId: orgId,
-      provider: "wordpress",
-      accountLabel: "Practice blog",
+      provider: "submittable",
+      accountLabel: "Grant portal",
       status: "connected",
       settings: JSON.stringify({ username: "editor", appPassword: "••••••••" }),
     });
-    expect(decryptJson((await db.getConnectionByProvider(orgId, "wordpress"))!.secretsEncrypted)).toEqual({ appPassword: "abcd efgh ijkl mnop" });
+    expect(decryptJson((await db.getConnectionByProvider(orgId, "submittable"))!.secretsEncrypted)).toEqual({ appPassword: "abcd efgh ijkl mnop" });
 
     // Disconnecting deletes the secrets.
-    await caller(owner).publishing.updateConnection({ organizationId: orgId, provider: "wordpress", accountLabel: "Practice blog", status: "disconnected" });
-    expect((await db.getConnectionByProvider(orgId, "wordpress"))?.secretsEncrypted).toBeNull();
+    await caller(owner).publishing.updateConnection({ organizationId: orgId, provider: "submittable", accountLabel: "Grant portal", status: "disconnected" });
+    expect((await db.getConnectionByProvider(orgId, "submittable"))?.secretsEncrypted).toBeNull();
   });
 });

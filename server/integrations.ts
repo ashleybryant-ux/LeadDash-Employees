@@ -629,6 +629,7 @@ export async function channelState(orgId: number) {
     threads: !!by("threads"),
     tiktok: !!by("tiktok"),
     google_business: !!by("google_business"),
+    wordpress: !!by("wordpress"),
     gmail: !!by("google_workspace") || db.listAccountLinks(orgId, "send").some((l) => l.status === "connected"),
     calendar: !!by("google_workspace") || db.listAccountLinks(orgId, "calendar").some((l) => l.kind === "google" && l.holds !== "no"),
   } as Record<string, boolean>;
@@ -1309,6 +1310,7 @@ const SOCIAL: Record<SocialChannel, (orgId: number, p: Payload) => Promise<strin
 export function channelsFor(item: OutboundItem): string[] {
   if (item.kind === "social_post") return postChannels(item);
   if (item.kind === "calendar_hold") return ["calendar"];
+  if (item.kind === "blog_post") return ["wordpress"];
   if (item.kind === "email_draft" || item.kind === "hiring_email" || item.kind === "speaking_pitch" || item.kind === "outreach_email" || item.kind === "lead_reply") return ["gmail"];
   return [];
 }
@@ -1344,6 +1346,7 @@ export async function dispatch(item: OutboundItem): Promise<{ status: OutboundIt
         const kind = emp?.kind ?? (item.kind === "outreach_email" ? "outreach" : item.kind === "lead_reply" ? "leads" : null);
         url = await sendGmail(item.organizationId, to, subject, item.body ?? "", kind);
       } else if (ch === "calendar") url = await addToCalendar(item.organizationId, item);
+      else if (ch === "wordpress") url = await (await import("./wordpress")).publishDraft(item);
       else url = await SOCIAL[ch as SocialChannel](item.organizationId, payloadFor(item, ch as SocialChannel));
       results.push({ channel: ch, ok: true, url, at: new Date().toISOString() });
     } catch (err) {

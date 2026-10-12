@@ -3725,23 +3725,41 @@ export const appRouter = router({
         }
 
         const disconnect = input.status === "disconnected";
+        // WordPress is checked with the site before it is saved: the address, username and application password must sign in.
+        let checked = false;
+        if (input.provider === "wordpress" && !disconnect) {
+          const wp = await import("./wordpress");
+          const site = wp.siteOf(String(settings.site ?? input.accountHandle ?? ""));
+          let saved: Record<string, string> = {};
+          try {
+            saved = decryptJson<Record<string, string>>(secretsEncrypted) ?? {};
+          } catch {
+            saved = {};
+          }
+          const r = await wp.verify({ site, username: String(settings.username ?? ""), password: saved.appPassword ?? "" });
+          if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error });
+          settings.site = site;
+          settings.signedInAs = r.name;
+          input.accountHandle = site.replace(/^https?:\/\//, "");
+          checked = true;
+        }
         const conn = await db.upsertExternalConnection({
           organizationId: input.organizationId,
           provider: input.provider,
           accountLabel: input.accountLabel,
           accountHandle: input.accountHandle || null,
-          status: disconnect ? "disconnected" : "pending",
+          status: disconnect ? "disconnected" : checked ? "connected" : "pending",
           settings: JSON.stringify(settings),
           secretsEncrypted: disconnect ? null : secretsEncrypted,
-          connectedAt: null,
+          connectedAt: checked ? new Date() : null,
           lastCheckedAt: new Date(),
         });
         await db.logAction({
           organizationId: input.organizationId,
           actorType: "human_user",
           actorName: personName(ctx.user),
-          action: disconnect ? "Disconnected channel" : "Saved channel settings",
-          details: `${input.accountLabel} (${input.provider}).${disconnect ? " Saved secrets were deleted." : " Waiting for verification."}`,
+          action: disconnect ? "Disconnected channel" : checked ? "Connected channel" : "Saved channel settings",
+          details: `${input.accountLabel} (${input.provider}).${disconnect ? " Saved secrets were deleted." : checked ? " Signed in and checked." : " Waiting for verification."}`,
         });
         return conn ? publicConnection(conn) : null;
       }),
