@@ -7,6 +7,7 @@ import { authenticateRequest, createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { ENV } from "./env";
 import { getDb, getOrganizationMembership, guestDocSharesForUser, guestSharesForUser, publicFileByToken, purgeExpiredAuthRecords } from "../db";
+import fs from "node:fs";
 import path from "node:path";
 import { fileOwner, uploadsRoot } from "../storage";
 import { aiStatus, searchModel } from "./llm";
@@ -32,6 +33,8 @@ async function startServer() {
   await ensureAllRosters();
   // Once: in workspaces already in use, employees never onboarded and not in use go to the bench.
   await import("../employees/bench").then((m) => m.benchUnusedAll()).catch((err) => console.error("[bench] sweep failed:", err));
+  // The format card photos are made in the background the first time the server starts with them missing.
+  void import("../employees/formatPictures").then((m) => m.warmPictures()).catch((err) => console.error("[pictures] warm-up failed:", err));
   startNotifications();
   // Once per workspace: earlier AI costs are matched to the person whose chat message started them.
   import("../aiLimits").then((m) => m.backfillAll()).catch((err) => console.error("[ai limits] back-count failed:", err));
@@ -86,6 +89,27 @@ async function startServer() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, ai: aiStatus(), secretsKey: hasSecretsKey(), push: pushReady(), connect: readyApps() });
+  });
+
+  // The photos on Elena's Make a video format cards: made once and kept; the drawn picture shows until then.
+  app.get("/api/video-pictures/:key", async (req, res) => {
+    const fp = await import("../employees/formatPictures");
+    const key = String(req.params.key).replace(/\.webp$/i, "");
+    if (!(fp.PICTURE_KEYS as string[]).includes(key)) return res.status(404).send("Not found");
+    const photo = fp.pictureFile(key as never);
+    if (fs.existsSync(photo)) {
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      return res.sendFile(photo);
+    }
+    void fp.makePicture(key as never);
+    for (const base of [path.resolve(process.cwd(), "dist/public"), path.resolve(process.cwd(), "client/public")]) {
+      const drawn = path.join(base, "video-formats", `${key}.webp`);
+      if (fs.existsSync(drawn)) {
+        res.setHeader("Cache-Control", "no-store");
+        return res.sendFile(drawn);
+      }
+    }
+    return res.status(404).send("Not found");
   });
 
   // Public links for images used on published pages (photos and stock images Jordan

@@ -145,7 +145,7 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
           {FORMATS.map((f) => (
             <button key={f.key} type="button" role="radio" aria-checked={format === f.key} className={`ld-vm-fmt ${format === f.key ? "on" : ""}`} onClick={() => pickFormat(f.key)}>
               <span className="ld-vm-fmt-img">
-                <img src={`/video-formats/${f.key}.webp`} alt="" loading="lazy" />
+                <img src={`/api/video-pictures/${f.key}`} alt="" loading="lazy" />
                 {format === f.key && (
                   <span className="ld-vm-check" aria-hidden="true">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>

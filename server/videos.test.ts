@@ -412,6 +412,24 @@ describe("Elena's video agent", () => {
   });
 });
 
+describe("Format card photos", () => {
+  it("are made once with the image model, kept, and sized for the card", async () => {
+    const fp = await import("./employees/formatPictures");
+    fs.rmSync(fp.pictureDir(), { recursive: true, force: true });
+    const file = await fp.makePicture("talking");
+    expect(file).toBe(fp.pictureFile("talking"));
+    const sharp = (await import("sharp")).default;
+    expect(await sharp(file!).metadata()).toMatchObject({ width: 724, height: 444, format: "webp" });
+    const asked = posted("fal-ai/nano-banana-pro")[0];
+    expect(asked).toMatchObject({ aspect_ratio: "16:9" });
+    expect(asked.prompt).toMatch(/talking straight to the camera.*No text, letters, words, logos or watermarks/);
+    // Already made: nothing is asked again.
+    calls = [];
+    expect(await fp.makePicture("talking")).toBe(file);
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("The b-roll library", () => {
   it("takes uploads up to 60 seconds, tagged, and makes sets of AI clips that use their work hours", async () => {
     const { orgId, owner } = await onPlan("broll-lib");
