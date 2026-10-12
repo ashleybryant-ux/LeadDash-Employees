@@ -61,16 +61,21 @@ describe("Voices outside LeadDash's own workspaces", () => {
     const r = await c.elevenlabs.connect({ organizationId: orgId, apiKey: "sk_customer_own_key_123456" });
     expect(r).toMatchObject({ internal: false, connected: true, voices: 2, own: ["Dr. Rivera"] });
     expect(JSON.stringify(await c.elevenlabs.get({ organizationId: orgId }))).not.toContain("sk_customer");
-    expect(await keyFor(orgId)).toBe("sk_customer_own_key_123456");
-    expect(await huddle.providerFor(orgId)).toBe("elevenlabs");
+    // Only Elena's videos use it: the employees' voices stay standard.
+    expect(await keyFor(orgId, "video")).toBe("sk_customer_own_key_123456");
+    expect(await keyFor(orgId)).toBe("");
+    expect(await huddle.providerFor(orgId)).toBe("openai");
+    expect((await c.voices.options({ organizationId: orgId })).hasElevenLabs).toBe(false);
+    expect((await c.avatar.castVoices({ organizationId: orgId })).map((v) => v.name)[0]).toBe("Rachel"); // stock voices from their account, never their clone
     expect((await c.avatar.settings({ organizationId: orgId })).ready.canConnect).toBe(false);
 
     await c.elevenlabs.disconnect({ organizationId: orgId });
-    expect(await keyFor(orgId)).toBe("");
+    expect(await keyFor(orgId, "video")).toBe("");
 
     const own = await makeWorkspace("el-internal");
     await db.updateOrganization(own.orgId, { internal: true });
     expect(await keyFor(own.orgId)).toBe("el-leaddash-server");
+    expect(await keyFor(own.orgId, "video")).toBe("el-leaddash-server");
     expect((await caller(own.owner).avatar.settings({ organizationId: own.orgId })).ready.canConnect).toBe(false);
   });
 

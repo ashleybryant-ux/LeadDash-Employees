@@ -432,8 +432,8 @@ function GrantsGov({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) 
 }
 
 /**
- * The workspace's own ElevenLabs account: Elena's videos and the employees' voices use its voices,
- * including a voice the owner cloned there. Without it, they use the standard voices.
+ * The workspace's own ElevenLabs account, only for Elena's videos: its voices, including a voice
+ * the owner cloned there. Without it, videos use the standard voices.
  */
 function ElevenLabs({ isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
   const { currentOrgId } = useTenant();
@@ -450,7 +450,7 @@ function ElevenLabs({ isOpen, toggle }: { isOpen: boolean; toggle: () => void })
   const cancel = () => { setEditing(false); setKey(""); connect.reset(); };
   const desc = on
     ? `Connected. ${v!.voices} ${v!.voices === 1 ? "voice" : "voices"}${v!.own.length ? `, ${v!.own.length} of them yours` : ""}.`
-    : "Optional. Use your own ElevenLabs account and cloned voice for Elena's videos and your employees' voices.";
+    : "Optional. Use your own ElevenLabs account and cloned voice for Elena's videos.";
   const right = on ? (
     <button type="button" style={okTile} onClick={toggle} aria-expanded={isOpen}>Connected</button>
   ) : editing ? (

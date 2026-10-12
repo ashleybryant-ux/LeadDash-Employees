@@ -6,8 +6,8 @@ import { decryptJson, encryptJson } from "./_core/crypto";
 /**
  * Whose ElevenLabs account a workspace's voices use.
  * - LeadDash's own workspaces: the server's account (ELEVENLABS_API_KEY).
- * - Every other workspace: only its own account, connected on Integrations.
- *   Without one, its voices come from the standard (OpenAI) voices, and it never
+ * - Every other workspace: standard (OpenAI) voices for everything, and its own
+ *   ElevenLabs account, connected on Integrations, only for Elena's videos. It never
  *   sees or uses LeadDash's account or the voices cloned on it.
  */
 
@@ -25,12 +25,15 @@ export async function ownKey(orgId: number) {
   }
 }
 
-/** The key this workspace speaks with, or "" for the standard voices. */
-export async function keyFor(orgId?: number | null) {
+/**
+ * The ElevenLabs key for this workspace, or "" for the standard voices. A customer's own
+ * account is used only for Elena's videos ("video"); its employees' voices stay standard.
+ */
+export async function keyFor(orgId?: number | null, use: "video" | "voice" = "voice") {
   if (!orgId) return ENV.elevenLabsKey;
   const org = await db.getOrganizationById(orgId);
   if (org?.internal) return ENV.elevenLabsKey;
-  return ownKey(orgId);
+  return use === "video" ? ownKey(orgId) : "";
 }
 
 type Voice = { voice_id: string; name: string; category?: string };

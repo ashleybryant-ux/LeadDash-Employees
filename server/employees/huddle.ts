@@ -140,8 +140,8 @@ export async function providerFor(orgId: number): Promise<VoiceProvider> {
 }
 
 /**
- * The ElevenLabs key a workspace speaks with: LeadDash's own workspaces use the server's
- * account, every other workspace only the account it connected itself ("" for none).
+ * The ElevenLabs key a workspace's employees speak with: LeadDash's own workspaces use the
+ * server's account; every other workspace uses the standard voices ("").
  */
 export async function elevenKeyFor(orgId?: number | null) {
   return (await import("../elevenlabs")).keyFor(orgId);

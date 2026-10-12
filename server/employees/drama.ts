@@ -537,7 +537,7 @@ async function download(url: string) {
 const speak = (orgId: number, voiceId: string, text: string) => avatar.speech(orgId, voiceId, text);
 
 /** This workspace's ElevenLabs key, for room tone and music ("" leaves them out). */
-const elevenKey = (orgId: number) => import("../elevenlabs").then((m) => m.keyFor(orgId));
+const elevenKey = (orgId: number) => import("../elevenlabs").then((m) => m.keyFor(orgId, "video"));
 
 // ==========================================
 // Making an episode

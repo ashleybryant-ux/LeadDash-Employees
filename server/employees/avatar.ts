@@ -8,7 +8,7 @@ import type { AIEmployee, AvatarVideo } from "../../drizzle/schema";
  * Videos of the owner made by AI from her photo and her own voice (Elena).
  * 1. Elena writes the words; a draft holds the script, the photo and the voice.
  * 2. Make it: the voice reads the script (ElevenLabs for LeadDash's own workspaces and
- *    workspaces that connected their own ElevenLabs account, else a standard voice), then fal.ai's
+ *    workspaces that connected their own ElevenLabs account for videos, else a standard voice), then fal.ai's
  *    Kling talking-avatar model animates her photo to that audio. fal bills per
  *    second of video with no subscription.
  * 3. The finished MP4 is saved on this server (fal's links expire) and Elena
@@ -71,7 +71,7 @@ export async function standardVoices() {
 }
 
 /** This workspace's ElevenLabs key: LeadDash's own workspaces use the server's account, others only their own. */
-const elevenKey = (orgId: number) => import("../elevenlabs").then((m) => m.keyFor(orgId));
+const elevenKey = (orgId: number) => import("../elevenlabs").then((m) => m.keyFor(orgId, "video"));
 
 /**
  * The voices for this workspace's videos: its ElevenLabs account's voices (the owner's own cloned
