@@ -3,9 +3,11 @@ import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import type { EmployeeRow } from "../ChatPage";
 import { ErrorLine, UnderlineTabs } from "../ui";
+import { useHoursAsk } from "../HoursAsk";
 import { fmtDate, parseJson } from "../meta";
 import { AvatarVideosTab } from "../chat/Avatar";
 import { CampaignsTab, DramaCastTab, DramaEpisodesTab, StyleTab } from "../chat/Drama";
+import { MadeVideosTab } from "./MadeVideos";
 
 type Shot = { time: string; shot: string; say: string };
 type VideoData = {
@@ -14,23 +16,23 @@ type VideoData = {
 };
 
 const SHOT_COLS = "90px minmax(0,1.2fr) minmax(0,1.6fr)";
-const TREND_COLS = "minmax(0,1.4fr) minmax(0,2.2fr) minmax(0,1.4fr) 130px";
 
 const short = (url: string) => url.replace(/^https?:\/\/(www\.)?/, "");
 
-/** Elena's Work tab: video plans and the trends behind them. */
+/** Elena's Videos tab: the videos she made, her avatar, video plans from trends, episodes and campaigns. */
 export default function Videos({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const studio = trpc.drama.studio.useQuery({ organizationId: currentOrgId });
-  type VTab = "episodes" | "campaigns" | "cast" | "style" | "plans" | "trends" | "avatar";
+  type VTab = "videos" | "avatar" | "plans" | "episodes" | "campaigns" | "cast" | "style";
   const fromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
-  const [tab, setTab] = React.useState<VTab>(fromUrl && ["episodes", "campaigns", "cast", "style", "plans", "trends", "avatar"].includes(fromUrl) ? (fromUrl as VTab) : "episodes");
-  const avatarCount = trpc.avatar.list.useQuery({ organizationId: currentOrgId }).data?.length ?? 0;
+  const [tab, setTab] = React.useState<VTab>(fromUrl === "trends" ? "plans" : fromUrl && ["videos", "avatar", "plans", "episodes", "campaigns", "cast", "style"].includes(fromUrl) ? (fromUrl as VTab) : "videos");
+  const made = trpc.videos.list.useQuery({ organizationId: currentOrgId });
   const [selected, setSelected] = React.useState<number | null>(null);
 
   const videos = trpc.video.list.useQuery({ organizationId: currentOrgId });
   const find = trpc.video.find.useMutation({ onSuccess: () => utils.video.invalidate() });
+  const makeIt = trpc.video.makeIt.useMutation({ onSuccess: () => Promise.all([utils.videos.invalidate(), utils.video.invalidate()]) });
   const dismiss = trpc.video.dismiss.useMutation({
     onSuccess: async () => {
       setSelected(null);
@@ -43,7 +45,7 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
 
   return (
     <main className="ld-main" style={{ padding: "28px 36px" }}>
-      {(tab === "plans" || tab === "trends") && <div className="ld-row" style={{ justifyContent: "flex-end" }}>
+      {tab === "plans" && <div className="ld-row" style={{ justifyContent: "flex-end" }}>
         {find.data && !find.isPending && (
           <span className="ld-small ld-muted">
             {find.data.added ? `Planned ${find.data.added} from ${find.data.queries.length} searches.` : `No new trends from ${find.data.queries.length} searches.`}
@@ -59,17 +61,19 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
         value={tab}
         onChange={setTab}
         tabs={[
+          { key: "videos", label: `Videos (${made.data?.length ?? 0})` },
+          { key: "avatar", label: "Your avatar" },
+          { key: "plans", label: `Video plans (${list.length})` },
           { key: "episodes", label: `Episodes (${studio.data?.episodes.length ?? 0})` },
           { key: "campaigns", label: `Campaigns (${studio.data?.campaigns.length ?? 0})` },
           { key: "cast", label: `Cast (${studio.data?.cast.length ?? 0})` },
           { key: "style", label: `Style (${studio.data?.styleRefs.length ?? 0})` },
-          { key: "plans", label: `Video plans (${list.length})` },
-          { key: "trends", label: `Trends (${list.length})` },
-          { key: "avatar", label: `Your videos (${avatarCount})` },
         ]}
       />
 
-      {tab === "episodes" ? (
+      {tab === "videos" ? (
+        <MadeVideosTab empName={emp.name} />
+      ) : tab === "episodes" ? (
         <DramaEpisodesTab empName={emp.name} />
       ) : tab === "campaigns" ? (
         <CampaignsTab empName={emp.name} />
@@ -81,32 +85,6 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
         <AvatarVideosTab empName={emp.name} />
       ) : list.length === 0 ? (
         <div className="ld-card ld-empty">{videos.isLoading ? "Loading..." : `No video plans yet. Press Find trends or ask ${emp.name} in Chat.`}</div>
-      ) : tab === "trends" ? (
-        <div className="ld-card" style={{ overflow: "hidden" }}>
-          <div className="ld-hd" style={{ gridTemplateColumns: TREND_COLS }}>
-            <span>Trend</span>
-            <span>Why it works</span>
-            <span>Source</span>
-            <span>Found</span>
-          </div>
-          {list.map((v) => {
-            const url = v.d.trend?.sourceUrl || v.sourceUrl;
-            return (
-              <div key={v.id} className="ld-rw" style={{ gridTemplateColumns: TREND_COLS, alignItems: "start" }}>
-                <span className="ld-strong">{v.d.trend?.name || v.title}</span>
-                <span style={{ lineHeight: 1.55, color: "var(--ld-text2)" }}>{v.d.trend?.whyItWorks || "Not noted."}</span>
-                <span style={{ overflowWrap: "anywhere" }}>
-                  {url ? (
-                    <a href={url} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 600 }}>{short(url)}</a>
-                  ) : (
-                    "None"
-                  )}
-                </span>
-                <span>{fmtDate(v.createdAt)}</span>
-              </div>
-            );
-          })}
-        </div>
       ) : (
         <>
           {list.length > 1 && (
@@ -143,9 +121,17 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
             </div>
           )}
           {current && (
-            <PlanView key={current.id} item={current} onDismiss={() => dismiss.mutate({ organizationId: currentOrgId, id: current.id })} dismissing={dismiss.isPending} />
+            <PlanView
+              key={current.id}
+              item={current}
+              onDismiss={() => dismiss.mutate({ organizationId: currentOrgId, id: current.id })}
+              dismissing={dismiss.isPending}
+              made={(made.data ?? []).find((m) => m.planId === current.id) ?? null}
+              onMake={() => makeIt.mutate({ organizationId: currentOrgId, id: current.id }, { onSuccess: () => setTab("videos") })}
+              making={makeIt.isPending}
+            />
           )}
-          <ErrorLine error={dismiss.error} />
+          <ErrorLine error={dismiss.error ?? makeIt.error} />
         </>
       )}
     </main>
@@ -156,11 +142,19 @@ function PlanView({
   item,
   onDismiss,
   dismissing,
+  made,
+  onMake,
+  making,
 }: {
   item: { id: number; title: string; sourceUrl: string | null; createdAt: Date | string; d: VideoData };
   onDismiss: () => void;
   dismissing: boolean;
+  /** The video already made from this plan, if any. */
+  made: { statusLabel: string } | null;
+  onMake: () => void;
+  making: boolean;
 }) {
+  const hours = useHoursAsk();
   const [copied, setCopied] = React.useState(false);
   const p = item.d.plan ?? {};
   const t = item.d.trend ?? {};
@@ -194,11 +188,19 @@ function PlanView({
             <span style={{ fontWeight: 800, fontSize: 17 }}>{p.title || item.title}</span>
             <span className="ld-small ld-muted">{meta}</span>
           </div>
-          <div className="ld-row">
+          <div className="ld-row" style={{ flexWrap: "wrap", flexShrink: 0, maxWidth: "100%" }}>
+            {made ? (
+              <span className="ld-pill green">{made.statusLabel === "Ready" ? "Made" : made.statusLabel}</span>
+            ) : (
+              <button type="button" className="ld-btn p" disabled={making} onClick={() => hours.confirm(`plan-${item.id}`, "A video uses 8 work hours for each minute of video", onMake)}>
+                {making ? "Starting..." : "Make it"}
+              </button>
+            )}
             <button type="button" className="ld-btn" disabled={dismissing} onClick={onDismiss}>Dismiss</button>
             <button type="button" className="ld-btn" onClick={copyScript}>{copied ? "Copied" : "Copy script"}</button>
           </div>
         </div>
+        {hours.question(`plan-${item.id}`) && <div style={{ padding: "12px 18px", borderBottom: "1px solid #e3e9e6" }}>{hours.question(`plan-${item.id}`)}</div>}
         <div style={{ padding: "14px 18px", borderBottom: "1px solid #e3e9e6", display: "flex", flexDirection: "column", gap: 4 }}>
           <span className="ld-lbl">Hook (first 2 seconds)</span>
           <span style={{ fontSize: 15, fontWeight: 700 }}>{p.hook || "Not written."}</span>

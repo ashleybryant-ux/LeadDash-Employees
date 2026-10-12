@@ -26,7 +26,7 @@ import * as interview from "./interview";
  */
 
 export type ChatCard = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "receipt" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "question" | "submitted" | "receipt" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "browser_live" | "choices" | "layout_choice" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note" | "made_video";
   id: number;
   /** On a choices card after a bulk close in Projects: the task ids, so "Reopen them" can undo it. */
   undo?: string[];
@@ -66,7 +66,7 @@ export const LAYOUTS = [
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "capability_statement", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_list", "press_beats", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "make_video_script", "make_video", "change_video_script", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   social: ["none", "report", "write_post", "post_graphic", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   website: ["none", "report", "site_audit", "mockup_site", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -144,6 +144,9 @@ const ACTION_HELP: Record<string, string> = {
   make_episode: "make_episode: make an episode you wrote into a finished video (\"make episode 1\", \"make it\"). Put the episode number in `count` (0 for the next one not made yet).",
   avatar_script: "avatar_script: write a talking-to-camera video (a tip, an announcement, a UGC-style testimonial). Put a short title in `title` and the exact words spoken in `message`, written the way people talk out loud (about 2.5 words a second, so 110 words is about 45 seconds; aim for the length she asked for, 30 to 60 seconds if she didn't say). No stage directions, no labels, only the words. Who is on camera goes in `from`: 'me' for the owner (her photo and her own voice), or, when she wants someone else (another character, a creator, a made-up therapist), a name and a description like 'Maya: a therapist in her 40s, braids, cardigan, warm and a little tired'. You cast that person yourself: a portrait is made from the description and a fitting stock voice is picked, so never say you can't. Several scripts at once: write the first and offer the rest.",
   make_avatar: "make_avatar: make the video from a script you wrote (\"Make it\", \"make the video\", \"make the one about the waitlist\"). Put words from its title in `target` ('' for the newest script).",
+  make_video_script: "make_video_script: write any video she describes that isn't her on camera, a drama or a campaign film: b-roll with a voice-over, a slideshow of her photos, or an explainer of text cards. Put everything she said about it in `notes` (her words, with the call to action), the kind in `focus` (broll, slideshow or explainer; talking when she wants someone on camera), the size in `to` (vertical, square or wide; vertical when she didn't say), and the length in seconds in `count` (30 when she didn't say). You write the title, the shot list (when, what we see, what's said) and the caption; nothing is made yet.",
+  make_video: "make_video: make a video you wrote with make_video_script, or one of your Video plans (\"Make it\", \"make the evening hours one\"). Put words from its title in `target` ('' for the newest one not made yet).",
+  change_video_script: "change_video_script: she wants the shot list of a video you wrote changed (\"change the script\", \"make the ending warmer\", \"drop shot 3\"). Put words from its title in `target` ('' for the newest) and exactly what to change in `notes`.",
   set_deadlines: "set_deadlines: give every action item from a meeting or huddle a due date and make sure each one is a tracked task with its owner (\"assign deadlines from the last meeting\"). Put the meeting's name in `target` ('' for the most recent, huddles included) and any timing the person gave (\"by Friday\", \"next week\") in `notes`.",
   restore_page: "restore_page: the person wants the page you built put back to the version before (\"go back to the last version\"). Put the page's name in `target` ('' for the most recent page).",
   ask_layout: "ask_layout: before building a NEW page, ask the person to pick a layout and where the button goes. In `reply`, say in one or two sentences what you took from what they gave you (attachments included), then ask them to pick a layout.",
@@ -530,8 +533,10 @@ TALK_BY_KIND.onboarding = `- You onboard new customers onto this business's prod
 - Every email to a customer waits for the owner's approval. Never promise a date, price or feature the Brain doesn't state.
 - Nora tracks each onboarding plan as a project; you own the customer-facing steps.`;
 TALK_BY_KIND.video = `- The owner's photos are in the Brain under "Images on file". When she asks about her photos, name the ones there and how many. Never say you can't get to her photos when they're listed there. When none are, ask her to attach them right here with the paperclip (up to 10 at a time) and save them to the Brain with save_files.
-- You make videos of the owner from her photo and her own cloned voice yourself: choose avatar_script to write one, and make_avatar when she says to make it. Never recommend HeyGen, Synthesia or any other tool; this is how it's made.
-- Three kinds of video. A branded campaign or ad is write_campaign (three directions first), then pick_direction, then she approves the keyframes (approve_keyframes) before anything is animated. A micro drama (story, scenes, characters, cinematic, episodes, a series) is write_episodes, then make_episode: a cinematic episode cut from 10 to 16 shots with camera moves, the cast's faces matched in every shot, and each line spoken in that character's voice. A video of one person talking to camera (a tip, an announcement, a UGC-style piece) is avatar_script, then make_avatar: the owner by default, or anyone she describes (put them in from); you cast made-up people yourself, a portrait from the description and a stock voice, the same way you cast a drama, so you never say you can't cast someone else. When she asks for a drama, never write a talking-to-camera script, and in a drama she is the lead and she talks: her character is always played from her own photos and speaks in her own cloned voice (spoken lines lip synced to her face, and voice-over). Never cast anyone else as her. If she says she isn't in it or isn't talking, that's rewrite_episode.
+- You make any video she describes, yourself. Never recommend HeyGen, Synthesia, Canva or any other tool; this is how it's made. Read what she asked for and pick the kind:
+  1. B-roll with a voice-over, a slideshow of her photos from the Brain, or an explainer of text cards: make_video_script, then make_video when she says to make it. If it's unclear whether someone is on camera, b-roll or a slideshow, choose "none" and ask "Should someone be on camera, or b-roll with a voice-over?" with the choices "B-roll with voice-over", "Me on camera", "Slideshow of our photos". Ask about size or length only when it truly matters and she didn't say: vertical and 30 seconds are the defaults. After you write it, the reply says how many shots, the length and size, and the work hours it uses, with the choices "Make it" and "Change the script". Changes to the shot list are change_video_script. A Video plan from your trends is made with make_video and the plan's title.
+  2. One person talking to camera (a tip, an announcement, a UGC-style piece, "me on camera"): avatar_script, then make_avatar. The owner by default (her photo and her own cloned voice), or anyone she describes (put them in from); you cast made-up people yourself, a portrait from the description and a stock voice, the same way you cast a drama, so you never say you can't cast someone else.
+  3. A branded campaign film or ad is write_campaign (three directions first), then pick_direction, then she approves the keyframes (approve_keyframes) before anything is animated. A micro drama (story, scenes, characters, cinematic, episodes, a series) is write_episodes, then make_episode: a cinematic episode cut from 10 to 16 shots with camera moves, the cast's faces matched in every shot, and each line spoken in that character's voice. Cinematic episodes and campaign films aren't part of work-hour plans: on a plan, say so plainly when she asks for one and offer b-roll with a voice-over instead. When she asks for a drama, never write a talking-to-camera script, and in a drama she is the lead and she talks: her character is always played from her own photos and speaks in her own cloned voice (spoken lines lip synced to her face, and voice-over). Never cast anyone else as her. If she says she isn't in it or isn't talking, that's rewrite_episode.
 - Episodes are written as 3 to 5 scenes; shots in a scene follow straight on from each other, a script supervisor pass fixes anything that doesn't follow, each keyframe carries the room, light and wardrobe from the shot before it, a continuous camera move ends on the next keyframe, and the cut uses soft cuts inside a scene, a dip to black between scenes, crossfaded sound and one room tone per scene. If she says an episode was choppy or made no sense, that's rewrite_episode.
 - Nothing is animated without her clear approval. Asking to see the keyframes is never approval. Drama episodes are on the Episodes tab of your Videos tab; campaigns are on the Campaigns tab. Never send her to the wrong tab. For a shot where she speaks on camera, the most believable result is her own take: she presses Add take on that keyframe (in chat or on the Campaigns tab) and records herself saying the line on her phone, and her movement, expressions and real voice go onto the polished keyframe. Shots with one person are animated with Kling; shots with two or more people with Seedance, which holds several faces better. After a shot is animated she can press Redo with Seedance or Redo with Kling to try the other model on the same keyframe.
 - No markdown symbols like ** or #. Plain sentences, and number options as 1., 2., 3.`;
@@ -1434,6 +1439,61 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         return { text: `I couldn't start it: ${err instanceof Error ? err.message : String(err)}`, cards: [{ type: "avatar_video", id: v.id, title: v.title }], queries: [] };
       }
     }
+    case "make_video_script": {
+      const vd = await import("./videos");
+      const kind = vd.kindFrom(d.focus);
+      const ask = ["B-roll with voice-over", "Me on camera", "Slideshow of our photos"];
+      if (!kind) return { text: "Should someone be on camera, or b-roll with a voice-over?", cards: [], queries: [], choices: ask };
+      const instructions = (d.notes || d.message || ctx.said || "").trim();
+      if (!instructions) return { text: "What should the video be about?", cards: [], queries: [] };
+      try {
+        if (kind === "talking") {
+          const av = await import("./avatar");
+          const v = await vd.writeTalking(org, { instructions, seconds: d.count || 30, who: d.from || null });
+          const secs = Math.round(av.estimateTenths(v.script) / 10);
+          return { text: `Here's the script, about ${secs} seconds, to say on camera. Read it over, then press Make it.`, cards: [{ type: "avatar_video", id: v.id, title: v.title }], queries: [] };
+        }
+        const v = await vd.writeVideo(org, { instructions, kind, size: vd.sizeFrom(d.to), seconds: d.count || 30 });
+        const photos = kind === "slideshow" ? (await (await import("./avatar")).photos(org)).length : 1;
+        const view = vd.view(v);
+        const text = `Here's the shot list (${vd.summary(v)}). It uses ${view.hours} to make.${photos ? "" : " I need your photos for it: attach them here with the paperclip and I'll save them to the Brain."}`;
+        return { text, cards: [{ type: "made_video", id: v.id, title: v.title }], queries: [], choices: ["Make it", "Change the script"] };
+      } catch (err) {
+        return { text: `I couldn't write it: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
+    }
+    case "make_video": {
+      const vd = await import("./videos");
+      const t = d.target.trim().toLowerCase();
+      const all = vd.list(org);
+      let v = (t ? all.find((x) => x.title.toLowerCase().includes(t) && x.status !== "making") : null) ?? null;
+      if (!v && t) {
+        // One of the Video plans from trends: its shot list becomes a b-roll video.
+        const plan = (await db.listWorkItems(org, "video_plan")).find((p) => p.status !== "dismissed" && p.title.toLowerCase().includes(t));
+        if (plan) v = await vd.fromPlan(org, plan.id);
+      }
+      v ??= all.find((x) => x.status === "draft" || x.status === "failed") ?? null;
+      if (!v) return { text: "There's no video written yet. Tell me what it should be about and I'll write the shot list.", cards: [], queries: [] };
+      try {
+        const made = await vd.makeVideo(org, v.id);
+        return { text: `Making "${made.title}" now. It usually takes a few minutes, and I'll post it here when it's done.`, cards: [{ type: "made_video", id: made.id, title: made.title }], queries: [] };
+      } catch (err) {
+        return { text: `I couldn't start it: ${err instanceof Error ? err.message : String(err)}`, cards: [{ type: "made_video", id: v.id, title: v.title }], queries: [] };
+      }
+    }
+    case "change_video_script": {
+      const vd = await import("./videos");
+      const t = d.target.trim().toLowerCase();
+      const all = vd.list(org);
+      const v = (t ? all.find((x) => x.title.toLowerCase().includes(t)) : null) ?? all[0];
+      if (!v) return { text: "There's no video written yet. Tell me what it should be about and I'll write the shot list.", cards: [], queries: [] };
+      try {
+        const next = await vd.rewriteVideo(org, v.id, d.notes || d.message || ctx.said || "");
+        return { text: `I changed it. Here's the new shot list (${vd.summary(next)}). It uses ${vd.view(next).hours} to make.`, cards: [{ type: "made_video", id: next.id, title: next.title }], queries: [], choices: ["Make it", "Change the script"] };
+      } catch (err) {
+        return { text: `I couldn't change it: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
+    }
     case "set_deadlines": {
       const m = await coo.lastMeetingFor(org, d.target, emp.kind === "projects" ? "project" : "all");
       if (!m) return { text: "I don't have a past meeting or huddle with action items yet.", cards: [], queries: [] };
@@ -2250,6 +2310,8 @@ export function bigJobText(kind: string, action: string | undefined) {
       return kind === "grants" ? "a full grant application uses 8 work hours (a pitch or accelerator application uses 3)" : "a full application uses 3 work hours";
     case "make_avatar":
       return "a talking video uses 8 work hours for each minute (16 in Pro quality)";
+    case "make_video":
+      return "a video uses 8 work hours for each minute of video (4 for 30 seconds)";
     case "audit_workflows":
       return "reading your workflows uses 1 work hour for each one I open";
     default:

@@ -36,6 +36,7 @@ import Onboarding from "./Onboarding";
 import type { Outputs } from "./types";
 import { SpokenTag, TalkButton, VoiceBar, useOneOnOne } from "./chat/OneOnOne";
 import { AvatarVideoCard } from "./chat/Avatar";
+import { MadeVideoCard } from "./work/MadeVideos";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 import { Composer, type Mentionable } from "./team/Composer";
 import { DeckCard, DocCard } from "./chat/Talk";
@@ -123,7 +124,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "receipt" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "receipt" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note" | "made_video";
   items?: BriefItem[];
   counts?: { decisions: number; meetings: number; waiting: number; handled: number };
   id: number;
@@ -318,6 +319,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <LayoutChoiceCard key={`${c.type}-${c.id}`} options={c.options ?? []} onPick={pick} disabled={m.id !== lastId || pending !== null || send.isPending} />
                     ) : c.type === "avatar_video" ? (
                       <AvatarVideoCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "made_video" ? (
+                      <MadeVideoCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "dev_change" ? (
                       <DevChangeCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "web_task" ? (
