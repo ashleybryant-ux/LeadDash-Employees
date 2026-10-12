@@ -152,15 +152,15 @@ describe("Elena's video agent", () => {
     const elena = (await db.getEmployeeByKind(orgId, "video"))!;
     decision = { ...blank, action: "make_video_script", notes: "Our new evening hours. Calm, cozy office at night, end with Book a free consult.", focus: "broll" };
     const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: elena.id, text: "B-roll story" });
-    // No library and no stock on this server: the footage scenes are new AI clips (2 work hours each).
-    expect(r.reply.content).toBe("Here's the storyboard (4 scenes, 30 seconds, 9:16). The hook is up front. Change any scene, then press Make the video. It uses 8 work hours when it's done.");
+    // No library and no stock on this server: the footage scenes are new AI clips (2 work hours for each 5 seconds; these scenes run 6 and 8 seconds).
+    expect(r.reply.content).toBe("Here's the storyboard (4 scenes, 30 seconds, 9:16). The hook is up front. Change any scene, then press Make the video. It uses 12 work hours when it's done.");
     const cards = JSON.parse(r.reply.cards!);
     expect(cards[0]).toMatchObject({ type: "made_video", title: "Evening hours are here" });
     const v = vd.get(orgId, cards[0].id)!;
     expect(v).toMatchObject({ kind: "broll", size: "vertical", seconds: 30, status: "draft", source: "idea", voiceId: "openai:coral", voiceName: "Coral" });
     expect(vd.scriptOf(v).shots.map((s) => s.src)).toEqual(["ai", "ai", "text", "logo"]);
     const view = (await caller(owner).videos.get({ organizationId: orgId, id: v.id }))!;
-    expect(view).toMatchObject({ kindLabel: "B-roll story", length: "0:30", statusLabel: "Storyboard", hours: "8 work hours", newClips: 2, ratios: ["9:16"], voiceName: "Coral" });
+    expect(view).toMatchObject({ kindLabel: "B-roll story", length: "0:30", statusLabel: "Storyboard", hours: "12 work hours", newClips: 2, ratios: ["9:16"], voiceName: "Coral" });
     expect(view.shots.map((s) => [s.srcLabel, s.hook])).toEqual([["AI shot", true], ["AI shot", false], ["Kinetic text", false], ["Logo end", false]]);
     // Defaults for the look: bold captions in the middle with gold, music low; no logo uploaded, so the logo is off.
     expect(view.lookText).toEqual({ captions: "On, Bold pop, middle, gold highlight", logo: "Off", music: "Calm pulse, volume 20" });
@@ -178,7 +178,7 @@ describe("Elena's video agent", () => {
     const lib = await libraryClip(orgId, "Laptop closing", "laptop desk evening");
     const changed = await caller(owner).videos.changeShot({ organizationId: orgId, id: v.id, n: 1, src: "library", clipId: lib.id });
     expect(changed.shots[1]).toMatchObject({ src: "library", srcLabel: "Your b-roll", clipId: lib.id, made: true });
-    expect(changed.hours).toBe("6 work hours");
+    expect(changed.hours).toBe("8 work hours");
     // Stock isn't set up here, so it says so.
     await expect(caller(owner).videos.changeShot({ organizationId: orgId, id: v.id, n: 0, src: "stock" })).rejects.toThrow(/Stock footage isn't set up/);
   });
@@ -202,7 +202,7 @@ describe("Elena's video agent", () => {
     const planned = await vd.assignSources(orgId, "broll", "vertical", [{ at: 0, see: "A warm lamp in the empty office", say: "Hi." }]);
     expect(planned[0]).toMatchObject({ src: "library", clipId: lamp.id });
     expect(vd.view(v).sizes).toEqual(["vertical", "square"]);
-    expect(vd.view(v).hours).toBe("6 work hours");
+    expect(vd.view(v).hours).toBe("8 work hours");
   });
 
   it("makes every size from one job: voice-over, new AI clips saved to the library, captions, logo and music", async () => {
@@ -409,6 +409,128 @@ describe("Elena's video agent", () => {
     const p = await drama.probe(file);
     expect(p.audio).toBe(true);
     expect(Math.abs(p.duration - total)).toBeLessThan(0.25);
+  });
+});
+
+describe("Story videos in a drawn style", () => {
+  const STORY = {
+    title: "His evenings back",
+    caption: "He used to finish notes at 11 PM.",
+    cast: [{ name: "Marcus", look: "a therapist in his 30s, short dark hair, blue scrubs" }],
+    shots: [
+      { at: 0, see: "Marcus at his desk late at night, rubbing his eyes", say: "It was 11 PM, and Marcus had four notes left.", photo: "", src: "art", clip: 0, query: "", who: ["Marcus"] },
+      { at: 6, see: "An empty clinic hallway at sunrise", say: "He loved his clients.", photo: "", src: "art", clip: 0, query: "", who: [] },
+      { at: 12, see: "Notes done", say: "Now his notes are done before his last client leaves.", photo: "", src: "text", clip: 0, query: "", who: [] },
+      { at: 20, see: "Try it free", say: "Try it free this week.", photo: "", src: "logo", clip: 0, query: "", who: [] },
+    ],
+  };
+
+  it("writes the story with its cast, draws each person once, then every scene with them, and makes it with moving pictures for no extra hours", async () => {
+    const { orgId, owner } = await onPlan("vid-drawn");
+    script = STORY;
+    const v = await vd.writeVideo(orgId, { instructions: "A therapist gets his evenings back", style: "claymation", motion: "pictures" });
+    expect(v).toMatchObject({ style: "claymation", motion: "pictures", drawing: "0/2" });
+    expect(vd.scriptOf(v).shots.map((s) => s.src)).toEqual(["art", "art", "text", "logo"]);
+    await vd.drawJobFor(v.id);
+    const drawn = vd.get(orgId, v.id)!;
+    expect(drawn.drawing).toBeNull();
+    expect(vd.scriptOf(drawn).shots.slice(0, 2).every((s) => s.still)).toBe(true);
+    // Marcus's portrait first, in the style; then his scene drawn from that portrait so he looks the same.
+    const plain = posted("fal-ai/nano-banana-pro");
+    const edits = posted("fal-ai/nano-banana-pro/edit");
+    expect(plain[0].prompt).toMatch(/^Claymation stop-motion look.*character reference portrait of Marcus: a therapist in his 30s/);
+    expect(edits).toHaveLength(1);
+    expect(edits[0].image_urls[0]).toMatch(/^data:image\/jpeg;base64,/);
+    expect(edits[0].prompt).toMatch(/Marcus at his desk late at night.*look exactly like their reference portraits: Marcus/);
+    // The hallway has nobody in it, so it needs no reference.
+    expect(plain[1].prompt).toMatch(/An empty clinic hallway at sunrise/);
+    expect(vd.castOf(drawn)[0].portrait).toMatch(/^\/files\/org-\d+\/videos\/cast-/);
+    const view = (await caller(owner).videos.get({ organizationId: orgId, id: v.id }))!;
+    expect(view).toMatchObject({ style: "claymation", styleLabel: "Claymation", motion: "pictures", drawing: null, hours: "4 work hours" });
+    expect(view.shots[0]).toMatchObject({ srcLabel: "Claymation", made: true, who: ["Marcus"] });
+    expect(view.shots[0].thumb).toMatch(/scene-/);
+    expect(view.cast).toEqual([expect.objectContaining({ name: "Marcus", portrait: expect.stringMatching(/cast-/) })]);
+
+    // Made with moving pictures: no animation, only the length's work hours.
+    calls = [];
+    await vd.makeVideo(orgId, v.id);
+    await vd.jobFor(v.id);
+    expect(vd.get(orgId, v.id)!.status).toBe("ready");
+    expect(posted("fal-ai/kling-video/v3/pro/image-to-video")).toHaveLength(0);
+    expect(rendered[0].clips.map((c) => !!c.video)).toEqual([false, false, false, false]);
+    expect((await hours.balance(orgId)).usedMinutes).toBe(240);
+
+    // Change look: Marcus and his scene are drawn again; the empty hallway isn't.
+    calls = [];
+    await caller(owner).videos.changeLook({ organizationId: orgId, id: v.id, index: 0, look: "a therapist in his 30s with a beard" });
+    await vd.drawJobFor(v.id);
+    expect(posted("fal-ai/nano-banana-pro")).toHaveLength(1);
+    expect(posted("fal-ai/nano-banana-pro/edit")).toHaveLength(1);
+    expect(vd.castOf(vd.get(orgId, v.id)!)[0].look).toBe("a therapist in his 30s with a beard");
+
+    // Change style: everything is drawn again in the new look.
+    calls = [];
+    const w = await caller(owner).videos.changeStyle({ organizationId: orgId, id: v.id, style: "watercolor" });
+    expect(w.styleLabel).toBe("Watercolor");
+    await vd.drawJobFor(v.id);
+    expect(posted("fal-ai/nano-banana-pro").concat(posted("fal-ai/nano-banana-pro/edit")).every((b) => /^Loose watercolor illustration/.test(b.prompt))).toBe(true);
+    expect(posted("fal-ai/nano-banana-pro").concat(posted("fal-ai/nano-banana-pro/edit"))).toHaveLength(3);
+  });
+
+  it("animates each drawn scene with Animated clips, for 2 work hours each 5 seconds", async () => {
+    const { orgId } = await onPlan("vid-anim");
+    script = STORY;
+    const v = await vd.writeVideo(orgId, { instructions: "A therapist gets his evenings back", style: "animation", motion: "clips" });
+    await vd.drawJobFor(v.id);
+    expect(vd.view(vd.get(orgId, v.id)!).newClips).toBe(2);
+    await vd.makeVideo(orgId, v.id);
+    await vd.jobFor(v.id);
+    const done = vd.get(orgId, v.id)!;
+    expect(done.status).toBe("ready");
+    const moved = posted("fal-ai/kling-video/v3/pro/image-to-video");
+    expect(moved).toHaveLength(2);
+    expect(moved[0].start_image_url).toMatch(/^data:image\/jpeg;base64,/);
+    expect(rendered[0].clips.map((c) => !!c.video)).toEqual([true, true, false, false]);
+    expect((await hours.balance(orgId)).usedMinutes).toBe(240 + 2 * 120);
+    // Drawn clips stay with the video, not in the b-roll library.
+    expect(br.listClips(orgId)).toHaveLength(0);
+  });
+
+  it("goes up to 10 minutes with moving pictures; real footage stays at 2 minutes; Auto picks a style", async () => {
+    const { orgId } = await makeWorkspace("vid-long");
+    script = STORY;
+    const long = await vd.writeVideo(orgId, { instructions: "Our story", style: "watercolor", motion: "clips", seconds: 600 });
+    expect(long).toMatchObject({ seconds: 600, motion: "pictures" });
+    const { generateJson } = await import("./_core/llm");
+    const asked = (generateJson as any).mock.calls.filter((c: any) => c[0].schemaName === "video_script").at(-1)[0];
+    expect(asked.system).toMatch(/A storyboard: 75 to 120 scenes/);
+    expect(asked.maxTokens).toBe(12000);
+    const real = await vd.writeVideo(orgId, { instructions: "Our story", seconds: 600 });
+    expect(real.seconds).toBe(120);
+    const auto = await vd.writeVideo(orgId, { instructions: "Our story", style: "auto" });
+    expect(auto.style).toBe("animation");
+    await expect(vd.writeVideo(orgId, { instructions: "Our story", style: "custom:999" })).rejects.toThrow(/isn't in this workspace/);
+    await Promise.all([long, auto].map((x) => vd.drawJobFor(x.id)));
+  });
+
+  it("Add style: a look from their own pictures, used as the reference for every scene", async () => {
+    const { orgId, owner } = await makeWorkspace("vid-custom");
+    const ref = await storagePut(`org-${orgId}/styles/look.png`, png, "image/png");
+    await expect(caller(owner).videos.addStyle({ organizationId: orgId, name: "Print look", refs: ["/files/org-999/styles/x.png"] })).rejects.toThrow(/Upload at least one picture/);
+    const st = await caller(owner).videos.addStyle({ organizationId: orgId, name: "Print look", refs: [ref.url] });
+    expect(st).toMatchObject({ label: "Print look", image: ref.url });
+    const picker = await caller(owner).videos.styles({ organizationId: orgId });
+    expect(picker.custom.map((c) => c.label)).toEqual(["Print look"]);
+    expect(picker.presets).toHaveLength(17);
+    const other = await makeWorkspace("vid-custom-2");
+    expect((await caller(other.owner).videos.styles({ organizationId: other.orgId })).custom).toEqual([]);
+    script = { ...STORY, cast: [], shots: STORY.shots.map((s) => ({ ...s, who: [] })) };
+    const v = await vd.writeVideo(orgId, { instructions: "Our story", style: st.key });
+    await vd.drawJobFor(v.id);
+    const edits = posted("fal-ai/nano-banana-pro/edit");
+    expect(edits).toHaveLength(2);
+    expect(edits.every((b) => b.image_urls.length === 1 && /same art style/.test(b.prompt))).toBe(true);
+    expect(vd.view(vd.get(orgId, v.id)!).styleLabel).toBe("Print look");
   });
 });
 

@@ -17,14 +17,28 @@ export const PICTURES = {
   story: "A vertical phone video frame: a smiling woman hugging her golden retriever in a sunny park at golden hour, a candid personal moment.",
   audio: "A vertical phone video frame: a man wearing headphones speaking into a podcast microphone in a modern studio with purple and blue light, side angle.",
 } as const;
-export type PictureKey = keyof typeof PICTURES;
-export const PICTURE_KEYS = Object.keys(PICTURES) as PictureKey[];
+import { PRESETS, PRESET_KEYS } from "./styles";
+
+type FormatKey = keyof typeof PICTURES;
+/** A format card photo, or a style's preview in the picker ("style-claymation"). */
+export type PictureKey = FormatKey | `style-${keyof typeof PRESETS}`;
+export const PICTURE_KEYS: PictureKey[] = [...(Object.keys(PICTURES) as FormatKey[]), ...PRESET_KEYS.map((k) => `style-${k}` as const)];
 
 const STYLE = "Realistic, sharp, modern social media video look, shallow depth of field, natural color. No text, letters, words, captions, logos or watermarks anywhere in the picture.";
+const NO_TEXT = "No text, letters, words, captions, logos or watermarks anywhere in the picture.";
+
+/** What to draw, its shape and its size on disk. */
+function specOf(key: PictureKey) {
+  if (key.startsWith("style-")) {
+    const p = PRESETS[key.slice(6) as keyof typeof PRESETS];
+    return { prompt: `${p.prompt}. ${p.preview}. ${NO_TEXT}`, ratio: "1:1", w: 360, h: 360, suffix: "1x1" };
+  }
+  return { prompt: `${PICTURES[key as FormatKey]} ${STYLE}`, ratio: "9:16", w: 360, h: 640, suffix: "9x16" };
+}
 
 export const pictureDir = () => path.join(uploadsRoot(), "..", "ld-pictures");
-/** Phone-shaped (9:16), like a frame of the finished video. */
-export const pictureFile = (key: PictureKey) => path.join(pictureDir(), `${key}-9x16.webp`);
+/** Format cards are phone-shaped (9:16), like a frame of the finished video; style previews are square. */
+export const pictureFile = (key: PictureKey) => path.join(pictureDir(), `${key}-${specOf(key).suffix}.webp`);
 
 const making = new Map<PictureKey, Promise<string | null>>();
 
@@ -39,14 +53,15 @@ export function makePicture(key: PictureKey): Promise<string | null> {
       (async () => {
         try {
           const drama = await import("./drama");
-          const r = await drama.falRun("fal-ai/nano-banana-pro", { prompt: `${PICTURES[key]} ${STYLE}`, aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5);
+          const spec = specOf(key);
+          const r = await drama.falRun("fal-ai/nano-banana-pro", { prompt: spec.prompt, aspect_ratio: spec.ratio, num_images: 1, output_format: "png" }, 5);
           const url = r?.images?.[0]?.url as string | undefined;
           if (!url) throw new Error("no picture came back");
           const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
           if (!res.ok) throw new Error(`download failed (${res.status})`);
           const sharp = (await import("sharp")).default;
-          // The card shows it at about 120 by 213; this is three times that.
-          const out = await sharp(Buffer.from(await res.arrayBuffer())).resize(360, 640, { fit: "cover" }).webp({ quality: 86 }).toBuffer();
+          // Shown at about a third of this size, so it stays sharp on any screen.
+          const out = await sharp(Buffer.from(await res.arrayBuffer())).resize(spec.w, spec.h, { fit: "cover" }).webp({ quality: 86 }).toBuffer();
           fs.mkdirSync(pictureDir(), { recursive: true });
           fs.writeFileSync(file, out);
           return file;
@@ -62,7 +77,7 @@ export function makePicture(key: PictureKey): Promise<string | null> {
   return making.get(key)!;
 }
 
-/** At startup: any format photo not made yet is made in the background, one at a time. */
+/** At startup: any format photo or style preview not made yet is made in the background, one at a time. */
 export async function warmPictures() {
   if (!ENV.falKey || process.env.NODE_ENV === "test") return;
   for (const key of PICTURE_KEYS) await makePicture(key);

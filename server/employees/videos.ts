@@ -14,6 +14,7 @@ import { videos, type AIEmployee, type Video } from "../../drizzle/schema";
 import { withUsage } from "../usage";
 import * as avatar from "./avatar";
 import * as broll from "./broll";
+import * as styles from "./styles";
 import { systemPromptFor } from "./tasks";
 
 /**
@@ -40,7 +41,7 @@ export type Format = Kind | "talking";
 export type Size = "vertical" | "square" | "wide";
 export type Source = "idea" | "script" | "link" | "audio";
 /** Where a scene's picture comes from. */
-export type Src = "library" | "stock" | "ai" | "text" | "logo" | "photo";
+export type Src = "library" | "stock" | "ai" | "text" | "logo" | "photo" | "art";
 export type StockRef = { url: string; page: string; thumb: string; credit: string };
 export type VShot = {
   at: number;
@@ -53,8 +54,12 @@ export type VShot = {
   stock?: StockRef | null;
   /** Search words for stock footage. */
   query?: string;
-  /** The footage as kept (a library clip, the kept stock clip, a Brain photo). Empty means it still has to be made. */
+  /** The footage as kept (a library clip, the kept stock clip, a Brain photo, a drawn picture or its animated clip). Empty means it still has to be made. */
   file?: string | null;
+  /** Drawn styles: the people in this scene, by name (from the cast). */
+  who?: string[];
+  /** Drawn styles: the picture drawn for this scene. */
+  still?: string | null;
 };
 export type Script = { shots: VShot[]; caption: string; segment?: { from: number; to: number } | null };
 export type Word = { text: string; start: number; end: number };
@@ -77,7 +82,7 @@ export const SIZES: Record<Size, { w: number; h: number; ratio: string; label: s
   square: { w: 1080, h: 1080, ratio: "1:1", label: "square" },
   wide: { w: 1920, h: 1080, ratio: "16:9", label: "wide" },
 };
-export const SRC_LABEL: Record<Src, string> = { library: "Your b-roll", stock: "Stock clip", ai: "AI shot", text: "Kinetic text", logo: "Logo end", photo: "Your photo" };
+export const SRC_LABEL: Record<Src, string> = { library: "Your b-roll", stock: "Stock clip", ai: "AI shot", text: "Kinetic text", logo: "Logo end", photo: "Your photo", art: "Drawn scene" };
 export const CAPTION_LABEL: Record<CaptionStyle, string> = { pop: "Bold pop", clean: "Clean", boxed: "Boxed" };
 export const POSITION_LABEL: Record<CaptionPosition, string> = { top: "top", middle: "middle", bottom: "bottom" };
 export const HIGHLIGHT_LABEL: Record<Highlight, string> = { gold: "gold highlight", brand: "brand color highlight", none: "no highlight" };
@@ -221,12 +226,14 @@ const SHOT_PROPS = {
   src: { type: "string", enum: SRC_ENUM, description: "library: a clip from their b-roll library fits (give its id in clip). stock or ai: real footage of what we see. text: motion text. logo: the closing call to action on their logo. photo: one of their photos." },
   clip: { type: "integer", description: "The b-roll library clip id when src is library, else 0." },
   query: { type: "string", description: "Two to five words to search stock video for this scene, like 'phone ringing front desk'." },
+  who: { type: "array", items: { type: "string" }, description: "Drawn styles: the names (from the cast) of the people in this scene. [] when nobody is in it, and always [] for real footage." },
 };
+const CAST_SCHEMA = { type: "array", description: "Drawn styles only: each person who appears in the story, with a look described so an artist draws them the same every time (age, hair, skin, clothes). [] for real footage. Never a real client.", items: { type: "object", additionalProperties: false, required: ["name", "look"], properties: { name: { type: "string" }, look: { type: "string" } } } };
 
 const SCRIPT_SCHEMA: JsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "shots", "caption"],
+  required: ["title", "shots", "caption", "cast"],
   properties: {
     title: { type: "string", description: "A short title, at most 8 words." },
     shots: {
@@ -234,7 +241,7 @@ const SCRIPT_SCHEMA: JsonSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["at", "see", "say", "photo", "src", "clip", "query"],
+        required: ["at", "see", "say", "photo", "src", "clip", "query", "who"],
         properties: {
           at: { type: "integer", description: "When the scene starts, in seconds from the start." },
           see: SHOT_PROPS.see,
@@ -243,9 +250,11 @@ const SCRIPT_SCHEMA: JsonSchema = {
           src: SHOT_PROPS.src,
           clip: SHOT_PROPS.clip,
           query: SHOT_PROPS.query,
+          who: SHOT_PROPS.who,
         },
       },
     },
+    cast: CAST_SCHEMA,
     caption: { type: "string", description: "The caption to post with the video." },
   },
 };
@@ -264,6 +273,10 @@ const RULES = `- The first scene is the hook: it starts at 0 and stops the scrol
 - Use a library clip (src "library" with its id) whenever one fits the scene; otherwise "stock" for ordinary real-world footage, or "ai" for something specific stock won't have.
 - End with the call to action as src "logo" when they gave one.`;
 
+/** How many scenes a video this long can have: about one every 5 seconds, at least 16. */
+export const maxScenes = (seconds: number) => Math.min(120, Math.max(16, Math.ceil(seconds / 5)));
+const ALL_SRC: Src[] = [...SRC_ENUM, "art"];
+
 function cleanShots(raw: unknown, seconds: number): VShot[] {
   const list = (Array.isArray(raw) ? raw : []) as Partial<VShot & { clip: number }>[];
   const shots = list
@@ -272,14 +285,16 @@ function cleanShots(raw: unknown, seconds: number): VShot[] {
       see: String(s.see ?? "").trim().slice(0, 300),
       say: String(s.say ?? "").trim().slice(0, 400),
       photo: String(s.photo ?? "").trim().slice(0, 200),
-      src: SRC_ENUM.includes(s.src as Src) ? (s.src as Src) : undefined,
+      src: ALL_SRC.includes(s.src as Src) ? (s.src as Src) : undefined,
       clipId: Number(s.clipId ?? s.clip) > 0 ? Number(s.clipId ?? s.clip) : null,
       query: String(s.query ?? "").trim().slice(0, 100),
       stock: s.stock ?? null,
       file: s.file ?? null,
+      who: Array.isArray(s.who) ? s.who.map((w) => String(w).trim().slice(0, 60)).filter(Boolean).slice(0, 4) : [],
+      still: s.still ?? null,
     }))
     .filter((s) => s.see || s.say)
-    .slice(0, 16)
+    .slice(0, maxScenes(seconds))
     .sort((a, b) => a.at - b.at);
   if (shots.length) shots[0].at = 0;
   return shots.map((s) => {
@@ -290,9 +305,25 @@ function cleanShots(raw: unknown, seconds: number): VShot[] {
     if (s.query) out.query = s.query;
     if (s.stock) out.stock = s.stock;
     if (s.file) out.file = s.file;
+    if (s.who.length) out.who = s.who;
+    if (s.still) out.still = s.still;
     return out;
   });
 }
+
+/** The cast as Elena wrote it: names and looks, a few people at most. */
+function cleanCast(raw: unknown): styles.CastMember[] {
+  const list = (Array.isArray(raw) ? raw : []) as Partial<styles.CastMember>[];
+  const seen = new Set<string>();
+  return list
+    .map((c) => ({ name: String(c.name ?? "").trim().slice(0, 60), look: String(c.look ?? "").trim().slice(0, 300) }))
+    .filter((c) => c.name && c.look && !seen.has(c.name.toLowerCase()) && seen.add(c.name.toLowerCase()))
+    .slice(0, 4);
+}
+
+/** How a drawn style changes what Elena writes. */
+const drawnHow = (label: string) => `This video is drawn in a style (${label}), not filmed: every scene is one picture of one moment, with the people in it by name in "who". Describe the cast once (age, hair, skin, clothes) so they're drawn the same in every scene. src is "art" for every scene except motion text ("text") and the closing logo card ("logo"). Never a real client.`;
+const sceneCount = (seconds: number) => (seconds <= 30 ? "3 to 8" : seconds <= 90 ? "6 to 16" : `${Math.max(12, Math.round(seconds / 8))} to ${maxScenes(seconds)}`);
 
 /** What Elena knows to pick from: their library and their photos. */
 async function materials(orgId: number, kind: Kind) {
@@ -308,7 +339,15 @@ async function materials(orgId: number, kind: Kind) {
  * Where each scene's footage comes from, in order: the library clip Elena picked (or the closest
  * match), their photo, licensed stock, then a new AI clip. Motion text and the logo card stay as they are.
  */
-export async function assignSources(orgId: number, kind: Kind, size: Size, shots: VShot[], keep = false): Promise<VShot[]> {
+export async function assignSources(orgId: number, kind: Kind, size: Size, shots: VShot[], keep = false, drawn = false): Promise<VShot[]> {
+  // A drawn style: every scene is drawn (motion text and the logo card stay), so nothing clashes with the look.
+  if (drawn) {
+    return shots.map((s) => {
+      if (s.src === "text" || s.src === "logo") return { ...s, file: null };
+      if (keep && s.src === "art") return s;
+      return { at: s.at, see: s.see, say: s.say, src: "art" as const, ...(s.who?.length ? { who: s.who } : {}) };
+    });
+  }
   const clips = broll.readyClips(orgId);
   const photos = kind === "story" || kind === "slideshow" ? await avatar.photos(orgId) : [];
   // Clips Elena named are kept for their own scenes; the rest of the library is matched by words.
@@ -362,17 +401,17 @@ export async function assignSources(orgId: number, kind: Kind, size: Size, shots
   return out;
 }
 
-type Written = { title: string; shots: VShot[]; caption: string };
+type Written = { title: string; shots: VShot[]; caption: string; cast?: styles.CastMember[] };
 
-async function writeIdea(orgId: number, input: { instructions: string; kind: Kind; seconds: number; size: Size; current?: Written; change?: string }) {
+async function writeIdea(orgId: number, input: { instructions: string; kind: Kind; seconds: number; size: Size; current?: Written; change?: string; drawn?: string | null }) {
   const emp = await elena(orgId);
   const words = Math.round(input.seconds * 2.4);
   const extra = await materials(orgId, input.kind);
   const { system } = await systemPromptFor(
     emp,
     `Write a ${input.seconds}-second ${SIZES[input.size].label} video: ${KIND_LABEL[input.kind]}.
-${HOW[input.kind]}
-- A storyboard: 3 to 8 scenes, each with when it starts (seconds), what we see, the voice-over words over it, and where the footage comes from.
+${HOW[input.kind]}${input.drawn ? `\n${drawnHow(input.drawn)}` : ""}
+- A storyboard: ${sceneCount(input.seconds)} scenes, each with when it starts (seconds), what we see, the voice-over words over it, and where the footage comes from.
 ${RULES}
 - The voice-over is read aloud: about ${words} words in all, the way people talk, American English, no em dashes, no stage directions.
 - A caption to post with it: one to three short lines.
@@ -381,17 +420,17 @@ ${RULES}
   const prompt = input.current
     ? `The video so far:\nTitle: ${input.current.title}\n${input.current.shots.map((s) => `${fmtTime(s.at)} We see: ${s.see} | Said: ${s.say}`).join("\n")}\nCaption: ${input.current.caption}\n\nWhat they asked for at first: ${input.instructions}\nChange: ${input.change || "write it again"}\nRewrite it with that change and keep the rest.`
     : `What they asked for: ${input.instructions}`;
-  const out = await generateJson<{ title: string; shots: VShot[]; caption: string }>({ system, prompt, schemaName: "video_script", schema: SCRIPT_SCHEMA, maxTokens: 2500 });
+  const out = await generateJson<{ title: string; shots: VShot[]; caption: string; cast?: styles.CastMember[] }>({ system, prompt, schemaName: "video_script", schema: SCRIPT_SCHEMA, maxTokens: input.seconds > 90 ? 12000 : 3000 });
   const shots = cleanShots(out?.shots, input.seconds);
   if (!shots.length) throw new Error("I couldn't write the storyboard. Tell me a little more about the video.");
-  return { title: String(out.title ?? "").trim().slice(0, 120) || "Video", shots, caption: String(out.caption ?? "").trim().slice(0, 600) };
+  return { title: String(out.title ?? "").trim().slice(0, 120) || "Video", shots, caption: String(out.caption ?? "").trim().slice(0, 600), cast: cleanCast(out?.cast) };
 }
 
 /** Their script, kept word for word: split into scenes of a sentence or two each. */
 export function splitScript(text: string, seconds: number) {
   const sentences = text.replace(/\s+/g, " ").trim().match(/[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g)?.map((s) => s.trim()).filter(Boolean) ?? [];
   const total = sentences.reduce((n, s) => n + s.split(" ").length, 0) || 1;
-  const target = Math.max(8, Math.round(total / Math.min(8, Math.max(3, Math.round(seconds / 5)))));
+  const target = Math.max(8, Math.round(total / Math.min(maxScenes(seconds) / 2, Math.max(3, Math.round(seconds / 5)))));
   const scenes: string[] = [];
   let cur = "";
   for (const s of sentences) {
@@ -401,51 +440,52 @@ export function splitScript(text: string, seconds: number) {
     } else cur = cur ? `${cur} ${s}` : s;
   }
   if (cur) scenes.push(cur);
-  return scenes.slice(0, 16);
+  return scenes.slice(0, maxScenes(seconds));
 }
 
 const SCENES_SCHEMA: JsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "scenes", "caption"],
+  required: ["title", "scenes", "caption", "cast"],
   properties: {
     title: { type: "string" },
-    scenes: { type: "array", items: { type: "object", additionalProperties: false, required: ["see", "photo", "src", "clip", "query"], properties: SHOT_PROPS } },
+    scenes: { type: "array", items: { type: "object", additionalProperties: false, required: ["see", "photo", "src", "clip", "query", "who"], properties: SHOT_PROPS } },
     caption: { type: "string" },
+    cast: CAST_SCHEMA,
   },
 };
 
 /** The pictures for lines that are already written (their script, or a recording): one scene per line. */
-async function writeScenes(orgId: number, input: { lines: string[]; kind: Kind; size: Size; seconds: number; about: string }) {
+async function writeScenes(orgId: number, input: { lines: string[]; kind: Kind; size: Size; seconds: number; about: string; drawn?: string | null }) {
   const emp = await elena(orgId);
   const extra = await materials(orgId, input.kind);
   const { system } = await systemPromptFor(
     emp,
     `Plan the pictures for a ${input.seconds}-second ${SIZES[input.size].label} video: ${KIND_LABEL[input.kind]}. The words are already written and stay exactly as they are.
-${HOW[input.kind]}
+${HOW[input.kind]}${input.drawn ? `\n${drawnHow(input.drawn)}` : ""}
 - One scene for each line, in order: what we see and where the footage comes from.
 ${RULES}
 - A title, and a caption to post with it: one to three short lines, American English, no em dashes.
 - Never use a client's name or health information.${extra ? `\n${extra}` : ""}`
   );
-  const out = await generateJson<{ title: string; scenes: { see: string; photo: string; src: Src; clip: number; query: string }[]; caption: string }>({
+  const out = await generateJson<{ title: string; scenes: { see: string; photo: string; src: Src; clip: number; query: string; who?: string[] }[]; caption: string; cast?: styles.CastMember[] }>({
     system,
     prompt: `${input.about ? `About: ${input.about}\n` : ""}The lines:\n${input.lines.map((l, i) => `${i + 1}. ${l}`).join("\n")}`,
     schemaName: "video_scenes",
     schema: SCENES_SCHEMA,
-    maxTokens: 2500,
+    maxTokens: input.lines.length > 16 ? 12000 : 3000,
   });
   const scenes = Array.isArray(out?.scenes) ? out.scenes : [];
   const total = input.lines.reduce((n, l) => n + l.split(/\s+/).length, 0) || 1;
   let words = 0;
   const shots: VShot[] = input.lines.map((say, i) => {
-    const s = scenes[i] ?? { see: say, photo: "", src: "stock" as Src, clip: 0, query: "" };
+    const s = scenes[i] ?? { see: say, photo: "", src: "stock" as Src, clip: 0, query: "", who: [] };
     const at = Math.round((words / total) * input.seconds);
     words += say.split(/\s+/).length;
-    return cleanShots([{ at, see: s.see || say, say, photo: s.photo, src: s.src, clip: s.clip, query: s.query }], input.seconds)[0];
+    return cleanShots([{ at, see: s.see || say, say, photo: s.photo, src: s.src, clip: s.clip, query: s.query, who: s.who }], input.seconds)[0];
   });
   shots[0].at = 0;
-  return { title: String(out?.title ?? "").trim().slice(0, 120) || "Video", shots, caption: String(out?.caption ?? "").trim().slice(0, 600) };
+  return { title: String(out?.title ?? "").trim().slice(0, 120) || "Video", shots, caption: String(out?.caption ?? "").trim().slice(0, 600), cast: cleanCast(out?.cast) };
 }
 
 /** The best stretch of a recording for a video this long: Elena picks where it starts and ends. */
@@ -506,7 +546,22 @@ export type WriteInput = {
   voiceId?: string | null;
   look?: Partial<{ logo: Partial<Look["logo"]>; music: Partial<Look["music"]>; captions: Partial<Look["captions"]> }>;
   planId?: number | null;
+  /** "real", "auto", a preset style key or "custom:<id>". */
+  style?: string | null;
+  motion?: "pictures" | "clips";
 };
+
+/** Auto: Elena picks the drawn style that fits the story. */
+async function pickStyle(orgId: number, about: string) {
+  const out = await generateJson<{ style: string }>({
+    system: "You pick the visual style for a short story video for a small business. Pick the one that fits the subject and audience best.",
+    prompt: `The video: ${about.slice(0, 1500)}\nStyles: ${styles.PRESET_KEYS.map((k) => `${k} (${styles.PRESETS[k].label})`).join(", ")}`,
+    schemaName: "video_style",
+    schema: { type: "object", additionalProperties: false, required: ["style"], properties: { style: { type: "string", enum: styles.PRESET_KEYS } } },
+    maxTokens: 100,
+  }).catch(() => null);
+  return out?.style && styles.isPreset(out.style) ? out.style : "animation";
+}
 
 /** Elena writes the storyboard and saves it as a draft. Nothing is made yet. */
 export async function writeVideo(orgId: number, input: WriteInput) {
@@ -514,9 +569,16 @@ export async function writeVideo(orgId: number, input: WriteInput) {
   const kind = input.kind && KINDS.includes(input.kind) ? input.kind : "broll";
   const sizes = (input.sizes?.length ? input.sizes : [input.size ?? "vertical"]).filter((s): s is Size => s in SIZES);
   const size = sizes[0] ?? "vertical";
-  const seconds = Math.max(10, Math.min(kind === "audio" ? 180 : 120, Math.round(input.seconds || 30)));
   const source: Source = kind === "audio" ? "audio" : input.source ?? "idea";
   let instructions = input.instructions.trim().slice(0, 6000);
+  // Auto picks a drawn style for the story; a custom style must be this workspace's.
+  let style = input.style && input.style !== "real" ? input.style : "real";
+  if (style === "auto") style = await pickStyle(orgId, instructions || input.sourceUrl || "");
+  if (style !== "real" && !styles.isPreset(style) && styles.resolve(orgId, style).key === "real") throw new TRPCError({ code: "BAD_REQUEST", message: "That style isn't in this workspace. Pick another." });
+  const drawn = styles.isDrawn(style) ? styles.resolve(orgId, style) : null;
+  // Over 90 seconds is drawn with moving pictures (or your recording over pictures).
+  const seconds = Math.max(10, Math.min(drawn ? 600 : 120, Math.round(input.seconds || 30)));
+  const motion = drawn && seconds <= 90 && input.motion === "clips" ? "clips" : "pictures";
   let words: Word[] | null = null;
   let segment: Script["segment"] = null;
   let s: Written;
@@ -529,19 +591,19 @@ export async function writeVideo(orgId: number, input: WriteInput) {
     words = pick.words;
     segment = { from: pick.from, to: pick.to };
     instructions = instructions || pick.lines.join(" ").slice(0, 2000);
-    s = await writeScenes(orgId, { lines: groupLines(pick.lines, seconds), kind, size, seconds: Math.round(pick.to - pick.from), about: input.instructions });
+    s = await writeScenes(orgId, { lines: groupLines(pick.lines, seconds), kind, size, seconds: Math.round(pick.to - pick.from), about: input.instructions, drawn: drawn?.label });
   } else if (source === "script") {
     if (!instructions) throw new TRPCError({ code: "BAD_REQUEST", message: "Paste your script." });
-    s = await writeScenes(orgId, { lines: splitScript(instructions, seconds), kind, size, seconds, about: "" });
+    s = await writeScenes(orgId, { lines: splitScript(instructions, seconds), kind, size, seconds, about: "", drawn: drawn?.label });
   } else {
     if (source === "link") {
       const page = await linkText(input.sourceUrl || instructions);
       instructions = `${instructions && instructions !== input.sourceUrl ? `${instructions}\n\n` : ""}Make it from this article (${input.sourceUrl || "link"}):\n${page}`;
     }
     if (!instructions) throw new TRPCError({ code: "BAD_REQUEST", message: "Tell me what the video is about." });
-    s = await writeIdea(orgId, { instructions, kind, seconds, size });
+    s = await writeIdea(orgId, { instructions, kind, seconds, size, drawn: drawn?.label });
   }
-  const shots = await assignSources(orgId, kind, size, s.shots);
+  const shots = await assignSources(orgId, kind, size, s.shots, false, !!drawn);
   const voice = source === "audio" ? { id: null as string | null, name: "Your recording" } : await voiceFor(orgId, input.voiceId);
   const b = await brand(orgId);
   const look: Look = {
@@ -549,7 +611,7 @@ export async function writeVideo(orgId: number, input: WriteInput) {
     logo: { ...DEFAULT_LOOK.logo, on: !!b.logo, ...(input.look?.logo ?? {}) },
     music: { ...DEFAULT_LOOK.music, ...(input.look?.music ?? {}) },
   };
-  return db
+  const row = db
     .getDb()
     .insert(videos)
     .values({
@@ -569,17 +631,23 @@ export async function writeVideo(orgId: number, input: WriteInput) {
       look: JSON.stringify(look),
       words: words ? JSON.stringify({ text: "", words }) : null,
       planId: input.planId ?? null,
+      style,
+      motion,
+      cast: JSON.stringify(drawn ? s.cast ?? [] : []),
+      drawing: drawn ? `0/${shots.filter((x) => x.src === "art").length}` : null,
     })
     .returning()
     .get();
+  if (drawn) startDrawing(orgId, row.id);
+  return row;
 }
 
 /** A recording's sentences grouped into scenes of about 4 to 7 seconds. */
 function groupLines(lines: string[], seconds: number) {
-  const per = Math.max(1, Math.round(lines.length / Math.min(8, Math.max(3, Math.round(seconds / 6)))));
+  const per = Math.max(1, Math.round(lines.length / Math.min(maxScenes(seconds), Math.max(3, Math.round(seconds / 6)))));
   const out: string[] = [];
   for (let i = 0; i < lines.length; i += per) out.push(lines.slice(i, i + per).join(" "));
-  return out.slice(0, 16);
+  return out.slice(0, maxScenes(seconds));
 }
 
 /** "Change the script": Elena rewrites it with the change asked for. */
@@ -587,9 +655,11 @@ export async function rewriteVideo(orgId: number, id: number, change: string) {
   const v = must(orgId, id);
   if (v.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes, then change the script." });
   if (v.source === "audio" || v.source === "script") throw new TRPCError({ code: "BAD_REQUEST", message: "The words are yours, so I keep them as they are. Change a line or a shot on the storyboard instead." });
-  const s = await writeIdea(orgId, { instructions: v.instructions, kind: v.kind, seconds: v.seconds, size: v.size, current: { title: v.title, ...scriptOf(v) }, change });
-  const shots = await assignSources(orgId, v.kind, v.size, s.shots);
-  return update(orgId, id, { title: s.title, script: JSON.stringify({ ...scriptOf(v), shots, caption: s.caption }), status: "draft", error: null });
+  const drawn = styles.isDrawn(v.style) ? styles.resolve(orgId, v.style) : null;
+  const s = await writeIdea(orgId, { instructions: v.instructions, kind: v.kind, seconds: v.seconds, size: v.size, current: { title: v.title, ...scriptOf(v) }, change, drawn: drawn?.label });
+  const shots = await assignSources(orgId, v.kind, v.size, s.shots, false, !!drawn);
+  const out = update(orgId, id, { title: s.title, script: JSON.stringify({ ...scriptOf(v), shots, caption: s.caption }), ...(drawn ? { cast: JSON.stringify(mergeCast(castOf(v), s.cast ?? [])) } : {}), status: "draft", error: null });
+  return drawn ? startDrawing(orgId, id) ?? out : out;
 }
 
 /** Edit script on the Videos tab: the scenes and caption as typed. A scene whose words or picture changed is planned again. */
@@ -605,8 +675,9 @@ export async function saveScript(orgId: number, id: number, input: { title?: str
     // Same picture: keep where it comes from and what was made for it.
     return o.see === s.see ? { ...o, at: s.at, say: s.say } : { ...s, src: o.src === "text" || o.src === "logo" ? o.src : undefined };
   });
-  const planned = await assignSources(orgId, v.kind, v.size, kept, true);
-  return update(orgId, id, { title: input.title?.trim().slice(0, 120) || v.title, script: JSON.stringify({ ...old, shots: planned, caption: input.caption ?? old.caption }), status: v.status === "ready" ? "ready" : "draft", error: null });
+  const planned = await assignSources(orgId, v.kind, v.size, kept, true, styles.isDrawn(v.style));
+  const out = update(orgId, id, { title: input.title?.trim().slice(0, 120) || v.title, script: JSON.stringify({ ...old, shots: planned, caption: input.caption ?? old.caption }), status: v.status === "ready" ? "ready" : "draft", error: null });
+  return styles.isDrawn(v.style) && v.status !== "ready" ? startDrawing(orgId, id) ?? out : out;
 }
 
 /** Rewrite line: one scene's words as typed. */
@@ -624,7 +695,7 @@ export function saveLine(orgId: number, id: number, n: number, say: string) {
  * Change shot: what we see in one scene and where it comes from. The footage is made when
  * the video is made (or remade for this scene only, on a finished video).
  */
-export async function changeShot(orgId: number, id: number, n: number, input: { src: Src; see?: string; clipId?: number | null }) {
+export async function changeShot(orgId: number, id: number, n: number, input: { src: Src; see?: string; clipId?: number | null }, opts: { draw?: boolean } = {}) {
   const v = must(orgId, id);
   notMaking(v);
   const s = scriptOf(v);
@@ -644,9 +715,132 @@ export async function changeShot(orgId: number, id: number, n: number, input: { 
     const [p] = await assignSources(orgId, "story", v.size, [{ ...next, src: "photo", photo: see }]);
     if (p.src !== "photo") throw new TRPCError({ code: "BAD_REQUEST", message: "I didn't find that photo in the Brain." });
     next = p;
+  } else if (input.src === "art") {
+    if (!styles.isDrawn(v.style)) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick a drawn style for this video first." });
+    // Drawn again from the new words; the same people stay in it unless the words name others.
+    const cast = castOf(v);
+    const named = cast.filter((c) => see.toLowerCase().includes(c.name.toLowerCase().split(" ")[0])).map((c) => c.name);
+    next = { ...next, who: named.length ? named : cur.who ?? [] };
   }
   s.shots[n] = next;
-  return update(orgId, id, { script: JSON.stringify(s), error: null });
+  const out = update(orgId, id, { script: JSON.stringify(s), error: null });
+  // On the storyboard the new picture is drawn right away; a redo draws it while the video is made.
+  return input.src === "art" && opts.draw !== false ? startDrawing(orgId, id) ?? out : out;
+}
+
+// ==========================================
+// Drawn styles
+// ==========================================
+
+export const castOf = (v: Pick<Video, "cast">) => parse<styles.CastMember[]>(v.cast, []).filter((c) => c && c.name);
+/** Rewrites keep the portraits already drawn for people who are still in the story. */
+function mergeCast(old: styles.CastMember[], next: styles.CastMember[]) {
+  return next.map((c) => {
+    const o = old.find((x) => x.name.toLowerCase() === c.name.toLowerCase() && x.look === c.look);
+    return o?.portrait ? { ...c, portrait: o.portrait } : c;
+  });
+}
+
+const drawJobs = new Map<number, Promise<void>>();
+/** The background job drawing a video's pictures, if one is running (tests wait on it). */
+export const drawJobFor = (id: number) => drawJobs.get(id) ?? null;
+
+/** The people in one scene, from the cast. */
+const peopleIn = (cast: styles.CastMember[], shot: VShot) => cast.filter((c) => (shot.who ?? []).some((w) => w.toLowerCase() === c.name.toLowerCase()));
+
+/** Draws what a drawn-style scene needs: the portraits of its people first (once), then the scene. Returns the picture. */
+async function drawScene(v: Video, shot: VShot, n: number) {
+  const style = styles.resolve(v.organizationId, v.style);
+  const cast = castOf(v);
+  const people = peopleIn(cast, shot);
+  let changed = false;
+  for (const c of people) {
+    if (c.portrait) continue;
+    c.portrait = await styles.draw(v.organizationId, { prompt: styles.portraitPrompt(style, c), ratio: "3:4", refs: style.refs, name: `cast-${v.id}` });
+    changed = true;
+  }
+  if (changed) update(v.organizationId, v.id, { cast: JSON.stringify(cast) });
+  const refs = [...people.map((c) => c.portrait!).filter(Boolean), ...style.refs].slice(0, 5);
+  const still = await styles.draw(v.organizationId, { prompt: styles.scenePrompt(style, shot.see || shot.say, people), ratio: SIZES[v.size].ratio, refs, name: `scene-${v.id}-${n + 1}` });
+  return { still, cast };
+}
+
+/**
+ * Draws every scene picture a drawn-style video is missing, in the background, three at a time,
+ * keeping each as it's done. The storyboard fills in as they come. Null when nothing needs drawing.
+ */
+export function startDrawing(orgId: number, id: number): Video | null {
+  const v = get(orgId, id);
+  if (!v || !styles.isDrawn(v.style)) return null;
+  if (drawJobs.has(id)) return v;
+  const todo = scriptOf(v).shots.map((s, i) => ({ s, i })).filter(({ s }) => s.src === "art" && !s.still);
+  const total = scriptOf(v).shots.filter((s) => s.src === "art").length;
+  if (!todo.length) return v.drawing ? update(orgId, id, { drawing: null }) : v;
+  if (!ENV.falKey) return update(orgId, id, { drawing: null, error: "Drawing scenes isn't set up on the server yet. LeadDash support can turn it on." });
+  let done = total - todo.length;
+  const started = update(orgId, id, { drawing: `${done}/${total}`, error: null });
+  const job = (async () => {
+    try {
+      // The first scene alone, so each person's portrait is drawn once before the rest use it.
+      for (let k = 0; k < todo.length; k += k === 0 ? 1 : 3) {
+        const batch = todo.slice(k, k === 0 ? 1 : k + 3);
+        const results = await Promise.all(batch.map(async ({ s, i }) => ({ i, see: s.see, ...(await drawScene(get(orgId, id)!, s, i)) })));
+        const fresh = get(orgId, id);
+        if (!fresh) return;
+        const script = scriptOf(fresh);
+        for (const r of results) {
+          // Kept only if the scene wasn't changed again while it was being drawn.
+          if (script.shots[r.i]?.see === r.see && script.shots[r.i].src === "art") script.shots[r.i] = { ...script.shots[r.i], still: r.still, file: null };
+        }
+        done += results.length;
+        update(orgId, id, { script: JSON.stringify(script), drawing: `${Math.min(done, total)}/${total}` });
+      }
+      update(orgId, id, { drawing: null });
+      // Anything changed while drawing is drawn next.
+      const after = get(orgId, id);
+      if (after && scriptOf(after).shots.some((s) => s.src === "art" && !s.still)) queueMicrotask(() => startDrawing(orgId, id));
+    } catch (err) {
+      update(orgId, id, { drawing: null, error: `Some scenes weren't drawn: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)} Press Change shot on one to try again.` });
+    } finally {
+      drawJobs.delete(id);
+    }
+  })();
+  drawJobs.set(id, job);
+  return started;
+}
+
+/** Change style: every drawn scene (and the cast) is drawn again in the new look; Real footage goes back to footage. */
+export async function changeStyle(orgId: number, id: number, style: string, motion?: "pictures" | "clips") {
+  const v = must(orgId, id);
+  notMaking(v);
+  if (drawJobs.has(id)) throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until the scene pictures are drawn." });
+  let next = style === "auto" ? await pickStyle(orgId, `${v.title}. ${v.instructions}`) : style;
+  if (next !== "real" && styles.resolve(orgId, next).key === "real") throw new TRPCError({ code: "BAD_REQUEST", message: "That style isn't in this workspace. Pick another." });
+  if (next === "real" && v.seconds > 120) throw new TRPCError({ code: "BAD_REQUEST", message: "Real footage goes up to 2 minutes. Pick a drawn style for a video this long." });
+  const drawn = styles.isDrawn(next);
+  const sc = scriptOf(v);
+  const cleared = sc.shots.map((s) => ({ ...s, still: null, file: s.src === "text" || s.src === "logo" ? null : s.src === "art" ? null : s.file, ...(s.src === "art" && !drawn ? { src: undefined } : {}) }));
+  const shots = await assignSources(orgId, v.kind, v.size, cleared, !drawn, drawn);
+  // The people are drawn again in the new look.
+  const cast = castOf(v).map((c) => ({ name: c.name, look: c.look }));
+  const nextMotion = !drawn ? "pictures" : motion === "clips" && v.seconds <= 90 ? "clips" : motion === "pictures" ? "pictures" : v.motion;
+  update(orgId, id, { style: next, motion: nextMotion, cast: JSON.stringify(drawn ? cast : []), script: JSON.stringify({ ...sc, shots }), status: v.status === "ready" ? "ready" : "draft", error: null });
+  return drawn ? startDrawing(orgId, id)! : must(orgId, id);
+}
+
+/** Change look: one person is drawn again, and every scene they're in with them. */
+export function changeLook(orgId: number, id: number, index: number, look?: string) {
+  const v = must(orgId, id);
+  notMaking(v);
+  if (drawJobs.has(id)) throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until the scene pictures are drawn." });
+  const cast = castOf(v);
+  const c = cast[index];
+  if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "That person isn't in this video." });
+  cast[index] = { name: c.name, look: (look ?? c.look).trim().slice(0, 300) || c.look, portrait: null };
+  const sc = scriptOf(v);
+  sc.shots = sc.shots.map((s) => ((s.who ?? []).some((w) => w.toLowerCase() === c.name.toLowerCase()) ? { ...s, still: null, file: null } : s));
+  update(orgId, id, { cast: JSON.stringify(cast), script: JSON.stringify(sc), error: null });
+  return startDrawing(orgId, id)!;
 }
 
 /** New hook: Elena writes a different first scene and keeps the rest. */
@@ -657,8 +851,9 @@ export async function newHook(orgId: number, id: number) {
   const s = scriptOf(v);
   const [hook] = await hooks(orgId, v, 1);
   s.shots[0] = { ...s.shots[0], say: v.source === "script" ? s.shots[0].say : hook.say, see: hook.see, query: hook.query, src: undefined, file: null, clipId: null, stock: null };
-  s.shots = await assignSources(orgId, v.kind, v.size, s.shots, true);
-  return update(orgId, id, { script: JSON.stringify(s), error: null });
+  s.shots = await assignSources(orgId, v.kind, v.size, s.shots, true, styles.isDrawn(v.style));
+  const out = update(orgId, id, { script: JSON.stringify(s), error: null });
+  return styles.isDrawn(v.style) ? startDrawing(orgId, id) ?? out : out;
 }
 
 async function hooks(orgId: number, v: Video, count: number) {
@@ -686,16 +881,18 @@ export async function adVersions(orgId: number, id: number) {
   const made: Video[] = [];
   for (let i = 0; i < list.length; i++) {
     const h = list[i];
-    const shots = await assignSources(orgId, v.kind, v.size, [{ ...s.shots[0], say: h.say, see: h.see, query: h.query, src: undefined, file: null, clipId: null, stock: null }, ...s.shots.slice(1)], true);
+    const shots = await assignSources(orgId, v.kind, v.size, [{ ...s.shots[0], say: h.say, see: h.see, query: h.query, src: undefined, file: null, clipId: null, stock: null, still: null }, ...s.shots.slice(1)], true, styles.isDrawn(v.style));
     made.push(
       db
         .getDb()
         .insert(videos)
-        .values({ organizationId: orgId, employeeId: v.employeeId, title: `${v.title} (version ${String.fromCharCode(65 + i)})`.slice(0, 120), kind: v.kind, size: v.size, sizes: v.sizes, seconds: v.seconds, source: v.source, instructions: v.instructions, script: JSON.stringify({ ...s, shots }), voiceId: v.voiceId, voiceName: v.voiceName, look: v.look })
+        .values({ organizationId: orgId, employeeId: v.employeeId, title: `${v.title} (version ${String.fromCharCode(65 + i)})`.slice(0, 120), kind: v.kind, size: v.size, sizes: v.sizes, seconds: v.seconds, source: v.source, instructions: v.instructions, script: JSON.stringify({ ...s, shots }), voiceId: v.voiceId, voiceName: v.voiceName, look: v.look, style: v.style, motion: v.motion, cast: v.cast, drawing: styles.isDrawn(v.style) ? "0/1" : null })
         .returning()
         .get()
     );
   }
+  // Each version's new hook is drawn in the same style, with the same people.
+  for (const m of made) if (styles.isDrawn(m.style)) startDrawing(orgId, m.id);
   return made;
 }
 
@@ -996,8 +1193,10 @@ export async function render(input: RenderInput): Promise<Buffer> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-video-"));
   try {
     const { w, h } = input;
-    const W2 = w * 2;
-    const H2 = h * 2;
+    // Stills are moved at twice the size for smooth motion; long videos use less so the cut stays quick.
+    const k = input.clips.length > 20 ? 1.25 : 2;
+    const W2 = Math.round((w * k) / 2) * 2;
+    const H2 = Math.round((h * k) / 2) * 2;
     const args = ["-y"];
     input.clips.forEach((c) => (c.video ? args.push("-stream_loop", "-1", "-i", c.file) : args.push("-i", c.file)));
     let next = input.clips.length;
@@ -1053,7 +1252,7 @@ export async function render(input: RenderInput): Promise<Buffer> {
     } else parts.push(`${vo}[a]`);
     const out = path.join(dir, "out.mp4");
     args.push("-filter_complex", parts.join(";"), "-map", "[v]", "-map", "[a]", "-t", input.total.toFixed(3), "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out);
-    await run(drama.ffmpegPath(), args, { maxBuffer: 20 * 1024 * 1024, timeout: 15 * 60_000 }).catch((e) => {
+    await run(drama.ffmpegPath(), args, { maxBuffer: 20 * 1024 * 1024, timeout: Math.max(15, Math.ceil(input.total / 60) * 6) * 60_000 }).catch((e) => {
       throw new Error(`The cut didn't finish: ${String(e?.stderr ?? e?.message ?? e).trim().split("\n").slice(-3).join(" ").slice(0, 300)}`);
     });
     return fs.readFileSync(out);
@@ -1073,14 +1272,18 @@ const jobs = new Map<number, Promise<void>>();
 export const jobFor = (id: number) => jobs.get(id) ?? null;
 
 /** New AI clips this video still needs, and their work hours. */
-export function pendingClips(v: Video) {
+/** Scenes that still need a new moving clip: AI footage, or a drawn scene when the video uses Animated clips. */
+function pendingShots(v: Video) {
   const shots = scriptOf(v).shots;
-  return shots.filter((s) => s.src === "ai" && !s.file).length;
+  return shots
+    .map((s, i) => ({ s, len: (shots[i + 1]?.at ?? v.seconds) - s.at }))
+    .filter(({ s }) => (s.src === "ai" && !s.file) || (s.src === "art" && v.motion === "clips" && !(s.file && /\.mp4$/i.test(s.file))));
 }
-/** Work hours to make it now: its length (once per video) and each new AI clip. */
+export const pendingClips = (v: Video) => pendingShots(v).length;
+/** Work hours to make it now: its length (once per video) and each new clip (2 for each 5 seconds). Drawn pictures that pan or zoom use none. */
 export function minutesToMake(v: Video) {
   const base = v.paidAt ? 0 : workMinutes(v.tenths && v.status === "ready" ? v.tenths : v.seconds * 10);
-  return base + pendingClips(v) * hours.JOBS.clip.minutes;
+  return base + pendingShots(v).reduce((n, x) => n + broll.clipUnits(x.len) * hours.JOBS.clip.minutes, 0);
 }
 
 async function chargeNow(orgId: number, emp: { id: number; kind: AIEmployee["kind"] }, job: hours.JobKey, count: number, label: string) {
@@ -1098,12 +1301,13 @@ async function chargeNow(orgId: number, emp: { id: number; kind: AIEmployee["kin
 export async function makeVideo(orgId: number, id: number, opts: { restyle?: boolean } = {}): Promise<Video> {
   const v = must(orgId, id);
   if (v.status === "making") return v;
+  if (v.drawing || drawJobs.has(id)) throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until the scene pictures are drawn, then make the video." });
   const shots = scriptOf(v).shots;
   if (!shots.length) throw new TRPCError({ code: "BAD_REQUEST", message: "This video has no shots yet." });
   const voiceId = v.source === "audio" ? null : v.voiceId || DEFAULT_VOICE.id;
   // Older drafts were written before scenes had sources: they're planned now.
   if (shots.some((s) => !s.src)) {
-    const planned = await assignSources(orgId, v.kind, v.size, shots, true);
+    const planned = await assignSources(orgId, v.kind, v.size, shots, true, styles.isDrawn(v.style));
     Object.assign(v, update(orgId, id, { script: JSON.stringify({ ...scriptOf(v), shots: planned }) }));
   }
   if (!opts.restyle && pendingClips(v) && !ENV.falKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Making AI clips isn't set up on the server yet. LeadDash support can turn it on." });
@@ -1172,6 +1376,24 @@ async function footage(v: Video, durations: number[], emp: AIEmployee, restyle: 
   let made = 0;
   for (let i = 0; i < s.shots.length; i++) {
     const shot = s.shots[i];
+    if (shot.src === "art") {
+      const wantClip = v.motion === "clips";
+      if (shot.file && (!wantClip || /\.mp4$/i.test(shot.file))) continue;
+      if (restyle && (!shot.still || wantClip)) throw new Error("A scene needs new footage. Press Make it to make it.");
+      let still = shot.still;
+      // A scene changed by Redo is drawn now, in the same style and with the same people.
+      if (!still) still = (await drawScene(get(v.organizationId, v.id)!, shot, i)).still;
+      let file = still;
+      if (wantClip) {
+        const secs: 5 | 10 = durations[i] > 5.5 ? 10 : 5;
+        file = await styles.animate(v.organizationId, { still, see: shot.see, seconds: secs, name: `scene-${v.id}-${i + 1}` });
+        await chargeNow(v.organizationId, emp, "clip", broll.clipUnits(secs), `${v.title}, scene ${i + 1}`);
+        made++;
+      }
+      s.shots[i] = { ...shot, still, file };
+      update(v.organizationId, v.id, { script: JSON.stringify(s) });
+      continue;
+    }
     if (shot.file || shot.src === "text" || shot.src === "logo") continue;
     if (restyle) throw new Error("A scene needs new footage. Press Make it to make it.");
     if (shot.src === "library" && shot.clipId) {
@@ -1226,7 +1448,7 @@ export async function restyle(orgId: number, id: number, patch: { captions?: Par
 
 /** Redo a scene on a finished video: new footage for that scene only (its own work hours, if it's a new AI clip), then the cut again. */
 export async function redoScene(orgId: number, id: number, n: number, input: { src: Src; see?: string; clipId?: number | null }) {
-  await changeShot(orgId, id, n, input);
+  await changeShot(orgId, id, n, input, { draw: false });
   const v = must(orgId, id);
   if (v.status !== "ready") return v;
   return makeVideo(orgId, id);
@@ -1337,8 +1559,15 @@ export function view(v: Video) {
   const urls = urlsOf(v);
   const clipThumbs = new Map(broll.listClips(v.organizationId).map((c) => [c.id, c.thumbUrl]));
   const make = minutesToMake(v);
+  const st = styles.resolve(v.organizationId, v.style);
+  const drawing = v.drawing && drawJobs.has(v.id) ? v.drawing : null;
   return {
     id: v.id,
+    style: styles.isDrawn(v.style) ? st.key : "real",
+    styleLabel: st.label,
+    motion: v.motion,
+    cast: castOf(v).map((c) => ({ name: c.name, look: c.look, portrait: c.portrait ?? null })),
+    drawing,
     title: v.title,
     kind: v.kind,
     kindLabel: KIND_LABEL[v.kind],
@@ -1360,10 +1589,11 @@ export function view(v: Video) {
       say: x.say,
       photo: x.photo ?? "",
       src: (x.src ?? "ai") as Src,
-      srcLabel: SRC_LABEL[x.src ?? "ai"],
+      srcLabel: x.src === "art" ? st.label : SRC_LABEL[x.src ?? "ai"],
       hook: i === 0,
-      made: !!x.file || x.src === "text" || x.src === "logo",
-      thumb: x.src === "stock" ? x.stock?.thumb ?? null : x.clipId ? clipThumbs.get(x.clipId) ?? null : x.src === "photo" ? x.file ?? null : null,
+      made: x.src === "art" ? !!x.still && (v.motion !== "clips" || !!(x.file && /\.mp4$/i.test(x.file))) : !!x.file || x.src === "text" || x.src === "logo",
+      thumb: x.src === "art" ? x.still ?? null : x.src === "stock" ? x.stock?.thumb ?? null : x.clipId ? clipThumbs.get(x.clipId) ?? null : x.src === "photo" ? x.file ?? null : null,
+      who: x.who ?? [],
       credit: x.src === "stock" ? x.stock?.credit ?? null : null,
       creditUrl: x.src === "stock" ? x.stock?.page ?? null : null,
       clipId: x.clipId ?? null,
@@ -1387,4 +1617,4 @@ export function view(v: Video) {
 }
 
 /** One line for chat: "4 scenes, 30 seconds, 9:16 and 1:1". */
-export const summary = (v: Video) => `${scriptOf(v).shots.length} scenes, ${v.seconds} seconds, ${sizesOf(v).map((s) => SIZES[s].ratio).join(" and ")}`;
+export const summary = (v: Video) => `${scriptOf(v).shots.length} scenes, ${v.seconds > 90 ? `${Math.round(v.seconds / 60)} minutes` : `${v.seconds} seconds`}, ${styles.isDrawn(v.style) ? `${styles.resolve(v.organizationId, v.style).label}, ` : ""}${sizesOf(v).map((s) => SIZES[s].ratio).join(" and ")}`;

@@ -36,6 +36,7 @@ const LIMITS: Record<string, number> = {
   resume: 20_000_000,
   post_media: 250_000_000,
   broll: 250_000_000,
+  style_ref: 15_000_000,
   video_audio: 200_000_000,
   music: 40_000_000,
   chat: 20_000_000,
@@ -238,7 +239,17 @@ export function registerUploads(app: Express) {
       }
 
       const old = unsupportedNote(name);
-      if (old && slot !== "video" && slot !== "post_media" && slot !== "take" && slot !== "broll" && slot !== "video_audio" && slot !== "music") return res.status(400).json({ error: old });
+      if (old && slot !== "video" && slot !== "post_media" && slot !== "take" && slot !== "broll" && slot !== "video_audio" && slot !== "music" && slot !== "style_ref") return res.status(400).json({ error: old });
+
+      // A picture in a look someone wants Elena's videos drawn in (Add style).
+      if (slot === "style_ref") {
+        if (!/^image\/(jpeg|png|webp)$/.test(mime) && !/\.(jpe?g|png|webp)$/i.test(name)) return res.status(400).json({ error: "Upload a JPG, PNG or WebP picture." });
+        const declared = Number(req.headers["content-length"] || 0);
+        if (declared > max) return res.status(400).json({ error: `Pictures must be under ${Math.round(max / 1_000_000)} MB.` });
+        const saved = await storagePutStream(`org-${orgId}/styles/${name}`, req, max);
+        if (saved.size === 0) return res.status(400).json({ error: "The file was empty." });
+        return res.json({ url: saved.url });
+      }
 
       // Elena's b-roll library (a clip up to 60 seconds), a recording for Audio to video, or a music track.
       if (slot === "broll" || slot === "video_audio" || slot === "music") {

@@ -5,6 +5,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import type { Outputs } from "../types";
 import { useHoursAsk } from "../HoursAsk";
 import { ErrorLine } from "../ui";
+import { StylePicker, StyleRow } from "./Styles";
 
 /**
  * Elena's video agent on screen:
@@ -40,7 +41,8 @@ const SIZES: { key: Size; ratio: string }[] = [
   { key: "square", ratio: "1:1" },
   { key: "wide", ratio: "16:9" },
 ];
-const LENGTHS = [15, 30, 60, 90];
+const LENGTHS = [15, 30, 60, 90, 180, 300, 600];
+const lengthText = (l: number) => (l < 120 ? `${l}s` : `${l / 60} min`);
 
 /**
  * What a frame of each format looks like in the finished video, drawn over its photo:
@@ -116,6 +118,8 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   const [captions, setCaptions] = React.useState<"pop" | "clean" | "off">("pop");
   const [logo, setLogo] = React.useState<"br" | "tr" | "off" | null>(null);
   const [music, setMusic] = React.useState("calm");
+  const [style, setStyle] = React.useState("real");
+  const [motion, setMotion] = React.useState<"pictures" | "clips">("pictures");
   const fileRef = React.useRef<HTMLInputElement>(null);
   const write = trpc.videos.write.useMutation({
     onSuccess: async (r) => {
@@ -154,6 +158,28 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   };
   const halves = Math.max(1, Math.ceil(seconds / 30));
   const base = ((o?.videoHoursPerMinute ?? 8) / 2) * halves;
+  const drawn = style !== "real" && !talking;
+  // Over 90 seconds is a drawn story with moving pictures.
+  const long = seconds > 90;
+  const pickLength = (l: number) => {
+    setSeconds(l);
+    if (l > 90) {
+      if (style === "real") setStyle("auto");
+      setMotion("pictures");
+    }
+  };
+  const pickStyle = (k: string) => {
+    setStyle(k);
+    if (k === "real" && seconds > 90) setSeconds(90);
+  };
+  const clipHours = o?.clipHours ?? 2;
+  const estimate = talking
+    ? `About ${hoursText(base * 2)} for a ${seconds}-second talking video`
+    : drawn
+      ? motion === "clips"
+        ? `About ${hoursText(base + Math.ceil(seconds / 5) * clipHours)} with animated clips`
+        : `About ${hoursText(base)} for a ${seconds <= 90 ? `${seconds}-second` : `${seconds / 60}-minute`} story`
+      : `About ${hoursText(base)} for a ${seconds}-second video, plus ${clipHours} for each new AI clip`;
   const ready = isAudio ? !!audio : start === "link" ? /^https?:\/\/\S+$/.test(link.trim()) : !!text.trim();
   const plan = () =>
     write.mutate({
@@ -168,6 +194,8 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
       captions,
       logo: logoPick,
       music,
+      style: talking ? "real" : style,
+      motion: drawn && !long ? motion : "pictures",
     });
 
   return (
@@ -192,6 +220,8 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
           ))}
         </div>
       </div>
+
+      {!talking && <StyleRow value={style} onChange={pickStyle} />}
 
       <div className="ld-vm-field">
         <span className="ld-lbl">Start from</span>
@@ -235,8 +265,8 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
         <div className="ld-vm-field">
           <span className="ld-lbl">Length</span>
           <div className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>
-            {LENGTHS.map((l) => (
-              <Chip key={l} on={seconds === l} onClick={() => setSeconds(l)}>{`${l}s`}</Chip>
+            {LENGTHS.filter((l) => !(talking && l > 90)).map((l) => (
+              <Chip key={l} on={seconds === l} onClick={() => pickLength(l)}>{lengthText(l)}</Chip>
             ))}
           </div>
         </div>
@@ -269,6 +299,22 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
         )}
       </div>
 
+      {drawn && (
+        <div className="ld-vm-field">
+          <span className="ld-lbl">Scenes</span>
+          <div className="ld-vm-opts" role="radiogroup" aria-label="Scenes">
+            <button type="button" role="radio" aria-checked={motion === "pictures"} className={`ld-vm-opt ${motion === "pictures" ? "on" : ""}`} onClick={() => setMotion("pictures")}>
+              <b>Moving pictures</b>
+              <span>One picture per scene with a slow pan or zoom. No extra work hours.</span>
+            </button>
+            <button type="button" role="radio" aria-checked={motion === "clips"} className={`ld-vm-opt ${motion === "clips" ? "on" : ""}`} disabled={long} onClick={() => setMotion("clips")}>
+              <b>Animated clips</b>
+              <span>{long ? "Up to 90 seconds." : `Every scene moves like a short film. ${clipHours} work hours for each 5 seconds.`}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {!talking && (
         <div className="ld-vm-asks">
           <div className="ld-vm-ask">
@@ -298,7 +344,7 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
       )}
 
       <div className="ld-vm-foot">
-        <span className="ld-vm-hours">{talking ? `About ${hoursText(base * 2)} for a ${seconds}-second talking video` : `About ${hoursText(base)} for a ${seconds}-second video, plus ${o?.clipHours ?? 2} for each new AI clip`}</span>
+        <span className="ld-vm-hours">{estimate}</span>
         <div className="ld-row" style={{ gap: 8 }}>
           {onCancel && <button type="button" className="ld-btn" style={{ width: 150 }} onClick={onCancel}>Cancel</button>}
           <button type="button" className="ld-btn p" style={{ width: 150 }} disabled={!ready || write.isPending || uploading} onClick={plan}>
@@ -315,23 +361,23 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
 // Storyboard, finished video and Edit
 // ==========================================
 
-const SRC_COLOR: Record<Src, string> = { library: "t1", stock: "t2", ai: "t3", text: "t4", logo: "t5", photo: "t1" };
-const SRC_NOTE: Record<Src, string> = { library: "no extra hours", stock: "licensed stock", ai: "saved to your b-roll", text: "", logo: "", photo: "your photo" };
+const SRC_COLOR: Record<Src, string> = { library: "t1", stock: "t2", ai: "t3", text: "t4", logo: "t5", photo: "t1", art: "t3" };
+const SRC_NOTE: Record<Src, string> = { library: "no extra hours", stock: "licensed stock", ai: "saved to your b-roll", text: "", logo: "", photo: "your photo", art: "" };
 const RATIO_OF: Record<Size, string> = { vertical: "9 / 16", square: "1 / 1", wide: "16 / 9" };
 
 function useVideo(id: number) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
-  const one = trpc.videos.get.useQuery({ organizationId: currentOrgId, id }, { enabled: currentOrgId > 0, refetchInterval: (r) => (r.state.data?.status === "making" ? 8_000 : false) });
+  const one = trpc.videos.get.useQuery({ organizationId: currentOrgId, id }, { enabled: currentOrgId > 0, refetchInterval: (r) => (r.state.data?.status === "making" ? 8_000 : r.state.data?.drawing ? 4_000 : false) });
   const refresh = () => Promise.all([utils.videos.list.invalidate(), utils.videos.get.invalidate({ organizationId: currentOrgId, id }), utils.broll.list.invalidate()]);
   return { orgId: currentOrgId, v: one.data as V | null | undefined, loading: one.isLoading, refresh, utils };
 }
 
-function Thumb({ s, size }: { s: V["shots"][number]; size: Size }) {
+function Thumb({ s, size, drawing }: { s: V["shots"][number]; size: Size; drawing?: boolean }) {
   return (
     <span className={`ld-vm-thumb ${SRC_COLOR[s.src]}`} style={{ aspectRatio: RATIO_OF[size] }}>
       {s.thumb && <img src={s.thumb} alt="" loading="lazy" />}
-      <span>{s.src === "text" ? "Kinetic text" : s.srcLabel}</span>
+      {!(s.src === "art" && s.thumb) && <span>{s.src === "text" ? "Kinetic text" : s.src === "art" ? (drawing ? "Drawing..." : "Drawn when made") : s.srcLabel}</span>}
     </span>
   );
 }
@@ -348,7 +394,12 @@ function ShotEditor({ v, n, redo, onDone }: { v: V; n: number; redo: boolean; on
   const [clipId, setClipId] = React.useState<number | null>(s.clipId);
   const hours = useHoursAsk();
   const change = trpc.videos.changeShot.useMutation({ onSuccess: async () => (await refresh(), onDone()) });
-  const choices: { key: Src; label: string; show: boolean }[] = [
+  const drawn = v.style !== "real";
+  const choices: { key: Src; label: string; show: boolean }[] = drawn ? [
+    { key: "art", label: `Drawn scene, ${v.styleLabel}`, show: true },
+    { key: "text", label: "Motion text", show: true },
+    { key: "logo", label: "Logo end", show: true },
+  ] : [
     { key: "library", label: "Your b-roll", show: clips.length > 0 },
     { key: "stock", label: "Stock", show: !!opts.data?.stock },
     { key: "ai", label: "New AI clip", show: true },
@@ -358,7 +409,7 @@ function ShotEditor({ v, n, redo, onDone }: { v: V; n: number; redo: boolean; on
   ];
   const save = () => {
     const run = () => change.mutate({ organizationId: orgId, id: v.id, n, src, see, clipId: src === "library" ? clipId : null, redo });
-    if (redo && src === "ai") hours.confirm(`redo-${v.id}-${n}`, `A new AI clip uses ${opts.data?.clipHours ?? 2} work hours for each 5 seconds`, run);
+    if (redo && (src === "ai" || (src === "art" && v.motion === "clips"))) hours.confirm(`redo-${v.id}-${n}`, `A new ${src === "art" ? "animated scene" : "AI clip"} uses ${opts.data?.clipHours ?? 2} work hours for each 5 seconds`, run);
     else run();
   };
   return (
@@ -428,7 +479,7 @@ function Scenes({ v, mode }: { v: V; mode: "plan" | "redo" | "view" }) {
         <React.Fragment key={s.n}>
           <div className="ld-vm-scene">
             <span className="ld-vm-n">{s.n + 1}</span>
-            <Thumb s={s} size={size} />
+            <Thumb s={s} size={size} drawing={!!v.drawing} />
             <div className="ld-vm-say">
               <span className={`ld-vm-tag ${s.hook ? "hook" : "src"}`}>{s.hook ? `Hook · ${s.time}` : `${s.srcLabel} · ${s.time}${SRC_NOTE[s.src] && !s.made ? ` · ${SRC_NOTE[s.src]}` : s.src === "library" ? ` · ${SRC_NOTE.library}` : ""}`}</span>
               {s.say && <span className="ld-vm-s">{`"${s.say}"`}</span>}
@@ -600,6 +651,46 @@ function EditPanel({ v }: { v: V }) {
   );
 }
 
+/** The people in a drawn story: each drawn once and kept the same in every scene. Change look draws them again. */
+function CastCard({ v }: { v: V }) {
+  const { orgId, refresh } = useVideo(v.id);
+  const [editing, setEditing] = React.useState<number | null>(null);
+  const [look, setLook] = React.useState("");
+  const change = trpc.videos.changeLook.useMutation({ onSuccess: async () => (setEditing(null), await refresh()) });
+  return (
+    <div className="ld-vm-cast">
+      {v.cast.map((c, i) => (
+        <React.Fragment key={c.name}>
+          <div className="ld-vm-castrow">
+            <span className="ld-vm-portrait">{c.portrait ? <img src={c.portrait} alt="" /> : <span>{c.name[0]}</span>}</span>
+            <div className="ld-vm-castt">
+              <b>{c.name}</b>
+              <span>{`${c.look[0].toUpperCase()}${c.look.slice(1)}. The same in every scene.`}</span>
+            </div>
+            <button type="button" className="ld-btn" style={{ width: 150 }} disabled={!!v.drawing || v.status === "making"} aria-expanded={editing === i} onClick={() => (setLook(c.look), setEditing(editing === i ? null : i))}>
+              Change look
+            </button>
+          </div>
+          {editing === i && (
+            <div className="ld-vm-editor">
+              <label className="ld-vm-field" htmlFor={`look-${v.id}-${i}`}>
+                <span className="ld-lbl">{`How ${c.name} looks`}</span>
+                <input id={`look-${v.id}-${i}`} className="ld-in lg" value={look} onChange={(e) => setLook(e.target.value)} />
+              </label>
+              <span className="ld-small ld-muted">{`${c.name} is drawn again, with every scene ${c.name} is in.`}</span>
+              <ErrorLine error={change.error} />
+              <div className="ld-row" style={{ gap: 8 }}>
+                <button type="button" className="ld-btn p" style={{ width: 130 }} disabled={change.isPending || !look.trim()} onClick={() => change.mutate({ organizationId: orgId, id: v.id, index: i, look })}>{change.isPending ? "Saving..." : "Save"}</button>
+                <button type="button" className="ld-btn" style={{ width: 130 }} onClick={() => setEditing(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
 function Player({ v, ratio }: { v: V; ratio: string }) {
   const url = v.videoUrls[ratio] ?? v.videoUrl;
   const aspect = ratio === "1:1" ? "1 / 1" : ratio === "16:9" ? "16 / 9" : "9 / 16";
@@ -623,9 +714,13 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
   const versions = trpc.videos.adVersions.useMutation({ onSuccess: async () => (await refresh(), utils.chat.list.invalidate()) });
   const sienna = trpc.videos.toSienna.useMutation({ onSuccess: () => setSent(true) });
   const remove = trpc.videos.remove.useMutation({ onSuccess: refresh });
+  const restyleTo = trpc.videos.changeStyle.useMutation({ onSuccess: refresh });
+  const [picking, setPicking] = React.useState(false);
   if (!v) return loading ? null : <div className="ld-card ld-empty">This video was removed.</div>;
   const ready = v.status === "ready" && !!v.videoUrl;
-  const meta = [v.kindLabel, ready ? v.length : `${v.seconds} seconds`, v.ratios.join(" and ")].join(" · ");
+  const drawn = v.style !== "real";
+  const meta = [v.kindLabel, ...(drawn ? [v.styleLabel] : []), ready ? v.length : v.seconds > 90 ? `${Math.round(v.seconds / 60)} minutes` : `${v.seconds} seconds`, v.ratios.join(" and ")].join(" · ");
+  const drawingText = v.drawing ? `Drawing the scene pictures: ${v.drawing.replace("/", " of ")}. They fill in here as they're done.` : null;
   const pill = v.status === "draft" ? "amber" : v.status === "making" ? "blue" : v.status === "ready" ? "green" : "red";
   const startMake = () => hours.confirm(`made-${v.id}`, `This video uses ${v.hours}`, () => make.mutate({ organizationId: orgId, id: v.id }));
   const shown = ratio && v.videoUrls[ratio] ? ratio : v.ratios.find((r) => v.videoUrls[r]) ?? v.ratios[0];
@@ -682,15 +777,24 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
           {panel === "edit" && <EditPanel v={v} />}
           {panel === "redo" && (
             <>
-              <p className="ld-small ld-muted" style={{ margin: 0 }}>Redoing a scene uses hours for that scene only: a new AI clip uses its own, and your b-roll, stock and text use none.</p>
+              <p className="ld-small ld-muted" style={{ margin: 0 }}>{drawn ? `Redoing a scene draws it again in ${v.styleLabel}, with the same people. ${v.motion === "clips" ? "Animating it uses hours for that scene only." : "It uses no work hours."}` : "Redoing a scene uses hours for that scene only: a new AI clip uses its own, and your b-roll, stock and text use none."}</p>
               <Scenes v={v} mode="redo" />
             </>
           )}
         </>
       ) : (
         <>
+          {drawn && v.cast.length > 0 && <CastCard v={v} />}
+          {drawingText && <span className="ld-vm-drawing">{drawingText}</span>}
           <Scenes v={v} mode={v.status === "making" ? "view" : "plan"} />
           <div className="ld-vm-settings">
+            {drawn && (
+              <div className="ld-vm-set">
+                <span className="ld-lbl">Style</span>
+                <b>{v.styleLabel}</b>
+                <span>{v.motion === "clips" ? "Animated clips" : "Moving pictures"}</span>
+              </div>
+            )}
             <div className="ld-vm-set">
               <span className="ld-lbl">Voice</span>
               <b>{v.voiceName}</b>
@@ -701,11 +805,13 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
               <b>{v.look.music.track === "none" ? "No music" : v.lookText.music.split(",")[0]}</b>
               <span>{v.look.music.track === "none" ? "Voice only" : "Low under the voice"}</span>
             </div>
-            <div className="ld-vm-set">
-              <span className="ld-lbl">Brand</span>
-              <b>{v.look.logo.on ? "Logo and colors on" : "Colors on, no logo"}</b>
-              <span>From your workspace</span>
-            </div>
+            {!drawn && (
+              <div className="ld-vm-set">
+                <span className="ld-lbl">Brand</span>
+                <b>{v.look.logo.on ? "Logo and colors on" : "Colors on, no logo"}</b>
+                <span>From your workspace</span>
+              </div>
+            )}
             <div className="ld-vm-set">
               <span className="ld-lbl">Captions</span>
               <b>{v.look.captions.on ? (v.look.captions.style === "pop" ? "Bold pop" : v.look.captions.style === "clean" ? "Clean" : "Boxed") : "Off"}</b>
@@ -716,11 +822,13 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
           {v.status === "making" && <span className="ld-small ld-muted">Making it now. This usually takes a few minutes, and Elena posts it here when it's done.</span>}
           {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{v.error}</span>}
           {hours.question(`made-${v.id}`)}
-          <ErrorLine error={make.error ?? hook.error ?? remove.error} />
+          <ErrorLine error={make.error ?? hook.error ?? remove.error ?? restyleTo.error} />
+          {picking && <StylePicker title="Change style" value={v.style} onClose={() => setPicking(false)} onPick={(k) => (setPicking(false), k !== v.style && restyleTo.mutate({ organizationId: orgId, id: v.id, style: k }))} />}
           {v.status !== "making" && (
             <div className="ld-vm-foot">
               <span className="ld-vm-hours">{`Uses ${v.hours} when it's done`}</span>
               <div className="ld-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <button type="button" className="ld-btn" style={{ width: 150 }} disabled={!!v.drawing || restyleTo.isPending} onClick={() => setPicking(true)}>{restyleTo.isPending ? "Changing..." : "Change style"}</button>
                 <button type="button" className="ld-btn" style={{ width: 150 }} aria-pressed={panel === "edit"} onClick={() => setPanel(panel === "edit" ? null : "edit")}>Captions, logo, music</button>
                 {v.source !== "audio" && (
                   <button type="button" className="ld-btn" style={{ width: 150 }} disabled={hook.isPending} onClick={() => hook.mutate({ organizationId: orgId, id: v.id })}>{hook.isPending ? "Writing..." : "New hook"}</button>
@@ -728,7 +836,7 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
                 {bare && (
                   <button type="button" className="ld-btn" style={{ width: 150 }} disabled={remove.isPending} onClick={() => remove.mutate({ organizationId: orgId, id: v.id })}>Remove</button>
                 )}
-                <button type="button" className="ld-btn p" style={{ width: 150 }} disabled={make.isPending} onClick={startMake}>
+                <button type="button" className="ld-btn p" style={{ width: 150 }} disabled={make.isPending || !!v.drawing} onClick={startMake}>
                   {make.isPending ? "Starting..." : v.status === "failed" ? "Try again" : "Make the video"}
                 </button>
               </div>

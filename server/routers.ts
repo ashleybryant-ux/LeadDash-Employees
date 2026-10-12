@@ -3544,8 +3544,10 @@ export const appRouter = router({
           text: z.string().max(8000),
           sourceUrl: z.string().max(2000).nullable(),
           sizes: z.array(z.enum(["vertical", "square", "wide"])).min(1).max(3),
-          seconds: z.number().int().min(10).max(180),
+          seconds: z.number().int().min(10).max(600),
           voiceId: z.string().max(200).nullable(),
+          style: z.string().max(40).optional(),
+          motion: z.enum(["pictures", "clips"]).optional(),
           captions: z.enum(["pop", "clean", "off"]),
           logo: z.enum(["br", "tr", "off"]),
           music: z.string().max(40),
@@ -3575,6 +3577,8 @@ export const appRouter = router({
           source: input.start,
           sourceUrl: input.sourceUrl,
           voiceId: input.voiceId,
+          style: input.style ?? "real",
+          motion: input.motion ?? "pictures",
           look: { captions: input.captions === "off" ? { on: false } : { on: true, style: input.captions }, logo: input.logo === "off" ? { on: false } : { on: true, corner: input.logo }, music: { track: track as never } },
         });
         const view = vd.view(v);
@@ -3583,7 +3587,7 @@ export const appRouter = router({
           employeeId: emp.id,
           role: "employee",
           authorName: emp.name,
-          content: `Here's the storyboard (${vd.summary(v)}). The hook is up front. Change any scene, then press Make the video. It uses ${view.hours} when it's done.`,
+          content: v.drawing ? `Here's the storyboard (${vd.summary(v)}). I'm drawing the scene pictures now; they fill in here as they're done. Change any scene, then press Make the video. It uses ${view.hours} when it's done.` : `Here's the storyboard (${vd.summary(v)}). The hook is up front. Change any scene, then press Make the video. It uses ${view.hours} when it's done.`,
           cards: JSON.stringify([{ type: "made_video", id: v.id, title: v.title }]),
         });
         return { kind: "video" as const, id: v.id };
@@ -3595,7 +3599,7 @@ export const appRouter = router({
       return vd.view(await vd.makeVideo(input.organizationId, input.id));
     }),
     saveScript: protectedProcedure
-      .input(orgInput.extend({ id: z.number().int(), title: z.string().max(120).optional(), caption: z.string().max(600).optional(), shots: z.array(z.object({ at: z.number().int().min(0).max(600), see: z.string().max(300), say: z.string().max(400) })).min(1).max(16) }))
+      .input(orgInput.extend({ id: z.number().int(), title: z.string().max(120).optional(), caption: z.string().max(600).optional(), shots: z.array(z.object({ at: z.number().int().min(0).max(600), see: z.string().max(300), say: z.string().max(400) })).min(1).max(120) }))
       .mutation(async ({ ctx, input }) => {
         blockReviewer(ctx);
         await requireMember(ctx, input.organizationId, "member");
@@ -3603,7 +3607,7 @@ export const appRouter = router({
         return vd.view(await vd.saveScript(input.organizationId, input.id, { title: input.title, caption: input.caption, shots: input.shots }));
       }),
     /** Rewrite line: one scene's words as typed. */
-    saveLine: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0).max(15), say: z.string().min(1).max(400) })).mutation(async ({ ctx, input }) => {
+    saveLine: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0).max(119), say: z.string().min(1).max(400) })).mutation(async ({ ctx, input }) => {
       blockReviewer(ctx);
       await requireMember(ctx, input.organizationId, "member");
       const vd = await import("./employees/videos");
@@ -3611,7 +3615,7 @@ export const appRouter = router({
     }),
     /** Change shot (storyboard) or Redo a scene (finished video): what we see and where it comes from. */
     changeShot: protectedProcedure
-      .input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0).max(15), src: z.enum(["library", "stock", "ai", "text", "logo", "photo"]), see: z.string().max(300).optional(), clipId: z.number().int().nullable().optional(), redo: z.boolean().optional() }))
+      .input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0).max(119), src: z.enum(["library", "stock", "ai", "text", "logo", "photo", "art"]), see: z.string().max(300).optional(), clipId: z.number().int().nullable().optional(), redo: z.boolean().optional() }))
       .mutation(async ({ ctx, input }) => {
         blockReviewer(ctx);
         await requireMember(ctx, input.organizationId, "member");
@@ -3641,6 +3645,39 @@ export const appRouter = router({
         const vd = await import("./employees/videos");
         return vd.view(await vd.restyle(input.organizationId, input.id, { captions: input.captions, logo: input.logo, music: input.music }));
       }),
+    /** The looks a video can be drawn in: presets and this workspace's own styles. */
+    styles: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/styles")).pickerView(input.organizationId);
+    }),
+    /** Add style: 1 to 3 pictures in a look, named, saved for every video after this one. */
+    addStyle: protectedProcedure.input(orgInput.extend({ name: z.string().min(1).max(60), refs: z.array(z.string().max(500)).min(1).max(3) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const st = await import("./employees/styles");
+      const c = st.addCustom(input.organizationId, { name: input.name, refs: input.refs, by: ctx.user.name || ctx.user.email });
+      return { key: `custom:${c.id}`, id: c.id, label: c.name, image: st.refsOf(c)[0] ?? null };
+    }),
+    removeStyle: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./employees/styles")).removeCustom(input.organizationId, input.id);
+      return { success: true };
+    }),
+    /** Change style: the scenes and people are drawn again in the new look. */
+    changeStyle: protectedProcedure.input(orgInput.extend({ id: z.number().int(), style: z.string().min(1).max(40), motion: z.enum(["pictures", "clips"]).optional() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      return vd.view(await vd.changeStyle(input.organizationId, input.id, input.style, input.motion));
+    }),
+    /** Change look: one person drawn again, with every scene they're in. */
+    changeLook: protectedProcedure.input(orgInput.extend({ id: z.number().int(), index: z.number().int().min(0).max(3), look: z.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      return vd.view(vd.changeLook(input.organizationId, input.id, input.index, input.look));
+    }),
     /** Make 3 ad versions: three new hooks, each a draft to make. */
     adVersions: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
       blockReviewer(ctx);

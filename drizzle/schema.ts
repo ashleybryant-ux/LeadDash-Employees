@@ -1615,6 +1615,14 @@ export const videos = sqliteTable(
     words: text("words"),
     /** Set once the video's work hours were used, so Edit and redos don't use them again. */
     paidAt: integer("paidAt", { mode: "timestamp" }),
+    /** The look: "real" (footage), "auto" (Elena picks), a preset style key, or "custom:<id>" (a style made from their pictures). */
+    style: text("style").notNull().default("real"),
+    /** In a drawn style: "pictures" (one drawn picture per scene with a pan or zoom) or "clips" (each scene animated). */
+    motion: text("motion", { enum: ["pictures", "clips"] }).notNull().default("pictures"),
+    /** JSON: the people in the story, drawn once so they look the same in every scene: [{ name, look, portrait }]. */
+    cast: text("cast").notNull().default("[]"),
+    /** While scene pictures are being drawn: "3/8"; null when done. */
+    drawing: text("drawing"),
     /** The planned length in seconds. */
     seconds: integer("seconds").notNull().default(30),
     /** What the person asked for, in their words. */
@@ -1668,6 +1676,22 @@ export const brollClips = sqliteTable(
   (t) => [index("broll_clips_org_idx").on(t.organizationId)]
 );
 export type BrollClip = typeof brollClips.$inferSelect;
+
+/** A video style a workspace made from its own pictures (Add style). */
+export const videoStyles = sqliteTable(
+  "video_styles",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    name: text("name").notNull(),
+    /** JSON: 1 to 3 stored pictures in the look. */
+    refs: text("refs").notNull().default("[]"),
+    createdBy: text("createdBy"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("video_styles_org_idx").on(t.organizationId)]
+);
+export type VideoStyle = typeof videoStyles.$inferSelect;
 
 /** Company history read from an export of the owner's Claude or ChatGPT chats into the Brain. */
 export const historyImports = sqliteTable(
