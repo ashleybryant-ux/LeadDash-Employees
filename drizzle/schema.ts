@@ -1595,8 +1595,26 @@ export const videos = sqliteTable(
     organizationId: integer("organizationId").notNull(),
     employeeId: integer("employeeId").notNull(),
     title: text("title").notNull(),
-    kind: text("kind", { enum: ["broll", "slideshow", "explainer"] }).notNull().default("broll"),
+    /** The format: ad, broll (B-roll story), explainer, story (personal story), audio (audio to video); slideshow is the older photo format. */
+    kind: text("kind", { enum: ["broll", "slideshow", "explainer", "ad", "story", "audio"] }).notNull().default("broll"),
+    /** The first size picked; every size in `sizes` is made from one job. */
     size: text("size", { enum: ["vertical", "square", "wide"] }).notNull().default("vertical"),
+    /** JSON: every size to make, like ["vertical", "square"]. */
+    sizes: text("sizes").notNull().default("[]"),
+    /** What it started from: an idea, their script kept word for word, a link, or an audio recording. */
+    source: text("source", { enum: ["idea", "script", "link", "audio"] }).notNull().default("idea"),
+    /** The link, or the uploaded recording. */
+    sourceUrl: text("sourceUrl"),
+    /** JSON VideoLook: captions, logo and music. Changing it re-renders without new footage. */
+    look: text("look").notNull().default("{}"),
+    /** JSON: the finished file for each size, like { vertical: url, square: url }. */
+    videoUrls: text("videoUrls").notNull().default("{}"),
+    /** The voice-over as made, kept so Edit can re-render without reading it again. */
+    voUrl: text("voUrl"),
+    /** JSON: the voice-over's words with start and end seconds, for word-by-word captions. */
+    words: text("words"),
+    /** Set once the video's work hours were used, so Edit and redos don't use them again. */
+    paidAt: integer("paidAt", { mode: "timestamp" }),
     /** The planned length in seconds. */
     seconds: integer("seconds").notNull().default(30),
     /** What the person asked for, in their words. */
@@ -1618,6 +1636,38 @@ export const videos = sqliteTable(
   (t) => [index("videos_org_idx").on(t.organizationId)]
 );
 export type Video = typeof videos.$inferSelect;
+
+/** Elena's b-roll library: clips she made and clips people uploaded. Any video can reuse them, for no work hours. */
+export const brollClips = sqliteTable(
+  "broll_clips",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    title: text("title").notNull(),
+    /** Words Elena matches scenes against. */
+    tags: text("tags").notNull().default(""),
+    /** made: an AI clip Elena made. uploaded: someone on the team uploaded it. */
+    source: text("source", { enum: ["made", "uploaded"] }).notNull().default("made"),
+    status: text("status", { enum: ["making", "ready", "failed"] }).notNull().default("ready"),
+    /** What the clip was made from (AI clips). */
+    prompt: text("prompt"),
+    url: text("url"),
+    /** A still from the clip, for the library. */
+    thumbUrl: text("thumbUrl"),
+    /** Length in tenths of a second. */
+    tenths: integer("tenths"),
+    width: integer("width"),
+    height: integer("height"),
+    favorite: integer("favorite", { mode: "boolean" }).notNull().default(false),
+    /** How many videos used it. */
+    uses: integer("uses").notNull().default(0),
+    error: text("error"),
+    createdBy: text("createdBy"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("broll_clips_org_idx").on(t.organizationId)]
+);
+export type BrollClip = typeof brollClips.$inferSelect;
 
 /** Company history read from an export of the owner's Claude or ChatGPT chats into the Brain. */
 export const historyImports = sqliteTable(

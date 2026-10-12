@@ -671,7 +671,7 @@ const NAME_ICONS = {
 
 type Emp = { id: number; name: string; roleTitle: string; kind: string; status: string; avatar: string | null; interview?: string | null };
 
-export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines"; base: string }) {
+export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines" | "broll"; base: string }) {
   const { currentOrgId, currentOrg } = useTenant();
   const utils = trpc.useUtils();
   const [leave, setLeave] = React.useState<LeaveMode | null>(null);
@@ -721,6 +721,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
       <nav aria-label="Employee views" className="ld-emptabs" style={{ display: "flex", gap: 6, background: "var(--ld-faint2)", padding: 4, borderRadius: 12 }}>
         <Link href={base} style={tab(active === "chat")} className="ld-tablink">Chat</Link>
         {work && <Link href={`${base}/work`} style={tab(active === "work")}>{work}</Link>}
+        {emp.kind === "video" && <Link href={`${base}/broll`} style={tab(active === "broll")}>B-roll</Link>}
         <Link href={`${base}/knowledge`} style={tab(active === "knowledge")}>Knowledge</Link>
         <Link href={`${base}/onboarding`} style={tab(active === "onboarding")}>Onboarding</Link>
         <Link href={`${base}/guidelines`} style={tab(active === "guidelines")}>Guidelines</Link>

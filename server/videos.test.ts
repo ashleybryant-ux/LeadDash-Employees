@@ -7,27 +7,38 @@ import { createRequire } from "node:module";
 
 let decision: any = null;
 let script: any = null;
+let scenes: any = null;
+let hookOut: any = null;
+let setOut: any = null;
 vi.mock("./_core/llm", async (orig) => {
   const actual: any = await orig();
-  return { ...actual, generateJson: vi.fn(async (opts: any) => (opts.schemaName === "chat_decision" ? decision : opts.schemaName === "video_script" ? script : {})) };
+  return {
+    ...actual,
+    generateJson: vi.fn(async (opts: any) =>
+      opts.schemaName === "chat_decision" ? decision : opts.schemaName === "video_script" ? script : opts.schemaName === "video_scenes" ? scenes : opts.schemaName === "video_hooks" ? hookOut : opts.schemaName === "broll_set" ? setOut : {}
+    ),
+  };
 });
 
 import { caller, makeUser, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
 import * as hours from "./workHours";
 import * as vd from "./employees/videos";
+import * as br from "./employees/broll";
 import * as drama from "./employees/drama";
 import { withUsage } from "./usage";
 import { ENV } from "./_core/env";
+import { storagePut } from "./storage";
+import { brollClips } from "../drizzle/schema";
 
 const blank = { reply: "", action: "none", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
 const SCRIPT = {
   title: "Evening hours are here",
   shots: [
-    { at: 0, see: "Warm lamp in an empty office at dusk", say: "Evenings, finally.", photo: "" },
-    { at: 6, see: "A person closing a laptop, coat on", say: "Therapy that fits after work.", photo: "" },
-    { at: 14, see: "Two chairs, soft light", say: "Sessions until 8 PM, Monday to Thursday.", photo: "" },
-    { at: 24, see: "Logo and button", say: "Book a free consult.", photo: "" },
+    { at: 0, see: "Warm lamp in an empty office at dusk", say: "Evenings, finally.", photo: "", src: "stock", clip: 0, query: "lamp office dusk" },
+    { at: 6, see: "A person closing a laptop, coat on", say: "Therapy that fits after work.", photo: "", src: "ai", clip: 0, query: "closing laptop" },
+    { at: 14, see: "Answer in five minutes", say: "Sessions until 8 PM, Monday to Thursday.", photo: "", src: "text", clip: 0, query: "" },
+    { at: 24, see: "Book a free consult", say: "Book a free consult.", photo: "", src: "logo", clip: 0, query: "" },
   ],
   caption: "Evening sessions are open. Book a free consult.",
 };
@@ -35,25 +46,40 @@ const SCRIPT = {
 let calls: { url: string; init: any }[] = [];
 let mp3: Buffer;
 let png: Buffer;
+let mp4: Buffer;
+let wav: Buffer;
+let longMp4: string;
 let rendered: vd.RenderInput[] = [];
-const before = { fal: ENV.falKey, openai: ENV.openAiKey };
+let models = new Map<string, string>();
+const before = { fal: ENV.falKey, openai: ENV.openAiKey, pexels: ENV.pexelsKey };
+const ff = () => createRequire(import.meta.url)("ffmpeg-static") as string;
 
 beforeAll(() => {
-  const ff = createRequire(import.meta.url)("ffmpeg-static") as string;
+  // Built-in music is made once and kept; start without it so the test sees it made.
+  fs.rmSync(path.join(path.resolve(ENV.uploadsDir), "..", "ld-music"), { recursive: true, force: true });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "videos-t-"));
-  execFileSync(ff, ["-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220", "-t", "6", path.join(dir, "vo.mp3")]);
+  execFileSync(ff(), ["-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220", "-t", "6", path.join(dir, "vo.mp3")]);
   mp3 = fs.readFileSync(path.join(dir, "vo.mp3"));
-  execFileSync(ff, ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240", "-frames:v", "1", path.join(dir, "s.png")]);
+  execFileSync(ff(), ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240", "-frames:v", "1", path.join(dir, "s.png")]);
   png = fs.readFileSync(path.join(dir, "s.png"));
+  execFileSync(ff(), ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=180x320:rate=30", "-t", "2", "-pix_fmt", "yuv420p", path.join(dir, "c.mp4")]);
+  mp4 = fs.readFileSync(path.join(dir, "c.mp4"));
+  execFileSync(ff(), ["-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "3", path.join(dir, "m.wav")]);
+  wav = fs.readFileSync(path.join(dir, "m.wav"));
+  longMp4 = path.join(dir, "long.mp4");
+  execFileSync(ff(), ["-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:size=64x64:rate=5", "-t", "62", "-pix_fmt", "yuv420p", longMp4]);
 });
 
 beforeEach(() => {
   calls = [];
   rendered = [];
+  models = new Map();
   script = SCRIPT;
+  scenes = null;
   drama.setPollMs(1);
   (ENV as any).falKey = "fal-test";
   (ENV as any).openAiKey = "sk-test";
+  (ENV as any).pexelsKey = "";
   // The cut itself is checked in its own test below; here it records what it was asked to cut.
   vd.setRenderer(async (input) => {
     rendered.push(input);
@@ -67,11 +93,23 @@ beforeEach(() => {
     if (u === "https://api.openai.com/v1/audio/speech") return new Response(mp3, { status: 200 });
     if (u.startsWith("https://queue.fal.run/") && init.method === "POST") {
       const id = `r${++n}`;
+      models.set(id, u.slice("https://queue.fal.run/".length));
       return Response.json({ request_id: id, status_url: `https://queue.fal.run/req/${id}/status`, response_url: `https://queue.fal.run/req/${id}` });
     }
     if (/\/req\/r\d+\/status$/.test(u)) return Response.json({ status: "COMPLETED" });
-    if (/\/req\/r\d+$/.test(u)) return Response.json({ images: [{ url: "https://fal.media/still.png" }] });
+    const m = u.match(/\/req\/(r\d+)$/);
+    if (m) {
+      const model = models.get(m[1]) ?? "";
+      if (model.includes("kling")) return Response.json({ video: { url: "https://fal.media/clip.mp4" } });
+      if (model.includes("lyria")) return Response.json({ audio: { url: "https://fal.media/music.wav" } });
+      return Response.json({ images: [{ url: "https://fal.media/still.png" }] });
+    }
     if (u === "https://fal.media/still.png") return new Response(png, { status: 200 });
+    if (u === "https://fal.media/clip.mp4" || u === "https://videos.pexels.com/stock.mp4") return new Response(mp4, { status: 200 });
+    if (u === "https://fal.media/music.wav") return new Response(wav, { status: 200 });
+    if (u.startsWith("https://api.pexels.com/v1/videos/search")) {
+      return Response.json({ videos: [{ url: "https://www.pexels.com/video/1/", image: "https://images.pexels.com/1.jpg", duration: 9, user: { name: "Ana Lee" }, video_files: [{ link: "https://videos.pexels.com/stock.mp4", width: 1080, height: 1920, file_type: "video/mp4", quality: "hd" }] }] });
+    }
     return new Response("no route", { status: 500 });
   });
 });
@@ -80,6 +118,7 @@ afterEach(() => {
   vd.setRenderer(null);
   (ENV as any).falKey = before.fal;
   (ENV as any).openAiKey = before.openai;
+  (ENV as any).pexelsKey = before.pexels;
 });
 
 async function onPlan(slug: string) {
@@ -89,86 +128,156 @@ async function onPlan(slug: string) {
   return w;
 }
 
-describe("Elena makes any video you describe", () => {
-  it("asks what kind when it isn't clear, with tap-to-answer choices", async () => {
+const posted = (u: string) => calls.filter((c) => c.url === `https://queue.fal.run/${u}` && c.init.method === "POST").map((c) => JSON.parse(c.init.body));
+
+/** A ready library clip, as if uploaded. */
+async function libraryClip(orgId: number, title: string, tags: string) {
+  const saved = await storagePut(`org-${orgId}/broll/lib.mp4`, mp4, "video/mp4");
+  return db.getDb().insert(brollClips).values({ organizationId: orgId, title, tags, source: "uploaded", status: "ready", url: saved.url, tenths: 20, width: 180, height: 320 }).returning().get();
+}
+
+describe("Elena's video agent", () => {
+  it("shows the Make a video card when the format isn't clear", async () => {
     const { orgId, owner } = await makeWorkspace("vid-ask");
     const elena = (await db.getEmployeeByKind(orgId, "video"))!;
     decision = { ...blank, action: "make_video_script", notes: "A 30-second Instagram video about our new evening hours", focus: "" };
     const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make a 30-second Instagram video about our new evening hours" });
-    expect(r.reply.content).toBe("Should someone be on camera, or b-roll with a voice-over?");
-    expect(JSON.parse(r.reply.cards!)).toEqual([expect.objectContaining({ type: "choices", options: ["B-roll with voice-over", "Me on camera", "Slideshow of our photos"] })]);
+    expect(r.reply.content).toBe("What are we making? Pick a format and give me an idea, a script, a link or an audio file. I'll show you the storyboard before I make anything.");
+    expect(JSON.parse(r.reply.cards!)).toEqual([expect.objectContaining({ type: "video_maker", title: "A 30-second Instagram video about our new evening hours" })]);
     expect(vd.list(orgId)).toHaveLength(0);
   });
 
-  it("writes the shot list in chat with the defaults: b-roll, vertical, 30 seconds, a standard voice", async () => {
+  it("writes the storyboard with the hook first and a source for every scene; nothing is made yet", async () => {
     const { orgId, owner } = await makeWorkspace("vid-write");
     const elena = (await db.getEmployeeByKind(orgId, "video"))!;
     decision = { ...blank, action: "make_video_script", notes: "Our new evening hours. Calm, cozy office at night, end with Book a free consult.", focus: "broll" };
-    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: elena.id, text: "B-roll with voice-over" });
-    expect(r.reply.content).toBe("Here's the shot list (4 shots, 30 seconds, vertical). It uses 4 work hours to make.");
+    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: elena.id, text: "B-roll story" });
+    // No library and no stock on this server: the footage scenes are new AI clips (2 work hours each).
+    expect(r.reply.content).toBe("Here's the storyboard (4 scenes, 30 seconds, 9:16). The hook is up front. Change any scene, then press Make the video. It uses 8 work hours when it's done.");
     const cards = JSON.parse(r.reply.cards!);
     expect(cards[0]).toMatchObject({ type: "made_video", title: "Evening hours are here" });
-    expect(cards[1]).toMatchObject({ type: "choices", options: ["Make it", "Change the script"] });
     const v = vd.get(orgId, cards[0].id)!;
-    expect(v).toMatchObject({ kind: "broll", size: "vertical", seconds: 30, status: "draft", voiceId: "openai:coral", voiceName: "Coral" });
-    expect(vd.scriptOf(v).shots.map((s) => [s.at, s.see, s.say])).toEqual(SCRIPT.shots.map((s) => [s.at, s.see, s.say]));
-    expect(vd.scriptOf(v).caption).toBe(SCRIPT.caption);
+    expect(v).toMatchObject({ kind: "broll", size: "vertical", seconds: 30, status: "draft", source: "idea", voiceId: "openai:coral", voiceName: "Coral" });
+    expect(vd.scriptOf(v).shots.map((s) => s.src)).toEqual(["ai", "ai", "text", "logo"]);
     const view = (await caller(owner).videos.get({ organizationId: orgId, id: v.id }))!;
-    expect(view).toMatchObject({ kindLabel: "B-roll with voice-over", length: "0:30", statusLabel: "Script ready", hours: "4 work hours", voiceName: "Coral", voiceStandard: true });
-    expect(view.shots[1]).toEqual({ at: 6, time: "0:06", see: "A person closing a laptop, coat on", say: "Therapy that fits after work.", photo: "" });
+    expect(view).toMatchObject({ kindLabel: "B-roll story", length: "0:30", statusLabel: "Storyboard", hours: "8 work hours", newClips: 2, ratios: ["9:16"], voiceName: "Coral" });
+    expect(view.shots.map((s) => [s.srcLabel, s.hook])).toEqual([["AI shot", true], ["AI shot", false], ["Kinetic text", false], ["Logo end", false]]);
+    // Defaults for the look: bold captions in the middle with gold, music low; no logo uploaded, so the logo is off.
+    expect(view.lookText).toEqual({ captions: "On, Bold pop, middle, gold highlight", logo: "Off", music: "Calm pulse, volume 20" });
 
     // Another workspace never sees it.
     const other = await makeWorkspace("vid-write-2");
     expect(await caller(other.owner).videos.list({ organizationId: other.orgId })).toEqual([]);
     expect(await caller(other.owner).videos.get({ organizationId: other.orgId, id: v.id })).toBeNull();
     await expect(caller(other.owner).videos.make({ organizationId: other.orgId, id: v.id })).rejects.toThrow(/not in this workspace/);
+    await expect(caller(other.owner).videos.restyle({ organizationId: other.orgId, id: v.id, logo: { on: false, corner: "br", size: "m" } })).rejects.toThrow(/not in this workspace/);
 
-    // Edit script: the shots as typed, back to a draft.
-    const saved = await caller(owner).videos.saveScript({ organizationId: orgId, id: v.id, shots: [{ at: 0, see: "Lamp", say: "Evenings." }, { at: 10, see: "Chairs", say: "Book now." }] });
-    expect(saved.shots.map((s) => s.see)).toEqual(["Lamp", "Chairs"]);
-    expect(saved.caption).toBe(SCRIPT.caption);
+    // Rewrite line and Change shot on the storyboard.
+    const line = await caller(owner).videos.saveLine({ organizationId: orgId, id: v.id, n: 1, say: "Therapy after work." });
+    expect(line.shots[1].say).toBe("Therapy after work.");
+    const lib = await libraryClip(orgId, "Laptop closing", "laptop desk evening");
+    const changed = await caller(owner).videos.changeShot({ organizationId: orgId, id: v.id, n: 1, src: "library", clipId: lib.id });
+    expect(changed.shots[1]).toMatchObject({ src: "library", srcLabel: "Your b-roll", clipId: lib.id, made: true });
+    expect(changed.hours).toBe("6 work hours");
+    // Stock isn't set up here, so it says so.
+    await expect(caller(owner).videos.changeShot({ organizationId: orgId, id: v.id, n: 0, src: "stock" })).rejects.toThrow(/Stock footage isn't set up/);
   });
 
-  it("makes it on a work-hour plan: voice-over, a still per shot, the cut, and 4 work hours for 30 seconds or less", async () => {
+  it("uses the b-roll library first, then stock, then a new AI clip", async () => {
+    const { orgId } = await makeWorkspace("vid-sources");
+    (ENV as any).pexelsKey = "px-test";
+    const lamp = await libraryClip(orgId, "Lamp at dusk", "warm lamp empty office dusk evening");
+    const desk = await libraryClip(orgId, "Front desk", "front desk phone");
+    script = { ...SCRIPT, shots: [{ ...SCRIPT.shots[0], src: "library", clip: desk.id }, SCRIPT.shots[1], { ...SCRIPT.shots[2], src: "stock", see: "Rain on a window", query: "rain window" }, SCRIPT.shots[3]] };
+    const v = await vd.writeVideo(orgId, { instructions: "Evening hours", kind: "ad", sizes: ["vertical", "square"] });
+    const shots = vd.scriptOf(v).shots;
+    // Elena named the desk clip; she asked for a new AI clip for the laptop scene; the stock scene found stock.
+    expect(shots.map((s) => s.src)).toEqual(["library", "ai", "stock", "logo"]);
+    expect(shots[0].clipId).toBe(desk.id);
+    expect(shots[2].stock).toMatchObject({ credit: "Ana Lee on Pexels", page: "https://www.pexels.com/video/1/" });
+    const search = calls.find((c) => c.url.startsWith("https://api.pexels.com/"))!;
+    expect(search.init.headers).toMatchObject({ Authorization: "px-test" });
+    expect(new URL(search.url).searchParams.get("orientation")).toBe("portrait");
+    // A scene the library fits by its words gets the library clip even when Elena didn't name it.
+    const planned = await vd.assignSources(orgId, "broll", "vertical", [{ at: 0, see: "A warm lamp in the empty office", say: "Hi." }]);
+    expect(planned[0]).toMatchObject({ src: "library", clipId: lamp.id });
+    expect(vd.view(v).sizes).toEqual(["vertical", "square"]);
+    expect(vd.view(v).hours).toBe("6 work hours");
+  });
+
+  it("makes every size from one job: voice-over, new AI clips saved to the library, captions, logo and music", async () => {
     const { orgId, owner } = await onPlan("vid-make");
     const elena = (await db.getEmployeeByKind(orgId, "video"))!;
-    const v = await vd.writeVideo(orgId, { instructions: "Our new evening hours" });
+    const logo = await storagePut(`org-${orgId}/brand/logo.png`, png, "image/png");
+    await db.updateOrganization(orgId, { logoUrl: logo.url, brandColors: JSON.stringify(["#123456", "#abcdef"]) });
+    const v = await vd.writeVideo(orgId, { instructions: "Our new evening hours", sizes: ["vertical", "square"] });
+    expect(vd.lookOf(v).logo).toEqual({ on: true, corner: "br", size: "m" });
     decision = { ...blank, action: "make_video" };
     // On a plan, a job this big asks first.
     const ask = await caller(owner).chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make it" });
-    expect(ask.reply.content).toMatch(/^Before I start: a video uses 8 work hours for each minute of video \(4 for 30 seconds\)\. You have 50 hr left\./);
+    expect(ask.reply.content).toMatch(/^Before I start:/);
     const go = await caller(owner).chat.send({ organizationId: orgId, employeeId: elena.id, text: "Go ahead" });
-    expect(go.reply.content).toBe('Making "Evening hours are here" now. It usually takes a few minutes, and I\'ll post it here when it\'s done.');
-    expect(vd.get(orgId, v.id)!.status).toBe("making");
+    expect(go.reply.content).toMatch(/^Making "Evening hours are here" now\./);
     await vd.jobFor(v.id);
 
     const done = vd.get(orgId, v.id)!;
+    expect(done.error).toBeNull();
     expect(done.status).toBe("ready");
-    expect(done.videoUrl).toMatch(/^\/files\/org-\d+\/videos\/video-\d+_[0-9a-f]+\.mp4$/);
-    // The voice-over is every shot's words, read in the standard voice.
-    const speech = calls.find((c) => c.url === "https://api.openai.com/v1/audio/speech")!;
-    expect(JSON.parse(speech.init.body)).toMatchObject({ voice: "coral", input: "Evenings, finally. Therapy that fits after work. Sessions until 8 PM, Monday to Thursday. Book a free consult." });
-    // One still per shot, vertical, with no words in the picture.
-    const stills = calls.filter((c) => c.url === "https://queue.fal.run/fal-ai/nano-banana-pro" && c.init.method === "POST").map((c) => JSON.parse(c.init.body));
-    expect(stills).toHaveLength(4);
-    expect(stills[0]).toMatchObject({ aspect_ratio: "9:16", num_images: 1 });
-    expect(stills[0].prompt).toMatch(/^A still frame of b-roll footage: Warm lamp in an empty office at dusk\..*No text/);
-    // The cut: four clips with alternating moves, as long as the voice plus a short tail, captions from the words.
+    expect(JSON.parse(done.videoUrls)).toEqual({ vertical: expect.stringMatching(/9x16/), square: expect.stringMatching(/1x1/) });
+    expect(done.videoUrl).toBe(JSON.parse(done.videoUrls).vertical);
+    // The voice-over is every scene's words, read once.
+    const speech = calls.filter((c) => c.url === "https://api.openai.com/v1/audio/speech");
+    expect(speech).toHaveLength(1);
+    expect(JSON.parse(speech[0].init.body)).toMatchObject({ voice: "coral", input: "Evenings, finally. Therapy that fits after work. Sessions until 8 PM, Monday to Thursday. Book a free consult." });
+    // Two new AI clips: a still, then the still brought to life (5 seconds or 10, no sound).
+    expect(posted("fal-ai/nano-banana-pro")).toHaveLength(2);
+    const moved = posted("fal-ai/kling-video/v3/pro/image-to-video");
+    expect(moved).toHaveLength(2);
+    expect(moved[0]).toMatchObject({ start_image_url: "https://fal.media/still.png", generate_audio: false });
+    expect(["5", "10"]).toContain(moved[0].duration);
+    // Each is saved to the b-roll library for every video after this one.
+    const lib = br.listClips(orgId);
+    expect(lib.filter((c) => c.source === "made" && c.status === "ready")).toHaveLength(2);
+    expect(vd.scriptOf(done).shots.slice(0, 2).every((s) => s.src === "ai" && s.clipId && s.file)).toBe(true);
+    // One cut per size, the same scenes: clips that move, then the text and logo cards.
+    expect(rendered.map((r) => [r.w, r.h])).toEqual([[1080, 1920], [1080, 1080]]);
     const cut = rendered[0];
-    expect([cut.w, cut.h]).toEqual([1080, 1920]);
-    expect(cut.clips.map((c) => c.motion)).toEqual(["push", "right", "pull", "left"]);
-    expect(cut.clips.reduce((n, c) => n + c.seconds, 0)).toBeCloseTo(cut.total, 3);
-    expect(cut.total).toBeGreaterThan(6.5);
-    expect(cut.captions[0]).toMatchObject({ text: "Evenings, finally." });
-    expect(cut.captions.every((c) => c.text.split(" ").length <= 6)).toBe(true);
-    expect(done.tenths).toBe(Math.round(cut.total * 10));
-    // 8 work hours a minute, by the half minute: a 7-second video uses 4.
-    const b = await hours.balance(orgId);
-    expect(b.usedMinutes).toBe(240);
+    expect(cut.clips.map((c) => !!c.video)).toEqual([true, true, false, false]);
+    expect(cut.clips.reduce((n, c) => n + c.seconds, 0)).toBeCloseTo(cut.total, 1);
+    expect(cut.words!.map((w) => w.text).join(" ")).toBe("Evenings, finally. Therapy that fits after work. Sessions until 8 PM, Monday to Thursday. Book a free consult.");
+    expect(cut.caps).toMatchObject({ on: true, style: "pop", position: "middle", color: "#F5C542" });
+    expect(cut.logo).toMatchObject({ corner: "br", size: "m" });
+    expect(cut.music!.volume).toBe(20);
+    expect(posted("fal-ai/lyria2")).toHaveLength(1);
+    // 4 work hours for the length, and 2 for each new clip.
+    expect((await hours.balance(orgId)).usedMinutes).toBe(240 + 2 * 120);
     const last = (await db.listChatMessages(orgId, elena.id)).at(-1)!;
-    expect(last.content).toMatch(/^Your video "Evening hours are here" is ready\. It came out at 0:0\d and used 4 work hours\. It's on my Videos tab\.$/);
-    expect(JSON.parse(last.cards!)[0]).toMatchObject({ type: "made_video", id: v.id });
-    expect((await caller(owner).videos.get({ organizationId: orgId, id: v.id }))!.statusLabel).toBe("Ready");
+    expect(last.content).toMatch(/^Your video "Evening hours are here" is ready: 0:0\d, 9:16 and 1:1\./);
+
+    // Edit: captions, logo and music change with a new cut, no new footage, no voice read again, no work hours.
+    calls = [];
+    rendered = [];
+    await caller(owner).videos.restyle({ organizationId: orgId, id: v.id, captions: { on: true, style: "boxed", position: "top", highlight: "brand" }, logo: { on: false, corner: "tl", size: "s" }, music: { track: "none", volume: 0 } });
+    await vd.jobFor(v.id);
+    expect(vd.get(orgId, v.id)!.status).toBe("ready");
+    expect(calls.filter((c) => c.url.includes("fal") || c.url.includes("openai"))).toEqual([]);
+    expect(rendered[0]).toMatchObject({ logo: null, music: null, caps: { style: "boxed", position: "top", color: "#abcdef" } });
+    expect((await hours.balance(orgId)).usedMinutes).toBe(480);
+    expect((await db.listChatMessages(orgId, elena.id)).at(-1)!.content).toBe('I saved your changes to "Evening hours are here". No new footage, so it used no work hours.');
+
+    // Redo a scene: one new clip for that scene only.
+    calls = [];
+    await caller(owner).videos.changeShot({ organizationId: orgId, id: v.id, n: 0, src: "ai", see: "Sunset over a quiet street", redo: true });
+    await vd.jobFor(v.id);
+    expect(posted("fal-ai/kling-video/v3/pro/image-to-video")).toHaveLength(1);
+    expect((await hours.balance(orgId)).usedMinutes).toBe(480 + 120);
+
+    // Send to Sienna: a Reel draft with the caption, waiting for approval.
+    await caller(owner).videos.toSienna({ organizationId: orgId, id: v.id });
+    const sienna = (await db.getEmployeeByKind(orgId, "social"))!;
+    const post = (await db.listOutboundItemsByOrg(orgId, "social_post")).at(-1)!;
+    expect(post).toMatchObject({ employeeId: sienna.id, status: "pending_approval", body: SCRIPT.caption });
+    expect(JSON.parse(post.metadata!).post).toMatchObject({ type: "reel", videoUrl: JSON.parse(vd.get(orgId, v.id)!.videoUrls).vertical });
   });
 
   it("won't start when the workspace is out of work hours, and a failed cut uses none", async () => {
@@ -180,7 +289,8 @@ describe("Elena makes any video you describe", () => {
     expect(vd.get(orgId, v.id)!.status).toBe("draft");
 
     const fresh = await onPlan("vid-fail");
-    const v2 = await vd.writeVideo(fresh.orgId, { instructions: "Our new evening hours", kind: "explainer", size: "wide" });
+    const v2 = await vd.writeVideo(fresh.orgId, { instructions: "Our new evening hours", kind: "explainer", size: "wide", look: { music: { track: "none" } } });
+    expect(vd.scriptOf(v2).shots.map((s) => s.src)).toEqual(["text", "text", "text", "logo"]);
     vd.setRenderer(async (input) => {
       // Explainer cards are drawn here, fitted into the wide frame on their own background.
       expect(input.clips.every((c) => c.fit === "contain" && c.motion === "push")).toBe(true);
@@ -194,7 +304,33 @@ describe("Elena makes any video you describe", () => {
     expect(calls.some((c) => c.url.startsWith("https://queue.fal.run/"))).toBe(false);
   });
 
-  it("makes a Video plan from trends into a b-roll video with Make it", async () => {
+  it("keeps their script word for word, one scene per line or two", async () => {
+    const { orgId } = await makeWorkspace("vid-script");
+    const words = "Half the people who call your practice will book somewhere else by Friday. It's not your clinicians. It's the wait between the call and the first answer. Answer in five minutes, and offer two times. Book a call at the link in our bio.";
+    scenes = { title: "Why new clients disappear", caption: "Answer fast.", scenes: [{ see: "Phone on an empty desk", photo: "", src: "ai", clip: 0, query: "phone desk" }, { see: "Lobby", photo: "", src: "ai", clip: 0, query: "" }, { see: "Answer in 5 minutes", photo: "", src: "text", clip: 0, query: "" }, { see: "Book a call", photo: "", src: "logo", clip: 0, query: "" }] };
+    const v = await vd.writeVideo(orgId, { instructions: words, kind: "broll", source: "script", seconds: 30 });
+    const shots = vd.scriptOf(v).shots;
+    expect(shots.map((s) => s.say).join(" ")).toBe(words);
+    expect(shots[0]).toMatchObject({ at: 0, see: "Phone on an empty desk" });
+    expect(v.title).toBe("Why new clients disappear");
+    await expect(vd.rewriteVideo(orgId, v.id, "shorter")).rejects.toThrow(/The words are yours/);
+    expect(vd.splitScript("One. Two three. Four five six.", 15).join(" ")).toBe("One. Two three. Four five six.");
+  });
+
+  it("writes a new hook, and three ad versions with different hooks", async () => {
+    const { orgId } = await makeWorkspace("vid-hooks");
+    const v = await vd.writeVideo(orgId, { instructions: "Evening hours", kind: "ad" });
+    hookOut = { hooks: [{ say: "Still waiting for a callback?", see: "Phone ringing", query: "phone ringing" }, { say: "Two times, five minutes.", see: "Clock", query: "clock" }, { say: "Your next client is calling.", see: "Hand on phone", query: "phone" }] };
+    const h = await vd.newHook(orgId, v.id);
+    expect(vd.scriptOf(h).shots[0]).toMatchObject({ say: "Still waiting for a callback?", see: "Phone ringing" });
+    expect(vd.scriptOf(h).shots.slice(1).map((s) => s.say)).toEqual(SCRIPT.shots.slice(1).map((s) => s.say));
+    const versions = await vd.adVersions(orgId, v.id);
+    expect(versions.map((x) => x.title)).toEqual(["Evening hours are here (version A)", "Evening hours are here (version B)", "Evening hours are here (version C)"]);
+    expect(versions.map((x) => vd.scriptOf(x).shots[0].say)).toEqual(hookOut.hooks.map((x: any) => x.say));
+    expect(versions.every((x) => x.status === "draft" && !x.paidAt)).toBe(true);
+  });
+
+  it("makes a Video plan from trends into a b-roll video, and Recreate keeps a format's structure", async () => {
     const { orgId, owner } = await makeWorkspace("vid-plan");
     const elena = (await db.getEmployeeByKind(orgId, "video"))!;
     const plan = await db.createWorkItem({
@@ -204,40 +340,108 @@ describe("Elena makes any video you describe", () => {
       status: "drafted",
       title: "Three signs you need a break",
       sourceUrl: "https://example.com/trend",
-      data: JSON.stringify({ trend: { name: "Three signs", whyItWorks: "Lists hold attention", sourceUrl: "https://example.com/trend" }, plan: { title: "Three signs you need a break", platform: "Instagram Reels", lengthSeconds: 20, hook: "Tired all the time?", shots: [{ time: "0:00-0:03", shot: "Coffee cup on a desk", say: "Tired all the time?" }, { time: "0:03-0:12", shot: "Window with rain", say: "Here are three signs." }, { time: "0:12", shot: "Calendar", say: "Book a session." }], caption: "Save this." } }),
+      data: JSON.stringify({ trend: { name: "3 mistakes countdown", whyItWorks: "Lists hold attention", sourceUrl: "https://example.com/trend" }, plan: { title: "Three signs you need a break", platform: "Instagram Reels", lengthSeconds: 20, hook: "Tired all the time?", shots: [{ time: "0:00-0:03", shot: "Coffee cup on a desk", say: "Tired all the time?" }, { time: "0:03-0:12", shot: "Window with rain", say: "Here are three signs." }, { time: "0:12", shot: "Calendar", say: "Book a session." }], caption: "Save this." } }),
     });
     const made = await caller(owner).video.makeIt({ organizationId: orgId, id: plan.id });
     expect(made).toMatchObject({ kind: "broll", size: "vertical", seconds: 20, status: "making", planId: plan.id, caption: "Save this." });
     expect(made.shots.map((s) => [s.at, s.see, s.say])).toEqual([[0, "Coffee cup on a desk", "Tired all the time?"], [3, "Window with rain", "Here are three signs."], [12, "Calendar", "Book a session."]]);
     await vd.jobFor(made.id);
     expect(vd.get(orgId, made.id)!.status).toBe("ready");
-    // Pressing it again returns the same video, not a second one.
     await caller(owner).video.makeIt({ organizationId: orgId, id: plan.id });
     expect(vd.list(orgId)).toHaveLength(1);
 
-    // In chat, "make the three signs one" finds the plan by its title.
-    const p2 = await db.createWorkItem({ organizationId: orgId, employeeId: elena.id, kind: "video_plan", status: "drafted", title: "Morning routine for therapists", sourceUrl: "https://example.com/t2", data: JSON.stringify({ plan: { title: "Morning routine for therapists", lengthSeconds: 15, shots: [{ time: "0:00", shot: "Sunrise", say: "Start slow." }] } }) });
-    decision = { ...blank, action: "make_video", target: "morning routine" };
-    const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make the morning routine one" });
-    expect(r.reply.content).toMatch(/^Making "Morning routine for therapists" now\./);
-    const v = vd.list(orgId).find((x) => x.planId === p2.id)!;
-    await vd.jobFor(v.id);
-    expect(vd.get(orgId, v.id)!.status).toBe("ready");
+    const f = await caller(owner).videos.formats({ organizationId: orgId });
+    expect(f[0]).toMatchObject({ id: plan.id, name: "3 mistakes countdown", structure: "Hook, 3 beats, 20 seconds" });
+    const re = await caller(owner).videos.recreate({ organizationId: orgId, planId: plan.id });
+    expect(re.status).toBe("draft");
+    const { generateJson } = await import("./_core/llm");
+    const asked = (generateJson as any).mock.calls.filter((c: any) => c[0].schemaName === "video_script").at(-1)[0];
+    expect(asked.prompt).toMatch(/Recreate this format with our business[\s\S]*3 mistakes countdown[\s\S]*Coffee cup on a desk/);
+    expect(JSON.parse((await db.listChatMessages(orgId, elena.id)).at(-1)!.cards!)[0]).toMatchObject({ type: "made_video", id: re.id });
   });
 
-  it("cuts real stills into an MP4 with ffmpeg: moves, captions and the voice-over", async () => {
+  it("word-by-word captions: a few words at a time, the word being said highlighted", () => {
+    const words = vd.estimateWords("Half the people who call will book somewhere else.", 3);
+    expect(words).toHaveLength(9);
+    expect(words[8].end).toBeLessThanOrEqual(3);
+    const ass = vd.wordCaptions(1080, 1920, words, { on: true, style: "pop", position: "top", highlight: "gold", color: "#F5C542" }, 0.3);
+    expect(ass).toMatch(/Style: Cap,DejaVu Sans,\d+,.*,8,\d+,\d+,\d+,1/);
+    const lines = ass.split("\n").filter((l) => l.startsWith("Dialogue"));
+    expect(lines).toHaveLength(9);
+    expect(lines[0]).toContain("{\\c&H0042C5F5&\\fscx110\\fscy110}HALF{\\r} THE PEOPLE");
+    expect(lines[3]).toContain("{\\c&H0042C5F5&\\fscx110\\fscy110}WHO{\\r} CALL WILL");
+    const plain = vd.wordCaptions(1920, 1080, words, { on: true, style: "clean", position: "bottom", highlight: "none", color: "#F5C542" }, 0);
+    expect(plain.split("\n").filter((l) => l.startsWith("Dialogue")).map((l) => l.split(",,0,0,0,,")[1])).toEqual(["Half the people who call", "will book somewhere else."]);
+    const times = vd.sceneTimes([{ say: "Half the people" }, { say: "who call will book somewhere else." }], words, 4, 0.3);
+    expect(times.reduce((a, b) => a + b, 0)).toBeCloseTo(4, 1);
+    expect(times[0]).toBeGreaterThan(0.5);
+  });
+
+  it("cuts moving clips and stills into an MP4 with ffmpeg: captions, logo and music", async () => {
     vd.setRenderer(null);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "videos-cut-"));
     const img = path.join(dir, "a.png");
     fs.writeFileSync(img, png);
+    const clip = path.join(dir, "c.mp4");
+    fs.writeFileSync(clip, mp4);
+    const music = path.join(dir, "m.wav");
+    fs.writeFileSync(music, wav);
     const audio = path.join(dir, "vo.mp3");
     fs.writeFileSync(audio, mp3.subarray(0, Math.floor(mp3.length / 4)));
-    const plan = vd.planCut([{ say: "One two three." }, { say: "Four five." }], 1.2);
-    const out = await vd.render({ w: 180, h: 320, audio, delay: 0.3, total: plan.total, captions: plan.captions, clips: [{ file: img, seconds: plan.durations[0], fit: "cover", pad: "#000000", motion: "push" }, { file: img, seconds: plan.durations[1], fit: "contain", pad: "#0d3b2e", motion: "right" }] });
+    const words = vd.estimateWords("One two three four five.", 1.2);
+    const total = 2.2;
+    const out = await vd.render({
+      w: 180,
+      h: 320,
+      audio,
+      delay: 0.3,
+      total,
+      captions: [],
+      words,
+      caps: { on: true, style: "pop", position: "middle", highlight: "gold", color: "#F5C542" },
+      logo: { file: img, corner: "br", size: "m" },
+      music: { file: music, volume: 20 },
+      // A clip shorter than its scene is looped.
+      clips: [{ file: clip, seconds: 1.4, fit: "cover", pad: "#000000", motion: "push", video: true }, { file: img, seconds: 0.8, fit: "contain", pad: "#0d3b2e", motion: "right" }],
+    });
     const file = path.join(dir, "out.mp4");
     fs.writeFileSync(file, out);
     const p = await drama.probe(file);
     expect(p.audio).toBe(true);
-    expect(Math.abs(p.duration - plan.total)).toBeLessThan(0.25);
+    expect(Math.abs(p.duration - total)).toBeLessThan(0.25);
+  });
+});
+
+describe("The b-roll library", () => {
+  it("takes uploads up to 60 seconds, tagged, and makes sets of AI clips that use their work hours", async () => {
+    const { orgId, owner } = await onPlan("broll-lib");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "broll-up-"));
+    const file = path.join(dir, "IMG_2231.MOV");
+    fs.writeFileSync(file, mp4);
+    const c = await br.saveUpload(orgId, { file, name: "Lobby, morning light.mov", by: "Ashley", describe: false });
+    expect(c).toMatchObject({ title: "Lobby, morning light", source: "uploaded", status: "ready", width: 180, height: 320 });
+    expect(c.url).toMatch(/^\/files\/org-\d+\/broll\/.+\.mp4$/);
+    expect(c.thumbUrl).toMatch(/\.jpg$/);
+    expect(br.clipView(c)).toMatchObject({ sourceLabel: "Uploaded", length: "0:02", fits: ["9:16", "1:1"] });
+    await expect(br.saveUpload(orgId, { file: longMp4, name: "long.mp4", by: "Ashley", describe: false })).rejects.toThrow("Clips can be up to 60 seconds. This one is 62.");
+
+    // Favorites and Delete, only in this workspace.
+    expect((await caller(owner).broll.favorite({ organizationId: orgId, id: c.id, favorite: true })).favorite).toBe(true);
+    const other = await makeWorkspace("broll-lib-2");
+    await expect(caller(other.owner).broll.remove({ organizationId: other.orgId, id: c.id })).rejects.toThrow(/not in this workspace/);
+    expect((await caller(other.owner).broll.list({ organizationId: other.orgId })).clips).toEqual([]);
+
+    // Make clips: Elena plans the set and makes each one.
+    setOut = { clips: [{ title: "Calm office", tags: "office calm morning", prompt: "A calm therapy office in morning light" }, { title: "Plants", tags: "plants chairs", prompt: "Plants and soft chairs, slow pan" }] };
+    const rows = await caller(owner).broll.make({ organizationId: orgId, ask: "2 clips of a calm therapy office", count: 2, size: "vertical", seconds: 5 });
+    expect(rows.map((r) => r.status)).toEqual(["making", "making"]);
+    await br.setJob(orgId);
+    const list = (await caller(owner).broll.list({ organizationId: orgId })).clips;
+    expect(list.filter((x) => x.sourceLabel === "AI clip").map((x) => [x.title, x.status])).toEqual([["Plants", "ready"], ["Calm office", "ready"]]);
+    expect((await hours.balance(orgId)).usedMinutes).toBe(2 * 120);
+    const elena = (await db.getEmployeeByKind(orgId, "video"))!;
+    expect((await db.listChatMessages(orgId, elena.id)).at(-1)!.content).toBe("2 new clips are in your b-roll library. I'll use them in every video after this one.");
+    await caller(owner).broll.remove({ organizationId: orgId, id: c.id });
+    expect(br.getClip(orgId, c.id)).toBeNull();
   });
 });

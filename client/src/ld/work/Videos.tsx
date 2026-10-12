@@ -8,6 +8,7 @@ import { fmtDate, parseJson } from "../meta";
 import { AvatarVideosTab } from "../chat/Avatar";
 import { CampaignsTab, DramaCastTab, DramaEpisodesTab, StyleTab } from "../chat/Drama";
 import { MadeVideosTab } from "./MadeVideos";
+import { FormatsTab } from "../video/Broll";
 
 type Shot = { time: string; shot: string; say: string };
 type VideoData = {
@@ -24,9 +25,9 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const studio = trpc.drama.studio.useQuery({ organizationId: currentOrgId });
-  type VTab = "videos" | "avatar" | "plans" | "episodes" | "campaigns" | "cast" | "style";
+  type VTab = "videos" | "formats" | "avatar" | "plans" | "episodes" | "campaigns" | "cast" | "style";
   const fromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
-  const [tab, setTab] = React.useState<VTab>(fromUrl === "trends" ? "plans" : fromUrl && ["videos", "avatar", "plans", "episodes", "campaigns", "cast", "style"].includes(fromUrl) ? (fromUrl as VTab) : "videos");
+  const [tab, setTab] = React.useState<VTab>(fromUrl === "trends" ? "plans" : fromUrl && ["videos", "formats", "avatar", "plans", "episodes", "campaigns", "cast", "style"].includes(fromUrl) ? (fromUrl as VTab) : "videos");
   const made = trpc.videos.list.useQuery({ organizationId: currentOrgId });
   const [selected, setSelected] = React.useState<number | null>(null);
 
@@ -62,6 +63,7 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
         onChange={setTab}
         tabs={[
           { key: "videos", label: `Videos (${made.data?.length ?? 0})` },
+          { key: "formats", label: "Formats" },
           { key: "avatar", label: "Your avatar" },
           { key: "plans", label: `Video plans (${list.length})` },
           { key: "episodes", label: `Episodes (${studio.data?.episodes.length ?? 0})` },
@@ -73,6 +75,8 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
 
       {tab === "videos" ? (
         <MadeVideosTab empName={emp.name} />
+      ) : tab === "formats" ? (
+        <FormatsTab empName={emp.name} onMade={() => setTab("videos")} />
       ) : tab === "episodes" ? (
         <DramaEpisodesTab empName={emp.name} />
       ) : tab === "campaigns" ? (

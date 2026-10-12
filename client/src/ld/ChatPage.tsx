@@ -38,6 +38,8 @@ import type { Outputs } from "./types";
 import { SpokenTag, TalkButton, VoiceBar, useOneOnOne } from "./chat/OneOnOne";
 import { AvatarVideoCard } from "./chat/Avatar";
 import { MadeVideoCard } from "./work/MadeVideos";
+import { VideoMaker } from "./video/VideoAgent";
+import Broll from "./video/Broll";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 import { Composer, type Mentionable } from "./team/Composer";
 import { DeckCard, DocCard } from "./chat/Talk";
@@ -75,7 +77,7 @@ const WORK: Partial<Record<Kind, React.FC<{ emp: EmployeeRow }>>> = {
 export default function ChatPage({ params }: { params: { kind?: string; id?: string; tab?: string; appId?: string; view?: string } }) {
   const { list, isLoading } = useEmployees();
   const emp = params.id ? list.find((e) => e.id === Number(params.id)) : params.kind ? list.find((e) => e.kind === params.kind) : null;
-  const tab = (params.appId ? "work" : params.tab === "work" || params.tab === "guidelines" || params.tab === "knowledge" || params.tab === "onboarding" ? params.tab : "chat") as "chat" | "work" | "knowledge" | "onboarding" | "guidelines";
+  const tab = (params.appId ? "work" : params.tab === "work" || params.tab === "guidelines" || params.tab === "knowledge" || params.tab === "onboarding" || params.tab === "broll" ? params.tab : "chat") as "chat" | "work" | "knowledge" | "onboarding" | "guidelines" | "broll";
 
   const mobile = useIsMobile();
   const { chatOnly, currentOrg, currentOrgId } = useTenant();
@@ -114,6 +116,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
             {tab === "work" && params.appId && <ApplicationPage emp={emp} appId={Number(params.appId)} view={params.view === "review" ? "review" : "main"} />}
             {tab === "work" && !params.appId && Work && <Work emp={emp} />}
             {tab === "knowledge" && <Knowledge emp={emp} />}
+            {tab === "broll" && emp.kind === "video" && <Broll emp={emp} />}
             {tab === "onboarding" && <Onboarding emp={emp} />}
             {tab === "guidelines" && <Guidelines emp={emp} />}
           </>
@@ -129,7 +132,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "receipt" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note" | "made_video";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "receipt" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note" | "made_video" | "video_maker";
   items?: BriefItem[];
   counts?: { decisions: number; meetings: number; waiting: number; handled: number };
   id: number;
@@ -326,6 +329,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <AvatarVideoCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "made_video" ? (
                       <MadeVideoCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "video_maker" ? (
+                      <VideoMaker key={`${c.type}-${c.id}`} initial={c.title} />
                     ) : c.type === "dev_change" ? (
                       <DevChangeCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "web_task" ? (

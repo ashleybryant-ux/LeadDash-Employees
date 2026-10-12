@@ -3503,7 +3503,7 @@ export const appRouter = router({
     }),
   }),
 
-  /** Elena's videos made from instructions (b-roll, slideshow, explainer). */
+  /** Elena's video agent: storyboards, finished videos, Edit (captions, logo, music) and redos. */
   videos: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
@@ -3516,6 +3516,78 @@ export const appRouter = router({
       const v = vd.get(input.organizationId, input.id);
       return v ? vd.view(v) : null;
     }),
+    /** What the Make a video card offers: voices, music, whether there's a logo, stock and the library. */
+    options: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const [avatar, broll, hours] = await Promise.all([import("./employees/avatar"), import("./employees/broll"), import("./workHours")]);
+      const org = await db.getOrganizationById(input.organizationId);
+      const emp = await db.getEmployeeByKind(input.organizationId, "video");
+      const s = emp ? avatar.settingsOf(emp) : null;
+      const voices = await avatar.voices(input.organizationId);
+      return {
+        voices: voices.map((v) => ({ id: v.id, name: v.name, own: v.own })),
+        myVoice: s?.voiceId && voices.some((v) => v.id === s.voiceId) ? { id: s.voiceId, name: s.voiceName ?? "My voice" } : null,
+        tracks: broll.TRACK_KEYS.map((k) => ({ key: k, name: broll.TRACKS[k].name })),
+        hasLogo: !!org?.logoUrl,
+        stock: !!ENV.pexelsKey,
+        library: broll.readyClips(input.organizationId).length,
+        videoHoursPerMinute: hours.JOBS.video.minutes / 60,
+        clipHours: hours.JOBS.clip.minutes / 60,
+      };
+    }),
+    /** Plan the video: Elena writes the storyboard and posts it in her chat. Nothing is made yet. */
+    write: protectedProcedure
+      .input(
+        orgInput.extend({
+          format: z.enum(["ad", "broll", "explainer", "talking", "story", "audio"]),
+          start: z.enum(["idea", "script", "link", "audio"]),
+          text: z.string().max(8000),
+          sourceUrl: z.string().max(2000).nullable(),
+          sizes: z.array(z.enum(["vertical", "square", "wide"])).min(1).max(3),
+          seconds: z.number().int().min(10).max(180),
+          voiceId: z.string().max(200).nullable(),
+          captions: z.enum(["pop", "clean", "off"]),
+          logo: z.enum(["br", "tr", "off"]),
+          music: z.string().max(40),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const vd = await import("./employees/videos");
+        const emp = await db.getEmployeeByKind(input.organizationId, "video");
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "Elena is not in this workspace." });
+        const said = input.start === "link" ? `Make a video from ${input.sourceUrl ?? ""}` : input.start === "audio" ? "Make a video from my recording" : input.text.trim().slice(0, 600);
+        await db.createChatMessage({ organizationId: input.organizationId, employeeId: emp.id, role: "user", authorName: ctx.user.name || ctx.user.email, userId: ctx.user.id, content: `${vd.KIND_LABEL[input.format]}: ${said}` });
+        if (input.format === "talking") {
+          const av = await import("./employees/avatar");
+          const v = await vd.writeTalking(input.organizationId, { instructions: input.start === "link" ? input.sourceUrl ?? input.text : input.text, seconds: input.seconds, script: input.start === "script" });
+          const secs = Math.round(av.estimateTenths(v.script) / 10);
+          await db.createChatMessage({ organizationId: input.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `Here's the script, about ${secs} seconds, to say on camera. Read it over, then press Make it.`, cards: JSON.stringify([{ type: "avatar_video", id: v.id, title: v.title }]) });
+          return { kind: "talking" as const, id: v.id };
+        }
+        const track = input.music === "none" ? "none" : input.music in (await import("./employees/broll")).TRACKS ? input.music : "calm";
+        const v = await vd.writeVideo(input.organizationId, {
+          instructions: input.start === "link" ? "" : input.text,
+          kind: input.format,
+          sizes: input.sizes,
+          seconds: input.seconds,
+          source: input.start,
+          sourceUrl: input.sourceUrl,
+          voiceId: input.voiceId,
+          look: { captions: input.captions === "off" ? { on: false } : { on: true, style: input.captions }, logo: input.logo === "off" ? { on: false } : { on: true, corner: input.logo }, music: { track: track as never } },
+        });
+        const view = vd.view(v);
+        await db.createChatMessage({
+          organizationId: input.organizationId,
+          employeeId: emp.id,
+          role: "employee",
+          authorName: emp.name,
+          content: `Here's the storyboard (${vd.summary(v)}). The hook is up front. Change any scene, then press Make the video. It uses ${view.hours} when it's done.`,
+          cards: JSON.stringify([{ type: "made_video", id: v.id, title: v.title }]),
+        });
+        return { kind: "video" as const, id: v.id };
+      }),
     make: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
       blockReviewer(ctx);
       await requireMember(ctx, input.organizationId, "member");
@@ -3528,13 +3600,112 @@ export const appRouter = router({
         blockReviewer(ctx);
         await requireMember(ctx, input.organizationId, "member");
         const vd = await import("./employees/videos");
-        return vd.view(vd.saveScript(input.organizationId, input.id, { title: input.title, caption: input.caption, shots: input.shots }));
+        return vd.view(await vd.saveScript(input.organizationId, input.id, { title: input.title, caption: input.caption, shots: input.shots }));
       }),
+    /** Rewrite line: one scene's words as typed. */
+    saveLine: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0).max(15), say: z.string().min(1).max(400) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      return vd.view(vd.saveLine(input.organizationId, input.id, input.n, input.say));
+    }),
+    /** Change shot (storyboard) or Redo a scene (finished video): what we see and where it comes from. */
+    changeShot: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0).max(15), src: z.enum(["library", "stock", "ai", "text", "logo", "photo"]), see: z.string().max(300).optional(), clipId: z.number().int().nullable().optional(), redo: z.boolean().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const vd = await import("./employees/videos");
+        const shot = { src: input.src, see: input.see, clipId: input.clipId ?? null };
+        return vd.view(input.redo ? await vd.redoScene(input.organizationId, input.id, input.n, shot) : await vd.changeShot(input.organizationId, input.id, input.n, shot));
+      }),
+    newHook: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      return vd.view(await vd.newHook(input.organizationId, input.id));
+    }),
+    /** Edit: captions, logo and music. A finished video is cut again with no new footage. */
+    restyle: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().int(),
+          captions: z.object({ on: z.boolean(), style: z.enum(["pop", "clean", "boxed"]), position: z.enum(["top", "middle", "bottom"]), highlight: z.enum(["gold", "brand", "none"]) }).optional(),
+          logo: z.object({ on: z.boolean(), corner: z.enum(["tl", "tr", "bl", "br"]), size: z.enum(["s", "m", "l"]) }).optional(),
+          music: z.object({ track: z.enum(["calm", "upbeat", "piano", "upload", "none"]), url: z.string().max(500).nullable().optional(), name: z.string().max(80).nullable().optional(), volume: z.number().int().min(0).max(100) }).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const vd = await import("./employees/videos");
+        return vd.view(await vd.restyle(input.organizationId, input.id, { captions: input.captions, logo: input.logo, music: input.music }));
+      }),
+    /** Make 3 ad versions: three new hooks, each a draft to make. */
+    adVersions: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      const made = await vd.adVersions(input.organizationId, input.id);
+      const emp = await db.getEmployeeByKind(input.organizationId, "video");
+      if (emp) await db.createChatMessage({ organizationId: input.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content: "Here are 3 versions, each with its own hook and the same scenes after it. Make the ones you want to test.", cards: JSON.stringify(made.map((v) => ({ type: "made_video", id: v.id, title: v.title }))) });
+      return made.map(vd.view);
+    }),
+    toSienna: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      const post = await vd.toSienna(input.organizationId, input.id, ctx.user.name || ctx.user.email);
+      return { id: post.id };
+    }),
     remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
       blockReviewer(ctx);
       await requireMember(ctx, input.organizationId, "member");
       (await import("./employees/videos")).remove(input.organizationId, input.id);
       return { success: true };
+    }),
+    /** Formats that work now: the trends Elena found, to recreate. */
+    formats: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/videos")).formats(input.organizationId);
+    }),
+    recreate: protectedProcedure.input(orgInput.extend({ planId: z.number().int(), size: z.enum(["vertical", "square", "wide"]).optional() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      const v = await vd.recreate(input.organizationId, input.planId, input.size);
+      const emp = await db.getEmployeeByKind(input.organizationId, "video");
+      if (emp) await db.createChatMessage({ organizationId: input.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `Here's "${v.title}", the same structure and pacing with your business in it (${vd.summary(v)}). Change any scene, then press Make the video.`, cards: JSON.stringify([{ type: "made_video", id: v.id, title: v.title }]) });
+      return vd.view(v);
+    }),
+  }),
+
+  /** Elena's b-roll library: clips she made and clips people uploaded. Sienna and Jordan can use them too. */
+  broll: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const b = await import("./employees/broll");
+      return { clips: b.listClips(input.organizationId).map(b.clipView), making: !!b.setJob(input.organizationId) };
+    }),
+    favorite: protectedProcedure.input(orgInput.extend({ id: z.number().int(), favorite: z.boolean() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const b = await import("./employees/broll");
+      return b.clipView(b.setFavorite(input.organizationId, input.id, input.favorite));
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./employees/broll")).removeClip(input.organizationId, input.id);
+      return { success: true };
+    }),
+    /** Make clips: Elena plans a set and makes each one; every clip is saved here. */
+    make: protectedProcedure.input(orgInput.extend({ ask: z.string().min(1).max(1000), count: z.number().int().min(1).max(10), size: z.enum(["vertical", "square", "wide"]), seconds: z.union([z.literal(5), z.literal(10)]) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const b = await import("./employees/broll");
+      const rows = await b.makeSet(input.organizationId, { ask: input.ask, count: input.count, size: input.size, seconds: input.seconds as 5 | 10, by: ctx.user.name || ctx.user.email });
+      return rows.map(b.clipView);
     }),
   }),
 

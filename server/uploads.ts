@@ -35,6 +35,9 @@ const LIMITS: Record<string, number> = {
   video: 250_000_000,
   resume: 20_000_000,
   post_media: 250_000_000,
+  broll: 250_000_000,
+  video_audio: 200_000_000,
+  music: 40_000_000,
   chat: 20_000_000,
   team: 20_000_000,
   work: 20_000_000,
@@ -235,7 +238,41 @@ export function registerUploads(app: Express) {
       }
 
       const old = unsupportedNote(name);
-      if (old && slot !== "video" && slot !== "post_media" && slot !== "take") return res.status(400).json({ error: old });
+      if (old && slot !== "video" && slot !== "post_media" && slot !== "take" && slot !== "broll" && slot !== "video_audio" && slot !== "music") return res.status(400).json({ error: old });
+
+      // Elena's b-roll library (a clip up to 60 seconds), a recording for Audio to video, or a music track.
+      if (slot === "broll" || slot === "video_audio" || slot === "music") {
+        const okType = slot === "broll" ? /^video\//.test(mime) || /\.(mp4|mov|m4v|webm)$/i.test(name) : /^(audio|video)\//.test(mime) || /\.(mp3|m4a|wav|aac|ogg|mp4|mov|webm)$/i.test(name);
+        if (!okType) return res.status(400).json({ error: slot === "broll" ? "Upload an MP4 or MOV video." : "Upload an MP3, M4A or WAV file." });
+        const declared = Number(req.headers["content-length"] || 0);
+        if (declared > max) return res.status(400).json({ error: `Files must be under ${Math.round(max / 1_000_000)} MB.` });
+        const raw = await storagePutStream(`org-${orgId}/${slot === "broll" ? "broll" : slot === "music" ? "music" : "videos"}/${name}`, req, max);
+        if (raw.size === 0) return res.status(400).json({ error: "The file was empty." });
+        const b = await import("./employees/broll");
+        const fs = await import("node:fs");
+        const file = b.localFile(raw.url);
+        try {
+          if (slot === "video_audio") {
+            const p = await b.probe(file);
+            if (!p.audio) {
+              fs.rmSync(file, { force: true });
+              return res.status(400).json({ error: "That file has no sound. Upload a recording." });
+            }
+            return res.json({ url: raw.url, name, seconds: Math.round(p.seconds) });
+          }
+          if (slot === "music") {
+            const t = await b.saveMusic(orgId, file, name);
+            fs.rmSync(file, { force: true });
+            return res.json(t);
+          }
+          const clip = await b.saveUpload(orgId, { file, name, by: who, describe: await photosAllowed(orgId, "video") });
+          fs.rmSync(file, { force: true });
+          return res.json(b.clipView(clip));
+        } catch (err) {
+          fs.rmSync(file, { force: true });
+          return res.status(400).json({ error: err instanceof Error ? err.message : "That file couldn't be read." });
+        }
+      }
 
       // Images and videos for Sienna's posts.
       if (slot === "post_media") {

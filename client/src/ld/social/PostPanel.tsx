@@ -2,6 +2,7 @@ import React from "react";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine } from "../ui";
+import { BrollPicker } from "../video/Broll";
 import { uploadFile } from "../meta";
 import { PlatIcon, PostPreview, PreviewTabs, useAccounts, Frame } from "./PostPreview";
 import { DEFAULT_TIKTOK, PLAT, PLATFORMS, TEXT_LIMIT, TIMES, dateValid, fmtDuration, payloadFor, postChannels, postSpec, videoWarnings, whenLabel, zoned, type MediaMeta, type PostRow, type SocialChannel, type TikTokSettings } from "./model";
@@ -155,8 +156,9 @@ const drop: React.CSSProperties = { border: "1.5px dashed #b7c6bf", borderRadius
 const section: React.CSSProperties = { borderTop: "1px solid #dbe4df", paddingTop: 12, display: "flex", flexDirection: "column", gap: 12 };
 
 /** A file box: shows what is there, Upload and Remove buttons, and takes a dropped file. */
-function FileBox({ kind, url, meta, onFile, onRemove, busy, thumb }: { kind: "image" | "video"; url: string | null; meta: MediaMeta | null; onFile: (f: File) => void; onRemove: () => void; busy: boolean; thumb: React.ReactNode }) {
+function FileBox({ kind, url, meta, onFile, onRemove, busy, thumb, onLibrary }: { kind: "image" | "video"; url: string | null; meta: MediaMeta | null; onFile: (f: File) => void; onRemove: () => void; busy: boolean; thumb: React.ReactNode; onLibrary?: (c: { url: string; title: string; w: number | null; h: number | null; seconds: number }) => void }) {
   const input = React.useRef<HTMLInputElement>(null);
+  const [picking, setPicking] = React.useState(false);
   const [over, setOver] = React.useState(false);
   const dims = meta?.w && meta?.h ? ` · ${meta.w} × ${meta.h}` : "";
   return (
@@ -181,12 +183,18 @@ function FileBox({ kind, url, meta, onFile, onRemove, busy, thumb }: { kind: "im
           <button type="button" className="ld-btn" disabled={busy} onClick={() => input.current?.click()}>
             {busy ? "Uploading..." : kind === "video" ? "Upload video" : "Upload image"}
           </button>
+          {onLibrary && (
+            <button type="button" className="ld-btn" disabled={busy} aria-expanded={picking} onClick={() => setPicking(!picking)}>
+              From b-roll
+            </button>
+          )}
           {url && (
             <button type="button" className="ld-btn" disabled={busy} onClick={onRemove}>
               Remove
             </button>
           )}
         </span>
+        {picking && onLibrary && <BrollPicker onClose={() => setPicking(false)} onPick={(c) => (setPicking(false), onLibrary(c))} />}
         <span style={help}>{kind === "video" ? "MP4 or MOV, vertical 9:16. Or drag a file here." : "JPG or PNG, up to 8 MB. Or drag a file here."}</span>
       </div>
       <input
@@ -516,6 +524,7 @@ export default function PostPanel({
                     busy={busy === "video"}
                     onFile={(f) => upload(f, "video")}
                     onRemove={() => set({ videoUrl: null, videoMeta: null })}
+                    onLibrary={(c) => set({ videoUrl: c.url, videoMeta: { name: c.title, w: c.w ?? undefined, h: c.h ?? undefined, seconds: c.seconds }, coverMs: Math.min(d.coverMs, c.seconds * 1000) })}
                     thumb={<div style={{ width: 54, height: 96, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "#000" }}>{d.videoUrl && <Frame src={d.videoUrl} ms={d.coverMs} />}</div>}
                   />
                 </div>
