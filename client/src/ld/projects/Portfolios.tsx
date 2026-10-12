@@ -166,7 +166,7 @@ export function PortfolioPage({ orgId, id, onPick, onOpenTask }: { orgId: number
             <div className="gp-tile"><b>{d.tiles.pct}%</b><span>Tasks done across the portfolio</span></div>
             <div className="gp-tile"><b>{d.tiles.done}</b><span>Complete</span></div>
             <div className="gp-tile"><b>{d.tiles.open}</b><span>Incomplete</span></div>
-            <div className="gp-tile"><b style={d.tiles.overdue ? { color: "#c2253c" } : undefined}>{d.tiles.overdue}</b><span>Overdue</span></div>
+            <div className="gp-tile"><b style={d.tiles.overdue ? { color: "var(--ld-red)" } : undefined}>{d.tiles.overdue}</b><span>Overdue</span></div>
             <div className="gp-tile"><b>{d.tiles.lastDue ? fmtYmd(d.tiles.lastDue) : "–"}</b><span>Last due date</span></div>
           </div>
         )}
@@ -188,7 +188,7 @@ export function PortfolioPage({ orgId, id, onPick, onOpenTask }: { orgId: number
                   <span className="ld-small ld-muted">{r.progress.total ? `${r.progress.done} of ${r.progress.total}` : "No tasks"}</span>
                 </span>
                 <span>{r.owner ? <OwnerAvatar o={person(r.owner)} size={26} /> : <NobodyAvatar size={26} />}</span>
-                <span className="ld-small" style={r.end && r.end < d.today && r.progress.done < r.progress.total ? { color: "#c2253c", fontWeight: 700 } : undefined}>{r.start && r.end ? `${fmtYmd(r.start)} to ${fmtYmd(r.end)}` : r.end ? `to ${dueText(r.end, d.today)}` : <span className="ld-muted">No dates</span>}</span>
+                <span className="ld-small" style={r.end && r.end < d.today && r.progress.done < r.progress.total ? { color: "var(--ld-red)", fontWeight: 700 } : undefined}>{r.start && r.end ? `${fmtYmd(r.start)} to ${fmtYmd(r.end)}` : r.end ? `to ${dueText(r.end, d.today)}` : <span className="ld-muted">No dates</span>}</span>
                 <span className="ld-small" style={{ fontWeight: 700, color: r.priority ? PRIORITY_COLOR[r.priority] : "var(--ld-soft)" }}>{r.priority ? `⚑ ${PRIORITY_TEXT[r.priority]}` : "None"}</span>
                 <span onClick={(e) => e.stopPropagation()}>
                   {d.canEdit && (

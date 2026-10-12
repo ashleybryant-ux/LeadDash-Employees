@@ -382,7 +382,7 @@ export default function PostPanel({
                 input={{ channel: active, type: d.type, text: curText, imageUrl: curImage, imageMeta: curImageMeta, videoUrl: d.videoUrl, videoMeta: d.videoMeta, coverUrl: coverMode === "upload" ? d.coverUrl : null, coverMs: d.coverMs, when }}
               />
               {reel && videoWarnings(d.channels, d.videoMeta, cr?.maxSeconds).map((w) => (
-                <div key={w} style={{ fontSize: 12, color: "#8a4510", fontWeight: 600, marginTop: 6 }}>{w}</div>
+                <div key={w} style={{ fontSize: 12, color: "var(--ld-warn)", fontWeight: 600, marginTop: 6 }}>{w}</div>
               ))}
             </div>
           </>
@@ -419,7 +419,7 @@ export default function PostPanel({
                   <span className="ld-body">{[spec.videoMeta?.name, spec.videoMeta?.seconds ? fmtDuration(spec.videoMeta.seconds) : "", spec.videoMeta?.w ? `${spec.videoMeta.w} × ${spec.videoMeta.h}` : ""].filter(Boolean).join(" · ") || "Video"}</span>
                 </div>
               ) : (
-                <span className="ld-body" style={{ color: "#8a4510" }}>No video yet</span>
+                <span className="ld-body" style={{ color: "var(--ld-warn)" }}>No video yet</span>
               )}
             </div>
           ) : item.imageUrl ? (

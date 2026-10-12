@@ -292,7 +292,7 @@ export function VoiceBar({ o, emp, thinking }: { o: OneOnOne; emp: Emp; thinking
         </span>
       )}
       {o.voiceError && !o.micError && (
-        <span className="ld-small" role="alert" style={{ color: "#8a4510", padding: "0 12px 10px" }}>
+        <span className="ld-small" role="alert" style={{ color: "var(--ld-warn)", padding: "0 12px 10px" }}>
           You'll see {emp.name}'s answers but won't hear them: {o.voiceError}
         </span>
       )}

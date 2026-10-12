@@ -376,12 +376,12 @@ function Funnel({ rows }: { rows: { name: string; v: number }[] }) {
         <div key={r.name} className="gp-fun">
           <span className="ld-between">
             <span>{r.name} <b>{Math.round(r.v * 10) / 10}</b></span>
-            <span className="ld-small" style={i === worst ? { color: "#c2253c", fontWeight: 800 } : { color: "var(--ld-muted)" }}>{conv[i] === null ? "" : `${conv[i]}%`}</span>
+            <span className="ld-small" style={i === worst ? { color: "var(--ld-red)", fontWeight: 800 } : { color: "var(--ld-muted)" }}>{conv[i] === null ? "" : `${conv[i]}%`}</span>
           </span>
           <span className="t"><i style={{ width: `${Math.max(3, (r.v / top) * 100)}%`, background: i === worst ? "#e8384f" : "var(--ld-accent)" }} /></span>
         </div>
       ))}
-      {worst !== null && <span className="ld-small" style={{ color: "#c2253c", fontWeight: 700 }}>Biggest leak: {rows[worst - 1].name} to {rows[worst].name.toLowerCase()}</span>}
+      {worst !== null && <span className="ld-small" style={{ color: "var(--ld-red)", fontWeight: 700 }}>Biggest leak: {rows[worst - 1].name} to {rows[worst].name.toLowerCase()}</span>}
     </>
   );
 }

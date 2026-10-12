@@ -147,7 +147,7 @@ function PagePanel({ id, status, progress }: { id: number; status: string; progr
     <div className="ld-expand ld-pg-panel">
       <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
         {status === "building" && <p className="ld-small ld-muted" style={{ margin: 0 }}>{progress || "Building"}... This takes a few minutes.</p>}
-        {status !== "building" && progress && <p className="ld-small" style={{ margin: 0, color: "#8a4510" }}>{progress}</p>}
+        {status !== "building" && progress && <p className="ld-small" style={{ margin: 0, color: "var(--ld-warn)" }}>{progress}</p>}
         {hasPage && d && (
           <>
             <div className="ld-between">

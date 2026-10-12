@@ -405,7 +405,7 @@ function EpisodeRow({ e, open, onToggle }: { e: Ep; open: boolean; onToggle: () 
         <div className="ld-av-exp" style={{ gridTemplateColumns: "minmax(0,1fr) 128px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
             {e.status === "ready" && <Versions e={e} />}
-            {e.status === "making" && <span style={{ fontSize: 14, fontWeight: 700, color: "#8a4510" }}>{e.progress ?? "Starting"}.</span>}
+            {e.status === "making" && <span style={{ fontSize: 14, fontWeight: 700, color: "var(--ld-warn)" }}>{e.progress ?? "Starting"}.</span>}
             {e.status === "failed" && e.error && <span style={{ fontSize: 14, color: "var(--ld-bad)" }}>{e.error}</span>}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span className="ld-lbl">Beats</span>
@@ -538,7 +538,7 @@ function CampaignRow({ e, open, onToggle }: { e: Ep; open: boolean; onToggle: ()
             ) : (
               <>
                 {e.status === "ready" && <Versions e={e} />}
-                {e.status === "making" && <span style={{ fontSize: 14, fontWeight: 700, color: "#8a4510" }}>{e.progress ?? "Starting"}.</span>}
+                {e.status === "making" && <span style={{ fontSize: 14, fontWeight: 700, color: "var(--ld-warn)" }}>{e.progress ?? "Starting"}.</span>}
                 {editing ? <ScriptEditor e={e} onDone={() => setEditing(false)} /> : <Timeline e={e} />}
                 <ShotList e={e} />
               </>
@@ -671,7 +671,7 @@ export function DramaCastTab() {
                 <Face name={c.name} url={c.photoUrl} size={40} />
                 <span><b>{c.kind === "owner" ? "You" : c.name}</b><br /><span className="ld-small">{c.kind === "owner" ? c.name : c.kind === "team" ? "Your AI team" : "Made up"}</span></span>
                 <span>{c.role}</span>
-                <span>{c.voiceName ?? (c.kind === "team" ? "No lines" : <span style={{ color: "#8a4510" }}>Pick a voice</span>)}</span>
+                <span>{c.voiceName ?? (c.kind === "team" ? "No lines" : <span style={{ color: "var(--ld-warn)" }}>Pick a voice</span>)}</span>
                 <button type="button" className="ld-btn" onClick={() => setEdit(open ? null : { id: c.id, name: c.name, role: c.role, look: c.look, voiceId: c.voiceId ?? "" })}>{open ? "Close" : "Edit"}</button>
               </div>
               {open && edit && (

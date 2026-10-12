@@ -448,7 +448,7 @@ function AppRows({ list, employees }: { list: AppRow[]; employees: ReturnType<ty
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="ld-lbl">Signed by</span><span className="ld-body">{a.certifiedBy ? `${a.certifiedBy}, ${fmtDate(a.certifiedAt)}` : signer}</span></div>
                   {waiting && (
                     a.blockers.length ? (
-                      <span className="ld-small" style={{ color: "#8a4510", fontWeight: 600 }}>Before Submit: {a.blockers.join(". ")}.</span>
+                      <span className="ld-small" style={{ color: "var(--ld-warn)", fontWeight: 600 }}>Before Submit: {a.blockers.join(". ")}.</span>
                     ) : (
                       <span className="ld-small ld-muted" style={{ lineHeight: 1.5 }}>Submitting certifies the application is true and complete and that you are authorized to submit it for {org.data?.name ?? "this workspace"}.</span>
                     )

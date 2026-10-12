@@ -67,7 +67,7 @@ const tile: React.CSSProperties = {
   boxSizing: "border-box",
 };
 const okTile: React.CSSProperties = { ...tile, background: "var(--ld-accent-bg)", color: "var(--ld-accent-dark)", cursor: "default" };
-const warnTile: React.CSSProperties = { ...tile, background: "#fdf0e3", color: "#8a4510" };
+const warnTile: React.CSSProperties = { ...tile, background: "var(--ld-warn-bg)", color: "var(--ld-warn)" };
 
 export default function Integrations() {
   const { currentOrgId, currentOrg } = useTenant();
@@ -233,10 +233,10 @@ function OneClick({ item, conn, ready, loading }: { item: CatalogItem; conn: Con
         <div style={{ fontSize: 13, color: "var(--ld-text2)", lineHeight: 1.45, marginTop: 2 }}>{item.desc}</div>
         {account && <div style={{ fontSize: 13, fontWeight: 700, color: status === "error" ? "#8a4510" : "var(--ld-accent-dark)", marginTop: 6, overflowWrap: "anywhere" }}>{account}</div>}
         {status === "connected" && item.app === "google_business" && settings.setupNote && (
-          <div style={{ fontSize: 12, color: "#8a4510", marginTop: 4 }}>Google has not opened Business Profile access for LeadDash yet. Posts will wait until it does.</div>
+          <div style={{ fontSize: 12, color: "var(--ld-warn)", marginTop: 4 }}>Google has not opened Business Profile access for LeadDash yet. Posts will wait until it does.</div>
         )}
         {status === "connected" && item.app === "zoom" && settings.canCreateMeetings === false && (
-          <div style={{ fontSize: 12, color: "#8a4510", marginTop: 4 }}>This connection can't create meetings: it was approved before the Zoom app had that permission. Disconnect and reconnect to approve it.</div>
+          <div style={{ fontSize: 12, color: "var(--ld-warn)", marginTop: 4 }}>This connection can't create meetings: it was approved before the Zoom app had that permission. Disconnect and reconnect to approve it.</div>
         )}
         {choosing && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>

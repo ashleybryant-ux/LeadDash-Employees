@@ -255,7 +255,7 @@ export function DateCell({ q, t, which }: { q: QuickCtx; t: QuickTask; which: "d
   const v = t[which];
   const late = which === "dueDate" && v && !t.closed && v < q.today;
   const now = which === "dueDate" && v === q.today && !t.closed;
-  const show = v ? <span style={late ? { color: "#c2253c", fontWeight: 700 } : now ? { color: "#b45309", fontWeight: 700 } : undefined}>{which === "dueDate" ? dueText(v, q.today) : fmtYmd(v)}</span> : <span className="ld-small ld-muted">No date</span>;
+  const show = v ? <span style={late ? { color: "var(--ld-red)", fontWeight: 700 } : now ? { color: "var(--ld-warn)", fontWeight: 700 } : undefined}>{which === "dueDate" ? dueText(v, q.today) : fmtYmd(v)}</span> : <span className="ld-small ld-muted">No date</span>;
   return <Cell canEdit={q.canEdit} show={show} ghost={!v ? "📅 Date" : undefined} pick={(close) => <DatePick value={v} onChange={(d) => save(t.id, { [which]: d })} close={close} today={q.today} />} />;
 }
 

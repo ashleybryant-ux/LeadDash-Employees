@@ -56,7 +56,7 @@ export function FolderOverview({ orgId, folderId, onPick, onOpenTask, onNewList,
           <h4>This folder</h4>
           <div className="gp-ovnums">
             <span><b>{d.totals.open}</b>open tasks</span>
-            <span><b style={d.totals.overdue ? { color: "#c2253c" } : undefined}>{d.totals.overdue}</b>overdue</span>
+            <span><b style={d.totals.overdue ? { color: "var(--ld-red)" } : undefined}>{d.totals.overdue}</b>overdue</span>
             <span><b>{d.totals.doneThisMonth}</b>done this month</span>
           </div>
           <span className="gp-ovbar"><i style={{ width: `${pct}%` }} /></span>

@@ -146,7 +146,7 @@ export default function PressWork({ emp }: { emp: EmployeeRow }) {
         </div>
       )}
       {v?.settings.paused && (
-        <div role="alert" className="ld-card" style={{ padding: "12px 16px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 16, alignItems: "center", background: "#fdeeee", borderColor: "#f3cccc" }}>
+        <div role="alert" className="ld-card" style={{ padding: "12px 16px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 16, alignItems: "center", background: "var(--ld-bad-bg)", borderColor: "var(--ld-red)" }}>
           <span style={{ fontSize: 14, lineHeight: 1.5 }}><b>Outreach is stopped on this desk.</b> {v.settings.pausedReason}. Nothing goes out until you resume it.</span>
           <button type="button" className="ld-btn" disabled={resume.isPending} onClick={() => resume.mutate({ organizationId: orgId })}>Resume</button>
         </div>
@@ -783,7 +783,7 @@ function ReplyRow({ r, cols, open, onToggle }: { r: Reply; cols: string; open: b
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
             <Box label={r.subject || "Their email"}><span style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-line" }}>{r.text}</span></Box>
             {r.kind === "crisis" ? (
-              <div role="alert" style={{ background: "#fdeeee", border: "1px solid #f3cccc", borderRadius: 10, padding: "10px 12px", fontSize: 14, lineHeight: 1.5 }}><b>This is a crisis question.</b> Outreach on this desk is stopped, and Taylor won't answer it. Answer it yourself, with counsel if needed, then resume the desk in Press settings.</div>
+              <div role="alert" style={{ background: "var(--ld-bad-bg)", border: "1px solid var(--ld-red)", borderRadius: 10, padding: "10px 12px", fontSize: 14, lineHeight: 1.5 }}><b>This is a crisis question.</b> Outreach on this desk is stopped, and Taylor won't answer it. Answer it yourself, with counsel if needed, then resume the desk in Press settings.</div>
             ) : r.kind === "dnc" ? (
               <span className="ld-small">Saved as Do not contact for every desk.</span>
             ) : draft !== null ? (

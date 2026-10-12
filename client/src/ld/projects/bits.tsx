@@ -59,7 +59,7 @@ export function dueText(ymd: string, today: string) {
 export function Due({ t, today }: { t: TaskRow; today: string }) {
   if (!t.dueDate) return <span className="ld-small ld-muted">No date</span>;
   const late = !t.closed && t.dueDate < today;
-  return <span style={late ? { color: "#c2253c", fontWeight: 700 } : t.dueDate === today ? { color: "#b45309", fontWeight: 700 } : undefined}>{dueText(t.dueDate, today)}</span>;
+  return <span style={late ? { color: "var(--ld-red)", fontWeight: 700 } : t.dueDate === today ? { color: "var(--ld-warn)", fontWeight: 700 } : undefined}>{dueText(t.dueDate, today)}</span>;
 }
 
 export function Counts({ t }: { t: TaskRow }) {

@@ -217,7 +217,7 @@ export function DeckCard({ id, title, subtitle }: { id: number; title: string; s
   return (
     <div className="ld-card" style={{ overflow: "hidden" }}>
       <div className="ld-talk-head" style={{ gridTemplateColumns: "44px minmax(0, 1fr)", borderBottom: "1px solid #e3e9e6" }}>
-        <span className="ld-talk-ic" style={{ background: "#fdf0e3", color: "#8a4510" }}>PPT</span>
+        <span className="ld-talk-ic" style={{ background: "var(--ld-warn-bg)", color: "var(--ld-warn)" }}>PPT</span>
         <span style={{ minWidth: 0 }}>
           <span className="ld-strong" style={{ display: "block" }}>{title}</span>
           {subtitle && <span className="ld-small ld-muted">{subtitle}</span>}
@@ -398,7 +398,7 @@ export function SlideFace({ s, theme, event, headshot, small }: { s: Slide; them
   }
   if (s.kind === "big") {
     return (
-      <div className={`ld-slide ${small ? "sm" : ""}`} style={{ background: "var(--ld-surface)", color: "#24332c" }}>
+      <div className={`ld-slide ${small ? "sm" : ""}`} style={{ background: "var(--ld-surface)", color: "var(--ld-text2)" }}>
         <span className="ld-slide-bar" style={{ background: theme.accent }} />
         <div className="ld-slide-big">
           <div className="ld-slide-huge" style={{ color: theme.dark }}>{s.title}</div>
@@ -411,7 +411,7 @@ export function SlideFace({ s, theme, event, headshot, small }: { s: Slide; them
   }
   const picLeft = s.kind === "activity";
   return (
-    <div className={`ld-slide ${small ? "sm" : ""}`} style={{ background: s.kind === "activity" ? "var(--ld-hover)" : "#fff", color: "#24332c" }}>
+    <div className={`ld-slide ${small ? "sm" : ""}`} style={{ background: s.kind === "activity" ? "var(--ld-hover)" : "var(--ld-surface)", color: "var(--ld-text2)" }}>
       {pic && <img src={pic} alt="" className="ld-slide-img" style={{ top: 0, bottom: 0, height: "100%", width: picLeft ? "37%" : "43%", [picLeft ? "left" : "right"]: 0 }} />}
       {(!pic || !picLeft) && <span className="ld-slide-bar" style={{ background: theme.accent }} />}
       <div className="ld-slide-body" style={pic ? (picLeft ? { left: "40%" } : { right: "45%" }) : undefined}>

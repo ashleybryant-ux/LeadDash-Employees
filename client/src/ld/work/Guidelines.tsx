@@ -83,7 +83,7 @@ export default function Guidelines({ emp }: { emp: EmployeeRow }) {
         <div className="ld-sh">
           <span className="ld-st">Always followed</span>
         </div>
-        <div style={{ padding: "14px 18px", fontSize: 14, lineHeight: 1.7, color: "#24332c" }}>
+        <div style={{ padding: "14px 18px", fontSize: 14, lineHeight: 1.7, color: "var(--ld-text2)" }}>
           {ALWAYS_FOLLOWED[kind].map((line, i) => (
             <div key={i}>{line}</div>
           ))}
@@ -126,7 +126,7 @@ function GuidelineSections({ emp }: { emp: EmployeeRow }) {
   return (
     <>
       {g.conflicts.length > 0 && (
-        <section className="ld-card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10, borderColor: "#e8b36b", background: "#fffaf2" }}>
+        <section className="ld-card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10, borderColor: "#e8b36b", background: "var(--ld-warn-bg)" }}>
           <div className="ld-row" style={{ gap: 10 }}>
             <span className="ld-pill amber">{`${g.conflicts.length} conflict${g.conflicts.length === 1 ? "" : "s"}`}</span>
             <span style={{ fontWeight: 800 }}>{`${emp.name} found guidelines that disagree`}</span>

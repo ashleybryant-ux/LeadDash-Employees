@@ -65,7 +65,7 @@ export function PressStoryCard({ id }: { id: number }) {
         {s.quote && <span><b>Your comment (from your quote bank):</b> "{s.quote}"</span>}
         <span className="ld-small">{mine.length} {mine.length === 1 ? "pitch" : "pitches"} · {mine.filter((p) => p.score >= 85).length} passed the pitch check · window ends {s.windowEnds || "soon"}</span>
         {s.skipped.map((x) => (
-          <div key={x.contactId} style={{ background: "#fdf6ee", border: "1px solid #f1dcc4", borderRadius: 10, padding: "8px 12px", fontSize: 13 }}><b>Skipped {x.name}.</b> {x.reason}. Free again {fmtDate(x.until)}.</div>
+          <div key={x.contactId} style={{ background: "var(--ld-warn-bg)", border: "1px solid var(--ld-line)", borderRadius: 10, padding: "8px 12px", fontSize: 13 }}><b>Skipped {x.name}.</b> {x.reason}. Free again {fmtDate(x.until)}.</div>
         ))}
         <ErrorLine error={approve.error} />
       </div>

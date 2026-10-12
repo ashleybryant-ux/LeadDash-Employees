@@ -331,7 +331,7 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
   };
 
   const chip = (ev: Ev) => {
-    const cls = ev.kind === "s" ? { background: "var(--ld-accent-bg)", color: "var(--ld-accent-dark)" } : ev.kind === "p" ? { background: "var(--ld-line2)", color: "var(--ld-muted)" } : { background: "var(--ld-surface)", border: "1px dashed #d9a066", color: "#8a4510" };
+    const cls = ev.kind === "s" ? { background: "var(--ld-accent-bg)", color: "var(--ld-accent-dark)" } : ev.kind === "p" ? { background: "var(--ld-line2)", color: "var(--ld-muted)" } : { background: "var(--ld-surface)", border: "1px dashed #d9a066", color: "var(--ld-warn)" };
     const movable = ev.kind !== "p";
     return (
       <button
@@ -488,7 +488,7 @@ function Calendar({ all, drafts, tz, emp }: { all: PostRow[]; drafts: PostRow[];
 
       <div className="ld-row" style={{ gap: 14, fontSize: 12, color: "var(--ld-muted)", flexWrap: "wrap" }}>
         <span style={{ background: "var(--ld-accent-bg)", color: "var(--ld-accent-dark)", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Scheduled</span>
-        <span style={{ background: "var(--ld-surface)", border: "1px dashed #d9a066", color: "#8a4510", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Draft</span>
+        <span style={{ background: "var(--ld-surface)", border: "1px dashed #d9a066", color: "var(--ld-warn)", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Draft</span>
         <span style={{ background: "var(--ld-line2)", color: "var(--ld-muted)", borderRadius: 6, padding: "4px 6px", fontWeight: 600 }}>Posted</span>
         <span>Double-click a day to write a post for it.</span>
       </div>

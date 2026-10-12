@@ -88,7 +88,7 @@ export function Samples({ emp, view, value, onChange }: { emp: EmployeeRow; view
               <b style={{ fontSize: 14 }}>{`${String.fromCharCode(65 + i)}. ${s.label}`}</b>
               {on && <span className="ld-pill green">Sounds like us</span>}
             </span>
-            <span style={{ fontSize: 14, lineHeight: 1.5, color: "#24332c" }}>{s.text}</span>
+            <span style={{ fontSize: 14, lineHeight: 1.5, color: "var(--ld-text2)" }}>{s.text}</span>
           </button>
         );
       })}

@@ -18,7 +18,7 @@ export function ColdHotCard({ id }: { id: number }) {
   if (!r) return null;
   const l = r.lead;
   return (
-    <div className="ld-card ld-resultcard" style={{ ...GRID, background: "#fdf6ee", borderColor: "#f1dcc4" }}>
+    <div className="ld-card ld-resultcard" style={{ ...GRID, background: "var(--ld-warn-bg)", borderColor: "var(--ld-line)" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 14, lineHeight: 1.6, minWidth: 0 }}>
         <b>{l ? `${l.name}${l.practice ? `, ${l.practice}` : ""}` : "A lead"}</b>
         {l && <span>{[l.signals?.clinicians ? `${l.signals.clinicians} clinicians` : "", [l.city, l.state].filter(Boolean).join(", "), l.signals?.ehr?.name, l.fit != null ? `Fit ${l.fit}` : ""].filter(Boolean).join(" · ")}</span>}

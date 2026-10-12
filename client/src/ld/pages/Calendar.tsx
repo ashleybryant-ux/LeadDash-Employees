@@ -296,7 +296,7 @@ function NextBar() {
       <span className="ld-cal-badge" style={soon ? undefined : { background: "#24403a", color: "#fff" }}>{badge}</span>
       <span className="ld-cal-next-text">
         <b>Next meeting: {m.title}</b>
-        <span style={{ color: "#a9c0b6" }}> · {facts}</span>
+        <span style={{ color: "#e2ece7" }}> · {facts}</span>
       </span>
       <span className="ld-cal-next-btns">
         {m.precallId ? (

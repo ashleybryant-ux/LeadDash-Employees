@@ -171,7 +171,7 @@ function ReposCard() {
               <span className="ld-small ld-muted" style={{ gridColumn: "1 / -1" }}>Add Claude opens GitHub with Claude's workflow filled in. Press Commit changes once per repo (skip any repo that already has it).</span>
             )}
             {repos.some((r) => !r.connected && r.reason && r.reason !== "Claude's workflow isn't in this repo yet") && (
-              <span className="ld-small" style={{ gridColumn: "1 / -1", color: "#8a4510" }}>{repos.find((r) => !r.connected && r.reason)?.reason}</span>
+              <span className="ld-small" style={{ gridColumn: "1 / -1", color: "var(--ld-warn)" }}>{repos.find((r) => !r.connected && r.reason)?.reason}</span>
             )}
           </div>
         ) : (

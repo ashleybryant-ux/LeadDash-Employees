@@ -154,7 +154,7 @@ function MainView({ d, emp, base }: { d: AppDetail; emp: EmployeeRow; base: stri
       )}
       {hours.question("rewrite")}
       {app.mode === "outline" && (
-        <div style={{ background: "#fdf0e3", border: "1px solid #f3d3b0", borderRadius: 12, padding: "14px 18px" }}>
+        <div style={{ background: "var(--ld-warn-bg)", border: "1px solid var(--ld-line)", borderRadius: 12, padding: "14px 18px" }}>
           <span className="ld-body" style={{ color: "#5c2e0a" }}>
             <strong>AI rule.</strong> {(reqs.aiPolicy?.note || "This host limits AI-written applications").replace(/\.$/, "")}{reqs.aiPolicy?.citation ? ` (${reqs.aiPolicy.citation})` : ""}. {emp.name} prepared the outline, facts and sources. You write each section.
           </span>
@@ -265,7 +265,7 @@ function AskCard({ q, onDone }: { q: AppDetail["questions"][number]; onDone: () 
         </div>
         <button type="button" className="ld-btn" style={{ width: 96 }} disabled={busy || text.trim().length < 2} onClick={() => answer.mutate({ organizationId: currentOrgId, questionId: q.id, answer: text.trim() })}>Send</button>
       </div>
-      {r?.status === "not_found" && <span className="ld-small" style={{ color: "#8a4510" }}>It isn't stated anywhere public, and there's no contact email to ask. Pick a choice or type what you know.</span>}
+      {r?.status === "not_found" && <span className="ld-small" style={{ color: "var(--ld-warn)" }}>It isn't stated anywhere public, and there's no contact email to ask. Pick a choice or type what you know.</span>}
       <ErrorLine error={answer.error || research.error} />
     </div>
   );
@@ -289,7 +289,7 @@ function QuestionCard({ q, n, appId, outline, locked, onSaved }: { q: Question; 
         {limit && <span style={{ fontSize: 12, fontWeight: 600, color: over ? "var(--ld-bad)" : "var(--ld-muted)" }}>{limit}</span>}
         {outline && (q.outline.length > 0 || q.facts.length > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16 }}>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.6, color: "#24332c" }}>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.6, color: "var(--ld-text2)" }}>
               {q.outline.map((o, i) => <li key={i}>{o}</li>)}
             </ul>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -314,7 +314,7 @@ function QuestionCard({ q, n, appId, outline, locked, onSaved }: { q: Question; 
             <ErrorLine error={save.error || redo.error} />
           </>
         ) : q.answer ? (
-          <div style={{ fontSize: 14, lineHeight: 1.6, color: "#24332c", whiteSpace: "pre-line" }}>{q.answer}</div>
+          <div style={{ fontSize: 14, lineHeight: 1.6, color: "var(--ld-text2)", whiteSpace: "pre-line" }}>{q.answer}</div>
         ) : (
           <span className="ld-small ld-muted">{outline ? "Not written yet." : q.status === "writing" ? "Writing..." : "No answer yet."}</span>
         )}
@@ -365,7 +365,7 @@ function AttachmentRow({ a, last, appId, empName, locked, onSaved }: { a: Attach
           </>
         ) : pill}
       </div>
-      {a.needsSignature && a.source !== "upload" && <span className="ld-small" style={{ color: "#8a4510" }}>Needs your signature. Sign the host's form and upload it.</span>}
+      {a.needsSignature && a.source !== "upload" && <span className="ld-small" style={{ color: "var(--ld-warn)" }}>Needs your signature. Sign the host's form and upload it.</span>}
       {a.source === "missing" && <span className="ld-small ld-muted">{a.required ? "Required" : "Optional"}. Not found in the Brain or Knowledge.</span>}
       {err && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{err}</span>}
     </div>
@@ -405,7 +405,7 @@ function PitchCards({ appId, extras, reqs, locked, onSaved }: { appId: number; e
             <span className="ld-lbl">Video script</span>
             <span className="ld-small ld-muted">{mins}:{String(secs).padStart(2, "0")} · {scriptWords} words</span>
           </div>
-          <div className="ld-small" style={{ color: "#24332c", lineHeight: 1.55, whiteSpace: "pre-line" }}>{showScript ? extras.videoScript : `${extras.videoScript.slice(0, 160)}${extras.videoScript.length > 160 ? "..." : ""}`}</div>
+          <div className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.55, whiteSpace: "pre-line" }}>{showScript ? extras.videoScript : `${extras.videoScript.slice(0, 160)}${extras.videoScript.length > 160 ? "..." : ""}`}</div>
           <button type="button" className="ld-btn sm" onClick={() => setShowScript((v) => !v)}>{showScript ? "Close" : "Open"}</button>
         </div>
       )}

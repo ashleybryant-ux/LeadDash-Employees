@@ -204,7 +204,7 @@ function ColdEmail({ v }: { v: Overview }) {
   return (
     <>
       {v.paused && (
-        <div role="alert" className="ld-card" style={{ padding: "12px 16px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 16, alignItems: "center", background: "#fdeeee", borderColor: "#f3cccc" }}>
+        <div role="alert" className="ld-card" style={{ padding: "12px 16px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 16, alignItems: "center", background: "var(--ld-bad-bg)", borderColor: "var(--ld-red)" }}>
           <span style={{ fontSize: 14, lineHeight: 1.5 }}><b>Cold email is paused.</b> No new leads go to Instantly until you resume. Replies are still read.</span>
           <button type="button" className="ld-btn" disabled={pause.isPending} onClick={() => pause.mutate({ organizationId: orgId, paused: false })}>Resume</button>
         </div>

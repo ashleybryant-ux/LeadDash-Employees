@@ -566,7 +566,7 @@ function CardBody({ c, onOpenTask, onPick, onRefresh, refreshing }: { c: CardDat
         {ts.map((t) => (
           <button key={t.id} type="button" onClick={() => onOpenTask(t.id)}>
             <span className="gp-ell">{t.name}</span>
-            <span style={t.overdue ? { color: "#c2253c", fontWeight: 700 } : undefined}>{t.dueDate ? fmtYmd(t.dueDate) : ""}</span>
+            <span style={t.overdue ? { color: "var(--ld-red)", fontWeight: 700 } : undefined}>{t.dueDate ? fmtYmd(t.dueDate) : ""}</span>
           </button>
         ))}
       </div>

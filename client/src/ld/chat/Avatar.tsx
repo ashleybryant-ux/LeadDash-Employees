@@ -309,7 +309,7 @@ function SettingsCard() {
             )}
           </div>
         )}
-        {missing && <span className="ld-small" style={{ color: "#8a4510" }}>Making videos isn't set up yet. LeadDash support can turn it on.</span>}
+        {missing && <span className="ld-small" style={{ color: "var(--ld-warn)" }}>Making videos isn't set up yet. LeadDash support can turn it on.</span>}
         {!missing && s.ready.canConnect && (
           <span className="ld-small ld-muted">
             Want videos in your own voice? Connect ElevenLabs under <Link href="/integrations">Integrations</Link>.

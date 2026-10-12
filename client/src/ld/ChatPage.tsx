@@ -818,7 +818,7 @@ function ScheduleCard({ events }: { events: NonNullable<Card["events"]> }) {
             {header && <div style={{ padding: "10px 16px 6px", fontSize: 12, fontWeight: 700, color: "var(--ld-muted)", textTransform: "uppercase", letterSpacing: "0.06em", borderTop: i ? "1px solid #e3e9e6" : 0 }}>{header}</div>}
             <div className="ld-sched" style={{ display: "grid", gridTemplateColumns: "170px minmax(0,1fr) 200px", gap: 14, padding: "11px 16px", borderBottom: i < events.length - 1 ? "1px solid #eef2f0" : 0, fontSize: 14, alignItems: "center", background: e.clash ? "#fdf6ee" : undefined }}>
               <b>{e.when}</b>
-              <span style={{ overflowWrap: "anywhere" }}>{e.title}{e.clash ? <span className="ld-small" style={{ color: "#8a4510", marginLeft: 8, fontWeight: 700 }}>Overlaps</span> : null}</span>
+              <span style={{ overflowWrap: "anywhere" }}>{e.title}{e.clash ? <span className="ld-small" style={{ color: "var(--ld-warn)", marginLeft: 8, fontWeight: 700 }}>Overlaps</span> : null}</span>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--ld-text2)", fontWeight: 600, minWidth: 0 }}>
                 <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 999, background: e.color, flexShrink: 0 }} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.calendar}</span>
@@ -938,7 +938,7 @@ function BrowserCard({ card }: { card: Card }) {
           {pill}
         </div>
         {control && (
-          <div style={{ background: "#e8effd", border: "1px solid #c7d6fb", borderRadius: 10, padding: "10px 14px", fontSize: 14, color: "#1e3a8a", lineHeight: 1.5 }}>
+          <div style={{ background: "var(--ld-info-bg)", border: "1px solid var(--ld-line)", borderRadius: 10, padding: "10px 14px", fontSize: 14, color: "var(--ld-info)", lineHeight: 1.5 }}>
             {card.title.replace(/'s browser$/, "")} is paused. Click and type right in the page. What you type goes straight to the site and isn't saved.
           </div>
         )}
@@ -1038,7 +1038,7 @@ export function LongText({ text }: { text: string }) {
       <div
         style={
           code
-            ? { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, lineHeight: 1.5, background: "#f3f6f5", border: "1px solid #e3e9e6", borderRadius: 8, padding: "10px 12px", maxHeight: all ? 420 : 140, overflow: all ? "auto" : "hidden", whiteSpace: "pre-wrap", wordBreak: "break-all" }
+            ? { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, lineHeight: 1.5, background: "var(--ld-faint2)", border: "1px solid var(--ld-line)", borderRadius: 8, padding: "10px 12px", maxHeight: all ? 420 : 140, overflow: all ? "auto" : "hidden", whiteSpace: "pre-wrap", wordBreak: "break-all" }
             : { maxHeight: all ? "none" : 160, overflow: "hidden" }
         }
       >
