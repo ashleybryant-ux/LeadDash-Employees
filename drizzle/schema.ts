@@ -3561,3 +3561,35 @@ export const complianceItems = sqliteTable(
   (t) => [index("compliance_items_org_idx").on(t.organizationId, t.status)]
 );
 export type ComplianceItem = typeof complianceItems.$inferSelect;
+
+/**
+ * Camille's reminders to the practice's team (2026-10-12): drafted in her chat,
+ * sent through LeadDash EHR to the people named (email, and push where they
+ * turned it on) only when a person says to, now or at a time they chose, and
+ * repeating weekly or monthly when asked. Counts only, never a client.
+ */
+export const REMINDER_STATUSES = ["draft", "scheduled", "sent", "cancelled", "failed"] as const;
+export const REMINDER_REPEATS = ["none", "weekly", "monthly"] as const;
+export const complianceReminders = sqliteTable(
+  "compliance_reminders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    /** JSON list of { id, name }: LeadDash EHR team members. */
+    recipients: text("recipients").notNull().default("[]"),
+    subject: text("subject").notNull(),
+    body: text("body").notNull(),
+    /** When it goes out next; null for a draft or for "when I say". */
+    sendAt: integer("sendAt", { mode: "timestamp" }),
+    repeat: text("repeat", { enum: REMINDER_REPEATS }).notNull().default("none"),
+    status: text("status", { enum: REMINDER_STATUSES }).notNull().default("draft"),
+    lastSentAt: integer("lastSentAt", { mode: "timestamp" }),
+    sentCount: integer("sentCount").notNull().default(0),
+    lastResult: text("lastResult").notNull().default(""),
+    approvedBy: text("approvedBy"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("compliance_reminders_org_idx").on(t.organizationId, t.status)]
+);
+export type ComplianceReminder = typeof complianceReminders.$inferSelect;

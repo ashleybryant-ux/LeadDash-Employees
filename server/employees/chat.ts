@@ -83,7 +83,7 @@ const ACTIONS: Record<string, string[]> = {
   platform: ["none", "report", "audit_workflows", "fix_workflow", "platform_page", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   ads: ["none", "report", "ads_campaign", "ads_note", "ads_rewrite", "ads_approve", "ads_skip", "ads_platform", "ads_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   billing: ["none", "report", "ehr_read", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  compliance: ["none", "report", "ehr_read", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  compliance: ["none", "report", "ehr_read", "remind_draft", "remind_change", "remind_send", "remind_cancel", "remind_list", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   custom: ["none", "report", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
 };
 // Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
@@ -214,6 +214,11 @@ const ACTION_HELP: Record<string, string> = {
   show_receipt: "show_receipt: the person asks whether or how an application was submitted, for proof, the confirmation, or which email was used (\"how do I know it went in\", \"show me the receipt\", \"what email did you use\"). Put words from the application's name in `target` ('' for the newest one submitted). You show the receipt screenshot and the submission record.",
   apply: "apply: start the application for an opportunity already found. Put its name (or 'best' for the best fit not yet started) in `target`.",
   find_and_apply: "find_and_apply: search now, then start applications for the best fits (used by scheduled tasks like a morning search). Set `oppKind` and `focus` as for a search.",
+  remind_draft: "remind_draft: write a reminder to people on the practice's team (\"remind Dana about her unsigned notes\", \"remind the clinicians every Monday at 9 to sign notes\", \"tell everyone CAQH attestation is due\"). Put who in `to` (names from the team, or all clinicians, everyone, admins, supervisors, interns, billers, front desk), the subject in `title`, the whole message in `notes` written in your voice and signed the way your guidelines say, the day as YYYY-MM-DD in `date` and the time in `time` ('' for both when it goes out as soon as they approve), and weekly or monthly in `focus` when it repeats ('' when it doesn't). Counts and dates only: never a client's name, initials or anything from a chart. It is saved as a draft and shown; nothing goes out until they say send.",
+  remind_change: "remind_change: change a reminder that hasn't gone out, or a repeating one (\"make it Tuesday\", \"add Marcus\", \"shorter\", \"stop repeating it\"). Put words from its subject or a person on it in `target` ('' for the newest), and only what changes: who in `to`, the subject in `title`, the whole new message in `notes`, the day in `date`, the time in `time`, and weekly, monthly or once in `focus`.",
+  remind_send: "remind_send: the person approves a reminder you showed them (\"send it\", \"yes\", \"looks good, schedule it\"). Put words from its subject in `target` ('' for the newest waiting). It goes out now, or at the time on it.",
+  remind_cancel: "remind_cancel: stop a reminder that hasn't gone out, or the rest of a repeating one (\"cancel it\", \"stop the Monday reminder\"). Put words from its subject or a person on it in `target` ('' for the newest).",
+  remind_list: "remind_list: the person asks what reminders are waiting, scheduled or went out lately.",
   ehr_read: "ehr_read: read LeadDash EHR to answer a question with real numbers (how much came in today, today against last Thursday, this week against last week, what a payer paid, claims denied this month, sessions this week, no-shows by clinician). Put `payments` (money that came in: insurance and client payments, refunds), `claims` (by date of service, any status) or `appointments` (the practice's sessions on the LeadDash EHR calendar; each comes back with the client's balance and any paperwork sent and not finished, so one read answers \"who tomorrow has a balance or forms out\") in `target`, the first day as YYYY-MM-DD in `date`, and how many days in `count` (1 for one day; read last Thursday through today in one read to compare them). Read as many times as the question needs, one range each time, and say so in `plan`. You get every row back and answer from it yourself: add it up, compare it, name the clients. Never guess a number you have not read.",
   check_status: "check_status: report what is open, what is waiting for the person, what is submitted, and what is due soon.",
   find_videos: "find_videos: search for current short-form video trends and plan videos. Put any focus in `focus`.",
@@ -427,7 +432,7 @@ async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "speaking") return `${(await import("./press")).pressFacts(emp.organizationId)}${await (await import("./newsroom")).newsroomFacts(emp.organizationId)}`;
   if (emp.kind === "billing" || emp.kind === "compliance") {
     const ehr = await import("../ehr");
-    const extra = emp.kind === "compliance" ? await (await import("./compliance")).complianceFacts(emp.organizationId) : "";
+    const extra = emp.kind === "compliance" ? `${await (await import("./compliance")).complianceFacts(emp.organizationId)}${await (await import("./reminders")).remindersFacts(emp.organizationId)}` : "";
     return `${await ehr.ehrFacts(emp.organizationId, emp.kind)}${extra}`;
   }
   if (emp.kind === "leads") {
@@ -507,6 +512,10 @@ TALK_BY_KIND.ads = `- You own paid acquisition for this brand: think like a perf
 - One platform at a time: a set waits in the chat until the person approves it, asks for another version, edits it or skips it. Never write two platforms in one message.
 - Never invent a result, a cost per click or a platform rule. The platforms' specs come from your training; a number the person did not give you is a question, not a guess.`;
 
+TALK_BY_KIND.compliance = `- You read the practice's team from LeadDash EHR (names, roles, licenses and their expiry dates, who has an email); the team and its licenses are in your facts. You never change anything in LeadDash EHR.
+- Reminders happen in this chat. When the person asks for one, choose remind_draft right away and write the message yourself; ask only for what you can't work out (usually who, when it isn't clear), one question with tap-to-answer choices. Show it and wait: nothing goes out until they say to (remind_send). Changes are remind_change, stopping is remind_cancel.
+- When you report unsigned notes, plans due or licenses expiring, offer the reminder with choices like "Remind them", "Remind them Monday at 9".
+- A reminder carries counts and dates only, never a client's name, initials or anything from a chart.`;
 TALK_BY_KIND.blog = `- Every article has a main keyword: the search term it should rank for. When the person names one, put it in "target". When they haven't, still choose write_article with "target" empty: you ask "Which search term should this rank for?" with their saved search terms and your suggestions as choices.
 - When they answer that question, choose write_article for the same article with their answer in "target" exactly as they said it ("No keyword" when they chose none). Never ask about the keyword twice for one article.
 - The keyword goes in the title, the first paragraph, one heading and the meta description, written naturally. Never quote a search volume or promise a ranking.`;
@@ -1835,6 +1844,24 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const r = await ehr.read(org, what, from, toDay.toISOString().slice(0, 10));
       if (r.facts) await hrs.charge(org, emp.id, "ehr", 1, what).catch(() => 0);
       return { text: r.text, cards: [], queries: [], facts: r.facts || undefined, quiet: Boolean(r.facts), answer: Boolean(r.facts) };
+    }
+    case "remind_draft":
+    case "remind_change":
+    case "remind_send":
+    case "remind_cancel":
+    case "remind_list": {
+      const rm = await import("./reminders");
+      const input = { to: d.to, subject: d.title, body: d.notes, date: d.date, time: d.time, repeat: d.focus };
+      if (d.action === "remind_list") return { text: await rm.listText(org), cards: [], queries: [] };
+      const out =
+        d.action === "remind_draft"
+          ? await rm.draft(org, input)
+          : d.action === "remind_change"
+            ? await rm.change(org, { ...input, target: d.target })
+            : d.action === "remind_send"
+              ? await rm.approve(org, d.target, ctx.who ?? "the owner")
+              : rm.cancel(org, d.target);
+      return { text: out.text, cards: out.ask?.length ? [choicesCard(out.ask)] : [], queries: [] };
     }
     case "check_schedule": {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { text: "Which day should I check?", cards: [], queries: [] };

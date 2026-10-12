@@ -25,6 +25,10 @@ import type { AIEmployee, EmployeeKind } from "../drizzle/schema";
  * `Authorization: Bearer <key>`:
  *   GET /api/employees/ping      -> { ok, practice, locationId }
  *   GET /api/employees/snapshot  -> EhrSnapshot (below)
+ *   GET /api/employees/team      -> { ok, practice, team: EhrTeamMember[] }
+ *   POST /api/employees/remind   { userIds, subject, text } -> { ok, sent, skipped }
+ * The one thing sent the other way is a reminder to staff a person approved
+ * (Camille): a message, never a change to a chart.
  */
 
 export type EhrClaim = { id: string; name?: string; initials: string; dos: string; payer: string; status: "denied" | "rejected"; reason: string; fix: string; amountCents: number; url: string; at: string };
@@ -76,6 +80,18 @@ export const tools = {
     const text = await res.text();
     if (!res.ok) throw new Error(`LeadDash EHR answered ${res.status}: ${text.slice(0, 200)}`);
     return JSON.parse(text);
+  },
+  postJson: async (url: string, key: string, body: unknown, timeoutMs = 60_000): Promise<unknown> => {
+    const res = await fetch(url, { method: "POST", headers: { authorization: `Bearer ${key}`, accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
+    const text = await res.text();
+    let parsed: { error?: string } | null = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+    if (!res.ok) throw new Error(parsed?.error || `LeadDash EHR answered ${res.status}: ${text.slice(0, 200)}`);
+    return parsed;
   },
 };
 
@@ -371,7 +387,7 @@ export async function announce(orgId: number, changes: Changes, tz = "America/Ch
   if (camille && changes.docs.length) {
     const lines = changes.docs.map((d) => `- ${d.clinician}: ${d.unsigned} unsigned note${d.unsigned === 1 ? "" : "s"} past the limit (was ${d.before})`);
     const head = `${changes.docs.length === 1 ? "A clinician has" : `${changes.docs.length} clinicians have`} more unsigned notes than yesterday.`;
-    await post(camille, `${head}\n${lines.join("\n")}\n\nCounts only; I never read a note. The reminder is drafted on my Compliance tab and waits for Send.`);
+    await post(camille, `${head}\n${lines.join("\n")}\n\nCounts only; I never read a note. Want me to remind ${changes.docs.length === 1 ? "them" : "each of them"}? Say the word here and I'll write it for you to approve.`);
     notes.push({ kind: "compliance", title: head, text: lines.join(" "), url: "/chats/compliance/work" });
   }
   for (const n of notes) await notify(orgId, "ehr", { title: n.title, body: n.text, url: n.url, tag: `ehr-${n.kind}` }).catch(() => null);
@@ -549,4 +565,43 @@ export function formatRead(what: EhrRead, raw: Row, range: string, snap: EhrSnap
     ...list.slice(0, 150).map((x) => `- ${whenText(String(x.start))} · ${named(x)} · ${x.clinician || "Unassigned"} · ${x.status}${extras(x)}`),
     ...(n(raw.appointmentsTotal) > 150 ? [`(and ${n(raw.appointmentsTotal) - 150} more; the counts above include all of them)`] : []),
   ].join("\n");
+}
+
+// ==========================================
+// The team, and reminders to it (Camille, 2026-10-12)
+// ==========================================
+
+export type EhrLicense = { type: string; state: string; number: string; expires: string | null; primary: boolean };
+export type EhrTeamMember = { id: string; name: string; email: string; phone: string; role: string; seesClients: boolean; signsAs: string; npi: string; licenses: EhrLicense[] };
+
+const TEAM_KEEP_MS = 5 * 60_000;
+const teamKept = new Map<number, { at: number; team: EhrTeamMember[] }>();
+
+/** The practice's team from LeadDash EHR, kept five minutes. Null when the EHR isn't connected; throws when it can't be read. */
+export async function team(orgId: number, fresh = false): Promise<EhrTeamMember[] | null> {
+  const c = await connection(orgId);
+  if (!c) return null;
+  const kept = teamKept.get(orgId);
+  if (!fresh && kept && Date.now() - kept.at < TEAM_KEEP_MS) return kept.team;
+  const raw = (await tools.fetchJson(`${settingsOf(c).url}/api/employees/team`, keyOf(c))) as { ok?: boolean; team?: EhrTeamMember[]; error?: string };
+  if (!raw || raw.ok === false || !Array.isArray(raw.team)) throw new Error(raw?.error || "no answer");
+  const list = raw.team.map((m) => ({ ...m, id: String(m.id), name: String(m.name || ""), licenses: Array.isArray(m.licenses) ? m.licenses : [] }));
+  teamKept.set(orgId, { at: Date.now(), team: list });
+  return list;
+}
+
+export function forgetTeam(orgId?: number) {
+  if (orgId === undefined) teamKept.clear();
+  else teamKept.delete(orgId);
+}
+
+export type RemindResult = { sent: { id: string; name: string; email: boolean; push: number }[]; skipped: { id: string; name?: string; reason: string }[] };
+
+/** Sends one reminder through LeadDash EHR to the team members named. */
+export async function remind(orgId: number, input: { userIds: string[]; subject: string; text: string }): Promise<RemindResult> {
+  const c = await connection(orgId);
+  if (!c) throw new Error("LeadDash EHR isn't connected.");
+  const raw = (await tools.postJson(`${settingsOf(c).url}/api/employees/remind`, keyOf(c), input)) as Partial<RemindResult> & { ok?: boolean; error?: string };
+  if (!raw || raw.ok === false) throw new Error(raw?.error || "no answer");
+  return { sent: Array.isArray(raw.sent) ? raw.sent : [], skipped: Array.isArray(raw.skipped) ? raw.skipped : [] };
 }

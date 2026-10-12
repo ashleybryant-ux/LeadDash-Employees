@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { hideProviders } from "./_core/providers";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { and, desc, eq, inArray, lt, gt, isNull, like, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, lte, gt, isNull, like, or, sql } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "../drizzle/schema";
@@ -2360,6 +2360,29 @@ export const compliance = {
   },
   remove(orgId: number, id: number) {
     return getDb().delete(schema.complianceItems).where(and(eq(schema.complianceItems.organizationId, orgId), eq(schema.complianceItems.id, id))).run().changes;
+  },
+};
+
+/** Camille's reminders to the team, per workspace. */
+export const reminders = {
+  list(orgId: number) {
+    const t = schema.complianceReminders;
+    return getDb().select().from(t).where(eq(t.organizationId, orgId)).orderBy(desc(t.updatedAt), desc(t.id)).all();
+  },
+  get(orgId: number, id: number) {
+    const t = schema.complianceReminders;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.id, id))).limit(1).all()[0] ?? null;
+  },
+  add(row: typeof schema.complianceReminders.$inferInsert) {
+    return getDb().insert(schema.complianceReminders).values(row).returning().all()[0];
+  },
+  update(id: number, patch: Partial<typeof schema.complianceReminders.$inferInsert>) {
+    return getDb().update(schema.complianceReminders).set({ ...patch, updatedAt: new Date() }).where(eq(schema.complianceReminders.id, id)).returning().all()[0];
+  },
+  /** Scheduled reminders whose time has come, every workspace. */
+  due(now: Date) {
+    const t = schema.complianceReminders;
+    return getDb().select().from(t).where(and(eq(t.status, "scheduled"), lte(t.sendAt, now))).all();
   },
 };
 
