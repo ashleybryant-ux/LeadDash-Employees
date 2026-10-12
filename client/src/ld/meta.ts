@@ -60,6 +60,9 @@ export const AVATAR_FILES: Partial<Record<Kind, string>> = {
   developer: "/avatars/developer.webp",
   onboarding: "/avatars/onboarding.webp",
   platform: "/avatars/platform.webp",
+  ads: "/avatars/ads.webp",
+  billing: "/avatars/billing.webp",
+  compliance: "/avatars/compliance.webp",
   custom: "/avatars/custom.webp",
 };
 
