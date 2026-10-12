@@ -2225,6 +2225,7 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-rs-kv { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .ld-rs-kv > b, .ld-rs-kv > .ld-lbl { padding-top: 8px !important; }
   .ld-rs-ta { min-height: 88px; }
+}
 
 /* Elena: videos made from instructions (Videos tab and chat card) */
 .ld-mv-exp { display: grid; gap: 20px; padding: 14px 18px 18px; background: var(--ld-hover); border-bottom: 1px solid var(--ld-line); align-items: start; }
@@ -2243,6 +2244,7 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-mv-btns { flex-direction: row; flex-wrap: wrap; }
   .ld-mv-btns .ld-btn { flex: 1 1 120px; }
   .ld-av-card .ld-mv-player, .ld-mv-exp .ld-mv-player { width: 100% !important; max-width: 300px; }
+}
 
 /* ===================================
  * Imani: People tab (new hires, leaving, customers)
@@ -2267,7 +2269,8 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .im-kv > span, .im-kv > input { margin-bottom: 8px; }
   .im-list { grid-template-columns: minmax(0, 1fr) auto; }
   .im-list.edit { grid-template-columns: minmax(0, 1fr) 96px; }
-=======
+}
+
 /* Quinn: job description on the Roles tab */
 .ld-jd { display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 20px; padding: 14px 18px 18px; align-items: start; }
 .ld-jd.live { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 128px; }
