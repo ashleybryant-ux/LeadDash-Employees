@@ -658,6 +658,17 @@ function TeamGroup({ activeKind }: { activeKind: string | null }) {
 // Employee header (Chat | Work | Guidelines)
 // ==========================================
 
+/** The client-names privacy switch: a lock for the switch, an eye for Show, a name tag for Initial, a crossed eye for Hide. */
+const nameIcon = (d: React.ReactNode) => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+);
+const NAME_ICONS = {
+  lock: nameIcon(<><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>),
+  show: nameIcon(<><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>),
+  initial: nameIcon(<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M7 15l2.5-6L12 15M7.8 13h3.4M15 15h.01" /></>),
+  hide: nameIcon(<><path d="M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" /></>),
+};
+
 type Emp = { id: number; name: string; roleTitle: string; kind: string; status: string; avatar: string | null; interview?: string | null };
 
 export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines"; base: string }) {
@@ -715,8 +726,10 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
       </nav>
       {clientInfo && (
         <div className="ld-pg-toggle ld-names" role="radiogroup" aria-label="Client names" title="How client names show on your screen: in full, as first initial and last name, or hidden" style={{ marginLeft: "auto" }}>
+          <span className="ld-names-lbl" aria-hidden="true">{NAME_ICONS.lock}<span>Client names</span></span>
           {(["show", "initial", "hide"] as const).map((m) => (
             <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} disabled={setNameMode.isPending} onClick={() => mode !== m && setNameMode.mutate({ mode: m })}>
+              {NAME_ICONS[m]}
               {m === "show" ? "Show" : m === "initial" ? "Initial" : "Hide"}
             </button>
           ))}

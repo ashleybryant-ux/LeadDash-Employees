@@ -297,7 +297,10 @@ html.ld-next .ld-switcher-pop { top: 48px !important; }
 .ld-pg-toggle button.on { background: var(--ld-surface); color: var(--ld-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
 /* Client names switch in the employee header: Show, Initial, Hide. */
 .ld-names { flex-shrink: 0; }
-.ld-names button { padding: 0 10px; }
+.ld-names button { padding: 0 10px; display: inline-flex; align-items: center; gap: 5px; }
+.ld-names { align-items: center; }
+.ld-names-lbl { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px 0 6px; font-size: 12px; font-weight: 800; color: var(--ld-ink); white-space: nowrap; border-right: 1px solid var(--ld-line4); margin-right: 2px; }
+.ld-names button.on svg { color: var(--ld-accent-text); }
 /* A desktop short on room (1401px to 1600px): a header with the switch keeps one row the way the laptop layout does.
  * The job title, the Client info pill (the switch says the same thing) and the status pill drop; the tabs tighten. */
 @media (min-width: 1401px) and (max-width: 1600px) {
@@ -312,7 +315,8 @@ html.ld-next .ld-switcher-pop { top: 48px !important; }
   .ld-emphead:has(.ld-names) .ld-emphead-status .ld-pill { display: none; }
   .ld-emphead:has(.ld-names) .ld-names button { padding: 0 8px; font-size: 12.5px; }
 }
-.ld-names button[aria-checked="true"] { background: var(--ld-inverse); color: #fff; }
+.ld-names button[aria-checked="true"] { background: var(--ld-accent); color: #fff; }
+.ld-names button[aria-checked="true"] svg { color: #fff; }
 .ld-pg-frame { border: 1px solid var(--ld-line3); border-radius: 12px; overflow: hidden; background: var(--ld-surface); }
 .ld-pg-phone { width: 375px; max-width: 100%; border: 10px solid var(--ld-ink); border-radius: 34px; overflow: hidden; background: var(--ld-surface); margin: 0 auto; }
 .ld-pg-ver { display: grid; grid-template-columns: 50px minmax(0, 1fr) 130px 128px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--ld-line2); font-size: 14px; }
@@ -2523,3 +2527,5 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-leave-btns.col { flex-direction: row; }
   .ld-leave-btns .ld-btn { width: auto; flex: 1; }
 }
+
+@media (max-width: 760px) { .ld-names-lbl span { display: none; } .ld-names-lbl { padding: 0 6px 0 4px; } }
