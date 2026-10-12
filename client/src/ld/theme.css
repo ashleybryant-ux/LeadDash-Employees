@@ -518,7 +518,7 @@ div.ld-1on1.ld-small { padding: 10px 12px; box-shadow: none; border-color: var(-
 .ld-cal-mc { min-height: 118px; border-left: 1px solid var(--ld-line2); border-bottom: 1px solid var(--ld-line2); padding: 6px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .ld-cal-mc:nth-child(7n + 1) { border-left: 0; }
 .ld-cal-mn { font: inherit; font-size: 12px; font-weight: 700; color: var(--ld-text2); border: 0; background: none; padding: 0; cursor: pointer; text-align: left; width: 22px; height: 22px; }
-.ld-cal-mc.out .ld-cal-mn { color: #b8c4be; }
+.ld-cal-mc.out .ld-cal-mn { color: var(--ld-soft); }
 .ld-cal-mc.today .ld-cal-mn { color: #fff; background: var(--ld-accent); border-radius: 999px; display: flex; align-items: center; justify-content: center; }
 .ld-cal-dot { font: inherit; font-size: 11px; display: flex; gap: 4px; align-items: center; white-space: nowrap; overflow: hidden; border: 0; background: none; padding: 1px 2px; cursor: pointer; text-align: left; color: var(--ld-ink); border-radius: 4px; }
 .ld-cal-dot i { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; display: inline-block; }

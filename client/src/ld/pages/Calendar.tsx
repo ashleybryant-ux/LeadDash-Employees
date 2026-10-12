@@ -98,12 +98,16 @@ function title(view: View, anchor: string) {
   return `${mon(a.m)} ${a.d} to ${b.d}, ${b.y}`;
 }
 
-/** Light fill for an event's color. */
+const isHex = (hex: string) => /^#[0-9a-f]{6}$/i.test(hex);
+
+/** A soft fill for an event's color, mixed into the page surface so it works in light and dark. */
 function tint(hex: string) {
-  const n = parseInt(hex.replace("#", ""), 16);
-  if (Number.isNaN(n)) return "var(--ld-line2)";
-  const mix = (c: number) => Math.round(c + (255 - c) * 0.86);
-  return `rgb(${mix((n >> 16) & 255)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+  return isHex(hex) ? `color-mix(in srgb, ${hex} 16%, var(--ld-surface))` : "var(--ld-line2)";
+}
+
+/** An event's color as text: darker in light mode, lighter in dark mode, so it reads on its own fill. */
+function inkOf(hex: string) {
+  return isHex(hex) ? `color-mix(in srgb, ${hex} 55%, var(--ld-ink))` : "var(--ld-ink)";
 }
 
 const readHidden = (): string[] => {
@@ -360,12 +364,12 @@ function onDay(i: Item, ymd: string, tz: string) {
 }
 
 function Chip({ item, sel, onPick }: { item: Item; sel: boolean; onPick: (k: string) => void }) {
-  const late = item.late ? { background: "#fdecea", color: "var(--ld-bad)" } : null;
+  const late = item.late ? { background: "var(--ld-bad-bg)", color: "var(--ld-bad)" } : null;
   return (
     <button
       type="button"
       className={`ld-cal-chip ${sel ? "sel" : ""}`}
-      style={late ?? { background: tint(item.color), color: item.kind === "team" ? "var(--ld-text2)" : item.color }}
+      style={late ?? { background: tint(item.color), color: item.kind === "team" ? "var(--ld-text2)" : inkOf(item.color) }}
       title={item.title}
       onClick={() => onPick(item.key)}
     >
@@ -398,7 +402,7 @@ function TimeGrid({ days, today, tz, items, sel, onPick, onDay: openDay }: { day
             <b>{partsOf(d).d}</b>
           </button>
         ))}
-        <div className="ld-cal-tl" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", borderBottom: "1px solid #e3e9e6" }}>All day</div>
+        <div className="ld-cal-tl" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", borderBottom: "1px solid var(--ld-line)" }}>All day</div>
         {days.map((d) => (
           <div key={d} className="ld-cal-ad" style={days.length === 1 ? { flexDirection: "row", flexWrap: "wrap" } : undefined}>
             {items
@@ -432,7 +436,7 @@ function TimeGrid({ days, today, tz, items, sel, onPick, onDay: openDay }: { day
                     height: p.height,
                     left: `calc(${(100 / p.cols) * p.col}% + 3px)`,
                     width: `calc(${100 / p.cols}% - 6px)`,
-                    background: i.busy || i.kind === "focus" ? "#f1f3f2" : tint(i.color),
+                    background: i.busy || i.kind === "focus" ? "var(--ld-faint2)" : tint(i.color),
                     borderLeftColor: i.color,
                     borderStyle: i.kind === "focus" ? "dashed" : undefined,
                   }}
@@ -538,7 +542,7 @@ function Detail({ item, tz, onClose }: { item: Item; tz: string; onClose: () => 
   return (
     <aside className="ld-cal-side" aria-label="Event">
       <div className="ld-between">
-        <span className="ld-pill" style={{ background: tint(item.color), color: item.color }}>{item.calendar}</span>
+        <span className="ld-pill" style={{ background: tint(item.color), color: inkOf(item.color) }}>{item.calendar}</span>
         <button type="button" className="ld-btn sm" style={{ width: 32, height: 32, padding: 0 }} aria-label="Close" onClick={onClose}>
           ×
         </button>
