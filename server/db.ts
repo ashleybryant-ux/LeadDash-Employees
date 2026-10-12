@@ -302,6 +302,12 @@ export async function getOrganizationById(orgId: number) {
   return rows[0] || null;
 }
 
+/** Whether this is one of LeadDash's own workspaces (staff set it). Sync, for places that can't wait. */
+export function isOwnWorkspace(orgId: number) {
+  const rows = getDb().select({ internal: organizations.internal }).from(organizations).where(eq(organizations.id, orgId)).limit(1).all();
+  return !!rows[0]?.internal;
+}
+
 export async function getOrganizationBySlug(slug: string) {
   const rows = getDb().select().from(organizations).where(eq(organizations.slug, slug)).limit(1).all();
   return rows[0] || null;

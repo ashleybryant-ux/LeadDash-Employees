@@ -150,10 +150,10 @@ describe("Morgan talks it through", () => {
   it("asks where to search when a person doesn't say, and offers to start the best fit after a search", async () => {
     const { orgId, owner } = await makeWorkspace("talk-search");
     const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
-    decision = { ...blank, reply: "Quick choice so I search the right places:", choices: ["Oklahoma first", "Nationwide", "Both"] };
+    decision = { ...blank, reply: "Quick choice so I search the right places:", choices: ["Our state first", "Nationwide", "Both"] };
     const ask = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "Find pitch competitions" });
-    expect(systems[0]).toContain('"Oklahoma first", "Nationwide", "Both"');
-    expect(JSON.parse(ask.reply.cards!)[0].options).toEqual(["Oklahoma first", "Nationwide", "Both"]);
+    expect(systems[0]).toContain('"Our state first", "Nationwide", "Both"');
+    expect(JSON.parse(ask.reply.cards!)[0].options).toEqual(["Our state first", "Nationwide", "Both"]);
 
     const made = await Promise.all(
       [90, 70, 50, 40].map((score, i) => db.createOpp({ organizationId: orgId, employeeId: morgan.id, kind: "pitch", title: `Comp ${i + 1}`, host: "Host", fitScore: score, fitCall: score >= 60 ? "apply" : "skip" } as any))
@@ -238,7 +238,7 @@ describe("every employee knows what's connected and works in Projects", () => {
     decision = { ...blank, reply: "Yes." };
     await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Where do tasks live?" });
     expect(systems[0]).toContain("Tasks and projects live in Projects, this app's own task manager");
-    expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (only for importing old ClickUp tasks into Projects; nobody works in ClickUp anymore");
+    expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (only for importing old ClickUp tasks into Projects; tasks live in Projects here");
     expect(systems[0]).toContain("Never say a connected tool isn't connected");
     expect(systems[0]).not.toContain("clickup_due");
     expect(systems[0]).toContain("task_due:");

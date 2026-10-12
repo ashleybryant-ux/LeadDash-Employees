@@ -130,7 +130,7 @@ export function AddView({ orgId, listId, folderId, listName, settings, editing, 
           <button type="button" className="ld-btn p sm" onClick={() => onAddTab!(kind as ViewKind)}>Add tab</button>
         </div>
       )}
-      <input className="ld-in xs" autoFocus aria-label="View name" placeholder={isItem ? `${ITEMS.find((i) => i.key === kind)?.label} name` : 'View name, like "Angela\'s week"'} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
+      <input className="ld-in xs" autoFocus aria-label="View name" placeholder={isItem ? `${ITEMS.find((i) => i.key === kind)?.label} name` : 'View name, like "Priya\'s week"'} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
       {!isItem && (
         <div className="ld-row" style={{ gap: 14, padding: "6px 6px 0", borderTop: "1px solid #eef2f0" }}>
           <label className="ld-row ld-small" style={{ gap: 6 }}><input type="checkbox" checked={priv} disabled={!canShare} onChange={(e) => setPriv(e.target.checked)} /> Only I see it</label>

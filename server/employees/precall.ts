@@ -67,7 +67,7 @@ const RULES = `Research rules (strict):
 - Reviews are patterns to guide questions, never something to quote back at them.
 - Turn what you find into discovery questions, Evidence, Hypothesis, Question, rather than facts to confront them with.
 - Prices for their current tools: give a range only, never a number presented as their bill.
-- What LeadDash offers comes only from the Brain. Never promise a migration, price or feature the Brain doesn't state.`;
+- What this business offers comes only from the Brain. Never promise a migration, price or feature the Brain doesn't state.`;
 
 type Input = { leadId?: number | null; person?: string; practice?: string; email?: string; website?: string; meetingAt?: Date | null; runBy: string; employeeKind?: string };
 

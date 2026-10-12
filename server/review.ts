@@ -110,7 +110,7 @@ export async function ensureDemoOrg(): Promise<number> {
       name: DEMO_NAME,
       slug: DEMO_SLUG,
       plan: "growth",
-      state: "Oklahoma City, OK",
+      state: "Denver, CO",
       website: "example.com",
       description: "Sample group counseling practice used for app review. Every person and number here is made up.",
       audience: "Adults, couples and families",
@@ -167,7 +167,7 @@ async function seedDemo(orgId: number) {
     payFrom: "$60,000",
     payTo: "$72,000",
     licenses: JSON.stringify(["LPC"]),
-    mustHave: "Active Oklahoma LPC license",
+    mustHave: "Active Colorado LPC license",
     niceToHave: "Couples or family experience",
   });
   await db.createHrPerson({
@@ -178,12 +178,12 @@ async function seedDemo(orgId: number) {
     name: "Casey Morgan",
     credentials: "LPC",
     currentRole: "Counselor at a community clinic",
-    location: "Oklahoma City, OK",
+    location: "Denver, CO",
     appliedOn: "Website",
     fitScore: 82,
     fitReason: "Meets the license requirement and has 4 years of family work.",
     mustHaves: JSON.stringify([
-      { item: "Active Oklahoma LPC license", met: "yes", kind: "must" },
+      { item: "Active Colorado LPC license", met: "yes", kind: "must" },
       { item: "Couples or family experience", met: "yes", kind: "nice" },
     ]),
   });

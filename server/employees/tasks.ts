@@ -52,7 +52,7 @@ export async function systemPromptFor(emp: AIEmployee, job: string, about?: stri
   return {
     brain,
     // What stays the same from one message to the next comes first, so it can be cached; the task and passages come after the mark.
-    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${handbookText(emp.organizationId)}${playbookText(emp.kind) ? `\n\n${playbookText(emp.kind)}` : ""}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${CACHE_MARK}# The task in front of you\n${job}${await passagesFor(emp, about, job)}`,
+    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${handbookText(emp.organizationId)}${playbookText(emp.kind, !!brain.org?.internal) ? `\n\n${playbookText(emp.kind, !!brain.org?.internal)}` : ""}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${CACHE_MARK}# The task in front of you\n${job}${await passagesFor(emp, about, job)}`,
   };
 }
 

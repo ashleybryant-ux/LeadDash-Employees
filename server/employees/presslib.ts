@@ -245,7 +245,7 @@ export async function fillLibrary(orgId: number, what: "bios" | "stories" | "cal
       const { system } = await systemPromptFor(emp, "Your job now: you are the publicist, writing the owner's bios from the Brain. Only facts in the Brain. Third person. Each length is a hard limit in words; full is up to 300 words.");
       const r = await generateJson<{ bios: { angle: string; length: string; text: string }[] }>({
         system,
-        prompt: `Write a bio for each angle (${BIO_ANGLES.join(", ")}) at each length (25, 50, 100, 150, full). Founder: building her companies. Clinical: her clinical credentials and practice. Relationships: couples and communication. Workplace: workplace mental health, disability inclusion, her research and workforce background. Tech: the technology company and clinician-built software. Skip an angle the Brain doesn't support.`,
+        prompt: `Write a bio for each angle (${BIO_ANGLES.join(", ")}) at each length (25, 50, 100, 150, full). Founder: building the business. Clinical: their credentials and practice. Relationships: the people and topics they help with most. Workplace: what they offer employers and teams. Tech: any technology they built or use. Skip an angle the Brain doesn't support.`,
         schemaName: "press_bios",
         schema: obj({ bios: arr(obj({ angle: str, length: str, text: str })) }),
         maxTokens: 12000,

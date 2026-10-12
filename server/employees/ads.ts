@@ -107,7 +107,7 @@ export const PLATFORM: Record<AdPlatform, Spec> = {
     name: "Spotify",
     where: "audio spots between songs and podcasts",
     fields: [
-      { key: "audioScript", label: "Audio script", kind: "long", limit: 700, hint: "30 seconds read aloud, about 75 words. Numbers and web addresses written the way they are said ('two ninety-nine', 'LeadDash dot I O')." },
+      { key: "audioScript", label: "Audio script", kind: "long", limit: 700, hint: "30 seconds read aloud, about 75 words. Numbers and web addresses written the way they are said ('forty-nine dollars', 'brightpath dot com')." },
       { key: "voice", label: "Voice", kind: "text", limit: 120, hint: "Who reads it: the owner, or a voice from the library, and the tone." },
       { key: "audience", label: "Shown to", kind: "long", limit: 240, hint: "Listeners of what, where, ages." },
     ],

@@ -65,7 +65,7 @@ export async function readWebsite(orgId: number, url: string): Promise<{ website
 - services: the services or offers, as a short comma list, with prices when the site shows them.
 - bookingLink: the URL a client uses to book or request an appointment or consultation, if the site has one (a link on the pages).
 - contact: phone, email and address as printed.
-- brandColors: the site's main colors as hex codes if the markup shows them (for example "Green #1b6b4a, orange #e88a3a"), otherwise "".
+- brandColors: the site's main colors as hex codes if the markup shows them (for example "Navy #1f3a5f, gold #d4a017"), otherwise "".
 - tone: how the site sounds, in one line (for example "Warm and personal, speaks to the reader as you").
 - team: the people named on the site with their titles, as a comma list.`,
     prompt: siteBrief(site, { html: true, textChars: 6000, htmlChars: 8000 }).slice(0, 90_000),

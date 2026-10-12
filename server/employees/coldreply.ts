@@ -54,7 +54,7 @@ const CLASSIFY: JsonSchema = obj({
 
 type Classified = { kind: ColdReply["kind"]; topic: string; followUpDate: string; followUpNote: string; referralName: string; referralEmail: string; summary: string; safe: boolean; needsYou: string; draft: string };
 
-const LADDER = `The next step only, never a jump from stranger to demo: cold → "worth sending a comparison?" → interested → "which system are you using now?" → qualified → "how many clinicians?" → problem found → "that's where LeadDash tends to help" → demo → "want to look at it together?"`;
+const LADDER = (name: string) => `The next step only, never a jump from stranger to demo: cold → "worth sending a comparison?" → interested → "what are you using now?" → qualified → "how big is the team?" → problem found → "that's where ${name} tends to help" → demo → "want to look at it together?"`;
 
 function playbookFor(orgId: number) {
   const plays = db.cold.playbook.list(orgId);
@@ -64,7 +64,7 @@ function playbookFor(orgId: number) {
   });
   const battles = plays.filter((p) => p.kind === "battle").map((p) => {
     const b = parse<Record<string, string>>(p.body, {});
-    return `- ${p.title}: does well: ${b.doesWell} Where LeadDash differs: ${b.differs} Don't claim: ${b.dontClaim}`;
+    return `- ${p.title}: does well: ${b.doesWell} Where we differ: ${b.differs} Don't claim: ${b.dontClaim}`;
   });
   const facts = plays.filter((p) => p.kind === "fact").map((p) => `- ${p.title}: ${parse<{ text?: string }>(p.body, {}).text ?? ""}`);
   const never = plays.filter((p) => p.kind === "never").map((p) => `- ${p.title}`);
@@ -129,7 +129,7 @@ export async function handleEmail(orgId: number, e: IEmail) {
     emp,
     `Your job now: a therapist answered one of your cold emails for ${org?.name ?? "the business"}. Sort the reply and write the answer.
 - Write like one practice owner answering another: short, plain, one thought. Sign with "${first}". No signature block (it's added).
-- ${LADDER}
+- ${LADDER(org?.name ?? "we")}
 - Pricing questions get the price from the website, then the offer to compare against their whole stack. Never hide the price behind a call.
 - Never argue with a no. Never invent a fact, price, offer, timeline, statistic or customer. Never mention anything personal about them. Never insult a competitor.
 - When offering a time: ${times.length ? `offer these: ${times.join("; ")}, or this link: ${link}` : `offer this link: ${link}`}.

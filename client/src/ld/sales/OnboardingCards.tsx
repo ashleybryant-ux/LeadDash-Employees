@@ -128,7 +128,7 @@ export function SellsCard() {
           )}
           <div style={col}>
             <label className="ld-lbl" htmlFor="sales-area">Area</label>
-            {editing ? <input id="sales-area" className="ld-in" style={{ maxWidth: 360 }} placeholder={therapy ? "Within 25 miles of Oklahoma City, OK" : "Texas and Oklahoma"} value={d.area} onChange={(e) => setD({ ...d, area: e.target.value })} /> : <span className="ld-body">{s.area || "Not set"}</span>}
+            {editing ? <input id="sales-area" className="ld-in" style={{ maxWidth: 360 }} placeholder={therapy ? "Within 25 miles of Denver, CO" : "Colorado and Wyoming"} value={d.area} onChange={(e) => setD({ ...d, area: e.target.value })} /> : <span className="ld-body">{s.area || "Not set"}</span>}
           </div>
           <div style={col}>
             <span className="ld-lbl">How the team works for this choice</span>

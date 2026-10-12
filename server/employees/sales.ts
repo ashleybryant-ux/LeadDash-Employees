@@ -134,7 +134,7 @@ export async function findProspects(orgId: number, opts: { focus?: string } = {}
 - Score fit 0 to 100: how likely they see people this practice serves. Say why in one sentence using something real from their page.
 - Return up to 10, best first.`
         : `Your job: find businesses that could buy what this workspace sells, from its Brain.
-- Search one angle at a time: group practice and clinic sites with "Our team" pages, therapist directories, the state licensing board's license lookup (for example the Texas Behavioral Health Executive Council or the Oklahoma LPC board), practices posting job openings.
+- Search one angle at a time: group practice and clinic sites with "Our team" pages, therapist directories, the state licensing board's license lookup (for example the state counseling or social work board), practices posting job openings.
 - Check the owner on the state licensing board's lookup when you can, and say in foundOn which sources you used (for example "NPI Registry, Texas BHEC license lookup, practice website").
 - For each: the business name, city, the owner or decision maker and their title, a work email and phone only if printed on their own site or in the NPI Registry (otherwise ""), its website, which page you found it on and that page's URL, its size (how many clinicians) if stated, and the owner's LinkedIn profile URL (linkedin.com/in/...) only if a search result showed it (otherwise "").
 - Score fit 0 to 100 against what the workspace sells. Say why in one sentence using something real from their page (books by phone only, hiring, takes insurance...).

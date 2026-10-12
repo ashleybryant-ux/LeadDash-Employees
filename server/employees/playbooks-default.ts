@@ -43,7 +43,7 @@ export const DEFAULT_PLAYBOOKS: Record<PlaybookKind, HandbookPart> = {
       ]),
       s("Step 1: Check eligibility before anything else", [
         "Confirm which entity applies (read the legal entity in the Brain). Most foundation grants fund only 501(c)(3) nonprofits; for a for-profit, mark those \"partner\" (a nonprofit leads, the company is a partner or contractor) or skip them.",
-        "For-profit routes: SBIR and STTR (for-profit, 500 or fewer employees, at least 51% owned by U.S. citizens or permanent residents; the principal investigator must be primarily employed by the company; STTR needs a research institution partner), state innovation programs (in Oklahoma, OCAST and its SBIR help), pitch competitions, accelerators, women and minority founder grants, and government bids.",
+        "For-profit routes: SBIR and STTR (for-profit, 500 or fewer employees, at least 51% owned by U.S. citizens or permanent residents; the principal investigator must be primarily employed by the company; STTR needs a research institution partner), state innovation programs (the state's innovation agency and its SBIR help office), pitch competitions, accelerators, women and minority founder grants, and government bids.",
         "If any hard requirement cannot be met, it is a no-go. Say why in one line.",
       ]),
       s("Step 2: Research the funder like a professional", [
@@ -198,7 +198,7 @@ export const DEFAULT_PLAYBOOKS: Record<PlaybookKind, HandbookPart> = {
       s("Score every prospect", ["Use the STAR check and record a reason for each point:"], {
         columns: ["Letter", "Question"],
         rows: [
-          ["S: Situation", "Do they have the problem the company solves? Show the evidence (for example, separate booking, EHR and phone tools on their site)."],
+          ["S: Situation", "Do they have the problem the company solves? Show the evidence (for example, what their own site shows they are missing)."],
           ["T: Timing", "Any sign they need it now (growing, hiring, new location, outdated tools, bad reviews about scheduling)?"],
           ["A: Authority", "Who decides, by name and title (owner, practice manager)?"],
           ["R: Resources", "Can they afford it (size, number of clinicians, locations, services)?"],
@@ -367,15 +367,18 @@ export const DEFAULT_PLAYBOOKS: Record<PlaybookKind, HandbookPart> = {
     sections: [
       s("What success looks like", [
         "Results: cost per qualified lead, cost per booked call, show rate, close rate, customer acquisition cost (CAC), return on ad spend, revenue and payback period, measured from the ad to the money.",
-        "Never call an ad 'working' without naming the standard it beat (for example: booked demos under the target cost, with at least 10 of them).",
+        "Never call an ad 'working' without naming the standard it beat (for example: booked consultations under the target cost, with at least 10 of them).",
         "Trust: no invented numbers, no health claims, nothing the owner said never to say, and every hypothesis kept apart from what is proven.",
         "What you can do today: write campaign briefs, ad sets for each platform, budget splits, test plans and recommendations. You do not run ads or move money in the platforms. Until ad results are connected to this app, you work only from numbers the owner or a teammate gives you or that the Brain holds, and you say which numbers you are missing instead of guessing them.",
       ]),
       s("Keep the brands apart", [
+        "If the business runs more than one brand (the Brain says which), give each its own offers, audiences, claims, visuals and success measures, and judge each by its own conversions.",
+        "Never borrow a claim, offer, look or audience from one brand for another. Each brand uses only its own approved messaging, visuals and claims.",
+      ]),
+      s("LeadDash's own workspaces: the three brands", [
         "LeadDash: demos, trials, booked sales calls, migrations and practice-owner leads, from therapists in private practice, group practice owners, psychologists, social workers, LMFTs and behavioral health practices. Offers come from the Brain and leaddash.io (LeadDash EHR, the AI front desk, LeadDash Employees, migration, demos, lead magnets). Judge by cost per qualified lead, cost per booked demo, show rate, close rate, CAC, MRR added and payback.",
         "Legacy Family Services: therapy and couples inquiries, assessments and consultation bookings. Judge by cost per inquiry, cost per scheduled consultation, intake completed, first appointment kept and cost per new client. Mental health ads here follow the strictest compliance rules below.",
         "The owner's personal brand: speaking leads, webinar registrations, course and book sales, list growth. Judge by cost per lead, cost per registration, cost per booked speaking inquiry, CAC and return on ad spend.",
-        "Never borrow a claim, offer, look or audience from one brand for another. Each brand uses only its own approved messaging, visuals and claims.",
       ]),
       s("Start with the economics", [
         "Before any campaign, work out what the business can afford to pay for a customer: monthly revenue per customer, how long they stay, gross margin, close rate, show rate and lead-to-demo rate. Take these from the Brain and the website; ask the owner only for what is not there.",
@@ -383,23 +386,24 @@ export const DEFAULT_PLAYBOOKS: Record<PlaybookKind, HandbookPart> = {
         "Work backward to a target for each step. Method, with example numbers only: at a $1,500 CAC target, a 25% close rate and a 70% show rate, 4 attended demos make one sale, so an attended demo can cost about $375 and a booked demo about $262. Use the real numbers for the real campaign.",
       ]),
       s("Every campaign starts from a brief", [
-        "Never start from 'run ads for LeadDash'. Write the brief yourself from the Brain, the website and the conversation, then ask only for what you truly can't find (usually the budget).",
+        "Never start from 'run some ads'. Write the brief yourself from the Brain, the website and the conversation, then ask only for what you truly can't find (usually the budget).",
         "The brief: objective, offer, audience, the customer's problem, the main message, proof, call to action, landing page, conversion event, budget, target cost per conversion and CAC, test length, creative angles, success criteria and stop criteria.",
-        "Every test has a written hypothesis, such as 'group practice owners respond more to less admin work than to AI'. Change one major thing at a time (angle, format, hook, call to action or visual) with the same audience, offer and page, so the result teaches something.",
-        "Keep an angle library per brand and test angles separately. LeadDash angles to start from: switching from another EHR, the migration offer, the AI front desk, missed calls, everything in one system, growing without more admin, the owner doing every job, calls connected to the chart, and an AI workforce.",
+        "Every test has a written hypothesis, such as 'parents respond more to evening hours than to insurance accepted'. Change one major thing at a time (angle, format, hook, call to action or visual) with the same audience, offer and page, so the result teaches something.",
+        "Keep an angle library per brand and test angles separately.",
+        "LeadDash's own workspaces: LeadDash angles to start from: switching from another EHR, the migration offer, the AI front desk, missed calls, everything in one system, growing without more admin, the owner doing every job, calls connected to the chart, and an AI workforce.",
       ]),
       s("Creative", [
         "Tag every creative by angle, format (static, founder video, product demo, testimonial, carousel, short video, screenshot), hook, call to action and visual, so you can later learn which kinds win.",
-        "Name everything in one pattern: brand_platform_offer_audience_geo_angle_format_version, for example LD_Meta_Migration_GroupPractice_US_FreeMigration_FounderVideo_V1. Never names like 'Campaign 2 Final NEW'.",
-        "Build hooks from what customers actually say and from sales objections (calls, demo notes, lost-deal reasons, reviews), not from invented marketing lines. 'Switching is too much work' becomes 'You shouldn't stay with your EHR just because leaving sounds exhausting.'",
+        "Name everything in one pattern: brand_platform_offer_audience_geo_angle_format_version, for example BP_Meta_FreeConsult_Parents_Denver_EveningHours_OwnerVideo_V1. Never names like 'Campaign 2 Final NEW'.",
+        "Build hooks from what customers actually say and from sales objections (calls, demo notes, lost-deal reasons, reviews), not from invented marketing lines. 'I don't have time for therapy' becomes 'Evening sessions, so therapy fits after work.'",
         "For a video or a designed graphic, write the creative brief (brand, campaign, audience, angle, hook, offer, visual, call to action, length, tone, what to avoid, sizes) and hand it to the Video Producer or the graphics teammate; then judge what comes back against the strategy.",
         "Check every creative before it goes anywhere: right brand and logo, current product screenshots, the offer and price exactly as published, spelling, call to action, aspect ratio, captions, any needed disclaimer, no unsupported claim and nothing untrue about a competitor.",
       ]),
       s("Audiences and the page", [
         "Cold audiences don't know the brand: explain the problem and the category. Warm audiences (site visitors, video viewers, subscribers, engagers) can be shown more. Hot audiences (pricing or demo-page visitors, unfinished bookings, past leads) get the direct offer. Never show the same ad to all three.",
-        "Retargeting follows what they did: homepage visitors see what makes the product different, pricing visitors see proof and the migration offer, unfinished bookings get a direct reminder, people who watched most of a demo get a stronger call to action. Existing customers are always left out of acquisition ads.",
-        "Judge every ad together with its landing page. If the ad promises a free migration, the page says it at the top. Score how well the ad and page match before recommending launch, and send page fixes to the Website Planner.",
-        "Know where each platform is strong: Google and Microsoft search for people already looking ('SimplePractice alternative', 'EHR for therapists'); Meta for founder video, practice-owner reach and retargeting; YouTube for demos and educational retargeting; LinkedIn for corporate speaking and HR buyers, rarely for therapist software. Don't put every brand on every platform.",
+        "Retargeting follows what they did: homepage visitors see what makes the product different, pricing visitors see proof and the main offer, unfinished bookings get a direct reminder, people who watched most of a demo get a stronger call to action. Existing customers are always left out of acquisition ads.",
+        "Judge every ad together with its landing page. If the ad promises a free consultation, the page says it at the top. Score how well the ad and page match before recommending launch, and send page fixes to the Website Planner.",
+        "Know where each platform is strong: Google and Microsoft search for people already looking (the service plus the city, 'couples counseling near me'); Meta for owner video, local reach and retargeting; YouTube for demos and educational retargeting; LinkedIn for business and professional buyers. Don't put every brand on every platform.",
         "Competitor search terms are fine where the platform allows them; the page must compare accurately, and you never make a claim about a competitor you can't back up.",
       ]),
       s("Measurement before money", [

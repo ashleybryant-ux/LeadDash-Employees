@@ -567,7 +567,7 @@ export function CampaignsTab({ empName }: { empName: string }) {
         <div className="ld-hd" style={{ gridTemplateColumns: "minmax(0,1.6fr) 80px 170px 100px 128px" }}>
           <span>Campaign</span><span>Length</span><span>Status</span><span>Cost</span><span />
         </div>
-        {list.length === 0 && <div className="ld-empty">No campaigns yet. Tell {empName} in Chat what the video is for, like "Make a 30-second LeadDash ad about therapists drowning in double entry."</div>}
+        {list.length === 0 && <div className="ld-empty">No campaigns yet. Tell {empName} in Chat what the video is for, like "Make a 30-second ad for our new evening hours."</div>}
         {list.map((e) => <CampaignRow key={e.id} e={e} open={open === e.id} onToggle={() => setOpen(open === e.id ? null : e.id)} />)}
       </div>
     </div>
@@ -625,7 +625,7 @@ function OwnerPack() {
           ))}
         </div>
       )}
-      <span className="ld-small">Plates are standard images of you (front, walking, seated, profile, waist-up, full body, green blazer, black suit, evening). Every shot with you names the plate it uses, so your face holds across long campaigns.</span>
+      <span className="ld-small">Plates are standard images of you (front, walking, seated, profile, waist-up, full body, a signature outfit, formal, evening). Every shot with you names the plate it uses, so your face holds across long campaigns.</span>
       <div>
         <button type="button" className="ld-btn sm" style={{ width: 160 }} disabled={plates.isPending || !picked.length} onClick={() => plates.mutate({ organizationId: currentOrgId })}>{plates.isPending ? "Making plates..." : q.data?.plates.length ? "Make plates again" : "Make plates"}</button>
       </div>

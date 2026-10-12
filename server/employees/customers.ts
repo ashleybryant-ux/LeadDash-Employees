@@ -60,7 +60,7 @@ ${HUMAN_EMAIL}`
         employeeId: imani.id,
         kind: "email_draft",
         status: "pending_approval",
-        title: out.subject || `Welcome to LeadDash, ${practice}`,
+        title: out.subject || `Welcome to ${(await db.getOrganizationById(orgId))?.name ?? "the team"}, ${practice}`,
         body: out.body,
         targetChannels: JSON.stringify(["Gmail"]),
         metadata: JSON.stringify({ recipient: input.contact || practice, email: input.email.trim(), whatTheyWant: `Welcome to onboarding (${practice})`, urgency: "today", newEmail: true, launchId: r.launch.id }),

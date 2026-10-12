@@ -77,13 +77,27 @@ export function playbooks() {
   return playbookCache;
 }
 
+/**
+ * Sections and rules that start with this are about LeadDash's own business (its brands,
+ * angles and offers). Only LeadDash's own workspaces get them; customers never do.
+ */
+export const OWN_ONLY = "LeadDash's own workspaces:";
+
+/** A playbook without the parts only LeadDash's own workspaces get. */
+export function forWorkspace<T extends HandbookPart>(p: T, internal: boolean): T {
+  if (internal) return p;
+  const own = (t: string | null | undefined) => (t ?? "").trim().startsWith(OWN_ONLY);
+  return { ...p, sections: p.sections.filter((sec) => !own(sec.title)).map((sec) => ({ ...sec, rules: sec.rules.filter((r) => !own(r)) })) };
+}
+
 /** The playbook for one kind of employee as instructions text, or "" when the role has none yet. */
-export function playbookText(kind: string) {
-  const hit = playbookTextCache.get(kind);
+export function playbookText(kind: string, internal = false) {
+  const key = `${kind}:${internal ? 1 : 0}`;
+  const hit = playbookTextCache.get(key);
   if (hit !== undefined) return hit;
   const p = playbooks().find((x) => x.key === `playbook:${kind}`);
-  const text = p ? renderPart(p, undefined).replace(/^## /, "# Your job playbook: ") : "";
-  playbookTextCache.set(kind, text);
+  const text = p ? renderPart(forWorkspace(p, internal), undefined).replace(/^## /, "# Your job playbook: ") : "";
+  playbookTextCache.set(key, text);
   return text;
 }
 

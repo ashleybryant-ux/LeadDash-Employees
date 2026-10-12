@@ -401,7 +401,7 @@ function ActionFields({ r, set, c, statuses, fields, lists, templates }: { r: Ru
     return (
       <>
         <label htmlFor="au-txt">{a.do === "chat" ? "Post" : a.do === "meeting" ? "Topic" : "Note"}</label>
-        <input id="au-txt" className="ld-in xs" placeholder={a.do === "chat" ? "⏰ {task} is due today and still open ({assignees})" : a.do === "meeting" ? "{task}" : "Send it to Caroline to paste in"} value={a.value} onChange={(e) => put({ value: e.target.value })} />
+        <input id="au-txt" className="ld-in xs" placeholder={a.do === "chat" ? "⏰ {task} is due today and still open ({assignees})" : a.do === "meeting" ? "{task}" : "Send it to Priya to paste in"} value={a.value} onChange={(e) => put({ value: e.target.value })} />
       </>
     );
   return null;

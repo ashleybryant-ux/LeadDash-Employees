@@ -13,7 +13,7 @@ type CatalogItem = { key: string; name: string; provider: Provider; logo: string
 /** One-click cards: each signs in with the company. WordPress, Submittable and Sessionize still take a sign-in. */
 const CATALOG: CatalogItem[] = [
   { key: "google", name: "Google", provider: "google_workspace", app: "google", logo: "G", color: "#db4437", desc: "Gmail, Calendar and Google Meet. Avery sends replies you approve, and Simone adds a Meet link to each meeting she schedules." },
-  { key: "clickup", name: "ClickUp", provider: "clickup", app: "clickup", logo: "CU", color: "#7b68ee", desc: "Only for bringing your old ClickUp tasks into Projects. Nobody works in ClickUp anymore." },
+  { key: "clickup", name: "ClickUp", provider: "clickup", app: "clickup", logo: "CU", color: "#7b68ee", desc: "Brings your old ClickUp tasks into Projects." },
   { key: "zoom", name: "Zoom", provider: "zoom", app: "zoom", logo: "Z", color: "#0b5cff", desc: "Simone adds a Zoom link instead of Google Meet, and can read the transcript when cloud recording is on." },
   { key: "linkedin", name: "LinkedIn", provider: "linkedin", app: "linkedin", logo: "in", color: "#0a66c2", desc: "Sienna posts to your profile after you approve." },
   { key: "meta", name: "Facebook and Instagram", provider: "facebook", app: "meta", logo: "f", color: "#1877f2", desc: "Sienna posts and Reels to your page and Instagram after you approve." },
@@ -811,7 +811,7 @@ function Calendars() {
             <span className="ld-lbl">Add calendar</span>
             <div className="ld-logins-form" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "10px 16px", fontSize: 14, alignItems: "center" }}>
               <label htmlFor="cal-new-name" style={{ fontWeight: 700 }}>Name</label>
-              <input id="cal-new-name" className="ld-in" style={{ maxWidth: 360 }} placeholder="Legacy Family Services" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} />
+              <input id="cal-new-name" className="ld-in" style={{ maxWidth: 360 }} placeholder="Bright Path Counseling" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} />
               <b style={{ alignSelf: "start", paddingTop: 6 }}>Where it lives</b>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Seg label="Where it lives" value={adding.where} onChange={(v) => setAdding({ ...adding, where: v })} options={[{ key: "google", label: "Google" }, { key: "link", label: "Outlook or iCloud" }]} />

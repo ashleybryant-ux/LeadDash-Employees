@@ -322,12 +322,12 @@ const FIND_JOB: Record<OppKind, string> = {
 - SAM.gov registration only matters for federal awards; never skip a state, local or foundation opportunity because of it.
 - Leave out anything whose deadline has passed. Prefer funders in the workspace's state, then national programs.`,
   pitch: `Your job: find startup pitch competitions taking applications now that fit this company.
-- Search widely, one angle per search: the company's state and city (state innovation agencies, universities, chambers, startup weeks), its region, its sector (health tech, software, SaaS), founder-focused competitions (women founders, Black founders, veteran founders) when the Brain says the founder qualifies, corporate and bank-sponsored competitions, and national virtual competitions.
+- Search widely, one angle per search: the company's state and city (state innovation agencies, universities, chambers, startup weeks), its region, its sector (from the Brain), founder-focused competitions when the Brain says the founder qualifies, corporate and bank-sponsored competitions, and national virtual competitions.
 - Rolling or monthly competitions count. Include ones whose application opens soon if the date is posted.
 - Note the prize, whether equity is taken, the company stage required, the region, the entry fee, and pitch day.
 - Leave out competitions whose deadline has passed or whose stage or region rules exclude the company.`,
   accelerator: `Your job: find accelerator and incubator programs taking applications now that fit this company.
-- Search widely, one angle per search: the company's state and region, its sector (health tech, software, SaaS), founder-focused programs when the Brain says the founder qualifies, corporate programs, and remote national programs.
+- Search widely, one angle per search: the company's state and region, its sector (from the Brain), founder-focused programs when the Brain says the founder qualifies, corporate programs, and remote national programs.
 - Rolling admissions count.
 - Note investment or stipend, equity taken, stage required, location, and program dates.
 - Leave out programs whose deadline has passed or that exclude the company's stage, sector or region.`,
@@ -378,17 +378,25 @@ async function grantsGovListings(keyword: string) {
 }
 
 /** The Google searches that widen each kind of opportunity search. */
-export function googleQueries(kind: OppKind, state: string, focus?: string) {
+export function googleQueries(kind: OppKind, state: string, focus?: string, own = false) {
   const y = new Date().getFullYear();
   const st = state.trim();
   const f = (focus ?? "").trim();
-  const base: Record<OppKind, string[]> = {
+  // LeadDash's own workspaces also search its own categories (health tech, founder programs, EHR bids, its speaking topics).
+  const base: Record<OppKind, string[]> = own ? {
     pitch: [`startup pitch competition ${y} ${y + 1} applications open`, `health tech pitch competition ${y + 1}`, `pitch competition for women founders ${y + 1}`, `pitch competition for Black founders ${y + 1}`, `virtual pitch competition startups apply ${y}`, st && `${st} startup pitch competition ${y}`, `SaaS startup pitch competition prize ${y + 1}`, `university business plan competition open to all founders ${y + 1}`],
     grant: [`small business grant ${y} ${y + 1} apply`, `behavioral health grant RFP ${y}`, `mental health funding opportunity ${y}`, st && `${st} small business grant ${y}`, st && `${st} mental health grant RFP ${y}`, `grants for women owned business ${y + 1}`],
     accelerator: [`startup accelerator applications open ${y + 1}`, `health tech accelerator ${y + 1} applications`, `accelerator for women founders ${y + 1}`, st && `${st} startup accelerator ${y}`, `remote accelerator program SaaS ${y + 1}`],
     bid: [st && `${st} RFP behavioral health ${y}`, st && `${st} bid electronic health record ${y}`, `RFP practice management software behavioral health ${y}`, `county RFP mental health services ${y}`],
     speaking: [`call for speakers ${y + 1} mental health conference`, `call for proposals ${y + 1} workplace wellbeing conference`, `HR conference call for speakers ${y + 1}`, `counseling conference call for proposals ${y + 1}`, st && `${st} conference call for speakers ${y + 1}`],
     media: [`podcast guest mental health workplace`, `journalist request therapist expert`, `op-ed submission guidelines mental health`, `podcast seeking guests entrepreneurs ${y}`],
+  } : {
+    pitch: [`startup pitch competition ${y} ${y + 1} applications open`, `virtual pitch competition startups apply ${y}`, st && `${st} startup pitch competition ${y}`, `small business pitch competition prize ${y + 1}`],
+    grant: [`small business grant ${y} ${y + 1} apply`, `behavioral health grant RFP ${y}`, `mental health funding opportunity ${y}`, st && `${st} small business grant ${y}`, st && `${st} mental health grant RFP ${y}`],
+    accelerator: [`startup accelerator applications open ${y + 1}`, st && `${st} startup accelerator ${y}`, `small business accelerator program ${y + 1}`],
+    bid: [st && `${st} RFP behavioral health services ${y}`, `county RFP mental health services ${y}`, st && `${st} bid opportunities ${y}`],
+    speaking: [`call for speakers ${y + 1} mental health conference`, `counseling conference call for proposals ${y + 1}`, st && `${st} conference call for speakers ${y + 1}`],
+    media: [`journalist request therapist expert`, `op-ed submission guidelines mental health`, `podcast seeking guests small business owners ${y}`],
   };
   const list = (base[kind] ?? []).filter(Boolean) as string[];
   return f ? [f + ` ${kind === "speaking" ? "call for speakers" : kind === "media" ? "media" : kind} ${y}`, ...list].slice(0, 9) : list;
@@ -430,7 +438,7 @@ export async function findOpportunities(orgId: number, empKind: "grants" | "spea
         : ""
     }`;
     // Google results widen the net; the employee checks each one.
-    const google = round === 1 ? await googleSearch(googleQueries(kind, brain.org?.state ?? "", opts.focus)) : [];
+    const google = round === 1 ? await googleSearch(googleQueries(kind, brain.org?.state ?? "", opts.focus, !!brain.org?.internal)) : [];
     const googleList = google.length
       ? `\n\nGoogle results to check (open the promising ones, keep only real opportunities that are open now; use the result's URL as sourceUrl or foundOn):\n${google.slice(0, 60).map((g) => `- ${g.title}: ${g.url}${g.snippet ? ` (${g.snippet})` : ""}`).join("\n")}`
       : "";

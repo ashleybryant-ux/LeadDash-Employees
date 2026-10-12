@@ -118,11 +118,11 @@ function Business({ d, onNext }: { d: View; onNext: () => void }) {
       )}
       {field("description", "What you do", "Group therapy practice offering individual, couples and family therapy", 2)}
       <div className="ld-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        {field("audience", "Who you serve", "Adults, couples and families in central Oklahoma", 2)}
+        {field("audience", "Who you serve", "Adults, couples and families in the Denver area", 2)}
         {field("bookingLink", "Booking link", "https://")}
       </div>
       <div className="ld-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        {field("brandColors", "Brand colors", "Green #1b6b4a, orange #e88a3a")}
+        {field("brandColors", "Brand colors", "Navy #1f3a5f, gold #d4a017")}
         <div className="ld-field">
           <span className="ld-lbl">How the team should sound</span>
           <div className="ld-row" style={{ flexWrap: "wrap" }}>

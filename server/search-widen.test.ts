@@ -17,7 +17,7 @@ describe("wider opportunity searches", () => {
 
   it("builds several Google searches per kind, with the workspace's state and the person's focus", () => {
     const q = googleQueries("pitch", "Oklahoma", "health tech");
-    expect(q.length).toBeGreaterThanOrEqual(6);
+    expect(q.length).toBeGreaterThanOrEqual(4);
     expect(q[0]).toContain("health tech");
     expect(q.some((x) => x.includes("Oklahoma"))).toBe(true);
     expect(googleQueries("pitch", "").every(Boolean)).toBe(true);

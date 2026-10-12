@@ -436,11 +436,11 @@ function RoleEditor({ draft: start, role, onDone }: { draft: RoleDraft; role?: R
           </div>
           <div className="ld-field">
             <label className="ld-lbl" htmlFor="r-must">Must have</label>
-            <input id="r-must" className="ld-in" value={d.mustHave} maxLength={1000} onChange={(e) => set("mustHave", e.target.value)} placeholder="Oklahoma license, 2 evenings a week, comfortable with telehealth" />
+            <input id="r-must" className="ld-in" value={d.mustHave} maxLength={1000} onChange={(e) => set("mustHave", e.target.value)} placeholder="State license, 2 evenings a week, comfortable with telehealth" />
           </div>
           <div className="ld-field">
             <label className="ld-lbl" htmlFor="r-nice">Nice to have</label>
-            <input id="r-nice" className="ld-in" value={d.niceToHave} maxLength={1000} onChange={(e) => set("niceToHave", e.target.value)} placeholder="Spanish, SoonerCare credentialed" />
+            <input id="r-nice" className="ld-in" value={d.niceToHave} maxLength={1000} onChange={(e) => set("niceToHave", e.target.value)} placeholder="Spanish, Medicaid credentialed" />
           </div>
           <ErrorLine error={save.error} />
         </div>

@@ -59,7 +59,7 @@ export default function Compliance() {
           <option key={k.key} value={k.key}>{k.label}</option>
         ))}
       </select>
-      <input className="ld-in" aria-label="What it is" placeholder="LPC renewal, Oklahoma" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+      <input className="ld-in" aria-label="What it is" placeholder="LPC renewal, Colorado" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
       <input className="ld-in" aria-label="Who" placeholder="Who" value={form.who} onChange={(e) => setForm((f) => ({ ...f, who: e.target.value }))} />
       <input className="ld-in" aria-label="Due" placeholder="MM/DD/YYYY" value={form.due} onChange={(e) => setForm((f) => ({ ...f, due: e.target.value }))} />
       <input className="ld-in" aria-label="Note" placeholder="Note (16 of 20 CE hours on file)" style={{ gridColumn: "1 / 4" }} value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />

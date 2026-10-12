@@ -240,7 +240,7 @@ function Settings({ orgId, d, refresh }: { orgId: number; d: F; refresh: () => v
           </>
         )}
         <label htmlFor="fs-intro">At the top</label>
-        <textarea id="fs-intro" className="ld-ta" rows={2} placeholder="25 seats at $299 a month. Tell us about your practice." value={edit.intro} onChange={(e) => setEdit({ ...edit, intro: e.target.value })} />
+        <textarea id="fs-intro" className="ld-ta" rows={2} placeholder="25 seats left. Tell us about your practice." value={edit.intro} onChange={(e) => setEdit({ ...edit, intro: e.target.value })} />
         <label htmlFor="fs-thanks">After sending</label>
         <input id="fs-thanks" className="ld-in xs" value={edit.thanks} onChange={(e) => setEdit({ ...edit, thanks: e.target.value })} />
         <label htmlFor="fs-on">Public link</label>

@@ -132,8 +132,8 @@ export async function deckPptx(orgId: number, appId: number) {
   if (!extras.deck?.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "There is no deck on this application yet." });
   const org = await db.getOrganizationById(orgId);
   const colors = (org?.brandColors ?? "").match(/#[0-9a-f]{6}/gi) ?? [];
-  const dark = (colors[0] ?? "#0d3b2e").slice(1);
-  const accent = (colors[1] ?? "#e88a3a").slice(1);
+  const dark = (colors[0] ?? "#22303c").slice(1);
+  const accent = (colors[1] ?? "#f2b544").slice(1);
   const PptxGenJS = (await import("pptxgenjs")).default as unknown as new () => any;
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";

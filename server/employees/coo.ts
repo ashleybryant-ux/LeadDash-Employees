@@ -508,8 +508,8 @@ export async function sendRecap(orgId: number, meetingId: number, who: string) {
 // ==========================================
 
 export const SCORE_ROWS = [
-  { key: "practices_contacted", team: "Sales", label: "Practices contacted", lowerIsBetter: false, unit: "" },
-  { key: "demos_booked", team: "Sales", label: "Demos booked", lowerIsBetter: false, unit: "" },
+  { key: "practices_contacted", team: "Sales", label: "Prospects contacted", lowerIsBetter: false, unit: "" },
+  { key: "demos_booked", team: "Sales", label: "Calls booked", lowerIsBetter: false, unit: "" },
   { key: "reply_minutes", team: "Sales", label: "Malik's reply time", lowerIsBetter: true, unit: " min" },
   { key: "posts_published", team: "Marketing", label: "Posts published", lowerIsBetter: false, unit: "" },
   { key: "articles_published", team: "Marketing", label: "Articles published", lowerIsBetter: false, unit: "" },

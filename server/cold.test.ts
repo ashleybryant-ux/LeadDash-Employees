@@ -58,8 +58,15 @@ vi.mock("./employees/browser", async (orig) => {
   return { ...actual, renderText: vi.fn(async () => "") };
 });
 
-import { caller, makeWorkspace } from "./test/helpers";
+import { caller, makeWorkspace as makeCustomer } from "./test/helpers";
 import * as db from "./db";
+
+/** Jada's cold email sells LeadDash: these run in LeadDash's own workspace. */
+async function makeWorkspace(slug: string) {
+  const w = await makeCustomer(slug);
+  await db.updateOrganization(w.orgId, { internal: true });
+  return w;
+}
 import * as cold from "./employees/cold";
 import * as coldreply from "./employees/coldreply";
 import * as precall from "./employees/precall";

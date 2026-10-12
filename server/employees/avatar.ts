@@ -26,7 +26,7 @@ export const MODEL: Record<Quality, string> = {
   pro: "fal-ai/kling-video/ai-avatar/v2/pro",
 };
 const WORDS_PER_SECOND = 2.5;
-const PROMPT = "A natural talking-head video. She speaks straight to the camera like she's talking to a colleague, with warm expressions, small natural head movements and the occasional hand gesture. Steady camera.";
+const PROMPT = "A natural talking-head video. The person speaks straight to the camera like they're talking to a colleague, with warm expressions, small natural head movements and the occasional hand gesture. Steady camera.";
 const PROMPT_CAST = "A natural talking-to-camera video, the kind a real person films on their phone. They speak straight to the camera like they're talking to a friend, with real expressions, small natural head movements and the occasional hand gesture. Steady handheld camera.";
 
 export function settingsOf(emp: Pick<AIEmployee, "studio">): AvatarSettings {

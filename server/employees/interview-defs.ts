@@ -36,11 +36,11 @@ const TONE3 = ["Warm and personal", "Brief and direct", "Formal"];
 const BASE_BRAIN: BrainNeed[] = [
   { key: "name", label: "Business", field: "name" },
   { key: "description", label: "What you do", field: "description", placeholder: "Group therapy practice offering individual, couples and family therapy" },
-  { key: "audience", label: "Who you serve", field: "audience", placeholder: "Adults, couples and families in central Oklahoma" },
+  { key: "audience", label: "Who you serve", field: "audience", placeholder: "Adults, couples and families in the Denver area" },
   { key: "website", label: "Website", field: "website", placeholder: "https://" },
 ];
 const BOOKING: BrainNeed = { key: "booking", label: "Booking link", entry: "Booking link", category: "services_offers", placeholder: "https://" };
-const COLORS: BrainNeed = { key: "brandColors", label: "Brand colors", field: "brandColors", placeholder: "Green #1b6b4a, orange #e88a3a" };
+const COLORS: BrainNeed = { key: "brandColors", label: "Brand colors", field: "brandColors", placeholder: "Navy #1f3a5f, gold #d4a017" };
 
 const job = (goalLabel: string, goalOptions: string[] | null, guide: string, extra: IQuestion[] = []): ISection => ({
   key: "job",
@@ -111,7 +111,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         intro: "The meetings I'll run for you.",
         questions: [
           { key: "meetings", label: "Which meetings do you run, and how often?", type: "text", placeholder: "Leadership Mondays 9:00 AM; sales check-in Tuesdays 10:00 AM", short: "Meetings", guide: "meetings" },
-          { key: "deciders", label: "Who makes the final call in each?", type: "text", placeholder: "Leadership: me. Sales: Caroline", short: "Final call", guide: "meetings" },
+          { key: "deciders", label: "Who makes the final call in each?", type: "text", placeholder: "Leadership: me. Scheduling: Priya", short: "Final call", guide: "meetings" },
           { key: "style", label: "Agenda style", type: "choice", options: ["Short: decisions first", "Full: every team reports"], short: "Agenda style", guide: "agenda" },
           { key: "always", label: "Always on the agenda", type: "text", placeholder: "Cash on hand, open hiring, anything late", short: "Always on the agenda", guide: "agenda" },
           { key: "noMeet", label: "Meeting hours and no-meeting days", type: "text", placeholder: "No meetings before 9:30 AM or on Wednesdays", short: "Meeting hours", guide: "meetings" },
@@ -122,7 +122,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         title: "Your team",
         intro: "Who does what, so I put the right people on each item.",
         questions: [
-          { key: "team", label: "Who's on your team and what does each person own?", type: "text", placeholder: "Caroline: content and community. BJ: facilities and operations", short: "Team", guide: "team" },
+          { key: "team", label: "Who's on your team and what does each person own?", type: "text", placeholder: "Priya: front desk and scheduling. Marcus: operations and billing", short: "Team", guide: "team" },
           { key: "updatesFrom", label: "Who gives updates in meetings?", type: "text", placeholder: "Nora on launches, Jada and Malik on sales", short: "Updates from", guide: "team" },
         ],
       },
@@ -159,7 +159,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         title: "Owners",
         intro: "Who I give tasks to.",
         questions: [
-          { key: "owners", label: "Who owns what? Name each person's strengths.", type: "text", placeholder: "Caroline: content. BJ: vendors and space. Me: approvals", short: "Owners", guide: "owners" },
+          { key: "owners", label: "Who owns what? Name each person's strengths.", type: "text", placeholder: "Priya: scheduling. Marcus: vendors and space. Me: approvals", short: "Owners", guide: "owners" },
           { key: "approver", label: "Who approves a plan before it starts?", type: "text", placeholder: "Me", short: "Approves plans", guide: "owners" },
         ],
       },
@@ -195,10 +195,10 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
 
   grants: build(
     [
-      { key: "entity", label: "Legal entity", field: "entity", placeholder: "Legacy Family Services, LLC" },
+      { key: "entity", label: "Legal entity", field: "entity", placeholder: "Bright Path Counseling, LLC" },
       { key: "ein", label: "EIN", field: "ein", placeholder: "12-3456789" },
       { key: "annualBudget", label: "Annual budget", field: "annualBudget", placeholder: "$850,000" },
-      { key: "state", label: "State", field: "state", placeholder: "Oklahoma" },
+      { key: "state", label: "State", field: "state", placeholder: "Colorado" },
     ],
     [
       job("What should I apply for?", ["Grants", "Pitch competitions", "Accelerators", "Government contracts"], "fit", [
@@ -211,7 +211,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         questions: [
           { key: "status", label: "Tax status", type: "choice", options: ["501(c)(3) nonprofit", "LLC or for-profit", "Fiscal sponsor", "Not sure"], short: "Tax status", guide: "org" },
           { key: "sam", label: "SAM.gov registration", type: "choice", options: ["Registered, with a UEI", "In progress", "Not registered"], note: "Only federal awards need it. State, local and foundation grants don't.", short: "SAM.gov", guide: "org" },
-          { key: "staff", label: "Staff size and service area", type: "text", placeholder: "14 clinicians; Oklahoma, Logan and Canadian counties", short: "Staff and area", guide: "org" },
+          { key: "staff", label: "Staff size and service area", type: "text", placeholder: "9 clinicians; Denver and Jefferson counties", short: "Staff and area", guide: "org" },
           { key: "served", label: "People served per year", type: "text", placeholder: "About 1,200 clients in 2025", short: "Served per year", guide: "org" },
         ],
       },
@@ -235,7 +235,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
           { key: "priorities", label: "What should funding pay for?", type: "text", placeholder: "Clinician hiring, intern supervision, rural access", short: "Funding pays for", guide: "fit" },
           { key: "match", label: "Can you match funds?", type: "choice", options: ["Yes, cash", "Yes, in-kind", "No match available"], short: "Match", guide: "fit" },
           { key: "autoStart", label: "When something scores 75 or higher", type: "choice", options: ["Start the application", "Ask me first"], short: "High scores", guide: "fit" },
-          { key: "signer", label: "Who signs applications? Name and title", type: "text", placeholder: "Ashley R. Bryant, PhD, LPC, CRC, Owner", short: "Signs", guide: "signing" },
+          { key: "signer", label: "Who signs applications? Name and title", type: "text", placeholder: "Dana Whitfield, LPC, Owner", short: "Signs", guide: "signing" },
         ],
       },
       examples("past proposals or narratives", "writing"),
@@ -259,7 +259,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         title: "Your talks",
         intro: "What I pitch.",
         questions: [
-          { key: "topics", label: "Talks you give best (titles)", type: "text", placeholder: "Building a practice that pays you back; the P.U.L.S.E. Framework", short: "Talks", guide: "talks" },
+          { key: "topics", label: "Talks you give best (titles)", type: "text", placeholder: "Building a practice that pays you back; burnout-proof scheduling", short: "Talks", guide: "talks" },
           { key: "abstracts", label: "One takeaway for each talk", type: "text", placeholder: "Practice owners leave with a 90-day hiring plan", short: "Takeaways", guide: "talks" },
         ],
       },
@@ -270,7 +270,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         questions: [
           { key: "bioShort", label: "Short bio (2 sentences)", type: "text", short: "Short bio", guide: "bio" },
           { key: "credentials", label: "Credentials to always list", type: "text", placeholder: "PhD, LPC, CRC", short: "Credentials", guide: "bio" },
-          { key: "pastEvents", label: "Past events and testimonials", type: "text", placeholder: "100+ talks; ACA 2025; NABC 2024", short: "Past events", guide: "bio" },
+          { key: "pastEvents", label: "Past events and testimonials", type: "text", placeholder: "40 talks; state counseling conference 2025", short: "Past events", guide: "bio" },
         ],
       },
       {
@@ -293,7 +293,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         intro: "What I pitch to reporters and podcasts.",
         questions: [
           { key: "pressTopics", label: "Topics you'll comment on as an expert", type: "text", placeholder: "Therapist burnout; why EHRs and marketing tools don't talk; couples and money", short: "Press topics", guide: "press" },
-          { key: "outlets", label: "Outlets and podcasts you want", type: "text", placeholder: "Psychology Today, Counseling Today, The Oklahoman, therapy business podcasts", short: "Want", guide: "press" },
+          { key: "outlets", label: "Outlets and podcasts you want", type: "text", placeholder: "Psychology Today, Counseling Today, the local paper, therapy business podcasts", short: "Want", guide: "press" },
           { key: "mediaAvoid", label: "Outlets or topics to avoid", type: "text", short: "Avoid in press", guide: "press" },
         ],
       },
@@ -326,7 +326,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
           { key: "size", label: "Smallest fit", type: "choice", options: ["Solo practices", "2 or more clinicians", "5 or more clinicians", "10 or more clinicians"], short: "Smallest fit", guide: "fit" },
           { key: "specialty", label: "Specialties", type: "multi", options: ["Mental health", "Substance use", "ABA and autism", "Psychiatry", "Medical", "Any"], short: "Specialties", guide: "fit" },
           { key: "payer", label: "Payer mix", type: "choice", options: ["Takes insurance", "Private pay", "Either"], short: "Payer mix", guide: "fit" },
-          { key: "states", label: "States or cities", type: "text", placeholder: "Oklahoma and Texas", short: "Where", guide: "fit" },
+          { key: "states", label: "States or cities", type: "text", placeholder: "Colorado and Wyoming", short: "Where", guide: "fit" },
           { key: "ideal", label: "What makes a great fit?", type: "text", placeholder: "Group practices that take insurance and book by phone", short: "Great fit", guide: "fit" },
         ],
       },
@@ -374,7 +374,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
       },
       voice("voice", [
         { key: "tone", label: "Tone", type: "choice", options: TONE3, short: "Tone", guide: "voice" },
-        { key: "signOff", label: "Sign-off name and title", type: "text", placeholder: "Ashley Bryant, LPC, CRC, LeadDash", short: "Sign as", guide: "voice" },
+        { key: "signOff", label: "Sign-off name and title", type: "text", placeholder: "Dana Whitfield, LPC, Bright Path Counseling", short: "Sign as", guide: "voice" },
         { key: "address", label: "Mailing address for the email footer", type: "text", note: "The law requires one on sales email.", short: "Footer address", guide: "rules" },
       ]),
       examples("outreach emails", "voice"),
@@ -402,7 +402,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
           { key: "services", label: "Services to talk about", type: "text", short: "Services", guide: "services" },
           { key: "prices", label: "Prices", type: "choice", options: ["Share prices", "Share a range", "Never share prices"], short: "Prices", guide: "services" },
           { key: "priceList", label: "Prices or ranges you're OK sharing", type: "text", short: "Price list", guide: "services" },
-          { key: "faqs", label: "Questions leads ask most, with your answers", type: "text", placeholder: "Do you take Medicaid? Yes, SoonerCare for adults", short: "FAQs", guide: "faqs" },
+          { key: "faqs", label: "Questions leads ask most, with your answers", type: "text", placeholder: "Do you take Medicaid? Yes, for adults", short: "FAQs", guide: "faqs" },
         ],
       },
       {
@@ -441,7 +441,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         title: "Offers and audiences",
         intro: "What I send people to, and who they are.",
         questions: [
-          { key: "offers", label: "The offers or pages ads should send people to", type: "text", placeholder: "leaddash.io/founding (the $299 founding member rate), the demo page", short: "Offers", guide: "offers" },
+          { key: "offers", label: "The offers or pages ads should send people to", type: "text", placeholder: "The free consultation page, the new-client special", short: "Offers", guide: "offers" },
           { key: "audience", label: "Who buys, in their own words", type: "text", placeholder: "Owners of group therapy practices with 3 to 20 clinicians", short: "Audience", guide: "offers" },
           { key: "platforms", label: "Where you run ads now, or want to", type: "multi", options: ["Meta", "Google Search", "YouTube", "Microsoft Ads", "LinkedIn", "TikTok", "Reddit", "Spotify", "Nextdoor", "Yelp"], short: "Platforms", guide: "offers" },
           { key: "budget", label: "A usual monthly ad budget", type: "text", placeholder: "$1,000 a month", short: "Usual budget", guide: "offers" },
@@ -471,8 +471,8 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         title: "How the money works here",
         intro: "What I need to read the billing the way you do.",
         questions: [
-          { key: "biller", label: "Who works claims and fixes them in LeadDash EHR", type: "text", placeholder: "Angela St. Ville", short: "Biller", guide: "money" },
-          { key: "payers", label: "Payers you bill most", type: "text", placeholder: "BCBS of Oklahoma, HealthChoice, Aetna, UnitedHealthcare", short: "Payers", guide: "money" },
+          { key: "biller", label: "Who works claims and fixes them in LeadDash EHR", type: "text", placeholder: "Marcus Lee", short: "Biller", guide: "money" },
+          { key: "payers", label: "Payers you bill most", type: "text", placeholder: "Aetna, Cigna, UnitedHealthcare, Medicaid", short: "Payers", guide: "money" },
           { key: "followup", label: "When should I flag an unpaid claim?", type: "choice", options: ["30 days", "45 days", "60 days"], short: "Unpaid after", guide: "money" },
           { key: "balances", label: "Client balances: what goes out and when", type: "text", placeholder: "Statement at 30 days, text reminder with consent at 45, card on file only when a person presses it", short: "Balances", guide: "balances" },
         ],
@@ -498,7 +498,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         title: "What to track",
         intro: "The dates that cannot slip, and who owns them.",
         questions: [
-          { key: "clinicians", label: "Clinicians and their licenses (type and state)", type: "text", placeholder: "Angela St. Ville, LPC Oklahoma; Bentlee Smiley, LPC Oklahoma", short: "Clinicians", guide: "track" },
+          { key: "clinicians", label: "Clinicians and their licenses (type and state)", type: "text", placeholder: "Jordan Reyes, LPC Colorado; Sam Ortiz, LMFT Colorado", short: "Clinicians", guide: "track" },
           { key: "payers", label: "Payers each clinician is enrolled with, or applying to", type: "text", short: "Enrollments", guide: "track" },
           { key: "notesRule", label: "Notes must be signed within", type: "choice", options: ["24 hours", "48 hours", "72 hours", "7 days"], short: "Notes signed within", guide: "notes" },
           { key: "planRule", label: "Treatment plans reviewed every", type: "choice", options: ["90 days", "6 months", "A year"], short: "Plans reviewed every", guide: "notes" },
@@ -523,7 +523,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
       voice("writing", [
         { key: "emoji", label: "Emoji", type: "choice", options: ["None", "One at most", "A few"], short: "Emoji", guide: "writing" },
         { key: "hashtags", label: "Hashtags", type: "choice", options: ["None", "2 or 3 at the end", "Only on Instagram"], short: "Hashtags", guide: "writing" },
-        { key: "signOff", label: "How you sign off", type: "text", placeholder: "Dr. Ashley · Legacy Family Services", short: "Sign-off", guide: "writing" },
+        { key: "signOff", label: "How you sign off", type: "text", placeholder: "Dana · Bright Path Counseling", short: "Sign-off", guide: "writing" },
       ]),
       {
         key: "audience",
@@ -531,7 +531,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         intro: "Who you're talking to and where.",
         questions: [
           { key: "platforms", label: "Where do you post?", type: "multi", options: ["LinkedIn", "Instagram", "Facebook", "X", "Threads"], short: "Platforms", guide: "themes" },
-          { key: "audience", label: "Who are you talking to?", type: "text", placeholder: "Couples and parents of teens in OKC; clinicians on LinkedIn", short: "Audience", guide: "themes" },
+          { key: "audience", label: "Who are you talking to?", type: "text", placeholder: "Couples and parents of teens in Denver; clinicians on LinkedIn", short: "Audience", guide: "themes" },
           { key: "often", label: "How many posts?", type: "choice", options: ["Every weekday", "3 a week", "Weekly"], short: "Posts", guide: "themes" },
         ],
       },
@@ -571,7 +571,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
           { key: "reader", label: "Who reads the blog?", type: "choice", options: ["Clients and families", "Other clinicians", "Practice owners"], short: "Readers", guide: "readers" },
           { key: "questions", label: "What do readers search for?", type: "text", placeholder: "Does insurance cover couples counseling?", short: "Searches", guide: "readers" },
           { key: "topics", label: "Topics to cover", type: "text", placeholder: "Couples counseling, anxiety in teens, insurance questions", short: "Topics", guide: "topics" },
-          { key: "keywords", label: "Search terms to rank for", type: "text", placeholder: "couples therapy OKC, family counseling Edmond", short: "Keywords", guide: "topics" },
+          { key: "keywords", label: "Search terms to rank for", type: "text", placeholder: "couples therapy Denver, family counseling Lakewood", short: "Keywords", guide: "topics" },
         ],
       },
       {
@@ -710,7 +710,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
       },
       voice("writing", [
         { key: "tone", label: "Reply tone", type: "choice", options: TONE3, short: "Tone", guide: "writing" },
-        { key: "signature", label: "Email signature", type: "text", placeholder: "Dr. Ashley Bryant, LPC, CRC", short: "Signature", guide: "writing" },
+        { key: "signature", label: "Email signature", type: "text", placeholder: "Dana Whitfield, LPC", short: "Signature", guide: "writing" },
       ]),
     ],
     [
@@ -725,7 +725,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
   ),
 
   hiring: build(
-    [{ key: "state", label: "State", field: "state", placeholder: "Oklahoma" }],
+    [{ key: "state", label: "State", field: "state", placeholder: "Colorado" }],
     [
       job("Who are you hiring most?", ["Licensed clinicians", "Interns and candidates", "Front desk and billing", "Developers", "Sales"], "roles", [
         { key: "often", label: "How often should I look for people?", type: "choice", options: OFTEN, short: "Look", guide: "rules" },
@@ -735,8 +735,8 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         title: "Roles and must-haves",
         intro: "What every hire needs.",
         questions: [
-          { key: "mustHave", label: "Must-haves for every hire", type: "text", placeholder: "Oklahoma license, 2 evenings a week, telehealth", short: "Must-haves", guide: "roles" },
-          { key: "licenses", label: "Licenses and states accepted", type: "text", placeholder: "LPC, LMFT, LCSW; Oklahoma", short: "Licenses", guide: "roles" },
+          { key: "mustHave", label: "Must-haves for every hire", type: "text", placeholder: "Colorado license, 2 evenings a week, telehealth", short: "Must-haves", guide: "roles" },
+          { key: "licenses", label: "Licenses and states accepted", type: "text", placeholder: "LPC, LMFT, LCSW; Colorado", short: "Licenses", guide: "roles" },
           { key: "greatFit", label: "What makes someone a great fit at your practice?", type: "text", placeholder: "Warm with families, organized with notes, open to feedback", short: "Great fit", guide: "roles" },
         ],
       },
@@ -829,7 +829,7 @@ export const INTERVIEWS: Record<EmployeeKind, Interview> = {
         intro: "Where I work and what I leave alone.",
         questions: [
           { key: "mattersMost", label: "Which workflows matter most?", type: "text", placeholder: "New lead follow-up, demo reminders, no-show follow-up", short: "Check first", guide: "platform" },
-          { key: "never", label: "Never change these", type: "text", placeholder: "Billing workflows, anything with Legacy in the name", short: "Never change", guide: "rules" },
+          { key: "never", label: "Never change these", type: "text", placeholder: "Billing workflows, anything marked Do not edit", short: "Never change", guide: "rules" },
           { key: "pages", label: "Where should new pages go?", type: "text", placeholder: "The Speaking funnel", short: "Pages go in", guide: "platform" },
         ],
       },

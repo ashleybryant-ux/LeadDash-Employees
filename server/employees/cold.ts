@@ -64,9 +64,18 @@ export function siteOf(s: Pick<ColdSettings, "site">): SiteInfo {
 export type SiteInfo = { plans: { name: string; price: string; seats: string; includes: string }[]; address: string; notes: string; url: string };
 type Today = { date?: string; added?: number; month?: string; monthSent?: number; week?: string };
 
+const checked = new Set<number>();
+
 export function settingsOf(orgId: number): ColdSettings {
   const s = db.cold.getSettings(orgId);
-  if (s) return s;
+  if (s) {
+    // Once per run: a customer workspace keeps no LeadDash cards from before.
+    if (!checked.has(orgId)) {
+      checked.add(orgId);
+      seedPlaybook(orgId);
+    }
+    return s;
+  }
   const made = db.cold.saveSettings(orgId, { hookToken: crypto.randomBytes(18).toString("base64url") });
   seedPlaybook(orgId);
   return made;
@@ -583,12 +592,12 @@ export async function researchOne(orgId: number, leadId: number) {
 // ==========================================
 
 export const ANGLES = [
-  { key: "switcher", name: "EHR switchers", idea: "They likely use another EHR that only runs the clinical side. LeadDash puts the EHR and the growth side (leads, phones, follow-up, the 24/7 receptionist) in one system. Ask if a comparison would help.", who: { segments: ["ehr_simplepractice"], minFit: 60 } },
-  { key: "missed_calls", name: "Missed calls after hours", idea: "What happens when someone calls the practice after hours or during a session. Answering, booking and following up.", who: { segments: ["solo_owner"], minFit: 60 } },
-  { key: "too_many", name: "Too many systems", idea: "An EHR plus separate phone, CRM, forms, scheduling and email tools. LeadDash puts the practice workflow together.", who: { segments: [], minFit: 60 } },
-  { key: "group_ops", name: "Group practice operations", idea: "Once a practice adds clinicians, keeping up with inquiries, follow-up and operations gets messy fast.", who: { segments: ["group_owner"], minFit: 60 } },
-  { key: "growing", name: "Growing team, same back office", idea: "They're hiring. They're already investing in growth; can the back office keep up?", who: { segments: ["hiring"], minFit: 60 } },
-  { key: "owner_time", name: "Owner time", idea: "Practice owners shouldn't have to be receptionist, marketer, intake coordinator and clinician.", who: { segments: ["solo_owner"], minFit: 50 } },
+  { key: "switcher", name: "EHR switchers", idea: "They likely use another EHR that only runs the clinical side. LeadDash puts the EHR and the growth side (leads, phones, follow-up, the 24/7 receptionist) in one system. Ask if a comparison would help.", plain: "They likely use another provider for what this business offers. Say what is different, from the Brain only, and ask if a comparison would help.", who: { segments: ["ehr_simplepractice"], minFit: 60 } },
+  { key: "missed_calls", name: "Missed calls after hours", idea: "What happens when someone calls the practice after hours or during a session. Answering, booking and following up.", plain: "What happens when a customer calls after hours or while they're busy. Answering, booking and following up.", who: { segments: ["solo_owner"], minFit: 60 } },
+  { key: "too_many", name: "Too many systems", idea: "An EHR plus separate phone, CRM, forms, scheduling and email tools. LeadDash puts the practice workflow together.", plain: "Too many separate tools or vendors for this. Say how this business makes it simpler, from the Brain only.", who: { segments: [], minFit: 60 } },
+  { key: "group_ops", name: "Group practice operations", idea: "Once a practice adds clinicians, keeping up with inquiries, follow-up and operations gets messy fast.", plain: "Once a business adds staff, keeping up with inquiries, follow-up and operations gets messy fast.", who: { segments: ["group_owner"], minFit: 60 } },
+  { key: "growing", name: "Growing team, same back office", idea: "They're hiring. They're already investing in growth; can the back office keep up?", plain: "They're hiring. They're already investing in growth; can the back office keep up?", who: { segments: ["hiring"], minFit: 60 } },
+  { key: "owner_time", name: "Owner time", idea: "Practice owners shouldn't have to be receptionist, marketer, intake coordinator and clinician.", plain: "Owners shouldn't have to do every job in the business themselves.", who: { segments: ["solo_owner"], minFit: 50 } },
 ] as const;
 export type AngleKey = (typeof ANGLES)[number]["key"];
 
@@ -618,8 +627,8 @@ function playbookText(orgId: number) {
   return `Approved facts you may state:\n${facts.join("\n") || "- (none yet: use only what the Brain states)"}\nNever say:\n${never.join("\n") || "- (none listed)"}`;
 }
 
-const SEQ_JOB = (angle: (typeof ANGLES)[number], who: Who) => `Your job now: write a 4-email cold sequence to licensed therapists who own practices, for the angle below. Jada sends it through Instantly.
-Angle: ${angle.name}. ${angle.idea}
+const SEQ_JOB = (angle: (typeof ANGLES)[number], who: Who, own: boolean) => `Your job now: write a 4-email cold sequence to ${own ? "licensed therapists who own practices" : "the business owners on the lead list"}, for the angle below. Jada sends it through Instantly.
+Angle: ${angle.name}. ${own ? angle.idea : angle.plain}
 Who gets it: ${who.segments.map(segmentLabel).join(", ") || "any researched practice owner"}, fit ${who.minFit}+.
 The four emails:
 - Email 1 (day 1): the problem, why it's relevant to them, one simple question. The first goal is only to find out if they're the right person or open to a comparison. No calendar link, no feature list, no fake praise.
@@ -636,7 +645,7 @@ export async function writeCampaign(orgId: number, angleKey: AngleKey, opts: { w
   const angle = ANGLES.find((a) => a.key === angleKey) ?? ANGLES[0];
   const who: Who = { segments: [...(opts.who?.segments ?? angle.who.segments)], minFit: opts.who?.minFit ?? angle.who.minFit, states: opts.who?.states ?? [], licenses: opts.who?.licenses ?? [] };
   const emp = await employeeFor(orgId, "outreach");
-  const { system } = await systemPromptFor(emp, `${SEQ_JOB(angle, who)}\n\n${playbookText(orgId)}\n\n${pricingText(settingsOf(orgId))}`);
+  const { system } = await systemPromptFor(emp, `${SEQ_JOB(angle, who, db.isOwnWorkspace(orgId))}\n\n${playbookText(orgId)}\n\n${pricingText(settingsOf(orgId))}`);
   let r = await generateJson<{ name: string; offer: string; ask: string; emails: { subject: string; subjectB: string; body: string }[] }>({ system, prompt: opts.guidance ? `Write it. Also: ${opts.guidance}` : "Write it.", schemaName: "cold_sequence", schema: SEQ, maxTokens: 4000 });
   const tells = findTells(...(r.emails ?? []).flatMap((e) => [e.subject, e.subjectB, e.body]));
   if (tells.length) {
@@ -1136,10 +1145,22 @@ const BATTLES: [string, BattleBody][] = [
 
 const NEVER = ["I hope this message finds you well", "I came across your impressive practice", "I wanted to reach out because", "Anything about the prospect's personal life, family or social media", "Insulting or comparing down a competitor", "A price, discount, result or statistic that isn't in the playbook, the Brain or the website", "Anything about a client or patient"];
 
+/** LeadDash's own objections and battle cards are about selling LeadDash: only its own workspaces get them. */
+const aboutLeadDash = (body: unknown) => /LeadDash|SimplePractice|\bEHR\b/.test(JSON.stringify(body));
+
 export function seedPlaybook(orgId: number) {
-  if (db.cold.playbook.list(orgId).length) return;
-  for (const [title, body] of OBJECTIONS) db.cold.playbook.create({ organizationId: orgId, kind: "objection", title, body: JSON.stringify(body) });
-  for (const [title, body] of BATTLES) db.cold.playbook.create({ organizationId: orgId, kind: "battle", title, body: JSON.stringify(body) });
+  const own = db.isOwnWorkspace(orgId);
+  const plays = db.cold.playbook.list(orgId);
+  // A customer workspace seeded before this change: take out the LeadDash cards it was given (only untouched defaults).
+  if (!own) {
+    for (const p of plays) {
+      const d = p.kind === "battle" ? BATTLES.find(([t]) => t === p.title) : p.kind === "objection" ? OBJECTIONS.find(([t]) => t === p.title) : undefined;
+      if (d && JSON.stringify(d[1]) === p.body && (p.kind === "battle" || aboutLeadDash(d[1]))) db.cold.playbook.remove(p.id, orgId);
+    }
+  }
+  if (plays.length) return;
+  for (const [title, body] of OBJECTIONS) if (own || !aboutLeadDash(body)) db.cold.playbook.create({ organizationId: orgId, kind: "objection", title, body: JSON.stringify(body) });
+  if (own) for (const [title, body] of BATTLES) db.cold.playbook.create({ organizationId: orgId, kind: "battle", title, body: JSON.stringify(body) });
   for (const title of NEVER) db.cold.playbook.create({ organizationId: orgId, kind: "never", title, body: "{}" });
 }
 

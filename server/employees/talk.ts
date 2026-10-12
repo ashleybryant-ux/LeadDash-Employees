@@ -51,7 +51,7 @@ export type Deck = { title: string; event: string; slides: Slide[]; theme?: { da
 export const isGraphic = (k: string): k is GraphicKind => (GRAPHIC_KINDS as readonly string[]).includes(k);
 
 const GRAPHIC_GUIDE = `Graphic slides (drawn from shapes and charts, editable in PowerPoint). Use them where they help the room follow, about one in three slides:
-- framework: a named model or acronym the talk teaches (like P.U.L.S.E.). items: one per part, label = the letter or a 1 to 3 character tag, text = the word, detail = its meaning in under 6 words.
+- framework: a named model or acronym the talk teaches (like a named five-step method). items: one per part, label = the letter or a 1 to 3 character tag, text = the word, detail = its meaning in under 6 words.
 - stat: one number from what you were given. figure = the number as shown ("75%", "1 in 4", "3x"), title = what it means in under 14 words, source = where it's from as given.
 - steps: a process or practice in order. items: 2 to 5, label = the step in 1 to 3 words, text = how, under 9 words.
 - compare: two sides of an idea (others vs. you, before vs. after). items: exactly 2, label = the side, text = what it says in under 18 words. takeaway = one action for the room ('' for none).

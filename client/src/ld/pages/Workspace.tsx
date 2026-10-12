@@ -330,7 +330,7 @@ export default function Workspace() {
               {o.logoUrl && <button type="button" className="ld-btn sm" style={{ width: 120 }} disabled={removeLogo.isPending} onClick={() => removeLogo.mutate({ id: o.id })}>Remove</button>}
             </span>
             <label htmlFor="w-colors" className="ld-k">Colors</label>
-            <input id="w-colors" className="ld-in" type="text" placeholder="#0d3b2e, #e88a3a" value={f.brandColors} onChange={set("brandColors")} />
+            <input id="w-colors" className="ld-in" type="text" placeholder="#1f3a5f, #d4a017" value={f.brandColors} onChange={set("brandColors")} />
             <label htmlFor="w-fonts" className="ld-k">Fonts</label>
             <input id="w-fonts" className="ld-in" type="text" value={f.fonts} onChange={set("fonts")} />
           </div>

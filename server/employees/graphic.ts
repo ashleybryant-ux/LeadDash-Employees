@@ -44,8 +44,8 @@ export type ArtSpec = {
 export type Shape = "square" | "portrait" | "story";
 const SIZES: Record<Shape, { w: number; h: number }> = { square: { w: 1080, h: 1080 }, portrait: { w: 1080, h: 1350 }, story: { w: 1080, h: 1920 } };
 
-/** LeadDash's own palette, used when the workspace has not saved brand colors. */
-const DEFAULT: Omit<CardSpec, "headline" | "emphasis" | "subline"> = { background: "#0d3b2e", accent: "#d6a74a", text: "#ffffff", subtext: "#efe7d6", strip: "#14221c", stripText: "#ffffff" };
+/** A plain neutral palette, used when the workspace has not saved brand colors. */
+const DEFAULT: Omit<CardSpec, "headline" | "emphasis" | "subline"> = { background: "#22303c", accent: "#f2b544", text: "#ffffff", subtext: "#e6e9ec", strip: "#151d24", stripText: "#ffffff" };
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const hex = (s: string | undefined, fallback: string) => (s && HEX.test(s.trim()) ? s.trim().toLowerCase() : fallback);
