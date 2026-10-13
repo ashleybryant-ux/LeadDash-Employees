@@ -832,6 +832,19 @@ export async function changeStyle(orgId: number, id: number, style: string, moti
   return drawn ? startDrawing(orgId, id)! : must(orgId, id);
 }
 
+/**
+ * Moving pictures or Animated clips for a drawn video. Animated clips go up to 90 seconds.
+ * A finished video switched to Animated clips is made again by the caller, animating each scene.
+ */
+export function setMotion(orgId: number, id: number, motion: "pictures" | "clips") {
+  const v = must(orgId, id);
+  notMaking(v);
+  if (!styles.isDrawn(v.style)) throw new TRPCError({ code: "BAD_REQUEST", message: "Only a drawn video can be animated. Pick a style first." });
+  if (motion === "clips" && v.seconds > 90) throw new TRPCError({ code: "BAD_REQUEST", message: "Animated clips go up to 90 seconds. Make it shorter to animate it." });
+  if (v.motion === motion) return v;
+  return update(orgId, id, { motion });
+}
+
 /** Change look: one person is drawn again, and every scene they're in with them. */
 export function changeLook(orgId: number, id: number, index: number, look?: string) {
   const v = must(orgId, id);
@@ -1272,6 +1285,18 @@ export function setRenderer(fn: ((input: RenderInput) => Promise<Buffer>) | null
 }
 
 const jobs = new Map<number, Promise<void>>();
+
+/**
+ * Where a video is while it's being made, for the progress bar on its card. Kept in memory with the job:
+ * the voice-over (0 to 10%), each scene's footage (10 to 80%), then each size put together (80 to 100%).
+ */
+export type Progress = { label: string; pct: number; stage: "voice" | "footage" | "build"; startedAt: number; done: number; total: number; scene?: number };
+const progressMap = new Map<number, Progress>();
+export const progressOf = (id: number) => progressMap.get(id) ?? null;
+function setProgress(id: number, p: Omit<Progress, "startedAt">) {
+  const startedAt = progressMap.get(id)?.startedAt ?? Date.now();
+  progressMap.set(id, { ...p, pct: Math.max(0, Math.min(99, Math.round(p.pct))), startedAt });
+}
 /** The background job for a video, if one is running (tests wait on it). */
 export const jobFor = (id: number) => jobs.get(id) ?? null;
 
@@ -1321,6 +1346,8 @@ export async function makeVideo(orgId: number, id: number, opts: { restyle?: boo
   if (!opts.restyle && minutesToMake(v) > 0) await hours.gate(orgId);
   const emp = await elena(orgId);
   const started = update(orgId, id, { status: "making", error: null, voiceId, voiceName: v.voiceName || (voiceId ? DEFAULT_VOICE.name : "Your recording") });
+  progressMap.delete(id);
+  setProgress(id, { stage: "voice", label: "Making the voice-over", pct: 2, done: 0, total: 0 });
   const job = (async () => {
     try {
       const r = await cut(started, emp, !!opts.restyle);
@@ -1335,6 +1362,7 @@ export async function makeVideo(orgId: number, id: number, opts: { restyle?: boo
       await finish(update(orgId, id, { status: "failed", error: msg }), msg, opts.restyle ? "edit" : "made");
     } finally {
       jobs.delete(id);
+      progressMap.delete(id);
     }
   })();
   jobs.set(id, job);
@@ -1378,8 +1406,19 @@ async function voiceOver(v: Video, dir: string) {
 async function footage(v: Video, durations: number[], emp: AIEmployee, restyle: boolean) {
   const s = scriptOf(v);
   let made = 0;
+  // The scenes that need work now (a picture drawn, a scene animated, a new AI clip, stock saved), for the progress bar.
+  const needs = (x: VShot) =>
+    x.src === "art" ? !(x.file && (v.motion !== "clips" || /\.mp4$/i.test(x.file))) : !(x.file || x.src === "text" || x.src === "logo" || (x.src === "library" && x.clipId));
+  const work = s.shots.map((x, i) => (needs(x) ? i : -1)).filter((i) => i >= 0);
+  const verb = (x: VShot) => (x.src === "art" ? (v.motion === "clips" ? "Animating" : "Drawing") : x.src === "stock" ? "Getting footage for" : "Making");
+  const tick = (i: number) => {
+    const k = work.indexOf(i);
+    if (k < 0) return;
+    setProgress(v.id, { stage: "footage", label: `${verb(s.shots[i])} scene ${k + 1} of ${work.length}`, pct: 10 + (70 * k) / work.length, done: k, total: work.length, scene: i });
+  };
   for (let i = 0; i < s.shots.length; i++) {
     const shot = s.shots[i];
+    tick(i);
     if (shot.src === "art") {
       const wantClip = v.motion === "clips";
       if (shot.file && (!wantClip || /\.mp4$/i.test(shot.file))) continue;
@@ -1464,6 +1503,7 @@ async function cut(v: Video, emp: AIEmployee, restyle: boolean) {
   try {
     const delay = v.source === "audio" ? 0 : 0.3;
     const vo = await voiceOver(v, dir);
+    setProgress(v.id, { stage: "footage", label: "Getting the scenes ready", pct: 10, done: 0, total: 0 });
     const fresh = get(v.organizationId, v.id)!;
     const shots0 = scriptOf(fresh).shots;
     const total = Math.round((vo.seconds + delay + 0.7) * 30) / 30;
@@ -1487,7 +1527,10 @@ async function cut(v: Video, emp: AIEmployee, restyle: boolean) {
       if (file) music = { file, volume: look.music.volume };
     }
     const urls: Partial<Record<Size, string>> = {};
-    for (const size of sizesOf(fresh)) {
+    const allSizes = sizesOf(fresh);
+    for (let k = 0; k < allSizes.length; k++) {
+      const size = allSizes[k];
+      setProgress(v.id, { stage: "build", label: `Putting it together: ${SIZES[size].ratio}`, pct: 80 + (20 * k) / allSizes.length, done: k, total: allSizes.length });
       const { w, h } = SIZES[size];
       const clips: Clip[] = [];
       for (let i = 0; i < shots.length; i++) {
@@ -1567,6 +1610,7 @@ export function view(v: Video) {
   const drawing = v.drawing && drawJobs.has(v.id) ? v.drawing : null;
   return {
     id: v.id,
+    progress: v.status === "making" ? progressOf(v.id) : null,
     style: styles.isDrawn(v.style) ? st.key : "real",
     styleLabel: st.label,
     motion: v.motion,

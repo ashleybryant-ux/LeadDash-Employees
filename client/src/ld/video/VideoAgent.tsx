@@ -369,7 +369,7 @@ const RATIO_OF: Record<Size, string> = { vertical: "9 / 16", square: "1 / 1", wi
 function useVideo(id: number) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
-  const one = trpc.videos.get.useQuery({ organizationId: currentOrgId, id }, { enabled: currentOrgId > 0, refetchInterval: (r) => (r.state.data?.status === "making" ? 8_000 : r.state.data?.drawing ? 4_000 : false) });
+  const one = trpc.videos.get.useQuery({ organizationId: currentOrgId, id }, { enabled: currentOrgId > 0, refetchInterval: (r) => (r.state.data?.status === "making" ? 3_000 : r.state.data?.drawing ? 3_000 : false) });
   const refresh = () => Promise.all([utils.videos.list.invalidate(), utils.videos.get.invalidate({ organizationId: currentOrgId, id }), utils.broll.list.invalidate()]);
   return { orgId: currentOrgId, v: one.data as V | null | undefined, loading: one.isLoading, refresh, utils };
 }
@@ -478,7 +478,7 @@ function Scenes({ v, mode }: { v: V; mode: "plan" | "redo" | "view" }) {
     <div className="ld-vm-board">
       {v.shots.map((s) => (
         <React.Fragment key={s.n}>
-          <div className="ld-vm-scene">
+          <div className={`ld-vm-scene ${v.progress?.scene === s.n ? "now" : ""}`}>
             <span className="ld-vm-n">{s.n + 1}</span>
             <Thumb s={s} size={size} drawing={!!v.drawing} />
             <div className="ld-vm-say">
@@ -703,6 +703,68 @@ function Player({ v, ratio }: { v: V; ratio: string }) {
   );
 }
 
+/** "8:42 AM", today's time a step started. */
+const clock = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+/**
+ * The progress bar while scene pictures are drawn or the video is made: what it's doing now, the percent,
+ * when it started and about how long is left (once a scene is done, from how long the steps so far took).
+ */
+function MakingProgress({ v }: { v: V }) {
+  const [now, setNow] = React.useState(Date.now());
+  React.useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(t);
+  }, []);
+  let label: string;
+  let pct: number;
+  let sub: string | null = null;
+  let steps: { name: string; state: "done" | "now" | "next" }[] | null = null;
+  if (v.status === "making") {
+    const p = v.progress;
+    label = p?.label ?? "Starting";
+    pct = p?.pct ?? 1;
+    if (p) {
+      const elapsed = now - p.startedAt;
+      const left = pct >= 12 && (p.stage !== "footage" || p.done >= 1) ? Math.max(1, Math.round((elapsed * (100 - pct)) / pct / 60_000)) : null;
+      sub = `Started ${clock(p.startedAt)}${left ? ` · about ${left} minute${left === 1 ? "" : "s"} left` : ""}`;
+      const order = ["voice", "footage", "build"] as const;
+      const at = order.indexOf(p.stage);
+      const footName = p.stage === "footage" && p.total ? label.replace(/ scene /, " ") : "Scenes";
+      steps = [
+        { name: "Voice-over", state: at > 0 ? "done" : "now" },
+        { name: at === 1 ? footName : "Scenes", state: at > 1 ? "done" : at === 1 ? "now" : "next" },
+        { name: "Putting it together", state: at === 2 ? "now" : "next" },
+        { name: "Done", state: "next" },
+      ];
+    }
+  } else {
+    const [d, t] = (v.drawing ?? "0/1").split("/").map((x) => Number(x) || 0);
+    label = `Drawing scene ${Math.min(d + 1, t)} of ${t}`;
+    pct = t ? (d / t) * 100 : 0;
+  }
+  pct = Math.max(2, Math.min(99, Math.round(pct)));
+  return (
+    <div className="ld-vprog">
+      <div className="ld-vprog-head">
+        <span>{label}</span>
+        <span className="ld-vprog-pct">{`${pct}%`}</span>
+      </div>
+      <div className="ld-vprog-bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={v.status === "making" ? "Making the video" : "Drawing the scenes"}>
+        <div className="ld-vprog-fill" style={{ width: `${pct}%` }} />
+      </div>
+      {sub && <span className="ld-small">{sub}</span>}
+      {steps && (
+        <div className="ld-vprog-steps">
+          {steps.map((x) => (
+            <span key={x.name} className={`ld-vprog-step ${x.state}`}>{x.name}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The video in chat and on the Videos tab: storyboard, making, finished, Edit. */
 export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) {
   const { orgId, v, loading, refresh, utils } = useVideo(id);
@@ -716,12 +778,15 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
   const sienna = trpc.videos.toSienna.useMutation({ onSuccess: () => setSent(true) });
   const remove = trpc.videos.remove.useMutation({ onSuccess: refresh });
   const restyleTo = trpc.videos.changeStyle.useMutation({ onSuccess: refresh });
+  const motionTo = trpc.videos.setMotion.useMutation({ onSuccess: refresh });
+  const opts = trpc.videos.options.useQuery({ organizationId: orgId }, { enabled: orgId > 0 });
   const [picking, setPicking] = React.useState(false);
   if (!v) return loading ? null : <div className="ld-card ld-empty">This video was removed.</div>;
   const ready = v.status === "ready" && !!v.videoUrl;
   const drawn = v.style !== "real";
   const meta = [v.kindLabel, ...(drawn ? [v.styleLabel] : []), ready ? v.length : v.seconds > 90 ? `${Math.round(v.seconds / 60)} minutes` : `${v.seconds} seconds`, v.ratios.join(" and ")].join(" · ");
-  const drawingText = v.drawing ? `Drawing the scene pictures: ${v.drawing.replace("/", " of ")}. They fill in here as they're done.` : null;
+  const canAnimate = drawn && v.seconds <= 90;
+  const animateNow = () => hours.confirm(`animate-${v.id}`, `Animating every scene uses ${opts.data?.clipHours ?? 2} work hours for each 5 seconds`, () => motionTo.mutate({ organizationId: orgId, id: v.id, motion: "clips" }));
   const pill = v.status === "draft" ? "amber" : v.status === "making" ? "blue" : v.status === "ready" ? "green" : "red";
   const startMake = () => hours.confirm(`made-${v.id}`, `This video uses ${v.hours}`, () => make.mutate({ organizationId: orgId, id: v.id }));
   const shown = ratio && v.videoUrls[ratio] ? ratio : v.ratios.find((r) => v.videoUrls[r]) ?? v.ratios[0];
@@ -755,6 +820,9 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
                 <button type="button" className="ld-btn" aria-pressed={panel === "edit"} onClick={() => setPanel(panel === "edit" ? null : "edit")}>Edit</button>
                 <button type="button" className="ld-btn" disabled={sienna.isPending || sent} onClick={() => sienna.mutate({ organizationId: orgId, id: v.id })}>{sent ? "Sent to Sienna" : sienna.isPending ? "Sending..." : "Send to Sienna"}</button>
                 <button type="button" className="ld-btn" aria-pressed={panel === "redo"} onClick={() => setPanel(panel === "redo" ? null : "redo")}>Redo a scene</button>
+                {canAnimate && v.motion !== "clips" && (
+                  <button type="button" className="ld-btn" disabled={motionTo.isPending} onClick={animateNow}>{motionTo.isPending ? "Starting..." : "Animate scenes"}</button>
+                )}
                 {v.source !== "audio" && (
                   <button type="button" className="ld-btn" disabled={versions.isPending} onClick={() => versions.mutate({ organizationId: orgId, id: v.id })}>{versions.isPending ? "Writing..." : "Make 3 ad versions"}</button>
                 )}
@@ -765,7 +833,8 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
                 </span>
               )}
               {versions.data && <span className="ld-small">{`3 versions are in Elena's chat and on her Videos tab, ready to make.`}</span>}
-              <ErrorLine error={sienna.error ?? versions.error} />
+              {hours.question(`animate-${v.id}`)}
+              <ErrorLine error={sienna.error ?? versions.error ?? motionTo.error} />
               {v.caption && (
                 <div className="ld-vm-caption">
                   <span className="ld-lbl">Post caption</span>
@@ -786,7 +855,7 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
       ) : (
         <>
           {drawn && v.cast.length > 0 && <CastCard v={v} />}
-          {drawingText && <span className="ld-vm-drawing">{drawingText}</span>}
+          {(v.drawing || v.status === "making") && <MakingProgress v={v} />}
           <Scenes v={v} mode={v.status === "making" ? "view" : "plan"} />
           <div className="ld-vm-settings">
             {drawn && (
@@ -820,16 +889,21 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
             </div>
           </div>
           {v.status !== "making" && panel === "edit" && <EditPanel v={v} />}
-          {v.status === "making" && <span className="ld-small ld-muted">Making it now. This usually takes a few minutes, and Elena posts it here when it's done.</span>}
+          {v.status === "making" && <span className="ld-small ld-muted">Elena posts it here when it's done.</span>}
           {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{v.error}</span>}
           {hours.question(`made-${v.id}`)}
-          <ErrorLine error={make.error ?? hook.error ?? remove.error ?? restyleTo.error} />
+          <ErrorLine error={make.error ?? hook.error ?? remove.error ?? restyleTo.error ?? motionTo.error} />
           {picking && <StylePicker title="Change style" value={v.style} onClose={() => setPicking(false)} onPick={(k) => (setPicking(false), k !== v.style && restyleTo.mutate({ organizationId: orgId, id: v.id, style: k }))} />}
           {v.status !== "making" && (
             <div className="ld-vm-foot">
               <span className="ld-vm-hours">{`Uses ${v.hours} when it's done`}</span>
               <div className="ld-row" style={{ gap: 8, flexWrap: "wrap" }}>
                 <button type="button" className="ld-btn" style={{ width: 150 }} disabled={!!v.drawing || restyleTo.isPending} onClick={() => setPicking(true)}>{restyleTo.isPending ? "Changing..." : "Change style"}</button>
+                {canAnimate && (
+                  <button type="button" className="ld-btn" style={{ width: 150 }} disabled={motionTo.isPending || !!v.drawing} onClick={() => motionTo.mutate({ organizationId: orgId, id: v.id, motion: v.motion === "clips" ? "pictures" : "clips" })}>
+                    {v.motion === "clips" ? "Use still pictures" : "Animate scenes"}
+                  </button>
+                )}
                 <button type="button" className="ld-btn" style={{ width: 150 }} aria-pressed={panel === "edit"} onClick={() => setPanel(panel === "edit" ? null : "edit")}>Captions, logo, music</button>
                 {v.source !== "audio" && (
                   <button type="button" className="ld-btn" style={{ width: 150 }} disabled={hook.isPending} onClick={() => hook.mutate({ organizationId: orgId, id: v.id })}>{hook.isPending ? "Writing..." : "New hook"}</button>

@@ -1,3 +1,4 @@
+import React from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Redirect, Route, Switch } from "wouter";
@@ -157,12 +158,52 @@ function ReviewBar() {
   );
 }
 
+/**
+ * After a deploy, an open tab is still running the old screens. It checks the server's build every two
+ * minutes and when the tab comes back into view, and offers a refresh when it changed.
+ */
+function NewVersionBar() {
+  const [stale, setStale] = React.useState(false);
+  React.useEffect(() => {
+    let first: string | null = null;
+    let stop = false;
+    const check = async () => {
+      try {
+        const r = await fetch("/api/version", { cache: "no-store" });
+        const { version } = (await r.json()) as { version?: string };
+        if (!version || stop) return;
+        if (first === null) first = version;
+        else if (version !== first) setStale(true);
+      } catch {
+        /* offline: try again later */
+      }
+    };
+    void check();
+    const t = window.setInterval(check, 120_000);
+    const onShow = () => document.visibilityState === "visible" && void check();
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      stop = true;
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onShow);
+    };
+  }, []);
+  if (!stale) return null;
+  return (
+    <div className="ld-newver" role="status">
+      <span>A new version of LeadDash Employees is ready.</span>
+      <button type="button" className="ld-btn p sm" style={{ width: 90 }} onClick={() => window.location.reload()}>Refresh</button>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster position="top-right" richColors />
+          <NewVersionBar />
           <Gate />
         </TooltipProvider>
       </ThemeProvider>

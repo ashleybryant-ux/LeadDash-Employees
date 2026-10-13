@@ -8,6 +8,7 @@ import { serveStatic, setupVite } from "./vite";
 import { ENV } from "./env";
 import { getDb, getOrganizationMembership, guestDocSharesForUser, guestSharesForUser, publicFileByToken, purgeExpiredAuthRecords } from "../db";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileOwner, uploadsRoot } from "../storage";
 import { aiStatus, searchModel } from "./llm";
@@ -85,6 +86,21 @@ async function startServer() {
     else if (++entry.n > 30) return res.status(429).json({ error: "Too many sign-in attempts. Try again in 15 minutes." });
     if (hits.size > 10_000) hits.forEach((v, k) => v.reset < now && hits.delete(k));
     next();
+  });
+
+  // The build this server is running: an open tab that started on an older one offers a refresh.
+  const buildId = (() => {
+    for (const f of [path.resolve(import.meta.dirname, "public", "index.html"), path.resolve(import.meta.dirname, "../..", "dist", "public", "index.html")]) {
+      try {
+        return crypto.createHash("sha1").update(fs.readFileSync(f)).digest("hex").slice(0, 12);
+      } catch {
+        /* next */
+      }
+    }
+    return "dev";
+  })();
+  app.get("/api/version", (_req, res) => {
+    res.set("cache-control", "no-store").json({ version: buildId });
   });
 
   app.get("/api/health", (_req, res) => {

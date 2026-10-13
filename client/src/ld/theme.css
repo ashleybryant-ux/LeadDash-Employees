@@ -3135,3 +3135,21 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 .ld-vtable th { font-size: 12px; font-weight: 700; color: var(--ld-text2); }
 .ld-vtable .n { text-align: right; }
 .ld-vtable tfoot td { font-weight: 800; border-bottom: 0; }
+
+/* Video progress (2026-10-13): what Elena is doing now, the percent, and the steps. */
+.ld-vprog { display: flex; flex-direction: column; gap: 6px; }
+.ld-vprog-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 700; color: var(--ld-ink); }
+.ld-vprog-pct { font-variant-numeric: tabular-nums; }
+.ld-vprog-bar { height: 10px; border-radius: 999px; background: var(--ld-line); overflow: hidden; }
+.ld-vprog-fill { height: 100%; border-radius: 999px; background: var(--ld-accent); position: relative; transition: width .6s ease; overflow: hidden; }
+.ld-vprog-fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .4), transparent); animation: ld-vprog-sheen 1.6s linear infinite; }
+@keyframes ld-vprog-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .ld-vprog-fill::after { animation: none; } .ld-vprog-fill { transition: none; } }
+.ld-vprog-steps { display: flex; gap: 6px; flex-wrap: wrap; }
+.ld-vprog-step { font-size: 12.5px; font-weight: 600; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--ld-line); color: var(--ld-text2); }
+.ld-vprog-step.done { border-color: transparent; background: var(--ld-accent-bg); color: var(--ld-accent-text); }
+.ld-vprog-step.now { border-color: var(--ld-accent); color: var(--ld-ink); }
+.ld-vm-scene.now { outline: 2px solid var(--ld-accent); outline-offset: 2px; border-radius: 10px; }
+
+/* A new version was deployed while this tab was open. */
+.ld-newver { position: fixed; left: 50%; transform: translateX(-50%); top: calc(12px + env(safe-area-inset-top, 0px)); z-index: 1000; display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 16px; border-radius: 10px; background: var(--ld-ink); color: var(--ld-surface); font-weight: 600; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); max-width: calc(100vw - 32px); }

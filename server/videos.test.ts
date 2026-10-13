@@ -522,6 +522,39 @@ describe("Story videos in a drawn style", () => {
     expect(br.listClips(orgId)).toHaveLength(0);
   });
 
+  it("shows its progress while it's made, and a finished video with moving pictures can be animated after", async () => {
+    const { orgId, owner } = await onPlan("vid-progress");
+    script = STORY;
+    const v = await vd.writeVideo(orgId, { instructions: "A therapist gets his evenings back", style: "claymation", motion: "pictures" });
+    await vd.drawJobFor(v.id);
+    await vd.makeVideo(orgId, v.id);
+    // While it's made, the card has a step and a percent to show.
+    const making = (await caller(owner).videos.get({ organizationId: orgId, id: v.id }))!;
+    expect(making.status).toBe("making");
+    expect(making.progress).toMatchObject({ stage: expect.any(String), pct: expect.any(Number), startedAt: expect.any(Number) });
+    await vd.jobFor(v.id);
+    const ready = (await caller(owner).videos.get({ organizationId: orgId, id: v.id }))!;
+    expect(ready).toMatchObject({ status: "ready", motion: "pictures", progress: null });
+    expect(posted("fal-ai/kling-video/v3/pro/image-to-video")).toHaveLength(0);
+
+    // Animate scenes: the same pictures are animated and the video is made again.
+    calls = [];
+    const again = await caller(owner).videos.setMotion({ organizationId: orgId, id: v.id, motion: "clips" });
+    expect(again).toMatchObject({ motion: "clips", status: "making" });
+    await vd.jobFor(v.id);
+    expect(vd.get(orgId, v.id)!.status).toBe("ready");
+    expect(posted("fal-ai/kling-video/v3/pro/image-to-video")).toHaveLength(3);
+    expect(posted("fal-ai/nano-banana-pro")).toHaveLength(0);
+    expect(rendered.at(-1)!.clips.map((c) => !!c.video)).toEqual([true, true, true, false]);
+
+    // Only a drawn video up to 90 seconds can be animated.
+    const real = await vd.writeVideo(orgId, { instructions: "Our story", seconds: 30 });
+    await expect(caller(owner).videos.setMotion({ organizationId: orgId, id: real.id, motion: "clips" })).rejects.toThrow(/Only a drawn video/);
+    const long = await vd.writeVideo(orgId, { instructions: "Our story", style: "watercolor", seconds: 300 });
+    await vd.drawJobFor(long.id);
+    await expect(caller(owner).videos.setMotion({ organizationId: orgId, id: long.id, motion: "clips" })).rejects.toThrow(/up to 90 seconds/);
+  });
+
   it("goes up to 10 minutes with moving pictures; real footage stays at 2 minutes; Auto picks a style", async () => {
     const { orgId } = await makeWorkspace("vid-long");
     script = STORY;

@@ -3697,6 +3697,16 @@ export const appRouter = router({
       const vd = await import("./employees/videos");
       return vd.view(await vd.changeStyle(input.organizationId, input.id, input.style, input.motion));
     }),
+    /** Moving pictures or Animated clips. A finished video switched to Animated clips is made again, animating each scene. */
+    setMotion: protectedProcedure.input(orgInput.extend({ id: z.number().int(), motion: z.enum(["pictures", "clips"]) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vd = await import("./employees/videos");
+      const before = vd.get(input.organizationId, input.id);
+      const v = vd.setMotion(input.organizationId, input.id, input.motion);
+      if (before?.status === "ready" && input.motion === "clips" && before.motion !== "clips") return vd.view(await vd.makeVideo(input.organizationId, input.id));
+      return vd.view(v);
+    }),
     /** Change look: one person drawn again, with every scene they're in. */
     changeLook: protectedProcedure.input(orgInput.extend({ id: z.number().int(), index: z.number().int().min(0).max(3), look: z.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
       blockReviewer(ctx);
