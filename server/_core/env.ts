@@ -67,6 +67,8 @@ export const ENV = {
   falKey: process.env.FAL_KEY || "",
   /** Pexels: free licensed stock video for Elena's scenes. Without it she uses the b-roll library and new AI clips. */
   pexelsKey: process.env.PEXELS_API_KEY || "",
+  /** Pixabay: free stock video for Elena's scenes (used when Pexels has nothing or isn't set up). */
+  pixabayKey: process.env.PIXABAY_API_KEY || "",
   /** GitHub fine-grained token for Kai: issues, pull requests and contents on the owner's repos. */
   githubToken: process.env.GITHUB_TOKEN || "",
   elevenLabsModel: process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5",

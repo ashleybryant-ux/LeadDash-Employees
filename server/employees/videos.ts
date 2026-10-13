@@ -709,7 +709,7 @@ export async function changeShot(orgId: number, id: number, n: number, input: { 
     next = { ...next, clipId: c.id, file: c.url };
   } else if (input.src === "stock") {
     const st = await broll.stockFor(see, v.size);
-    if (!st) throw new TRPCError({ code: "BAD_REQUEST", message: ENV.pexelsKey ? "I didn't find stock footage for that. Try other words, or pick a new AI clip." : "Stock footage isn't set up on the server yet. Pick your b-roll or a new AI clip." });
+    if (!st) throw new TRPCError({ code: "BAD_REQUEST", message: broll.hasStock() ? "I didn't find stock footage for that. Try other words, or pick a new AI clip." : "Stock footage isn't set up on the server yet. Pick your b-roll or a new AI clip." });
     next = { ...next, stock: { url: st.url, page: st.page, thumb: st.thumb, credit: st.credit } };
   } else if (input.src === "photo") {
     const [p] = await assignSources(orgId, "story", v.size, [{ ...next, src: "photo", photo: see }]);

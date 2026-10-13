@@ -3529,7 +3529,7 @@ export const appRouter = router({
         myVoice: s?.voiceId && voices.some((v) => v.id === s.voiceId) ? { id: s.voiceId, name: s.voiceName ?? "My voice" } : null,
         tracks: broll.TRACK_KEYS.map((k) => ({ key: k, name: broll.TRACKS[k].name })),
         hasLogo: !!org?.logoUrl,
-        stock: !!ENV.pexelsKey,
+        stock: !!(ENV.pexelsKey || ENV.pixabayKey),
         library: broll.readyClips(input.organizationId).length,
         videoHoursPerMinute: hours.JOBS.video.minutes / 60,
         clipHours: hours.JOBS.clip.minutes / 60,

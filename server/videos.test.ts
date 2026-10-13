@@ -51,7 +51,7 @@ let wav: Buffer;
 let longMp4: string;
 let rendered: vd.RenderInput[] = [];
 let models = new Map<string, string>();
-const before = { fal: ENV.falKey, openai: ENV.openAiKey, pexels: ENV.pexelsKey };
+const before = { fal: ENV.falKey, openai: ENV.openAiKey, pexels: ENV.pexelsKey, pixabay: ENV.pixabayKey };
 const ff = () => createRequire(import.meta.url)("ffmpeg-static") as string;
 
 beforeAll(() => {
@@ -80,6 +80,7 @@ beforeEach(() => {
   (ENV as any).falKey = "fal-test";
   (ENV as any).openAiKey = "sk-test";
   (ENV as any).pexelsKey = "";
+  (ENV as any).pixabayKey = "";
   // The cut itself is checked in its own test below; here it records what it was asked to cut.
   vd.setRenderer(async (input) => {
     rendered.push(input);
@@ -107,6 +108,12 @@ beforeEach(() => {
     if (u === "https://fal.media/still.png") return new Response(png, { status: 200 });
     if (u === "https://fal.media/clip.mp4" || u === "https://videos.pexels.com/stock.mp4") return new Response(mp4, { status: 200 });
     if (u === "https://fal.media/music.wav") return new Response(wav, { status: 200 });
+    if (u.startsWith("https://pixabay.com/api/videos/")) {
+      return Response.json({ hits: [
+        { pageURL: "https://pixabay.com/videos/wide-1/", duration: 12, user: "Wide Shooter", videos: { large: { url: "https://cdn.pixabay.com/wide.mp4", width: 1920, height: 1080, thumbnail: "https://cdn.pixabay.com/wide.jpg" } } },
+        { pageURL: "https://pixabay.com/videos/tall-2/", duration: 9, user: "Tall Shooter", videos: { large: { url: "https://cdn.pixabay.com/tall.mp4", width: 1080, height: 1920, thumbnail: "https://cdn.pixabay.com/tall.jpg" }, small: { url: "https://cdn.pixabay.com/tall-s.mp4", width: 360, height: 640, thumbnail: "https://cdn.pixabay.com/tall-s.jpg" } } },
+      ] });
+    }
     if (u.startsWith("https://api.pexels.com/v1/videos/search")) {
       return Response.json({ videos: [{ url: "https://www.pexels.com/video/1/", image: "https://images.pexels.com/1.jpg", duration: 9, user: { name: "Ana Lee" }, video_files: [{ link: "https://videos.pexels.com/stock.mp4", width: 1080, height: 1920, file_type: "video/mp4", quality: "hd" }] }] });
     }
@@ -119,6 +126,7 @@ afterEach(() => {
   (ENV as any).falKey = before.fal;
   (ENV as any).openAiKey = before.openai;
   (ENV as any).pexelsKey = before.pexels;
+  (ENV as any).pixabayKey = before.pixabay;
 });
 
 async function onPlan(slug: string) {
@@ -203,6 +211,18 @@ describe("Elena's video agent", () => {
     expect(planned[0]).toMatchObject({ src: "library", clipId: lamp.id });
     expect(vd.view(v).sizes).toEqual(["vertical", "square"]);
     expect(vd.view(v).hours).toBe("8 work hours");
+  });
+
+  it("uses Pixabay when Pexels isn't set up: the clip in the video's shape, credited, and each search kept for a day", async () => {
+    (ENV as any).pixabayKey = "pb-test";
+    const tall = await br.stockFor("rain window", "vertical");
+    expect(tall).toMatchObject({ url: "https://cdn.pixabay.com/tall.mp4", credit: "Tall Shooter on Pixabay", page: "https://pixabay.com/videos/tall-2/", width: 1080, height: 1920 });
+    const wide = await br.stockFor("rain window", "wide");
+    expect(wide).toMatchObject({ url: "https://cdn.pixabay.com/wide.mp4", credit: "Wide Shooter on Pixabay" });
+    // The same words were asked once.
+    expect(calls.filter((c) => c.url.startsWith("https://pixabay.com/api/videos/"))).toHaveLength(1);
+    expect(new URL(calls.find((c) => c.url.startsWith("https://pixabay.com/"))!.url).searchParams.get("key")).toBe("pb-test");
+    expect(br.hasStock()).toBe(true);
   });
 
   it("makes every size from one job: voice-over, new AI clips saved to the library, captions, logo and music", async () => {
