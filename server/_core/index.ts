@@ -106,19 +106,17 @@ async function startServer() {
     return res.status(404).send("Not found");
   });
 
-  // The sound each transition makes (made here from noise and tones; nothing about a workspace), for the picker to play.
-  app.get("/api/transition-sounds/:kind", async (req, res) => {
+  // The sound each transition makes (one sound effect per transition, made once for every workspace), for the picker and preview.
+  app.get("/api/transition-sounds/:key", async (req, res) => {
     const ts = await import("../employees/transitionSounds");
-    const kind = String(req.params.kind).replace(/\.wav$/i, "");
-    if (!ts.isSoundKind(kind)) return res.status(404).send("Not found");
-    try {
-      const file = await ts.soundFile(kind);
-      res.setHeader("Cache-Control", "public, max-age=86400");
-      res.type("audio/wav");
-      return res.sendFile(path.resolve(file));
-    } catch {
-      return res.status(503).send("Not ready");
-    }
+    const { isTrans } = await import("../employees/transitions");
+    const key = String(req.params.key).replace(/\.(mp3|wav)$/i, "");
+    if (!isTrans(key) || !ts.hasSound(key)) return res.status(404).send("Not found");
+    const snd = await ts.soundFor(key);
+    if (!snd) return res.status(503).send("Not ready");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.type("audio/mpeg");
+    return res.sendFile(snd.file);
   });
 
   // Public links for images used on published pages (photos and stock images Jordan
@@ -208,6 +206,8 @@ async function startServer() {
       `AI: writing ${ai.writing ? "on" : "OFF"}, web search ${ai.webSearch ? `on (${ENV.searchProvider}, ${searchModel()})` : "OFF"}, images ${ai.images ? "on" : "OFF"}; secrets key ${hasSecretsKey() ? "set" : "MISSING"}`
     );
     if (ENV.adminEmails.length === 0) console.warn("ADMIN_EMAILS is empty: nobody can create workspaces.");
+    // Transition sounds not made yet: made once in the background (a few seconds each).
+    void import("../employees/transitionSounds").then((m) => m.warmSounds()).catch(() => null);
   });
 }
 

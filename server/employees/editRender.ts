@@ -5,7 +5,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { EditLook, Piece, Range } from "./editLook";
 import { MOVES, RECIPES, overlaySvg, type OverlayKind } from "./transitions";
-import { LEVEL, PEAK, SOUND, soundFile, type SoundKind } from "./transitionSounds";
+import { LEVEL, soundFor, type Sound } from "./transitionSounds";
+import type { TransKey } from "./transitions";
 
 /**
  * The ffmpeg side of Edit my video.
@@ -88,7 +89,7 @@ const cover = (w: number, h: number, bias = 0.5) => `scale=${w}:${h}:force_origi
 const NORM = "fps=30,format=yuv420p,setsar=1,settb=AVTB";
 
 /** Builds the filter graph and inputs for one size. Exported so tests can read the plan without running it. */
-export function editGraph(input: EditRenderInput, overlayFiles: Partial<Record<OverlayKind, string>>, soundFiles: Partial<Record<SoundKind, string>> = {}) {
+export function editGraph(input: EditRenderInput, overlayFiles: Partial<Record<OverlayKind, string>>, soundFiles: Partial<Record<TransKey, Sound>> = {}) {
   const { w: W, h: H, total } = input;
   const wide = W > H;
   const args: string[] = [];
@@ -274,13 +275,11 @@ export function editGraph(input: EditRenderInput, overlayFiles: Partial<Record<O
     parts.push(`[${mi}:a]aresample=44100,aformat=channel_layouts=stereo,volume=${gain.toFixed(2)},atrim=0:${total.toFixed(3)},asetpts=N/SR/TB,afade=t=in:d=0.5,afade=t=out:st=${Math.max(0, total - 1.5).toFixed(3)}:d=1.5[mus]`);
     under.push("[mus]");
   }
-  const sfx = input.sounds ? sfxOf(pieces, total) : [];
+  const sfx = input.sounds ? sfxOf(pieces, total, soundFiles) : [];
   sfx.forEach((x, k) => {
-    const file = soundFiles[x.kind];
-    if (!file) return;
-    const si = addInput("-i", file);
+    const si = addInput("-i", x.file);
     const ms = Math.round(x.at * 1000);
-    parts.push(`[${si}:a]aresample=44100,aformat=channel_layouts=stereo,volume=${LEVEL[x.kind].toFixed(2)},adelay=${ms}|${ms}[sx${k}]`);
+    parts.push(`[${si}:a]aresample=44100,aformat=channel_layouts=stereo,volume=${LEVEL.toFixed(2)},adelay=${ms}|${ms}[sx${k}]`);
     under.push(`[sx${k}]`);
   });
   if (under.length) {
@@ -291,13 +290,13 @@ export function editGraph(input: EditRenderInput, overlayFiles: Partial<Record<O
 }
 
 /** Where each transition's sound goes: loudest in the middle of the change. */
-export function sfxOf(pieces: Piece[], total: number) {
-  const out: { kind: SoundKind; at: number }[] = [];
+export function sfxOf(pieces: Piece[], total: number, sounds: Partial<Record<TransKey, Sound>>) {
+  const out: { tr: TransKey; file: string; at: number }[] = [];
   pieces.forEach((p, k) => {
-    const kind = SOUND[p.tr];
-    if (!k || !kind || !RECIPES[p.tr].xfade) return;
-    const at = Math.max(0, p.from + p.d / 2 - PEAK[kind]);
-    if (at < total - 0.05) out.push({ kind, at: +at.toFixed(3) });
+    const snd = sounds[p.tr];
+    if (!k || !snd || !RECIPES[p.tr].xfade) return;
+    const at = Math.max(0, p.from + p.d / 2 - snd.peak);
+    if (at < total - 0.05) out.push({ tr: p.tr, file: snd.file, at: +at.toFixed(3) });
   });
   return out;
 }
@@ -322,10 +321,11 @@ export async function renderEdit(input: EditRenderInput): Promise<Buffer> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-edit-"));
   try {
     const ov = await overlays(input.pieces, input.w, input.h, dir);
-    const sounds: Partial<Record<SoundKind, string>> = {};
+    const sounds: Partial<Record<TransKey, Sound>> = {};
     if (input.sounds) for (const p of input.pieces) {
-      const k = SOUND[p.tr];
-      if (k && !sounds[k]) sounds[k] = await soundFile(k);
+      if (p.tr === "none" || p.tr in sounds) continue;
+      const snd = await soundFor(p.tr);
+      if (snd) sounds[p.tr] = snd;
     }
     const { args, graph } = editGraph(input, ov, sounds);
     let g = graph;

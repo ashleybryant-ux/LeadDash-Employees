@@ -67,13 +67,13 @@ function SaveRow({ onSave, onCancel, busy, disabled, label = "Save" }: { onSave:
 
 /** Plays a transition's sound (the files are made once on the server and cached by the browser). */
 const sounds = new Map<string, HTMLAudioElement>();
-function playSound(kind: string | null | undefined, volume = 0.8) {
-  if (!kind || typeof Audio === "undefined") return;
-  let a = sounds.get(kind);
+function playSound(key: string | null | undefined, volume = 0.8) {
+  if (!key || typeof Audio === "undefined") return;
+  let a = sounds.get(key);
   if (!a) {
-    a = new Audio(`/api/transition-sounds/${kind}.wav`);
+    a = new Audio(`/api/transition-sounds/${key}.mp3`);
     a.preload = "auto";
-    sounds.set(kind, a);
+    sounds.set(key, a);
   }
   a.volume = volume;
   a.currentTime = 0;
@@ -387,7 +387,13 @@ function Preview({ v, opts, size }: { v: EV; opts: Opts | null; size: Size }) {
   // Each transition's sound as the preview reaches it, when Sound is on.
   const lastT = React.useRef(0);
   const cues = React.useMemo(
-    () => (look.tools.transitions && look.transition.sound ? kept.filter((l, k) => k > 0 && l.tr).map((l) => ({ at: l.from, kind: opts?.transitions.find((x) => x.key === l.tr!.key)?.sound ?? null })) : []),
+    () => (look.tools.transitions && look.transition.sound ? kept
+            .filter((l, k) => k > 0 && l.tr)
+            .map((l) => {
+              const o = opts?.transitions.find((x) => x.key === l.tr!.key);
+              // Started early enough that its loudest moment lands on the change.
+              return { at: Math.max(0, l.from - (o?.soundPeak ?? 0.3)), kind: o?.sound ? l.tr!.key : null };
+            }) : []),
     [kept, look.tools.transitions, look.transition.sound, opts]
   );
   const cuesRef = React.useRef(cues);
@@ -1037,7 +1043,7 @@ function TransitionPicker({ v, opts, n, set, onClose }: { v: EV; opts: Opts; n: 
       <FolderTabs tabs={(["All", "Simple", "Motion", "Effects"] as const).map((k) => ({ key: k, label: k }))} value={group} onChange={setGroup}>
         <div className="ld-ed-trgrid" style={{ ["--a" as string]: `url("${fromImg}")`, ["--b" as string]: `url("${toImg}")` }}>
           {shown.map((t) => (
-            <button key={t.key} type="button" className={`ld-tx ${key === t.key ? "on" : ""}`} aria-pressed={key === t.key} onClick={() => (setKey(t.key), soundOn && playSound(t.sound))}>
+            <button key={t.key} type="button" className={`ld-tx ${key === t.key ? "on" : ""}`} aria-pressed={key === t.key} onClick={() => (setKey(t.key), soundOn && t.sound && playSound(t.key))}>
               {current === t.key && <span className="cur">Current</span>}
               <span className={`tp e-${t.key}`}>
                 <i className="a" />

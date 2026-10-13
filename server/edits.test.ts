@@ -24,7 +24,7 @@ import * as lk from "./employees/editLook";
 import * as er from "./employees/editRender";
 import { editAss } from "./employees/editCaptions";
 import { RECIPES, TRANS_KEYS } from "./employees/transitions";
-import { PEAK, SOUND, SOUND_KINDS, soundFile } from "./employees/transitionSounds";
+import { SOUND_PROMPT, soundDir, soundFor } from "./employees/transitionSounds";
 import * as drama from "./employees/drama";
 import { ENV } from "./_core/env";
 import { storagePut } from "./storage";
@@ -430,23 +430,54 @@ describe("Edit my video: the real cut", () => {
     fs.writeFileSync(f, buf);
     expect(Math.abs((await drama.probe(f)).duration - total2)).toBeLessThan(0.2);
 
-    // Sound on: each transition's sound is laid under the voice, loudest in the middle of the change.
-    const cues = er.sfxOf(more as any, total2);
-    expect(cues.map((c) => c.kind)).toEqual(rest.map((k) => SOUND[k]).filter(Boolean));
-    expect(cues[0].at).toBeCloseTo(L + 0.1 - PEAK[cues[0].kind], 3);
-    const g = er.editGraph({ ...restIn, sounds: true }, {}, { [cues[0].kind]: "/x.wav" });
-    expect(g.graph).toContain(`adelay=${Math.round(cues[0].at * 1000)}|`);
-    expect(er.editGraph(restIn, {}, { [cues[0].kind]: "/x.wav" }).graph).not.toContain("adelay");
-    const meanDb = (file: string) => Number(/mean_volume: (-?[\d.]+) dB/.exec(spawnSync(ff(), ["-i", file, "-af", "volumedetect", "-f", "null", "-"], { encoding: "utf8" }).stderr)?.[1]);
-    const withSound = path.join(dir, "edit-sound.mp4");
-    fs.writeFileSync(withSound, await er.renderEdit({ ...restIn, sounds: true }));
-    expect(Math.abs((await drama.probe(withSound)).duration - total2)).toBeLessThan(0.2);
-    // Louder overall than the same cut without them.
-    expect(meanDb(withSound)).toBeGreaterThan(meanDb(f) + 0.5);
-    // Every sound can be made, and each peaks at the same level.
-    for (const k of SOUND_KINDS) {
-      const wav = await soundFile(k);
-      expect(/max_volume: (-?[\d.]+) dB/.exec(spawnSync(ff(), ["-i", wav, "-af", "volumedetect", "-f", "null", "-"], { encoding: "utf8" }).stderr)?.[1]).toBe("-3.0");
+    // Sound on: each transition's own sound effect (made once with ElevenLabs), its loudest moment in the middle of the change.
+    // The made-up effect here: quiet, then a loud hit at 0.4 seconds.
+    const hit = path.join(dir, "hit.mp3");
+    execFileSync(ff(), ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "aevalsrc='if(between(t,0.4,0.48),0.9*sin(2*PI*600*t),0.02*sin(2*PI*200*t))':s=44100:d=0.8", "-c:a", "libmp3lame", hit]);
+    const sfxCalls: any[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
+      if (String(url).startsWith("https://api.elevenlabs.io/v1/sound-generation")) {
+        sfxCalls.push(JSON.parse(init.body));
+        return new Response(fs.readFileSync(hit), { status: 200 });
+      }
+      return new Response("no route", { status: 500 });
+    });
+    const beforeKey = ENV.elevenLabsKey;
+    fs.rmSync(soundDir(), { recursive: true, force: true });
+    (ENV as any).elevenLabsKey = "";
+    expect(await soundFor("whip")).toBeNull();
+    (ENV as any).elevenLabsKey = "xi-test";
+    try {
+      const whip = (await soundFor("whip"))!;
+      expect(sfxCalls).toHaveLength(1);
+      expect(sfxCalls[0]).toMatchObject({ text: SOUND_PROMPT.whip!.text, duration_seconds: SOUND_PROMPT.whip!.seconds, model_id: "eleven_text_to_sound_v2" });
+      expect(whip.peak).toBeGreaterThan(0.33);
+      expect(whip.peak).toBeLessThan(0.5);
+      // Made once for every workspace: the next time it's read from disk.
+      expect((await soundFor("whip"))!.file).toBe(whip.file);
+      expect(sfxCalls).toHaveLength(1);
+      expect(await soundFor("none")).toBeNull();
+      const sounds: Record<string, { file: string; peak: number }> = {};
+      for (const k of rest) {
+        const snd = await soundFor(k);
+        if (snd) sounds[k] = snd;
+      }
+      // Every transition but a straight cut has a sound of its own.
+      expect(Object.keys(sounds).sort()).toEqual(rest.filter((k) => SOUND_PROMPT[k]).sort());
+      const cues = er.sfxOf(more as any, total2, sounds as any);
+      expect(cues.map((c) => c.tr)).toEqual(rest.filter((k) => SOUND_PROMPT[k] && RECIPES[k].xfade));
+      expect(cues[0].at).toBeCloseTo(L + 0.1 - sounds[cues[0].tr].peak, 3);
+      const g = er.editGraph({ ...restIn, sounds: true }, {}, sounds as any);
+      expect(g.graph).toContain(`adelay=${Math.round(cues[0].at * 1000)}|`);
+      expect(er.editGraph(restIn, {}, sounds as any).graph).not.toContain("adelay");
+      const meanDb = (file: string) => Number(/mean_volume: (-?[\d.]+) dB/.exec(spawnSync(ff(), ["-i", file, "-af", "volumedetect", "-f", "null", "-"], { encoding: "utf8" }).stderr)?.[1]);
+      const withSound = path.join(dir, "edit-sound.mp4");
+      fs.writeFileSync(withSound, await er.renderEdit({ ...restIn, sounds: true }));
+      expect(Math.abs((await drama.probe(withSound)).duration - total2)).toBeLessThan(0.2);
+      // Louder overall than the same cut without them.
+      expect(meanDb(withSound)).toBeGreaterThan(meanDb(f) + 0.5);
+    } finally {
+      (ENV as any).elevenLabsKey = beforeKey;
     }
     // On by default; the editor's Sound switch turns it off.
     expect(lk.editLookOf(null).transition.sound).toBe(true);

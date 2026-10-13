@@ -3771,7 +3771,7 @@ export const appRouter = router({
       })();
       return {
         captionStyles: lk.CAP_KEYS.map((k) => ({ key: k, label: lk.CAP_STYLES[k], group: lk.CAP_GROUP[k] })),
-        transitions: tr.TRANS_KEYS.map((k) => ({ key: k, label: tr.TRANSITIONS[k].label, group: tr.TRANSITIONS[k].group, sound: sfx.SOUND[k] })),
+        transitions: tr.TRANS_KEYS.map((k) => ({ key: k, label: tr.TRANSITIONS[k].label, group: tr.TRANSITIONS[k].group, sound: sfx.hasSound(k) && (sfx.soundsReady() || !!sfx.madeSound(k)), soundPeak: sfx.madeSound(k)?.peak ?? 0.3 })),
         languages: [...lk.LANGUAGES],
         emojis: Object.fromEntries(Object.entries(cap.EMOJIS)),
         tracks: b.TRACK_KEYS.map((k) => ({ key: k, name: b.TRACKS[k].name })),

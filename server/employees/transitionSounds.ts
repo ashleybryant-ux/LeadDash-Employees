@@ -2,99 +2,142 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { ENV } from "../_core/env";
 import { uploadsRoot } from "../storage";
 import type { TransKey } from "./transitions";
 
 /**
- * The sound that goes with each transition (whoosh, swish, pop, boom, glitch, shutter, paper tear,
- * fire, shimmer). Each is made here by ffmpeg from noise and tones, so nothing is licensed, and kept
- * as a WAV the first time it's needed. Edit my video lays them under the voice at each change when
- * Sound is on; the transition picker plays them from /api/transition-sounds/<kind>.wav.
+ * The sound that goes with each transition: its own sound effect, written for what that transition
+ * does on screen (a whip pan's air whip, a flash's camera pop, a paper tear's rip). Each one is made
+ * once with ElevenLabs Sound Effects on LeadDash's own account and kept for every workspace, like the
+ * format card photos; nothing here is about a workspace. Its loudest moment is found and saved with
+ * it, so that moment lands in the middle of the change on screen.
  */
 
 const run = promisify(execFile);
 
-export const SOUND_KINDS = ["soft", "whoosh", "swish", "pop", "boom", "glitch", "shutter", "tear", "fire", "shimmer"] as const;
-export type SoundKind = (typeof SOUND_KINDS)[number];
-export const isSoundKind = (k: unknown): k is SoundKind => typeof k === "string" && (SOUND_KINDS as readonly string[]).includes(k);
-
-/** Which sound each transition makes; a straight cut makes none. */
-export const SOUND: Record<TransKey, SoundKind | null> = {
+/** What each transition sounds like. A straight cut has none. */
+export const SOUND_PROMPT: Record<TransKey, { text: string; seconds: number } | null> = {
   none: null,
-  fade: "soft",
-  flash: "pop",
-  black: "boom",
-  slideup: "swish",
-  slidedown: "swish",
-  slideleft: "swish",
-  slideright: "swish",
-  zoomin: "whoosh",
-  zoomout: "whoosh",
-  zoomblur: "whoosh",
-  whip: "swish",
-  shake: "boom",
-  glitch: "glitch",
-  vhs: "glitch",
-  retro: "shutter",
-  filmburn: "fire",
-  lightleak: "shimmer",
-  sweep: "shimmer",
-  papertear: "tear",
-  firewipe: "fire",
-  pixel: "glitch",
-  circle: "whoosh",
-  comic: "pop",
+  fade: { text: "Very soft, gentle airy swell for a slow cross-fade between two video shots, smooth and subtle, no music", seconds: 1.2 },
+  flash: { text: "Camera flash: a bright quick pop with a short high shimmer, as the screen flashes white", seconds: 0.8 },
+  black: { text: "Deep cinematic low boom hit that fades into silence, as the screen dips to black", seconds: 1.5 },
+  slideup: { text: "Quick clean upward swoosh as a video slides up out of frame", seconds: 0.7 },
+  slidedown: { text: "Quick clean downward swoosh as a video slides down out of frame", seconds: 0.7 },
+  slideleft: { text: "Quick clean swoosh moving right to left as a video slides sideways", seconds: 0.7 },
+  slideright: { text: "Quick clean swoosh moving left to right as a video slides sideways", seconds: 0.7 },
+  zoomin: { text: "Fast rising whoosh that rushes forward, a camera zooming in quickly", seconds: 0.9 },
+  zoomout: { text: "Reverse whoosh pulling backward and away, a camera zooming out quickly", seconds: 0.9 },
+  zoomblur: { text: "Powerful fast whoosh with a blurry rush of air, an energetic zoom blur transition", seconds: 0.9 },
+  whip: { text: "Very fast whip pan: a sharp air whip swish, like a camera spun sideways", seconds: 0.6 },
+  shake: { text: "Heavy impact thud with a short rumble, like the camera is hit and shakes", seconds: 1.0 },
+  glitch: { text: "Digital glitch: a short stuttering electronic burst of data corruption and buzzing", seconds: 0.8 },
+  vhs: { text: "VHS tape glitch: a quick tape rewind warble with static hiss", seconds: 0.9 },
+  retro: { text: "Old film projector: a mechanical click and short reel rattle, vintage", seconds: 0.9 },
+  filmburn: { text: "Old film catching fire: a soft flaring whoosh with light crackle", seconds: 1.1 },
+  lightleak: { text: "Warm dreamy shimmer swell, soft and glowing, like light flooding the frame", seconds: 1.2 },
+  sweep: { text: "Bright sparkling swish, a beam of light sweeping across the screen", seconds: 0.9 },
+  papertear: { text: "A sheet of paper being torn quickly in one rip", seconds: 0.8 },
+  firewipe: { text: "Fire whoosh: a burst of flame sweeping across", seconds: 1.0 },
+  pixel: { text: "Retro 8-bit video game blips dissolving, a digital pixelate effect", seconds: 0.8 },
+  circle: { text: "Soft round whoosh opening up, airy and smooth", seconds: 0.9 },
+  comic: { text: "Cartoon comic book pop with a quick bouncy boing", seconds: 0.8 },
 };
 
-/** Seconds into each sound where it's loudest, so that lands in the middle of the change. */
-export const PEAK: Record<SoundKind, number> = { soft: 0.3, whoosh: 0.32, swish: 0.14, pop: 0.02, boom: 0.03, glitch: 0.05, shutter: 0.01, tear: 0.08, fire: 0.25, shimmer: 0.08 };
+/** How loud each sits under the voice (0 to 1); every file is evened out to the same peak first. */
+export const LEVEL = 0.55;
 
-/** How loud each sits under the voice (0 to 1). */
-export const LEVEL: Record<SoundKind, number> = { soft: 0.35, whoosh: 0.6, swish: 0.55, pop: 0.5, boom: 0.65, glitch: 0.25, shutter: 0.5, tear: 0.5, fire: 0.5, shimmer: 0.35 };
+export const hasSound = (k: TransKey) => !!SOUND_PROMPT[k];
+export const soundsReady = () => !!ENV.elevenLabsKey;
 
-const SR = 44100;
-/** The ffmpeg graph that makes each one, ending in [s]. */
-const GRAPH: Record<SoundKind, string> = {
-  soft: `anoisesrc=color=pink:amplitude=1:d=0.6:r=${SR},highpass=f=250,lowpass=f=1800,afade=t=in:d=0.3:curve=qsin,afade=t=out:st=0.3:d=0.3:curve=qsin[s]`,
-  whoosh: `anoisesrc=color=pink:amplitude=0.9:d=0.7:r=${SR},highpass=f=180,lowpass=f=2400,afade=t=in:d=0.32:curve=exp,afade=t=out:st=0.32:d=0.38:curve=qsin,aecho=0.6:0.4:25:0.3[s]`,
-  swish: `anoisesrc=color=white:amplitude=0.8:d=0.36:r=${SR},highpass=f=1600,lowpass=f=7500,afade=t=in:d=0.14:curve=exp,afade=t=out:st=0.14:d=0.22:curve=qsin[s]`,
-  pop: `aevalsrc='0.9*sin(2*PI*(1100-700*t/0.18)*t)*exp(-22*t)+0.3*(random(0)*2-1)*exp(-120*t)':s=${SR}:d=0.3[s]`,
-  boom: `aevalsrc='0.95*sin(2*PI*(72-34*t)*t)*exp(-4.5*t)+0.25*(random(0)*2-1)*exp(-14*t)':s=${SR}:d=0.9,lowpass=f=900[s]`,
-  glitch: `aevalsrc='0.45*sgn(sin(2*PI*(260+220*floor(mod(t*33,1)*9))*t))*lt(mod(t,0.055),0.034)+0.2*(random(0)*2-1)*lt(mod(t*7,1),0.3)':s=${SR}:d=0.42,afade=t=out:st=0.3:d=0.12[s]`,
-  shutter: `aevalsrc='(lt(t,0.014)*0.9+between(t,0.085,0.097)*0.7)*(random(0)*2-1)':s=${SR}:d=0.2,highpass=f=900,aecho=0.5:0.3:12:0.25[s]`,
-  tear: `aevalsrc='(random(0)*2-1)*0.75*(0.55+0.45*sin(2*PI*46*t))*min(1,t/0.03)*exp(-3.2*t)':s=${SR}:d=0.55,highpass=f=1700,lowpass=f=9000[s]`,
-  fire: `anoisesrc=color=brown:amplitude=0.9:d=0.75:r=${SR},lowpass=f=1100,afade=t=in:d=0.25:curve=exp,afade=t=out:st=0.3:d=0.45,volume=1.4[b];aevalsrc='gt(random(0),0.9965)*(random(1)*2-1)*0.9':s=${SR}:d=0.75,highpass=f=2500[c];[b][c]amix=inputs=2:normalize=0[s]`,
-  shimmer: `aevalsrc='0.22*(sin(2*PI*1760*t)+sin(2*PI*2637*t)+0.8*sin(2*PI*3520*t)+0.6*sin(2*PI*4186*t))*min(1,t/0.06)*exp(-3.6*t)':s=${SR}:d=0.9,aecho=0.7:0.5:60|110:0.35|0.2[s]`,
-};
+const VERSION = "v2";
+/** Where the made sounds are kept (outside the served files). */
+export const soundDir = () => path.resolve(uploadsRoot(), "..", "ld-sfx");
+const dir = soundDir;
+const fileOf = (k: TransKey) => path.join(dir(), `${k}-${VERSION}.mp3`);
+const metaOf = (k: TransKey) => path.join(dir(), `${k}-${VERSION}.json`);
+const pending = new Map<TransKey, Promise<Sound | null>>();
 
-const dir = () => path.join(uploadsRoot(), "..", "ld-sfx");
-const pending = new Map<SoundKind, Promise<string>>();
+export type Sound = { file: string; peak: number };
 
-/** The sound as a WAV on disk, made the first time. */
-export function soundFile(kind: SoundKind): Promise<string> {
-  const file = path.join(dir(), `${kind}-v1.wav`);
-  if (fs.existsSync(file)) return Promise.resolve(file);
-  const going = pending.get(kind);
+/** The second its loudest moment comes (the loudest 50 ms), from the decoded samples. */
+export async function peakOf(file: string) {
+  const ff = (await import("./drama")).ffmpegPath();
+  const { stdout } = await run(ff, ["-loglevel", "error", "-i", file, "-ac", "1", "-ar", "8000", "-f", "s16le", "-"], { encoding: "buffer", maxBuffer: 20 * 1024 * 1024, timeout: 60_000 });
+  const buf = stdout as unknown as Buffer;
+  const win = 400;
+  const n = Math.floor(buf.length / 2);
+  let sum = 0;
+  let best = -1;
+  let at = 0;
+  for (let i = 0; i < n; i++) {
+    sum += Math.abs(buf.readInt16LE(i * 2));
+    if (i >= win) sum -= Math.abs(buf.readInt16LE((i - win) * 2));
+    if (sum > best) {
+      best = sum;
+      at = Math.max(0, i - win / 2);
+    }
+  }
+  return at / 8000;
+}
+
+/** The sound if it's already made (no waiting). */
+export function madeSound(k: TransKey): Sound | null {
+  if (!SOUND_PROMPT[k] || !fs.existsSync(fileOf(k)) || !fs.existsSync(metaOf(k))) return null;
+  try {
+    return { file: fileOf(k), peak: Number(JSON.parse(fs.readFileSync(metaOf(k), "utf8")).peak) || 0 };
+  } catch {
+    return null;
+  }
+}
+
+/** The sound for a transition, made the first time it's needed; null when it can't be made here. */
+export function soundFor(k: TransKey): Promise<Sound | null> {
+  const p = SOUND_PROMPT[k];
+  if (!p) return Promise.resolve(null);
+  const made = madeSound(k);
+  if (made) return Promise.resolve(made);
+  if (!ENV.elevenLabsKey) return Promise.resolve(null);
+  const going = pending.get(k);
   if (going) return going;
-  const p = (async () => {
+  const job = (async () => {
     fs.mkdirSync(dir(), { recursive: true });
-    const ff = (await import("./drama")).ffmpegPath();
-    const raw = `${file}.${process.pid}.raw.wav`;
-    const tmp = `${file}.${process.pid}.tmp.wav`;
+    const res = await fetch("https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128", {
+      method: "POST",
+      headers: { "xi-api-key": ENV.elevenLabsKey, "content-type": "application/json" },
+      body: JSON.stringify({ text: p.text, duration_seconds: p.seconds, prompt_influence: 0.7, model_id: "eleven_text_to_sound_v2" }),
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (!res.ok) throw new Error(`The ${k} sound didn't come back (${res.status}).`);
+    const raw = `${fileOf(k)}.${process.pid}.raw.mp3`;
+    const tmp = `${fileOf(k)}.${process.pid}.tmp.mp3`;
     try {
-      await run(ff, ["-y", "-loglevel", "error", "-filter_complex", GRAPH[kind], "-map", "[s]", "-ac", "2", "-ar", String(SR), "-c:a", "pcm_s16le", raw], { timeout: 60_000 });
-      // Every sound peaks at the same level (-3 dB), so LEVEL alone sets how loud each sits.
+      fs.writeFileSync(raw, Buffer.from(await res.arrayBuffer()));
+      const ff = (await import("./drama")).ffmpegPath();
+      // Evened out to the same peak (-3 dB), so LEVEL alone sets how loud it sits.
       const probe = await run(ff, ["-i", raw, "-af", "volumedetect", "-f", "null", "-"], { timeout: 60_000 });
       const max = Number(/max_volume:\s*(-?[\d.]+) dB/.exec(String(probe.stderr))?.[1] ?? -3);
-      const gain = Math.min(40, -3 - max);
-      await run(ff, ["-y", "-loglevel", "error", "-i", raw, "-af", `volume=${gain.toFixed(2)}dB`, "-c:a", "pcm_s16le", tmp], { timeout: 60_000 });
-      fs.renameSync(tmp, file);
-      return file;
+      await run(ff, ["-y", "-loglevel", "error", "-i", raw, "-af", `volume=${Math.min(30, -3 - max).toFixed(2)}dB`, "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "160k", tmp], { timeout: 60_000 });
+      const peak = await peakOf(tmp);
+      fs.renameSync(tmp, fileOf(k));
+      fs.writeFileSync(metaOf(k), JSON.stringify({ peak: +peak.toFixed(3), prompt: p.text }));
+      return { file: fileOf(k), peak };
     } finally {
       fs.rmSync(raw, { force: true });
       fs.rmSync(tmp, { force: true });
     }
-  })().finally(() => pending.delete(kind));
-  pending.set(kind, p);
-  return p;
+  })()
+    .catch((err) => {
+      console.warn("[transition sounds]", err instanceof Error ? err.message : err);
+      return null;
+    })
+    .finally(() => pending.delete(k));
+  pending.set(k, job);
+  return job;
+}
+
+/** Makes any that are missing, one at a time, in the background (at start-up). */
+export async function warmSounds() {
+  if (!ENV.elevenLabsKey || process.env.NODE_ENV === "test") return;
+  for (const k of Object.keys(SOUND_PROMPT) as TransKey[]) if (SOUND_PROMPT[k]) await soundFor(k);
 }
