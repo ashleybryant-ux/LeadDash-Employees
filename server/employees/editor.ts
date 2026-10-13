@@ -817,6 +817,7 @@ export async function planRender(e: VideoEdit, size: ESize, files: { you: string
     emojis,
     logo: look.logo.on && b.logo ? { file: b.logo, corner: look.logo.corner, size: look.logo.size } : null,
     music,
+    sounds: look.tools.transitions && look.transition.sound,
     fontsDir: (await import("./drama")).fontsDir() || undefined,
   };
 }

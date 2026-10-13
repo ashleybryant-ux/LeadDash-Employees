@@ -60,7 +60,8 @@ export type EditLook = {
   captions: { on: boolean; style: CapStyle; position: "top" | "middle" | "bottom"; highlight: "gold" | "brand" | "none"; size: "s" | "m" | "l"; emojis: boolean };
   tools: { autoBroll: boolean; transitions: boolean; zooms: boolean; hook: { on: boolean; text: string }; cleanAudio: boolean; silences: boolean; badTakes: boolean; translate: { on: boolean; lang: string } };
   music: { on: boolean; track: broll.TrackKey | "upload"; url?: string | null; name?: string | null; volume: number };
-  transition: { speed: Speed };
+  /** sound: the sound that goes with each transition (a whoosh, a pop...), on or off. */
+  transition: { speed: Speed; sound: boolean };
   layout: {
     kind: Layout;
     split: { you: "top" | "bottom"; other: "auto" | "clip" | "video"; when: "whole" | "broll"; clipId?: number | null; videoUrl?: string | null; videoName?: string | null };
@@ -76,7 +77,7 @@ export const DEFAULT_EDIT_LOOK: EditLook = {
   captions: { on: true, style: "pop", position: "middle", highlight: "gold", size: "m", emojis: false },
   tools: { autoBroll: true, transitions: true, zooms: true, hook: { on: false, text: "" }, cleanAudio: false, silences: true, badTakes: false, translate: { on: false, lang: "Spanish" } },
   music: { on: false, track: "calm", volume: 15 },
-  transition: { speed: "normal" },
+  transition: { speed: "normal", sound: true },
   layout: {
     kind: "full",
     split: { you: "top", other: "auto", when: "whole" },

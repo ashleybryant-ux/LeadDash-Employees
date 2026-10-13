@@ -65,6 +65,21 @@ function SaveRow({ onSave, onCancel, busy, disabled, label = "Save" }: { onSave:
   );
 }
 
+/** Plays a transition's sound (the files are made once on the server and cached by the browser). */
+const sounds = new Map<string, HTMLAudioElement>();
+function playSound(kind: string | null | undefined, volume = 0.8) {
+  if (!kind || typeof Audio === "undefined") return;
+  let a = sounds.get(kind);
+  if (!a) {
+    a = new Audio(`/api/transition-sounds/${kind}.wav`);
+    a.preload = "auto";
+    sounds.set(kind, a);
+  }
+  a.volume = volume;
+  a.currentTime = 0;
+  void a.play().catch(() => null);
+}
+
 // ==========================================
 // Data
 // ==========================================
@@ -369,6 +384,14 @@ function Preview({ v, opts, size }: { v: EV; opts: Opts | null; size: Size }) {
   const look = v.look;
   const ranges = v.ranges;
   const kept = React.useMemo(() => v.lines.filter((l) => !(look.tools.badTakes && l.drop)), [v.lines, look.tools.badTakes]);
+  // Each transition's sound as the preview reaches it, when Sound is on.
+  const lastT = React.useRef(0);
+  const cues = React.useMemo(
+    () => (look.tools.transitions && look.transition.sound ? kept.filter((l, k) => k > 0 && l.tr).map((l) => ({ at: l.from, kind: opts?.transitions.find((x) => x.key === l.tr!.key)?.sound ?? null })) : []),
+    [kept, look.tools.transitions, look.transition.sound, opts]
+  );
+  const cuesRef = React.useRef(cues);
+  cuesRef.current = cues;
   // Skip what the cut takes out, so the preview plays like the finished video.
   React.useEffect(() => {
     let raf = 0;
@@ -376,6 +399,10 @@ function Preview({ v, opts, size }: { v: EV; opts: Opts | null; size: Size }) {
       const el = ref.current;
       if (el) {
         const now = el.currentTime;
+        if (!el.paused && now > lastT.current && now - lastT.current < 0.5) {
+          for (const c of cuesRef.current) if (c.at > lastT.current && c.at <= now) playSound(c.kind, 0.5);
+        }
+        lastT.current = now;
         if (ranges.length && !el.paused) {
           const inside = ranges.some((r) => now >= r.from - 0.02 && now < r.to);
           if (!inside) {
@@ -773,8 +800,10 @@ function BrollPanel({ v, opts, set, size }: { v: EV; opts: Opts; set: (v: EV) =>
   const remove = trpc.edits.setBroll.useMutation({ onSuccess: set });
   const [open, setOpen] = React.useState<{ kind: "broll" | "tr"; n: number } | null>(null);
   const [speed, setSpeed] = React.useState<Look["transition"]["speed"] | null>(null);
+  const [sound, setSound] = React.useState(true);
   const busy = !!v.step || v.status === "making";
   const sp = v.look.transition.speed;
+  const snd = v.look.transition.sound !== false;
   const SPEEDS = [
     { key: "quick", label: "Quick" },
     { key: "normal", label: "Normal" },
@@ -789,16 +818,30 @@ function BrollPanel({ v, opts, set, size }: { v: EV; opts: Opts; set: (v: EV) =>
         </div>
         <button type="button" className="ld-btn" style={{ width: 160 }} disabled={busy || redo.isPending || !v.look.tools.autoBroll} onClick={() => redo.mutate({ organizationId: currentOrgId, id: v.id })}>Redo auto b-roll</button>
       </div>
-      <Sec title="Transitions" editing={!!speed} onEdit={() => setSpeed(sp)}>
+      <Sec title="Transitions" editing={!!speed} onEdit={() => (setSpeed(sp), setSound(snd))}>
         {!speed ? (
-          <span className="ld-ed-kvv">{v.look.tools.transitions ? `Auto: Elena picks one at every change. Speed: ${SPEEDS.find((s) => s.key === sp)?.label.toLowerCase()}. Click any one below to change it.` : "Off: straight cuts. Turn them on under AI Tools."}</span>
+          v.look.tools.transitions ? (
+            <div className="ld-ed-kv">
+              <span>Speed</span>
+              <span className="ld-ed-kvv">{SPEEDS.find((s) => s.key === sp)?.label}</span>
+              <span>Sound</span>
+              <span className="ld-ed-kvv">{snd ? "On" : "Off"}</span>
+            </div>
+          ) : (
+            <span className="ld-ed-kvv">Off: straight cuts. Turn them on under AI Tools.</span>
+          )
         ) : (
           <>
             <div className="ld-ed-kv">
               <span>Speed</span>
               <div className="ld-row">{SPEEDS.map((s) => <Chip key={s.key} on={speed === s.key} onClick={() => setSpeed(s.key)}>{s.label}</Chip>)}</div>
+              <span>Sound</span>
+              <div className="ld-row">
+                <Chip on={sound} onClick={() => setSound(true)}>On</Chip>
+                <Chip on={!sound} onClick={() => setSound(false)}>Off</Chip>
+              </div>
             </div>
-            <SaveRow busy={m.isPending} onSave={() => save({ transition: { speed } }, () => setSpeed(null))} onCancel={() => setSpeed(null)} />
+            <SaveRow busy={m.isPending} onSave={() => save({ transition: { speed, sound } }, () => setSpeed(null))} onCancel={() => setSpeed(null)} />
           </>
         )}
       </Sec>
@@ -981,6 +1024,7 @@ function TransitionPicker({ v, opts, n, set, onClose }: { v: EV; opts: Opts; n: 
   const [key, setKey] = React.useState<string>(line.tr?.key ?? "fade");
   const [speed, setSpeed] = React.useState(v.look.transition.speed);
   const [every, setEvery] = React.useState(false);
+  const soundOn = v.look.transition.sound !== false;
   const save = trpc.edits.setTransition.useMutation({ onSuccess: (r) => (set(r), onClose()) });
   const shown = opts.transitions.filter((t) => group === "All" || t.group === group);
   const current = line.tr?.key;
@@ -988,12 +1032,12 @@ function TransitionPicker({ v, opts, n, set, onClose }: { v: EV; opts: Opts; n: 
     <div className="ld-ed-pick">
       <div className="ld-vm-sec-hd">
         <b>Transition {line.broll ? "into b-roll" : "back to you"}</b>
-        <span className="ld-small ld-muted">{fmt(line.from)} · hover a tile to play it</span>
+        <span className="ld-small ld-muted">{fmt(line.from)} · {soundOn ? "hover to play, click to hear" : "hover a tile to play it"}</span>
       </div>
       <FolderTabs tabs={(["All", "Simple", "Motion", "Effects"] as const).map((k) => ({ key: k, label: k }))} value={group} onChange={setGroup}>
         <div className="ld-ed-trgrid" style={{ ["--a" as string]: `url("${fromImg}")`, ["--b" as string]: `url("${toImg}")` }}>
           {shown.map((t) => (
-            <button key={t.key} type="button" className={`ld-tx ${key === t.key ? "on" : ""}`} aria-pressed={key === t.key} onClick={() => setKey(t.key)}>
+            <button key={t.key} type="button" className={`ld-tx ${key === t.key ? "on" : ""}`} aria-pressed={key === t.key} onClick={() => (setKey(t.key), soundOn && playSound(t.sound))}>
               {current === t.key && <span className="cur">Current</span>}
               <span className={`tp e-${t.key}`}>
                 <i className="a" />

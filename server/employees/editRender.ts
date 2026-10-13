@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { EditLook, Piece, Range } from "./editLook";
 import { MOVES, RECIPES, overlaySvg, type OverlayKind } from "./transitions";
+import { LEVEL, PEAK, SOUND, soundFile, type SoundKind } from "./transitionSounds";
 
 /**
  * The ffmpeg side of Edit my video.
@@ -76,6 +77,8 @@ export type EditRenderInput = {
   emojis: Emoji[];
   logo: { file: string; corner: "tl" | "tr" | "bl" | "br"; size: "s" | "m" | "l" } | null;
   music: { file: string; volume: number } | null;
+  /** The sound that goes with each transition, under the voice. */
+  sounds?: boolean;
   fontsDir?: string;
 };
 
@@ -85,7 +88,7 @@ const cover = (w: number, h: number, bias = 0.5) => `scale=${w}:${h}:force_origi
 const NORM = "fps=30,format=yuv420p,setsar=1,settb=AVTB";
 
 /** Builds the filter graph and inputs for one size. Exported so tests can read the plan without running it. */
-export function editGraph(input: EditRenderInput, overlayFiles: Partial<Record<OverlayKind, string>>) {
+export function editGraph(input: EditRenderInput, overlayFiles: Partial<Record<OverlayKind, string>>, soundFiles: Partial<Record<SoundKind, string>> = {}) {
   const { w: W, h: H, total } = input;
   const wide = W > H;
   const args: string[] = [];
@@ -262,16 +265,41 @@ export function editGraph(input: EditRenderInput, overlayFiles: Partial<Record<O
   }
   parts.push(`${v}format=yuv420p,trim=duration=${total.toFixed(3)}[v]`);
 
-  // The voice from the cut, with music low under it.
+  // The voice from the cut, with music low under it and each transition's sound.
   const voice = `[${youIn}:a]aresample=44100,aformat=channel_layouts=stereo,apad,atrim=0:${total.toFixed(3)}`;
+  const under: string[] = [];
   if (input.music) {
     const mi = addInput("-stream_loop", "-1", "-i", input.music.file);
     const gain = Math.max(0, Math.min(1, input.music.volume / 100));
-    parts.push(`${voice}[vo]`);
     parts.push(`[${mi}:a]aresample=44100,aformat=channel_layouts=stereo,volume=${gain.toFixed(2)},atrim=0:${total.toFixed(3)},asetpts=N/SR/TB,afade=t=in:d=0.5,afade=t=out:st=${Math.max(0, total - 1.5).toFixed(3)}:d=1.5[mus]`);
-    parts.push(`[vo][mus]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]`);
+    under.push("[mus]");
+  }
+  const sfx = input.sounds ? sfxOf(pieces, total) : [];
+  sfx.forEach((x, k) => {
+    const file = soundFiles[x.kind];
+    if (!file) return;
+    const si = addInput("-i", file);
+    const ms = Math.round(x.at * 1000);
+    parts.push(`[${si}:a]aresample=44100,aformat=channel_layouts=stereo,volume=${LEVEL[x.kind].toFixed(2)},adelay=${ms}|${ms}[sx${k}]`);
+    under.push(`[sx${k}]`);
+  });
+  if (under.length) {
+    parts.push(`${voice}[vo]`);
+    parts.push(`[vo]${under.join("")}amix=inputs=${under.length + 1}:duration=first:dropout_transition=0:normalize=0[a]`);
   } else parts.push(`${voice}[a]`);
   return { args, graph: parts.join(";\n"), pieces, lens };
+}
+
+/** Where each transition's sound goes: loudest in the middle of the change. */
+export function sfxOf(pieces: Piece[], total: number) {
+  const out: { kind: SoundKind; at: number }[] = [];
+  pieces.forEach((p, k) => {
+    const kind = SOUND[p.tr];
+    if (!k || !kind || !RECIPES[p.tr].xfade) return;
+    const at = Math.max(0, p.from + p.d / 2 - PEAK[kind]);
+    if (at < total - 0.05) out.push({ kind, at: +at.toFixed(3) });
+  });
+  return out;
 }
 
 /** Draws the overlays the transitions need, as PNGs at this size. */
@@ -294,7 +322,12 @@ export async function renderEdit(input: EditRenderInput): Promise<Buffer> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-edit-"));
   try {
     const ov = await overlays(input.pieces, input.w, input.h, dir);
-    const { args, graph } = editGraph(input, ov);
+    const sounds: Partial<Record<SoundKind, string>> = {};
+    if (input.sounds) for (const p of input.pieces) {
+      const k = SOUND[p.tr];
+      if (k && !sounds[k]) sounds[k] = await soundFile(k);
+    }
+    const { args, graph } = editGraph(input, ov, sounds);
     let g = graph;
     if (input.ass) {
       const assFile = path.join(dir, "captions.ass");

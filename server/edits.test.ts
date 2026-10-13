@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 let readOut: any = null;
@@ -24,6 +24,7 @@ import * as lk from "./employees/editLook";
 import * as er from "./employees/editRender";
 import { editAss } from "./employees/editCaptions";
 import { RECIPES, TRANS_KEYS } from "./employees/transitions";
+import { PEAK, SOUND, SOUND_KINDS, soundFile } from "./employees/transitionSounds";
 import * as drama from "./employees/drama";
 import { ENV } from "./_core/env";
 import { storagePut } from "./storage";
@@ -423,10 +424,33 @@ describe("Edit my video: the real cut", () => {
     const rest = TRANS_KEYS.slice(9);
     const more = [{ from: 0, to: L, broll: null, line: 0, tr: "none" as const, d: 0.2, file: null }, ...rest.map((k, i) => ({ from: (i + 1) * L, to: (i + 2) * L, broll: null, line: i + 1, tr: k, d: 0.2, file: i % 2 ? null : clip }))];
     const total2 = (rest.length + 1) * L;
-    const buf = await er.renderEdit({ w: 180, h: 320, you: talk, cutout: null, total: total2, pieces: more as any, zooms: [], layout: { kind: "full", you: "top", when: "broll", corner: "br" }, ass: null, emojis: [], logo: null, music: null });
+    const restIn = { w: 180, h: 320, you: talk, cutout: null, total: total2, pieces: more as any, zooms: [], layout: { kind: "full" as const, you: "top" as const, when: "broll" as const, corner: "br" as const }, ass: null, emojis: [], logo: null, music: null };
+    const buf = await er.renderEdit(restIn);
     const f = path.join(dir, "edit-rest.mp4");
     fs.writeFileSync(f, buf);
     expect(Math.abs((await drama.probe(f)).duration - total2)).toBeLessThan(0.2);
+
+    // Sound on: each transition's sound is laid under the voice, loudest in the middle of the change.
+    const cues = er.sfxOf(more as any, total2);
+    expect(cues.map((c) => c.kind)).toEqual(rest.map((k) => SOUND[k]).filter(Boolean));
+    expect(cues[0].at).toBeCloseTo(L + 0.1 - PEAK[cues[0].kind], 3);
+    const g = er.editGraph({ ...restIn, sounds: true }, {}, { [cues[0].kind]: "/x.wav" });
+    expect(g.graph).toContain(`adelay=${Math.round(cues[0].at * 1000)}|`);
+    expect(er.editGraph(restIn, {}, { [cues[0].kind]: "/x.wav" }).graph).not.toContain("adelay");
+    const meanDb = (file: string) => Number(/mean_volume: (-?[\d.]+) dB/.exec(spawnSync(ff(), ["-i", file, "-af", "volumedetect", "-f", "null", "-"], { encoding: "utf8" }).stderr)?.[1]);
+    const withSound = path.join(dir, "edit-sound.mp4");
+    fs.writeFileSync(withSound, await er.renderEdit({ ...restIn, sounds: true }));
+    expect(Math.abs((await drama.probe(withSound)).duration - total2)).toBeLessThan(0.2);
+    // Louder overall than the same cut without them.
+    expect(meanDb(withSound)).toBeGreaterThan(meanDb(f) + 0.5);
+    // Every sound can be made, and each peaks at the same level.
+    for (const k of SOUND_KINDS) {
+      const wav = await soundFile(k);
+      expect(/max_volume: (-?[\d.]+) dB/.exec(spawnSync(ff(), ["-i", wav, "-af", "volumedetect", "-f", "null", "-"], { encoding: "utf8" }).stderr)?.[1]).toBe("-3.0");
+    }
+    // On by default; the editor's Sound switch turns it off.
+    expect(lk.editLookOf(null).transition.sound).toBe(true);
+    expect(lk.editLookOf(JSON.stringify({ transition: { speed: "quick", sound: false } })).transition).toEqual({ speed: "quick", sound: false });
   }, 240_000);
 });
 

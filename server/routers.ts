@@ -3760,7 +3760,7 @@ export const appRouter = router({
     /** What the editor offers: caption styles, transitions, languages, emojis, music, stock and the logo. */
     options: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
-      const [lk, tr, b, cap, hours] = await Promise.all([import("./employees/editLook"), import("./employees/transitions"), import("./employees/broll"), import("./employees/editCaptions"), import("./workHours")]);
+      const [lk, tr, b, cap, hours, sfx] = await Promise.all([import("./employees/editLook"), import("./employees/transitions"), import("./employees/broll"), import("./employees/editCaptions"), import("./workHours"), import("./employees/transitionSounds")]);
       const org = await db.getOrganizationById(input.organizationId);
       const colors = (() => {
         try {
@@ -3771,7 +3771,7 @@ export const appRouter = router({
       })();
       return {
         captionStyles: lk.CAP_KEYS.map((k) => ({ key: k, label: lk.CAP_STYLES[k], group: lk.CAP_GROUP[k] })),
-        transitions: tr.TRANS_KEYS.map((k) => ({ key: k, label: tr.TRANSITIONS[k].label, group: tr.TRANSITIONS[k].group })),
+        transitions: tr.TRANS_KEYS.map((k) => ({ key: k, label: tr.TRANSITIONS[k].label, group: tr.TRANSITIONS[k].group, sound: sfx.SOUND[k] })),
         languages: [...lk.LANGUAGES],
         emojis: Object.fromEntries(Object.entries(cap.EMOJIS)),
         tracks: b.TRACK_KEYS.map((k) => ({ key: k, name: b.TRACKS[k].name })),
@@ -3804,7 +3804,7 @@ export const appRouter = router({
             .partial()
             .optional(),
           music: z.object({ on: z.boolean(), track: z.enum(["calm", "upbeat", "piano", "upload"]), url: z.string().max(500).nullable(), name: z.string().max(80).nullable(), volume: z.number().int().min(0).max(60) }).partial().optional(),
-          transition: z.object({ speed: z.enum(["quick", "normal", "slow"]) }).partial().optional(),
+          transition: z.object({ speed: z.enum(["quick", "normal", "slow"]), sound: z.boolean() }).partial().optional(),
           layout: z
             .object({
               kind: z.enum(["full", "split", "green", "pip"]),

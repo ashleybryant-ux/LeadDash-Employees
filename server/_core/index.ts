@@ -106,6 +106,21 @@ async function startServer() {
     return res.status(404).send("Not found");
   });
 
+  // The sound each transition makes (made here from noise and tones; nothing about a workspace), for the picker to play.
+  app.get("/api/transition-sounds/:kind", async (req, res) => {
+    const ts = await import("../employees/transitionSounds");
+    const kind = String(req.params.kind).replace(/\.wav$/i, "");
+    if (!ts.isSoundKind(kind)) return res.status(404).send("Not found");
+    try {
+      const file = await ts.soundFile(kind);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.type("audio/wav");
+      return res.sendFile(path.resolve(file));
+    } catch {
+      return res.status(503).send("Not ready");
+    }
+  });
+
   // Public links for images used on published pages (photos and stock images Jordan
   // placed). Only files given a link are served; everything else stays private.
   app.get("/pub/:file", async (req, res) => {
