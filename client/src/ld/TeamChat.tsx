@@ -5,7 +5,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ChatList, ErrorLine, PersonAvatar, Rail, useIsMobile } from "./ui";
 import { Menu } from "./goals/shared";
-import { isSameDay } from "./meta";
+import { fmtTime, isSameDay } from "./meta";
 import { useAttachments } from "./chat/Extras";
 import { Composer, type Mentionable } from "./team/Composer";
 import { Message, type Emp, type Person } from "./team/Message";
@@ -68,6 +68,62 @@ export function useNamesFor(d: { people: Person[]; employees: Emp[] } | undefine
   );
 }
 
+type Face = { userId: number; name: string; avatarUrl: string | null };
+type Live = { lastMineId: number; typing: Face[]; seenBy: (Face & { at: Date })[] } | undefined;
+
+const firstName = (n: string) => n.trim().split(/\s+/)[0] || n;
+
+/** "4:48 PM" today; "yesterday 4:48 PM"; "Oct 10, 4:48 PM" before that. */
+function seenWhen(at: Date) {
+  const d = new Date(at);
+  const today = new Date();
+  if (isSameDay(d, today)) return fmtTime(d);
+  const y = new Date(today);
+  y.setDate(y.getDate() - 1);
+  if (isSameDay(d, y)) return `yesterday ${fmtTime(d)}`;
+  return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${fmtTime(d)}`;
+}
+
+/**
+ * Under my last message: who has opened it and when. One person in a direct
+ * message; in a channel, everyone who has, newest first, with the latest time.
+ */
+function SeenLine({ live, lastId, mine, dm }: { live: Live; lastId: number; mine: boolean; dm: boolean }) {
+  if (!live || !mine || !live.seenBy.length || live.lastMineId !== lastId) return null;
+  const by = live.seenBy;
+  const faces = by.slice(0, 3).map((p) => <PersonAvatar key={p.userId} name={p.name} src={p.avatarUrl} size={16} />);
+  if (dm) {
+    return (
+      <div className="tc-seen">
+        {faces}
+        <span>Seen {seenWhen(by[0].at)}</span>
+      </div>
+    );
+  }
+  const names = by.map((p) => firstName(p.name));
+  const text = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} and ${names[1]}` : names.length === 3 ? `${names[0]}, ${names[1]} and ${names[2]}` : `${names[0]}, ${names[1]} and ${names.length - 2} others`;
+  return (
+    <div className="tc-seen">
+      {faces}
+      <span>Seen by {text} · last at {seenWhen(by[0].at)}</span>
+    </div>
+  );
+}
+
+/** Above the composer: who is typing right now. Up to two names, then a count. */
+function TypingLine({ who }: { who: Face[] }) {
+  if (!who.length) return null;
+  const names = who.map((p) => (who.length === 1 ? p.name : firstName(p.name)));
+  const text = names.length === 1 ? `${names[0]} is typing` : names.length === 2 ? `${names[0]} and ${names[1]} are typing` : `${names[0]}, ${names[1]} and ${names.length - 2} others are typing`;
+  return (
+    <div className="tc-typing">
+      {who.slice(0, 2).map((p) => <PersonAvatar key={p.userId} name={p.name} src={p.avatarUrl} size={22} />)}
+      <span>{text}</span>
+      <span className="tc-dots"><i /><i /><i /></span>
+    </div>
+  );
+}
+
 function TeamPane({ channel }: { channel: string }) {
   const { currentOrgId } = useTenant();
   const { user } = useAuth();
@@ -81,6 +137,8 @@ function TeamPane({ channel }: { channel: string }) {
   const at = Number(sp.get("at")) || null;
 
   const q = trpc.teamChat.messages.useQuery({ organizationId: currentOrgId, channel }, { enabled: currentOrgId > 0, refetchInterval: 4_000 });
+  const live = trpc.teamChat.presence.useQuery({ organizationId: currentOrgId, channel }, { enabled: currentOrgId > 0, refetchInterval: 2_500 });
+  const typingMut = trpc.teamChat.typing.useMutation();
   const chans = trpc.teamChat.channels.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const markRead = trpc.teamChat.markRead.useMutation({ onSuccess: () => utils.teamChat.channels.invalidate() });
   const setNotify = trpc.teamChat.setNotify.useMutation({ onSuccess: () => Promise.all([utils.teamChat.messages.invalidate(), utils.teamChat.channels.invalidate()]) });
@@ -118,9 +176,36 @@ function TeamPane({ channel }: { channel: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastId, channel, currentOrgId]);
 
+  // Typing: a check-in every three seconds while the box has text, and an
+  // "off" the moment it is emptied or sent, so the other side's line goes away.
+  const typedAt = React.useRef(0);
+  const wasTyping = React.useRef(false);
+  const onChange = (v: string) => {
+    setText(v);
+    const has = v.trim().length > 0;
+    if (has && Date.now() - typedAt.current > 3_000) {
+      typedAt.current = Date.now();
+      wasTyping.current = true;
+      typingMut.mutate({ organizationId: currentOrgId, channel, on: true });
+    } else if (!has && wasTyping.current) {
+      wasTyping.current = false;
+      typedAt.current = 0;
+      typingMut.mutate({ organizationId: currentOrgId, channel, on: false });
+    }
+  };
+  React.useEffect(() => {
+    wasTyping.current = false;
+    typedAt.current = 0;
+  }, [channel]);
+
   const submit = () => {
     const v = text.trim();
     if ((!v && !files.ready.length) || send.isPending || files.uploading) return;
+    if (wasTyping.current) {
+      wasTyping.current = false;
+      typedAt.current = 0;
+      typingMut.mutate({ organizationId: currentOrgId, channel, on: false });
+    }
     send.mutate({ organizationId: currentOrgId, channel, content: v, attachmentIds: files.ready.map((f) => f.id) });
   };
   const setUrl = (patch: Record<string, string | null>) => {
@@ -204,12 +289,13 @@ function TeamPane({ channel }: { channel: string }) {
                 </React.Fragment>
               );
             })}
-            {d?.seenAt && list.length > 0 && list[list.length - 1].userId === user?.id && <div className="ld-small ld-muted" style={{ textAlign: "right" }}>Seen</div>}
+            <SeenLine live={live.data} lastId={lastId} mine={list.length > 0 && list[list.length - 1].userId === user?.id} dm={isDm} />
+            <TypingLine who={live.data?.typing ?? []} />
             <ErrorLine error={send.error} />
             <div ref={bottom} />
           </div>
           <div className="ld-composer tc-compwrap">
-            <Composer value={text} onChange={setText} onSend={submit} placeholder={`Message ${d ? (isDm ? d.title : `#${d.title}`) : "your team"}`} who={who} busy={send.isPending || files.uploading} attach={files.button} chips={files.chips} note={files.note} />
+            <Composer value={text} onChange={onChange} onSend={submit} placeholder={`Message ${d ? (isDm ? d.title : `#${d.title}`) : "your team"}`} who={who} busy={send.isPending || files.uploading} attach={files.button} chips={files.chips} note={files.note} />
           </div>
         </div>
       </div>

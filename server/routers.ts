@@ -1917,6 +1917,17 @@ export const appRouter = router({
       (await import("./team")).markRead(input.organizationId, ctx.user.id, input.channel, input.lastId);
       return { ok: true };
     }),
+    /** Who is typing in a channel and who has seen my last message; polled every couple of seconds by the open chat. */
+    presence: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      return (await import("./team")).presence(input.organizationId, ctx.user.id, input.channel);
+    }),
+    /** The composer says it has text (on) or was emptied or sent (off). */
+    typing: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      (await import("./team")).markTyping(input.organizationId, ctx.user.id, input.channel, input.on);
+      return { ok: true };
+    }),
     createChannel: protectedProcedure
       .input(orgInput.extend({ name: z.string().max(80), purpose: z.string().max(300).default(""), private: z.boolean().default(false), memberIds: z.array(z.number().int()).max(200).default([]), aiAllowed: z.boolean().default(true) }))
       .mutation(async ({ ctx, input }) => {

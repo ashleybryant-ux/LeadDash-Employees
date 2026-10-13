@@ -39,6 +39,37 @@ export function isOnline(orgId: number, userId: number) {
   return Date.now() - (seen.get(`${orgId}:${userId}`) ?? 0) < 90_000;
 }
 
+// ==========================================
+// Who is typing, and when they saw the last message (2026-10-13)
+// ------------------------------------------
+// Typing is a check-in from the composer every few seconds while there is
+// text in it, kept in memory and forgotten after six seconds, so a person
+// who stops typing drops off the line without anyone having to tell us.
+// ==========================================
+const TYPING_TTL_MS = 6_000;
+// Keyed by org, user and channel (the channel key itself holds colons, so the parts are kept, not parsed back out).
+const typing = new Map<string, { orgId: number; userId: number; channel: string; at: number }>();
+export function markTyping(orgId: number, userId: number, channel: string, on: boolean) {
+  const k = `${orgId}|${userId}|${channel}`;
+  if (on) typing.set(k, { orgId, userId, channel, at: Date.now() });
+  else typing.delete(k);
+  markSeen(orgId, userId);
+}
+function typingIn(orgId: number, channel: string, me: number): number[] {
+  const now = Date.now();
+  const out: number[] = [];
+  const stale: string[] = [];
+  typing.forEach((t, k) => {
+    if (now - t.at > TYPING_TTL_MS) {
+      stale.push(k);
+      return;
+    }
+    if (t.orgId === orgId && t.channel === channel && t.userId !== me) out.push(t.userId);
+  });
+  stale.forEach((k) => typing.delete(k));
+  return out;
+}
+
 type Me = { id: number; name: string };
 const ROLE: Record<string, string> = { owner: "Owner", admin: "Admin", member: "Member", chat: "Team chat only" };
 
@@ -604,6 +635,41 @@ export async function save(orgId: number, me: Me, id: number) {
 export function markRead(orgId: number, me: number, channel: string, lastId: number) {
   db.team.markRead(orgId, me, channel, lastId);
   markSeen(orgId, me);
+}
+
+/**
+ * The live part of a channel, polled more often than the messages: who is
+ * typing right now, and who has seen my last message and when. In a direct
+ * message that is one person; in a channel it is everyone in it who has read
+ * past my last message, with the time each of them did.
+ */
+export async function presence(orgId: number, me: number, key: string) {
+  markSeen(orgId, me);
+  const where = await channelFor(orgId, me, key);
+  const orgs = await scopeOf(orgId, me, key);
+  const list = await people(orgId);
+  const byId = new Map(list.map((p) => [p.userId, p]));
+  const face = (userId: number) => {
+    const p = byId.get(userId);
+    return p ? { userId, name: p.name || p.email, avatarUrl: p.avatarUrl } : null;
+  };
+  const typers = typingIn(orgId, key, me).map(face).filter((p): p is NonNullable<typeof p> => !!p);
+
+  const rows = db.team.messages(orgs, key);
+  const mineLast = [...rows].reverse().find((m) => m.userId === me && !m.deletedAt);
+  const seenBy: { userId: number; name: string; avatarUrl: string | null; at: Date }[] = [];
+  if (mineLast) {
+    const others = where.other ? [where.other.userId] : (await channelPeople(orgId, where.channel!)).map((p) => p.userId).filter((id) => id !== me);
+    for (const id of others) {
+      const r = db.team.read(orgs, id, key);
+      if (r && r.lastReadId >= mineLast.id && r.readAt) {
+        const f = face(id);
+        if (f) seenBy.push({ ...f, at: r.readAt });
+      }
+    }
+    seenBy.sort((a, b) => b.at.getTime() - a.at.getTime());
+  }
+  return { lastMineId: mineLast?.id ?? 0, typing: typers, seenBy };
 }
 
 // ==========================================

@@ -48,6 +48,50 @@ describe("Team chat", () => {
     expect(mine.online).toBe(true);
   });
 
+  it("says who is typing and when they saw my last message, in direct messages and in channels", async () => {
+    const { orgId, owner, caroline } = await setup("tc-live");
+    const me = caller(owner);
+    const her = caller(caroline);
+    const dmKey = `dm:${Math.min(owner.id, caroline.id)}-${Math.max(owner.id, caroline.id)}`;
+
+    // Nobody typing, nothing seen yet.
+    await me.teamChat.send({ organizationId: orgId, channel: dmKey, content: "Did Callie pay through the platform?" });
+    let live = await me.teamChat.presence({ organizationId: orgId, channel: dmKey });
+    expect(live.typing).toEqual([]);
+    expect(live.seenBy).toEqual([]);
+
+    // She opens the chat: Seen, with the time she did.
+    const msgs = await her.teamChat.messages({ organizationId: orgId, channel: dmKey });
+    await her.teamChat.markRead({ organizationId: orgId, channel: dmKey, lastId: msgs.messages.at(-1)!.id });
+    live = await me.teamChat.presence({ organizationId: orgId, channel: dmKey });
+    expect(live.lastMineId).toBe(msgs.messages.at(-1)!.id);
+    expect(live.seenBy.map((p) => p.name)).toEqual(["Caroline Jones"]);
+    expect(live.seenBy[0].at).toBeInstanceOf(Date);
+
+    // She starts typing: I see it, she does not see herself.
+    await her.teamChat.typing({ organizationId: orgId, channel: dmKey, on: true });
+    live = await me.teamChat.presence({ organizationId: orgId, channel: dmKey });
+    expect(live.typing.map((p) => p.name)).toEqual(["Caroline Jones"]);
+    expect((await her.teamChat.presence({ organizationId: orgId, channel: dmKey })).typing).toEqual([]);
+    // Typing in one channel does not show in another.
+    expect((await me.teamChat.presence({ organizationId: orgId, channel: "everyone" })).typing).toEqual([]);
+
+    // She sends: the typing line goes away. Seen still describes MY last message (the screen only shows it when mine is the newest).
+    await her.teamChat.typing({ organizationId: orgId, channel: dmKey, on: false });
+    await her.teamChat.send({ organizationId: orgId, channel: dmKey, content: "Yes, on the platform." });
+    live = await me.teamChat.presence({ organizationId: orgId, channel: dmKey });
+    expect(live.typing).toEqual([]);
+    expect(live.lastMineId).toBe(msgs.messages.at(-1)!.id);
+    expect(live.seenBy.map((p) => p.name)).toEqual(["Caroline Jones"]);
+
+    // In a channel, everyone who has read past my last message is listed.
+    await me.teamChat.send({ organizationId: orgId, channel: "everyone", content: "Team meeting moved to 2:00." });
+    const gen = await her.teamChat.messages({ organizationId: orgId, channel: "everyone" });
+    await her.teamChat.markRead({ organizationId: orgId, channel: "everyone", lastId: gen.messages.at(-1)!.id });
+    live = await me.teamChat.presence({ organizationId: orgId, channel: "everyone" });
+    expect(live.seenBy.map((p) => p.name)).toEqual(["Caroline Jones"]);
+  });
+
   it("puts LeadDash staff on the team when they write in a workspace's chat, so their direct messages can be read", async () => {
     const { orgId, caroline, staff } = await setup("tc-staff");
     // Before: the staff member reaches the workspace as support, not as a team member, so Caroline has no conversation with them.
