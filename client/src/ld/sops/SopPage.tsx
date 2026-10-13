@@ -83,6 +83,7 @@ export default function SopPage() {
                   ))}
                 </section>
               )}
+              <SopVideo id={s.id} canEdit={canEdit} />
               <section className="ld-card">
                 <div className="sop-hd"><b>Steps</b><span className="ld-small ld-muted">{s.steps.length}</span></div>
                 <div style={{ padding: "14px 18px" }}>
@@ -195,5 +196,56 @@ function Editor({ s, onDone }: { s: SopFull; onDone: () => void }) {
       </section>
       {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
     </>
+  );
+}
+
+/** The SOP's video: Simone's narrated recording of its steps, or Make video. */
+function SopVideo({ id, canEdit }: { id: number; canEdit: boolean }) {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.sops.video.useQuery({ organizationId: currentOrgId, id }, { enabled: currentOrgId > 0, refetchInterval: (r) => (r.state.data?.latest && ["planning", "recording", "making"].includes(r.state.data.latest.status) ? 5000 : false) });
+  const logins = trpc.portals.list.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 && canEdit });
+  const [login, setLogin] = React.useState("");
+  const make = trpc.sops.makeVideo.useMutation({ onSuccess: () => utils.sops.video.invalidate() });
+  const v = q.data;
+  if (!v) return null;
+  if (v.ready) {
+    return (
+      <section className="ld-card sop-video">
+        <div className="sop-hd"><b>Video</b><span className="ld-small ld-muted">{v.ready.length}</span></div>
+        <div style={{ padding: "14px 18px" }}>
+          <video src={`${v.ready.videoUrl}#t=0.1`} controls playsInline preload="metadata" className="sop-video-player" />
+        </div>
+      </section>
+    );
+  }
+  const latest = v.latest;
+  const going = latest && ["planning", "plan", "asking", "recording", "making"].includes(latest.status);
+  return (
+    <section className="sop-video-ask">
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+        <b style={{ fontSize: 15 }}>Video</b>
+        {going ? (
+          <span className="ld-small">{latest!.status === "plan" || latest!.status === "asking" ? "Simone planned it. Read the plan and press Record it on her Videos tab." : `${latest!.step ?? "Simone is on it"}...`}</span>
+        ) : (
+          <span className="ld-small" style={{ lineHeight: 1.45 }}>{`No video yet. Simone can record these ${v.steps} steps${v.site ? "" : " in a saved Website login"} and narrate them. About ${v.about}, uses ${v.hours} work ${v.hours === 1 ? "hour" : "hours"}.`}</span>
+        )}
+        {latest?.status === "failed" && latest.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{latest.error}</span>}
+        {!going && canEdit && !v.site && (
+          <select className="ld-in lg" style={{ maxWidth: 320, marginTop: 6 }} value={login} onChange={(e) => setLogin(e.target.value)} aria-label="Website login">
+            <option value="">Website login to record it in</option>
+            {(logins.data ?? []).map((l) => (
+              <option key={l.id} value={l.name}>{l.name}</option>
+            ))}
+          </select>
+        )}
+        <ErrorLine error={make.error} />
+      </div>
+      {going ? (
+        <Link href={`/chats/coo/videos?video=${latest!.id}`} className="ld-btn" style={{ width: 140 }}>Open</Link>
+      ) : canEdit && v.steps > 0 ? (
+        <button type="button" className="ld-btn p" style={{ width: 140 }} disabled={make.isPending || (!v.site && !login)} onClick={() => make.mutate({ organizationId: currentOrgId, id, loginName: v.site ? null : login })}>{make.isPending ? "Starting..." : "Make video"}</button>
+      ) : null}
+    </section>
   );
 }

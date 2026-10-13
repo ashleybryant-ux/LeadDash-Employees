@@ -1722,13 +1722,39 @@ export const appRouter = router({
       return { ok: await sops.remove(input.organizationId, input.id) };
     }),
     /** Send an employee to a site to write one (the same as asking in chat). */
-    fromSite: protectedProcedure.input(orgInput.extend({ title: z.string().trim().min(1).max(160), url: z.string().max(500).optional(), login: z.string().max(100).optional(), employeeKind: z.string().max(40).optional() })).mutation(async ({ ctx, input }) => {
+    fromSite: protectedProcedure.input(orgInput.extend({ title: z.string().trim().min(1).max(160), url: z.string().max(500).optional(), login: z.string().max(100).optional(), employeeKind: z.string().max(40).optional(), video: z.boolean().optional() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       const sops = await import("./employees/sops");
+      const by = ctx.user.name || ctx.user.email;
+      // Make a narrated video too: Simone plans and records it on her Videos tab; the walk writes the SOP.
+      let demoId: number | null = null;
+      if (input.video) {
+        const dv = await import("./employees/demoVideos");
+        demoId = (await dv.create(input.organizationId, { ask: input.title, kind: "training", presenter: "screen", url: input.url ?? null, loginName: input.login ?? null, makeSop: false, by })).id;
+      }
       const emp = (await db.getEmployeeByKind(input.organizationId, (input.employeeKind || "platform") as never)) ?? (await db.getEmployeeByKind(input.organizationId, "coo" as never));
       if (!emp) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No employee can do that in this workspace yet." });
-      const { task, job } = await sops.startFromSite(emp, { title: input.title, url: input.url, login: input.login, by: ctx.user.name || ctx.user.email });
-      return { jobId: job.id, taskId: task.id, employeeId: emp.id, employeeName: emp.name };
+      const { task, job } = await sops.startFromSite(emp, { title: input.title, url: input.url, login: input.login, by });
+      return { jobId: job.id, taskId: task.id, employeeId: emp.id, employeeName: emp.name, demoId };
+    }),
+    /** The SOP's video (Simone's), and Make video for one that has none. */
+    video: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      const dv = await import("./employees/demoVideos");
+      const d = dv.forSop(input.organizationId, input.id)[0] ?? null;
+      const s = db.sops.get(input.organizationId, input.id);
+      const steps = s ? (await import("./employees/sops")).stepsOf(s).length : 0;
+      const hours = await import("./workHours");
+      // About 15 seconds a step plus the opening and closing; 2 work hours a minute of screen time.
+      const secs = steps * 15 + 10;
+      return { ready: await dv.sopVideo(input.organizationId, input.id), latest: d ? { id: d.id, status: d.status, step: d.step, error: d.error } : null, site: s ? dv.sopSite(s) : null, steps, about: dv.fmt(secs), hours: Number(hours.hoursNum(Math.max(1, Math.ceil(secs / 60)) * hours.JOBS.edit.minutes)) };
+    }),
+    makeVideo: protectedProcedure.input(orgInput.extend({ id: z.number().int(), loginName: z.string().max(100).nullable().optional(), url: z.string().max(500).nullable().optional() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      const d = await dv.fromSop(input.organizationId, input.id, ctx.user.name || ctx.user.email, { loginName: input.loginName, url: input.url });
+      return { id: d.id };
     }),
   }),
 
@@ -3888,6 +3914,256 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId, "member");
       (await import("./employees/editor")).remove(input.organizationId, input.id);
       return { success: true };
+    }),
+  }),
+
+  // ==========================================
+  // Simone's demo and training videos (and social "Come with me" videos)
+  // ==========================================
+  demo: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const dv = await import("./employees/demoVideos");
+      return Promise.all(dv.list(input.organizationId).map(dv.view));
+    }),
+    get: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const dv = await import("./employees/demoVideos");
+      const d = dv.get(input.organizationId, input.id);
+      return d ? dv.view(d) : null;
+    }),
+    /** Who can present, the voices, the saved Website logins, and the hours each choice uses. */
+    options: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const [dv, pr, hours] = await Promise.all([import("./employees/demoVideos"), import("./employees/presenters"), import("./workHours")]);
+      const logins = await db.listPortalLogins(input.organizationId);
+      return {
+        ...(await pr.options(input.organizationId)),
+        logins: logins.map((l) => ({ name: l.name, url: l.url })),
+        styles: Object.entries(dv.SOCIAL_STYLES).map(([key, label]) => ({ key, label })),
+        screenHoursPerMinute: hours.JOBS.edit.minutes / 60,
+        avatarHoursPerMinute: hours.JOBS.video.minutes / 60,
+        ready: dv.ready(),
+      };
+    }),
+    create: protectedProcedure
+      .input(
+        orgInput.extend({
+          ask: z.string().trim().min(1).max(1000),
+          kind: z.enum(["training", "social"]),
+          presenter: z.enum(["screen", "corner", "bookends"]),
+          avatar: z.union([z.object({ type: z.literal("twin"), twinId: z.number().int(), lookId: z.number().int().nullable().optional() }), z.object({ type: z.literal("photo") }), z.object({ type: z.literal("cast"), castId: z.number().int() })]).nullable().optional(),
+          voiceId: z.string().max(120).nullable().optional(),
+          audience: z.string().max(80).optional(),
+          socialStyle: z.enum(["come", "tip", "pov"]).optional(),
+          loginName: z.string().max(100).nullable().optional(),
+          url: z.string().max(500).nullable().optional(),
+          sizes: z.array(z.enum(["wide", "vertical", "square"])).max(3).optional(),
+          makeSop: z.boolean().optional(),
+          fromSopId: z.number().int().nullable().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const dv = await import("./employees/demoVideos");
+        const { organizationId, ...rest } = input;
+        return dv.view(await dv.create(organizationId, { ...rest, by: ctx.user.name || ctx.user.email }));
+      }),
+    answer: protectedProcedure.input(orgInput.extend({ id: z.number().int(), option: z.string().trim().min(1).max(80) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(dv.answer(input.organizationId, input.id, input.option));
+    }),
+    replan: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(dv.replan(input.organizationId, input.id));
+    }),
+    saveStep: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0), do: z.string().max(300), say: z.string().max(400), expect: z.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(dv.saveStep(input.organizationId, input.id, input.n, { do: input.do, say: input.say, expect: input.expect }));
+    }),
+    savePlanInfo: protectedProcedure.input(orgInput.extend({ id: z.number().int(), startsOn: z.string().max(400).optional(), doneWhen: z.string().max(400).optional(), intro: z.string().max(400).optional(), outro: z.string().max(400).optional() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      const { organizationId, id, ...rest } = input;
+      return dv.view(dv.savePlanInfo(organizationId, id, rest));
+    }),
+    record: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(await dv.record(input.organizationId, input.id, ctx.user.name || ctx.user.email));
+    }),
+    redoStep: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(await dv.redoStep(input.organizationId, input.id, input.n, ctx.user.name || ctx.user.email));
+    }),
+    editLine: protectedProcedure.input(orgInput.extend({ id: z.number().int(), key: z.string().regex(/^(intro|outro|s\d{1,2})$/), text: z.string().trim().min(1).max(400) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(dv.editLine(input.organizationId, input.id, input.key, input.text, ctx.user.name || ctx.user.email));
+    }),
+    changeLook: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().int(),
+          zoom: z.boolean().optional(),
+          cards: z.boolean().optional(),
+          logo: z.boolean().optional(),
+          captions: z.object({ on: z.boolean(), position: z.enum(["bottom", "top"]) }).partial().optional(),
+          music: z.object({ track: z.enum(["calm", "upbeat", "piano", "none"]), volume: z.number().int().min(0).max(60) }).partial().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const dv = await import("./employees/demoVideos");
+        const { organizationId, id, ...patch } = input;
+        return dv.view(dv.changeLook(organizationId, id, patch as never, ctx.user.name || ctx.user.email));
+      }),
+    setSizes: protectedProcedure.input(orgInput.extend({ id: z.number().int(), sizes: z.array(z.enum(["wide", "vertical", "square"])).min(1).max(3) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(dv.setSizes(input.organizationId, input.id, input.sizes, ctx.user.name || ctx.user.email));
+    }),
+    newHook: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(await dv.newHook(input.organizationId, input.id, ctx.user.name || ctx.user.email));
+    }),
+    versions: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return (await dv.versions(input.organizationId, input.id, ctx.user.name || ctx.user.email)).map((d) => d.id);
+    }),
+    toSienna: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      const post = await dv.toSienna(input.organizationId, input.id, ctx.user.name || ctx.user.email);
+      return { id: post.id };
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      dv.remove(input.organizationId, input.id);
+      return { ok: true };
+    }),
+  }),
+
+  // ==========================================
+  // My twin (Elena's Your avatar): the owner's own video and voice, consent, and looks
+  // ==========================================
+  twin: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const tw = await import("./employees/twin");
+      const t = await import("./workHours");
+      const name = ctx.user.name?.trim() || "";
+      return { twins: tw.list(input.organizationId).map(tw.view), consentLine: tw.consentLine(name), myName: name, clipHours: (t.JOBS.clip.minutes * 2) / 60, greenHoursPerMinute: t.JOBS.green.minutes / 60 };
+    }),
+    setConsent: protectedProcedure.input(orgInput.extend({ id: z.number().int(), url: z.string().max(500) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const tw = await import("./employees/twin");
+      return tw.view(tw.setConsent(input.organizationId, input.id, input.url));
+    }),
+    rename: protectedProcedure.input(orgInput.extend({ id: z.number().int(), name: z.string().trim().min(1).max(80) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const tw = await import("./employees/twin");
+      return tw.view(tw.rename(input.organizationId, input.id, input.name));
+    }),
+    makeVoice: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const tw = await import("./employees/twin");
+      return tw.view(await tw.makeVoice(input.organizationId, input.id));
+    }),
+    pickVoice: protectedProcedure.input(orgInput.extend({ id: z.number().int(), voiceId: z.string().max(120) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const tw = await import("./employees/twin");
+      return tw.view(await tw.pickVoice(input.organizationId, input.id, input.voiceId));
+    }),
+    /** A short sample in the twin's voice, to hear before using it. */
+    sample: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const tw = await import("./employees/twin");
+      const t = tw.get(input.organizationId, input.id);
+      if (!t?.voiceId) throw new TRPCError({ code: "BAD_REQUEST", message: "Your voice isn't made yet." });
+      const av = await import("./employees/avatar");
+      const { storagePut } = await import("./storage");
+      const buf = await av.speech(input.organizationId, t.voiceId, `Hi, I'm ${t.name}. This is how I sound in my videos. Let me show you how it works.`);
+      return { url: (await storagePut(`org-${input.organizationId}/twin/sample.mp3`, buf, "audio/mpeg")).url };
+    }),
+    newLook: protectedProcedure
+      .input(
+        orgInput.extend({
+          twinId: z.number().int(),
+          name: z.string().max(60),
+          outfit: z.enum(["keep", "describe", "photo"]),
+          outfitText: z.string().max(400).nullable().optional(),
+          outfitPhoto: z.string().max(500).nullable().optional(),
+          background: z.object({ type: z.enum(["room", "picture", "color", "clip", "style"]), color: z.string().max(7).nullable().optional(), url: z.string().max(500).nullable().optional(), clipId: z.number().int().nullable().optional(), style: z.string().max(40).nullable().optional(), place: z.string().max(200).nullable().optional() }),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const tw = await import("./employees/twin");
+        const { organizationId, twinId, ...rest } = input;
+        const l = await tw.newLook(organizationId, twinId, rest);
+        return { id: l.id };
+      }),
+    lookMinutes: protectedProcedure
+      .input(orgInput.extend({ twinId: z.number().int(), outfit: z.enum(["keep", "describe", "photo"]), background: z.enum(["room", "picture", "color", "clip", "style"]) }))
+      .query(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId);
+        const tw = await import("./employees/twin");
+        const t = tw.get(input.organizationId, input.twinId);
+        return { minutes: t ? tw.lookMinutes(t, { outfit: input.outfit, background: { type: input.background } }) : 0 };
+      }),
+    retryLook: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const tw = await import("./employees/twin");
+      return { id: (await tw.retryLook(input.organizationId, input.id)).id };
+    }),
+    saveLook: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const tw = await import("./employees/twin");
+      return { id: tw.saveLook(input.organizationId, input.id).id };
+    }),
+    removeLook: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const tw = await import("./employees/twin");
+      tw.removeLook(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "admin");
+      const tw = await import("./employees/twin");
+      tw.remove(input.organizationId, input.id);
+      return { ok: true };
     }),
   }),
 

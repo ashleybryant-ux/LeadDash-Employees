@@ -40,6 +40,7 @@ const LIMITS: Record<string, number> = {
   video_audio: 200_000_000,
   music: 40_000_000,
   edit_media: 250_000_000,
+  twin_consent: 200_000_000,
   chat: 20_000_000,
   team: 20_000_000,
   work: 20_000_000,
@@ -97,6 +98,8 @@ export const HISTORY_PART = 50_000_000;
 export const HISTORY_MAX = 3_000_000_000;
 /** Edit my video: 30 minutes from a phone in 4K is about 10 GB; 1080p is under 4 GB. */
 export const EDIT_MAX = 12_000_000_000;
+/** My twin: up to 5 minutes of someone talking; 4K from a phone is about 2 GB. */
+export const TWIN_MAX = 3_000_000_000;
 
 export function registerUploads(app: Express) {
   app.post("/api/upload/history-part", async (req: Request, res: Response) => {
@@ -161,6 +164,39 @@ export function registerUploads(app: Express) {
       await fs.promises.appendFile(part, body);
       if (index < total - 1) return res.json({ ok: true, received: offset + body.length });
       const row = ed.startFromUpload(orgId, { file: part, name, by: user.name?.trim() || user.email });
+      return res.json({ id: row.id });
+    } catch (err) {
+      return res.status(400).json({ error: err instanceof Error ? err.message : "Upload failed." });
+    }
+  });
+
+  /** My twin: a video of the person talking to the camera (30 seconds to 5 minutes), sent in parts. */
+  app.post("/api/upload/twin-part", async (req: Request, res: Response) => {
+    const orgId = Number(req.query.organizationId);
+    const name = String(req.query.name || "video").slice(0, 200);
+    const uploadId = String(req.query.uploadId || "");
+    const index = Number(req.query.index);
+    const total = Number(req.query.total);
+    const offset = Number(req.query.offset);
+    const twinId = Number(req.query.twinId || 0) || null;
+    const twinName = String(req.query.twinName || "").slice(0, 80);
+    try {
+      const user = Number.isFinite(orgId) && orgId > 0 ? await access(req, orgId) : null;
+      if (!user) return res.status(403).json({ error: "You cannot upload to this workspace." });
+      if (!/\.(mp4|mov|m4v|webm)$/i.test(name)) return res.status(400).json({ error: "Upload an MP4 or MOV video." });
+      if (!/^[a-f0-9]{16,64}$/.test(uploadId) || !Number.isInteger(index) || !Number.isInteger(total) || index < 0 || total < 1 || index >= total || !Number.isInteger(offset) || offset < 0) return res.status(400).json({ error: "That upload part is not valid." });
+      if (offset + Number(req.headers["content-length"] || 0) > TWIN_MAX) return res.status(400).json({ error: `Videos must be under ${TWIN_MAX / 1_000_000_000} GB.` });
+      const fs = await import("node:fs");
+      const twin = await import("./employees/twin");
+      const part = twin.holdingPath(orgId, uploadId);
+      const have = index === 0 ? 0 : fs.existsSync(part) ? fs.statSync(part).size : -1;
+      if (index === 0 && fs.existsSync(part)) fs.unlinkSync(part);
+      if (have !== offset) return res.status(409).json({ error: "The upload got out of step. Upload the video again." });
+      const body = await readBody(req, HISTORY_PART + 1_000_000);
+      await fs.promises.appendFile(part, body);
+      if (index < total - 1) return res.json({ ok: true, received: offset + body.length });
+      const who = user.name?.trim() || user.email;
+      const row = twin.startFromUpload(orgId, { file: part, name: twinName || who, by: who, twinId });
       return res.json({ id: row.id });
     } catch (err) {
       return res.status(400).json({ error: err instanceof Error ? err.message : "Upload failed." });
@@ -272,7 +308,7 @@ export function registerUploads(app: Express) {
       }
 
       const old = unsupportedNote(name);
-      if (old && slot !== "video" && slot !== "post_media" && slot !== "take" && slot !== "broll" && slot !== "video_audio" && slot !== "music" && slot !== "style_ref" && slot !== "edit_media") return res.status(400).json({ error: old });
+      if (old && slot !== "video" && slot !== "post_media" && slot !== "take" && slot !== "broll" && slot !== "video_audio" && slot !== "music" && slot !== "style_ref" && slot !== "edit_media" && slot !== "twin_consent") return res.status(400).json({ error: old });
 
       // Edit my video: a second video for split screen, or a picture to put behind someone (green screen).
       if (slot === "edit_media") {
@@ -285,6 +321,16 @@ export function registerUploads(app: Express) {
         const saved = await storagePutStream(`org-${orgId}/edits/${name}`, req, cap);
         if (saved.size === 0) return res.status(400).json({ error: "The file was empty." });
         return res.json({ url: saved.url, kind: isVideo ? "video" : "image", name });
+      }
+
+      // My twin: the person saying the consent line, on video (or just audio).
+      if (slot === "twin_consent") {
+        if (!/^(video|audio)\//.test(mime) && !/\.(mp4|mov|m4v|webm|m4a|mp3|wav|ogg)$/i.test(name)) return res.status(400).json({ error: "Upload a video or a voice recording." });
+        const declared = Number(req.headers["content-length"] || 0);
+        if (declared > max) return res.status(400).json({ error: `Recordings must be under ${Math.round(max / 1_000_000)} MB.` });
+        const saved = await storagePutStream(`org-${orgId}/twin/${name}`, req, max);
+        if (saved.size === 0) return res.status(400).json({ error: "The file was empty." });
+        return res.json({ url: saved.url });
       }
 
       // A picture in a look someone wants Elena's videos drawn in (Add style).

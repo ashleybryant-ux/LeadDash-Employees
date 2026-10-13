@@ -452,6 +452,35 @@ export async function describeImage(buf: Buffer, mime: string): Promise<string> 
   return String((data.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join(" ")).trim().slice(0, 1000);
 }
 
+/** Whether two photos show the same person (a twin's video and its consent recording). Null when it can't be told. */
+export async function compareFaces(a: Buffer, b: Buffer): Promise<boolean | null> {
+  if (!ENV.anthropicKey || process.env.NODE_ENV === "test") return null;
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: anthropicHeaders(),
+    body: JSON.stringify({
+      model: ENV.anthropicModel,
+      max_tokens: 20,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: a.toString("base64") } },
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b.toString("base64") } },
+            { type: "text", text: "Is the person in the first photo the same person as in the second photo? Clothes, hair styling and lighting may differ. Answer with one word: yes, no, or unsure." },
+          ],
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(60_000),
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  const data: any = await res.json();
+  await recordTokens(ENV.anthropicModel, Number(data.usage?.input_tokens) || 0, Number(data.usage?.output_tokens) || 0);
+  const said = String((data.content ?? []).map((x: any) => x.text ?? "").join(" ")).trim().toLowerCase();
+  return said.startsWith("yes") ? true : said.startsWith("no") ? false : null;
+}
+
 export function aiStatus() {
   return {
     writing: Boolean(ENV.assemblyAiKey),

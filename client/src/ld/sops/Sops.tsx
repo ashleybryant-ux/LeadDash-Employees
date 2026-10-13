@@ -93,7 +93,7 @@ function NewMenu({ onClose, onPick }: { onClose: () => void; onPick: (m: "record
   }, [onClose]);
   const items: { key: "record" | "site" | "chat"; icon: string; title: string; sub: string }[] = [
     { key: "record", icon: "●", title: "Record my screen", sub: "Do it once while you talk. The steps are written from the recording and your words, with a screenshot under each one." },
-    { key: "site", icon: "◎", title: "Send an employee to the site", sub: "Zara signs in with a saved Website login, walks the screens herself and writes it up. For the LeadDash platform and LeadDash EHR." },
+    { key: "site", icon: "◎", title: "Send an employee to the site", sub: "They sign in with a saved Website login, walk the screens and write it up. Simone can make a narrated video too." },
     { key: "chat", icon: "✎", title: "Tell an employee in chat", sub: "For procedures that are not on a screen. Say how it is done and the employee drafts it." },
   ];
   return (
@@ -343,6 +343,7 @@ function SiteModal({ onClose }: { onClose: () => void }) {
   const [login, setLogin] = React.useState("");
   const [url, setUrl] = React.useState("");
   const [kind, setKind] = React.useState("platform");
+  const [video, setVideo] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const start = trpc.sops.fromSite.useMutation({
     onSuccess: async (r) => {
@@ -377,10 +378,15 @@ function SiteModal({ onClose }: { onClose: () => void }) {
         ))}
       </select>
       <span className="ld-small ld-muted">For LeadDash EHR, use the demo practice login, never a real chart. The employee changes nothing and stops before any Save or Submit.</span>
+      <label className="sop-check">
+        <input type="checkbox" checked={video} onChange={(e) => setVideo(e.target.checked)} />
+        Make a narrated video too
+      </label>
+      {video && <span className="ld-small ld-muted">Simone plans it on her Videos tab. Nothing is recorded until you press Record it there.</span>}
       {error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{error}</span>}
       <div className="sop-mf">
         <button type="button" className="ld-btn" onClick={onClose}>Cancel</button>
-        <button type="button" className="ld-btn p" disabled={start.isPending || !title.trim() || (!login && !url.trim())} onClick={() => start.mutate({ organizationId: currentOrgId, title: title.trim(), login: login || undefined, url: login ? undefined : url.trim(), employeeKind: kind })}>Go</button>
+        <button type="button" className="ld-btn p" disabled={start.isPending || !title.trim() || (!login && !url.trim())} onClick={() => start.mutate({ organizationId: currentOrgId, title: title.trim(), login: login || undefined, url: login ? undefined : url.trim(), employeeKind: kind, video })}>Go</button>
       </div>
     </Modal>
   );

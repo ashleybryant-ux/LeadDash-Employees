@@ -22,7 +22,11 @@ import type { JobKey } from "../workHours";
 export type Secrets = { email?: string; password?: string; code?: string; content?: string };
 export type BrowserFile = { path: string; name: string };
 export type Download = { name: string; buf: Buffer; mime: string; url: string };
-export type StepLog = { step: number; action: string; detail: string; url: string; title?: string; screenshotUrl?: string | null };
+export type Box = { x: number; y: number; w: number; h: number };
+/** at/end: seconds since the recording started (recorded runs only); box: what was clicked or typed into; plan: the plan step it belongs to. */
+export type StepLog = { step: number; action: string; detail: string; url: string; title?: string; screenshotUrl?: string | null; at?: number; end?: number; box?: Box | null; plan?: number };
+/** A recorded run: a picture each time the screen changed, with the second it changed. */
+export type Frame = { t: number; file: string };
 
 export type BrowserResult = {
   status: "done" | "need_code" | "failed";
@@ -36,6 +40,10 @@ export type BrowserResult = {
   helped: string[];
   /** The page the browser ended on. */
   url: string;
+  /** Recorded runs: the screen as pictures (in a temp folder the caller removes) and the viewport size. */
+  frames?: Frame[];
+  recDir?: string;
+  view?: { width: number; height: number };
 };
 
 export type BrowserTask = {
@@ -61,6 +69,8 @@ export type BrowserTask = {
   rules?: string;
   /** Lets the person watch in chat and take over. onStuck posts the "waiting for you" card. */
   live?: { id: string; onStuck?: (reason: string) => Promise<void>; holdMs?: number; label?: string };
+  /** Record the screen (a picture each time it changes) and where each click lands, for a demo video. */
+  record?: boolean;
   /** For tests: replaces the AI's choice of action. */
   decide?: (view: PageView, history: StepLog[]) => Promise<Action>;
   /** Keep a screenshot after every action (an SOP is written from them), saved under this folder. */
@@ -83,6 +93,8 @@ export type Action = {
   secret: "" | "email" | "password" | "code" | "content";
   fileIndex: number;
   result: string;
+  /** Recorded runs: the plan step this action belongs to. */
+  planStep?: number;
 };
 
 const ACTION_SCHEMA: JsonSchema = {
@@ -99,6 +111,13 @@ const ACTION_SCHEMA: JsonSchema = {
     result: { type: "string", description: "For done: the answer the goal asks for (JSON when asked); for fail: why; '' otherwise" },
   },
 };
+
+/** A recorded run also says which plan step each action is for. */
+const RECORD_SCHEMA: JsonSchema = {
+  ...ACTION_SCHEMA,
+  required: [...(ACTION_SCHEMA.required as string[]), "planStep"],
+  properties: { ...(ACTION_SCHEMA.properties as Record<string, unknown>), planStep: { type: "integer", description: "The number of the plan step this action does (1, 2, 3...); 0 for anything outside the plan, like signing in" } },
+} as JsonSchema;
 
 /** Buttons that finish a submission. Refused unless the task was approved to submit. */
 export const SUBMIT_WORDS = /\b(submit|place bid|send bid|send response|finali[sz]e|sign and submit|certify and submit|complete submission)\b/i;
@@ -126,6 +145,8 @@ type Live = {
   helped: string[];
   /** What the owner said in chat while this session ran; given to the employee at its next step. */
   notes: string[];
+  /** On a recorded run: the plan step being done now. */
+  plan?: number;
 };
 const lives = new Map<number, Live>();
 /** Sessions waiting their turn behind the one that is open (one browser per workspace at a time). */
@@ -134,8 +155,8 @@ const queued = new Map<number, string[]>();
 export function liveView(orgId: number) {
   const l = lives.get(orgId);
   const waiting = queued.get(orgId) ?? [];
-  if (!l) return { id: "", state: "none" as const, step: "", url: "", reason: "", frame: null as string | null, frameAt: 0, queued: waiting };
-  return { id: l.id, state: l.state, step: l.step, url: l.url, reason: l.reason, frame: l.frame ? `data:image/jpeg;base64,${l.frame.toString("base64")}` : null, frameAt: l.frameAt, queued: waiting };
+  if (!l) return { id: "", state: "none" as const, step: "", url: "", reason: "", frame: null as string | null, frameAt: 0, queued: waiting, plan: 0 };
+  return { id: l.id, state: l.state, step: l.step, url: l.url, reason: l.reason, frame: l.frame ? `data:image/jpeg;base64,${l.frame.toString("base64")}` : null, frameAt: l.frameAt, queued: waiting, plan: l.plan ?? 0 };
 }
 
 /** Shows "Opening the browser" for a session that is about to start; one already open keeps the screen and the new one waits in line. */
@@ -364,11 +385,35 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
     };
     let page = await context.newPage();
     watch(page);
+    // Recorded runs: a picture each time the screen changes, as the browser paints it.
+    const frames: Frame[] = [];
+    const recDir = task.record ? fs.mkdtempSync(path.join(os.tmpdir(), "ld-rec-")) : "";
+    let t0 = 0;
+    let cast: import("playwright-core").CDPSession | null = null;
+    const startCast = async (pg: import("playwright-core").Page) => {
+      if (!task.record) return;
+      await cast?.send("Page.stopScreencast").catch(() => null);
+      cast = await context.newCDPSession(pg).catch(() => null);
+      if (!cast) return;
+      const c = cast;
+      c.on("Page.screencastFrame", (f: { data: string; sessionId: number }) => {
+        const now = Date.now() / 1000;
+        if (!t0) t0 = now;
+        const file = path.join(recDir, `f${String(frames.length).padStart(6, "0")}.jpg`);
+        fs.writeFileSync(file, Buffer.from(f.data, "base64"));
+        frames.push({ t: now - t0, file });
+        c.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => null);
+      });
+      await c.send("Page.startScreencast", { format: "jpeg", quality: 88, maxWidth: VIEW.width, maxHeight: VIEW.height, everyNthFrame: 1 }).catch(() => null);
+    };
+    const since = () => (t0 ? Date.now() / 1000 - t0 : 0);
+    await startCast(page);
     // A link that opens a new tab (a "Log in" button often does) is followed there.
     context.on("page", (pg) => {
       watch(pg);
       page = pg;
       if (live) live.page = pg;
+      void startCast(pg);
     });
 
     // The live view: a fresh picture about once a second while the session is open.
@@ -425,7 +470,8 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         live.step = status === "done" ? "Finished" : note.slice(0, 200);
         live.page = null;
       }
-      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl, helped: live?.helped ?? [], url: page.url() };
+      if (cast) await (cast as import("playwright-core").CDPSession).send("Page.stopScreencast").catch(() => null);
+      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl, helped: live?.helped ?? [], url: page.url(), ...(task.record ? { frames, recDir, view: { ...VIEW } } : {}) };
     };
 
     let lastSig = "";
@@ -455,7 +501,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       await page.waitForLoadState("domcontentloaded").catch(() => null);
       const view = hideSecrets(await snapshot(page), task.secrets);
       const act = task.decide ? await task.decide(view, log) : await decide(task, view, log);
-      const entry = (detail: string) => log.push({ step, action: act.action, detail: detail.slice(0, 300), url: view.url });
+      const entry = (detail: string) => log.push({ step, action: act.action, detail: detail.slice(0, 300), url: view.url, ...(task.record ? { plan: Number(act.planStep) || 0, at: since() } : {}) });
       if (act.action === "done") {
         entry("Goal reached");
         return await finish("done", act.result, act.thought);
@@ -487,13 +533,24 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         continue;
       }
       if (live) live.step = `${task.live?.label ? `${task.live.label} ` : ""}Step ${step}: ${act.thought || describe(act, view)}`.slice(0, 220);
+      if (live && task.record && Number(act.planStep) > 0) live.plan = Number(act.planStep);
+      // Recorded runs: where the click lands (for the zoom and the ring), with a beat before it so the viewer sees the screen first.
+      let box: Box | null = null;
+      let at = 0;
+      if (task.record && ["click", "type", "select", "upload", "download"].includes(act.action) && act.index >= 0) {
+        const bb = await page.locator(`[data-ld-i="${act.index}"]`).first().boundingBox().catch(() => null);
+        box = bb ? { x: Math.round(bb.x), y: Math.round(bb.y), w: Math.round(bb.width), h: Math.round(bb.height) } : null;
+        await page.waitForTimeout(350);
+      }
+      at = since();
       try {
         await perform(page, task, view, act);
         entry(describe(act, view));
       } catch (err) {
         entry(`Could not ${act.action}: ${(err as Error).message.split("\n")[0]}`);
       }
-      await page.waitForTimeout(600);
+      await page.waitForTimeout(task.record ? 1200 : 600);
+      if (task.record) Object.assign(log[log.length - 1], { at, end: since(), box });
       if (task.shots) {
         const last = log[log.length - 1];
         try {
@@ -704,7 +761,7 @@ Rules:
 - When the goal is reached, use "done" and put the requested answer in result, in under 400 words: the facts and findings the goal asks for, not a long write-up.${task.rules ? `\n${task.rules}` : ""}`,
     prompt: `GOAL:\n${task.goal}\n\nFILES YOU CAN UPLOAD:\n${files}\n\nSTEPS SO FAR:\n${past}\n\nCURRENT PAGE: ${view.title}\n${view.url}\n\nELEMENTS:\n${els}\n\nPAGE TEXT:\n${view.text}`,
     schemaName: "browser_action",
-    schema: ACTION_SCHEMA,
+    schema: task.record ? RECORD_SCHEMA : ACTION_SCHEMA,
     maxTokens: 3000,
     timeoutMs: 90_000,
   });

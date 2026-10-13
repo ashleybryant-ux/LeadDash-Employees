@@ -112,6 +112,14 @@ const active = new Set<number>();
 /** One browser job at a time in each workspace: the next waits for the one that is open, so two never fight over the screen. */
 const lines = new Map<number, Promise<unknown>>();
 
+/** Runs fn after any browser job already open in this workspace (one browser at a time per workspace). */
+export function inLine<T>(orgId: number, fn: () => Promise<T>): Promise<T> {
+  const prev = lines.get(orgId) ?? Promise.resolve();
+  const next = prev.catch(() => null).then(fn);
+  lines.set(orgId, next.catch(() => null));
+  return next;
+}
+
 /** Runs in the background, after any job already open in this workspace. */
 export function queueWebTask(orgId: number, id: number) {
   if (active.has(id)) return false;

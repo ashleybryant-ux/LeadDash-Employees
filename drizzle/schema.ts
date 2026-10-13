@@ -1730,6 +1730,124 @@ export const videoEdits = sqliteTable(
 );
 export type VideoEdit = typeof videoEdits.$inferSelect;
 
+/**
+ * Simone's demo and training videos of a website or app: planned from the playbook, the app's
+ * guide or an SOP, recorded in her browser, narrated, presented on screen only or by an avatar,
+ * and cut with zooms on each click. Social "Come with me" videos are the same with a hook.
+ */
+export const demoVideos = sqliteTable(
+  "demo_videos",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    title: text("title").notNull(),
+    /** training: a how-to for a team. social: a "Come with me" style post. */
+    kind: text("kind", { enum: ["training", "social"] }).notNull().default("training"),
+    /** screen: her voice over the screen. corner: an avatar talks in a corner. bookends: an avatar opens and closes. */
+    presenter: text("presenter", { enum: ["screen", "corner", "bookends"] }).notNull().default("screen"),
+    /** JSON Presenter: { type: "twin" | "photo" | "cast", twinId, lookId, castId }. */
+    avatar: text("avatar").notNull().default("{}"),
+    voiceId: text("voiceId"),
+    voiceName: text("voiceName"),
+    /** What to show, in the person's words. */
+    ask: text("ask").notNull().default(""),
+    audience: text("audience").notNull().default(""),
+    /** Social: come | tip | pov. */
+    socialStyle: text("socialStyle").notNull().default("come"),
+    /** Where: a saved Website login by name, a web address, or the SOP it's made from. */
+    loginName: text("loginName"),
+    url: text("url"),
+    fromSopId: integer("fromSopId"),
+    /** Make the written SOP from the same steps. */
+    makeSop: integer("makeSop", { mode: "boolean" }).notNull().default(true),
+    /** The SOP made from (or linked to) this video. */
+    sopId: integer("sopId"),
+    /** JSON Plan: startsOn, needs, doneWhen, intro, outro, steps [{ do, say, expect }], question. */
+    plan: text("plan").notNull().default("{}"),
+    /** planning, plan (ready for review), asking (a question first), recording, making, ready, failed. */
+    status: text("status", { enum: ["planning", "plan", "asking", "recording", "making", "ready", "failed"] }).notNull().default("planning"),
+    step: text("step"),
+    error: text("error"),
+    /** JSON Take: each step's recorded clip, its clicks and a screenshot. */
+    take: text("take").notNull().default("{}"),
+    /** JSON: each part's voice (mp3) and avatar clip, kept so an edit only redoes what changed. */
+    parts: text("parts").notNull().default("{}"),
+    /** JSON DemoLook: zooms, captions, title cards, music. */
+    look: text("look").notNull().default("{}"),
+    sizes: text("sizes").notNull().default('["wide"]'),
+    videoUrls: text("videoUrls").notNull().default("{}"),
+    videoUrl: text("videoUrl"),
+    tenths: integer("tenths"),
+    /** Work minutes already used (screen time, and avatar time), so a re-cut uses none. */
+    paidMinutes: integer("paidMinutes").notNull().default(0),
+    paidAvatar: integer("paidAvatar").notNull().default(0),
+    webTaskId: integer("webTaskId"),
+    createdBy: text("createdBy"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("demo_videos_org_idx").on(t.organizationId)]
+);
+export type DemoVideo = typeof demoVideos.$inferSelect;
+
+/** My twin: a person's own video and voice, so avatar videos look and sound like them. Made only with their recorded consent. */
+export const twins = sqliteTable(
+  "twins",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    /** The person in the video, as they named themselves in the consent line. */
+    name: text("name").notNull(),
+    /** The video as a plain MP4 (at most 1080 on its short side), a still from it, its length. */
+    sourceUrl: text("sourceUrl"),
+    thumbUrl: text("thumbUrl"),
+    tenths: integer("tenths"),
+    /** The consent recording and what came of checking it. */
+    consentUrl: text("consentUrl"),
+    consent: text("consent", { enum: ["needed", "checking", "ok", "failed"] }).notNull().default("needed"),
+    consentNote: text("consentNote"),
+    /** The voice made from the video (ElevenLabs), or a voice picked instead. */
+    voiceId: text("voiceId"),
+    voiceName: text("voiceName"),
+    voiceNote: text("voiceNote"),
+    /** preparing (video being read), ready, failed. */
+    status: text("status", { enum: ["preparing", "ready", "failed"] }).notNull().default("preparing"),
+    error: text("error"),
+    createdBy: text("createdBy"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("twins_org_idx").on(t.organizationId)]
+);
+export type Twin = typeof twins.$inferSelect;
+
+/** A twin in other clothes or another place: a base clip the voice is lip-synced onto. */
+export const twinLooks = sqliteTable(
+  "twin_looks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    twinId: integer("twinId").notNull(),
+    name: text("name").notNull(),
+    /** keep | describe | photo */
+    outfit: text("outfit").notNull().default("keep"),
+    outfitText: text("outfitText"),
+    outfitPhoto: text("outfitPhoto"),
+    /** JSON: { type: room | picture | color | clip | style, color, url, clipId, style, place, drawn }. */
+    background: text("background").notNull().default('{"type":"room"}'),
+    /** The look's video (silent), used under the lip sync. */
+    baseUrl: text("baseUrl"),
+    thumbUrl: text("thumbUrl"),
+    /** making, preview (made, not saved yet), saved, failed. */
+    status: text("status", { enum: ["making", "preview", "saved", "failed"] }).notNull().default("making"),
+    error: text("error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("twin_looks_org_idx").on(t.organizationId, t.twinId)]
+);
+export type TwinLook = typeof twinLooks.$inferSelect;
+
 /** A video style a workspace made from its own pictures (Add style). */
 export const videoStyles = sqliteTable(
   "video_styles",

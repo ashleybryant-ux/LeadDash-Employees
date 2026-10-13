@@ -21,7 +21,7 @@ export async function transcribeFile(buf: Buffer, opts: { timeoutMs?: number } =
   const start = await fetch(`${API}/transcript`, {
     method: "POST",
     headers: { ...headers, "content-type": "application/json" },
-    body: JSON.stringify({ audio_url: upload_url, speech_model: "universal", language_code: "en", punctuate: true, format_text: true }),
+    body: JSON.stringify({ audio_url: upload_url, speech_models: ["universal-3-5-pro", "universal-2"], language_code: "en", punctuate: true, format_text: true }),
     signal: AbortSignal.timeout(60_000),
   });
   if (!start.ok) throw new Error(`AssemblyAI transcript failed (${start.status}): ${(await start.text()).slice(0, 200)}`);

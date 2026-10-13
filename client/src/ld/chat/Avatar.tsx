@@ -5,6 +5,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import { BIG_JOB, useHoursAsk } from "../HoursAsk";
 import { ErrorLine } from "../ui";
 import { fmtDate } from "../meta";
+import { TwinSection } from "../video/Twin";
 
 /**
  * Elena's videos of the owner, made by AI from her photo and her own voice:
@@ -419,6 +420,7 @@ export function AvatarVideosTab({ empName }: { empName: string }) {
   const rows = (list.data ?? []) as View[];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <TwinSection />
       <SettingsCard />
       <div className="ld-card" style={{ overflow: "hidden" }}>
         <div className="ld-hd" style={{ gridTemplateColumns: COLS }}>

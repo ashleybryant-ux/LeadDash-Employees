@@ -623,7 +623,7 @@ export async function falUpload(file: string, contentType: string) {
 }
 
 /** Whether a video is a black and white matte (no color at all), from one frame. */
-async function isMatte(file: string) {
+export async function isMatte(file: string) {
   const ff = (await import("./drama")).ffmpegPath();
   const { stderr } = await run(ff, ["-hide_banner", "-ss", "0.5", "-i", file, "-frames:v", "1", "-vf", "signalstats,metadata=print:key=lavfi.signalstats.SATAVG", "-f", "null", "-"], { timeout: 60_000 }).catch((e) => ({ stderr: String(e.stderr ?? "") }));
   const m = stderr.match(/SATAVG=([\d.]+)/);
