@@ -210,7 +210,8 @@ describe("Edit my video: the cut math", () => {
   });
 });
 
-describe("Edit my video", () => {
+// Each test prepares a real upload (ffmpeg, plus the transcript wait), which takes about 5 seconds on the server.
+describe("Edit my video", { timeout: 60_000 }, () => {
   it("prepares an upload: plays, captioned, and Elena adds b-roll, transitions, zooms, an emoji and a hook", async () => {
     const { orgId, owner } = await makeWorkspace("edit-prep");
     (ENV as any).pixabayKey = "pb-test";
