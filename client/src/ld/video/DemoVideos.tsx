@@ -7,6 +7,7 @@ import type { EmployeeRow } from "../ChatPage";
 import { useHoursAsk } from "../HoursAsk";
 import { ErrorLine } from "../ui";
 import { fmtDate } from "../meta";
+import { BrowserCard } from "../ChatPage";
 
 /**
  * Simone's Videos tab: demo and training videos of a website or app, and social "Come with me" videos.
@@ -147,6 +148,7 @@ function MakeForm({ empName, onCancel, onStarted }: { empName: string; onCancel?
   const [url, setUrl] = React.useState("");
   const [sopId, setSopId] = React.useState<number | null>(null);
   const [sopLogin, setSopLogin] = React.useState("");
+  const [signInEmail, setSignInEmail] = React.useState("");
   const [audience, setAudience] = React.useState("");
   const [voiceId, setVoiceId] = React.useState<string | null>(null);
   const [style, setStyle] = React.useState<"come" | "tip" | "pov">("come");
@@ -201,6 +203,7 @@ function MakeForm({ empName, onCancel, onStarted }: { empName: string; onCancel?
       loginName: where?.kind === "login" ? where.name : where?.kind === "sop" && !sopHasSite ? sopLogin : null,
       url: where?.kind === "url" ? url.trim() : null,
       fromSopId: where?.kind === "sop" ? sopId : null,
+      signInEmail: where?.kind === "url" ? signInEmail.trim() || null : null,
       sizes,
       makeSop: !social && where?.kind !== "sop" && makeSop,
     });
@@ -251,6 +254,11 @@ function MakeForm({ empName, onCancel, onStarted }: { empName: string; onCancel?
           <>
             <span />
             <input className="ld-in lg" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" style={{ maxWidth: 480 }} />
+            <span className="ld-lbl">Sign in as</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 480 }}>
+              <input className="ld-in lg" type="email" value={signInEmail} onChange={(e) => setSignInEmail(e.target.value)} placeholder="Email (if the site needs one)" />
+              <span className="ld-small" style={{ color: "var(--ld-text2)" }}>When the site sends a code, she asks for it in chat. You can also sign in for her.</span>
+            </div>
           </>
         )}
         {where?.kind === "sop" && (
@@ -483,6 +491,8 @@ function PlanView({ d }: { d: DV }) {
       </Head>
       {hours.question(`rec-${d.id}`)}
       {busy && <div className="ld-card ld-dv-busy"><span className="ld-dv-spin" aria-hidden="true" />{d.step ?? "Working"}...</div>}
+      {d.asking && <SignInBox d={d} />}
+      {d.status === "planning" && d.liveId && <BrowserCard card={{ type: "browser_live", id: 0, title: "Simone's browser", url: d.liveId }} />}
       {d.error && <div className="ld-card ld-dv-err">{d.error}</div>}
       <ErrorLine error={record.error ?? replan.error ?? answer.error ?? remove.error} />
       {d.status === "asking" && d.plan.question && (
@@ -623,20 +633,23 @@ function Recording({ d }: { d: DV }) {
       <div className="ld-dv-rechd">
         <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
           <b style={{ fontSize: 17, overflowWrap: "anywhere" }}>{d.title}</b>
-          <span className="ld-small" style={{ color: "var(--ld-text2)" }}>{`Simone is ${redo ? (d.step ?? "recording").toLowerCase() : "recording"}${d.where ? ` in ${d.where}` : ""} · step ${cur} of ${d.plan.steps.length}`}</span>
+          <span className="ld-small" style={{ color: "var(--ld-text2)", display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span className="ld-dv-rec"><span className="dot" aria-hidden="true" />REC {mm}</span>
+            {`Simone is ${redo ? (d.step ?? "recording").toLowerCase() : "recording"}${d.where ? ` in ${d.where}` : ""} · step ${cur} of ${d.plan.steps.length}`}
+          </span>
         </div>
         <button type="button" className="ld-btn" style={{ width: 140 }} disabled={!l?.id || stop.isPending} onClick={() => l?.id && stop.mutate({ organizationId: currentOrgId, id: l.id })}>{stop.isPending ? "Stopping..." : "Stop"}</button>
       </div>
       <div className="ld-dv-recgrid">
-        <div className="ld-card ld-dv-screen">
-          <div className="ld-dv-bar">
-            <span className="dot" aria-hidden="true" />
-            <span className="rec">REC {mm}</span>
-            <span className="url">{l?.url || d.url || "Opening the browser"}</span>
-          </div>
-          <div className="ld-dv-frame">
-            {l?.frame ? <img src={l.frame} alt="Simone's browser" /> : <span className="ld-muted">{l?.step || "Opening the browser"}</span>}
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          {d.asking && <SignInBox d={d} />}
+          {d.liveId || l?.id ? (
+            <BrowserCard card={{ type: "browser_live", id: 0, title: "Simone's browser", url: d.liveId ?? l!.id }} />
+          ) : (
+            <div className="ld-card ld-dv-screen">
+              <div className="ld-dv-frame"><span className="ld-muted">Opening the browser</span></div>
+            </div>
+          )}
         </div>
         <div className="ld-card ld-dv-steps">
           <b style={{ fontSize: 15, marginBottom: 6 }}>Steps</b>
@@ -649,7 +662,7 @@ function Recording({ d }: { d: DV }) {
               </div>
             );
           })}
-          <span className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.45, marginTop: "auto", paddingTop: 10 }}>If the site asks for a sign-in code, she asks you in chat and waits. If a screen doesn't match the plan, she stops instead of guessing.</span>
+          <span className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.45, marginTop: "auto", paddingTop: 10 }}>If the site sends a sign-in code, she asks you for it here and in chat, and waits. You can also take over and sign in for her. If a screen doesn't match the plan, she stops instead of guessing.</span>
         </div>
       </div>
       <ErrorLine error={stop.error} />
@@ -978,6 +991,48 @@ function SocialLine({ d, ln, label, open, onToggle, locked, orgId, onDone }: { d
       )}
     </>
   );
+}
+
+// ==========================================
+// Signing her in
+// ==========================================
+
+/** What she's waiting on: the code the site sent, or the email to sign in as. */
+export function SignInBox({ d }: { d: DV }) {
+  const { orgId, refresh } = useDemo(d.id);
+  const [code, setCode] = React.useState("");
+  const [email, setEmail] = React.useState(d.signInEmail ?? "");
+  const send = trpc.demo.signIn.useMutation({ onSuccess: refresh });
+  const forCode = d.asking === "code";
+  const ok = forCode ? code.trim().length >= 4 : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const go = () => ok && send.mutate({ organizationId: orgId, id: d.id, ...(forCode ? { code: code.trim() } : { email: email.trim() }) });
+  return (
+    <div className="ld-card ld-dv-signin">
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+        <b style={{ fontSize: 15 }}>{forCode ? "The site sent a sign-in code" : "Who should she sign in as?"}</b>
+        <span className="ld-small" style={{ color: "var(--ld-text2)" }}>{forCode ? "Check the email or phone it went to and enter it here. Or take over below and sign in for her." : "Enter the email she signs in with. Or take over below and sign in for her."}</span>
+        {send.isSuccess ? (
+          <span className="ld-pill green" style={{ alignSelf: "flex-start" }}>{forCode ? "Got it. Typing it in now" : "Got it. Signing in now"}</span>
+        ) : forCode ? (
+          <input className="ld-in lg" inputMode="numeric" autoComplete="one-time-code" maxLength={12} aria-label="Sign-in code" style={{ maxWidth: 200, letterSpacing: 2 }} value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
+        ) : (
+          <input className="ld-in lg" type="email" aria-label="Email" style={{ maxWidth: 320 }} value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
+        )}
+        <ErrorLine error={send.error} />
+      </div>
+      {!send.isSuccess && (
+        <button type="button" className="ld-btn p" style={{ width: 128 }} disabled={!ok || send.isPending} onClick={go}>{send.isPending ? "Sending..." : forCode ? "Send code" : "Send email"}</button>
+      )}
+    </div>
+  );
+}
+
+/** The sign-in card in Simone's chat. */
+export function DemoSignInCard({ id }: { id: number }) {
+  const { d } = useDemo(id);
+  if (!d) return null;
+  if (!d.asking) return <div className="ld-card" style={{ padding: "12px 16px" }}><span className="ld-small" style={{ color: "var(--ld-text2)" }}>{`"${d.title}": signed in.`}</span></div>;
+  return <SignInBox d={d} />;
 }
 
 // ==========================================

@@ -40,7 +40,7 @@ import { AvatarVideoCard } from "./chat/Avatar";
 import { MadeVideoCard } from "./work/MadeVideos";
 import { VideoMaker } from "./video/VideoAgent";
 import { EditCard } from "./video/Editor";
-import DemoVideosTab, { DemoVideoCard } from "./video/DemoVideos";
+import DemoVideosTab, { DemoSignInCard, DemoVideoCard } from "./video/DemoVideos";
 import Broll from "./video/Broll";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 import { Composer, type Mentionable } from "./team/Composer";
@@ -134,8 +134,8 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // Chat pane
 // ==========================================
 
-type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "receipt" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note" | "made_video" | "video_maker" | "video_edit" | "demo_video";
+export type Card = {
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "receipt" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note" | "made_video" | "video_maker" | "video_edit" | "demo_video" | "demo_signin";
   items?: BriefItem[];
   counts?: { decisions: number; meetings: number; waiting: number; handled: number };
   id: number;
@@ -633,6 +633,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
   if (card.type === "onboarding_q") return <OnboardingQuestionCard emp={emp} qkey={card.title} />;
   if (card.type === "bidprime_code" || card.type === "portal_code" || card.type === "web_code") return <CodeCard card={card} />;
   if (card.type === "browser_live") return <BrowserCard card={card} />;
+  if (card.type === "demo_signin") return <DemoSignInCard id={card.id} />;
   if (card.type === "schedule") return <ScheduleCard events={card.events ?? []} />;
   if (card.type === "receipt" && card.imageUrl)
     return (
@@ -902,7 +903,7 @@ function CodeCard({ card }: { card: Card }) {
 const LIVE_KEYS = new Set(["Enter", "Tab", "Backspace", "Delete", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
 
 /** An employee's browser, live: watch it, take over when it's stuck, hand it back. */
-function BrowserCard({ card }: { card: Card }) {
+export function BrowserCard({ card }: { card: Card }) {
   const { currentOrgId } = useTenant();
   const id = card.url ?? "";
   const [ended, setEnded] = React.useState(false);

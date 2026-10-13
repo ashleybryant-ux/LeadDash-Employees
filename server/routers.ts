@@ -3961,6 +3961,7 @@ export const appRouter = router({
           sizes: z.array(z.enum(["wide", "vertical", "square"])).max(3).optional(),
           makeSop: z.boolean().optional(),
           fromSopId: z.number().int().nullable().optional(),
+          signInEmail: z.string().max(200).nullable().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -3981,6 +3982,13 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId, "member");
       const dv = await import("./employees/demoVideos");
       return dv.view(dv.replan(input.organizationId, input.id));
+    }),
+    /** Signing her in: the code the site sent, or the email to sign in as (kept for the next run). */
+    signIn: protectedProcedure.input(orgInput.extend({ id: z.number().int(), code: z.string().max(20).nullable().optional(), email: z.string().max(200).nullable().optional() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(await dv.signIn(input.organizationId, input.id, { code: input.code, email: input.email }));
     }),
     saveStep: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0), do: z.string().max(300), say: z.string().max(400), expect: z.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
       blockReviewer(ctx);

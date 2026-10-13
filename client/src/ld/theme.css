@@ -3118,3 +3118,8 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 .sop-check input { width: 16px; height: 16px; accent-color: var(--ld-accent); }
 .sop-video-ask { border: 1px dashed var(--ld-line4); border-radius: 12px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--ld-surface); }
 .sop-video-player { width: 100%; max-width: 720px; border-radius: 10px; background: #000; display: block; }
+
+.ld-dv-signin { padding: 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 16px; align-items: end; border-color: var(--ld-warn); }
+.ld-dv-rec { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: var(--ld-bad); white-space: nowrap; }
+.ld-dv-rec .dot { width: 10px; height: 10px; border-radius: 999px; background: #d90020; animation: ld-dv-blink 1.2s ease-in-out infinite; }
+@media (max-width: 760px) { .ld-dv-signin { grid-template-columns: minmax(0, 1fr); } }

@@ -1782,6 +1782,10 @@ export const demoVideos = sqliteTable(
     paidMinutes: integer("paidMinutes").notNull().default(0),
     paidAvatar: integer("paidAvatar").notNull().default(0),
     webTaskId: integer("webTaskId"),
+    /** The email she signs in with on a site that has no saved Website login (given on the form or in chat). */
+    signInEmail: text("signInEmail"),
+    /** While her browser waits for the person: "code" (a sign-in code the site sent) or "email" (who to sign in as). */
+    asking: text("asking", { enum: ["code", "email"] }),
     createdBy: text("createdBy"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

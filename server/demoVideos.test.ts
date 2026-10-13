@@ -8,6 +8,9 @@ import { createRequire } from "node:module";
 // The browser is scripted here: a practice run, then a recorded run with real pictures of the screen.
 const browserTasks: any[] = [];
 let recordFails = false;
+/** A recorded run that has to sign in first: it asks, then waits for the answer like the real browser. */
+let askFor: "code" | "email" | null = null;
+let answered: string | null = null;
 let frameDir = "";
 vi.mock("./employees/browser", async (orig) => {
   const actual: any = await orig();
@@ -18,6 +21,14 @@ vi.mock("./employees/browser", async (orig) => {
       const base = { storageState: null, downloads: [], screenshotUrl: null, helped: [], url: task.startUrl, note: "", result: '{"answer":"recorded"}' };
       if (!task.record) return { ...base, status: "done", log: [{ step: 1, action: "click", detail: "Opened Calendar", url: task.startUrl }], result: '{"answer":"The calendar has a Book anyway button."}' };
       if (recordFails) return { ...base, status: "failed", note: "The Book anyway button wasn't on the screen", log: [] };
+      if (askFor && task.ask) {
+        await task.ask.post(askFor, "Enter the code we emailed you");
+        for (let i = 0; i < 400 && !answered; i++) {
+          answered = task.ask.take(askFor) ?? null;
+          if (!answered) await new Promise((r) => setTimeout(r, 25));
+        }
+        task.ask.done?.();
+      }
       // Three moments on screen, one click in each of steps 1 and 2.
       const rec = fs.mkdtempSync(path.join(os.tmpdir(), "rec-"));
       const frames = ["red", "green", "blue"].map((c, i) => {
@@ -110,6 +121,8 @@ beforeEach(() => {
   rendered = [];
   browserTasks.length = 0;
   recordFails = false;
+  askFor = null;
+  answered = null;
   planOut = PLAN;
   drama.setPollMs(1);
   (ENV as any).falKey = "fal-test";
@@ -361,6 +374,60 @@ describe("Simone's demo videos", { timeout: 60_000 }, () => {
     const d = await settle(w.orgId, cards[0].id);
     expect(d).toMatchObject({ status: "plan", presenter: "screen", audience: "Front desk" });
     expect(browserTasks.filter((b) => b.record)).toHaveLength(0);
+  });
+});
+
+describe("Signing Simone in", { timeout: 60_000 }, () => {
+  it("adds https:// to a bare web address, so the browser can open it", async () => {
+    const w = await onPlan("demo-url");
+    const d = await dv.create(w.orgId, { ask: "Write a note", kind: "training", presenter: "screen", url: "demo.leaddash.io", signInEmail: "Demo@LeadDash.io", by: "Owner" });
+    expect(d).toMatchObject({ url: "https://demo.leaddash.io", signInEmail: "demo@leaddash.io" });
+    await settle(w.orgId, d.id);
+    // Rows saved before this keep working too.
+    expect(dv.fullUrl("demo.leaddash.io")).toBe("https://demo.leaddash.io");
+    expect(browserTasks[0]).toMatchObject({ startUrl: "https://demo.leaddash.io" });
+    expect(browserTasks[0].secrets.email).toBe("demo@leaddash.io");
+  });
+
+  it("waits on the same page for the code the site sent, asked in chat and on the Videos tab", async () => {
+    const w = await onPlan("demo-code");
+    const c = caller(w.owner);
+    const made = await dv.create(w.orgId, { ask: "Book a late session", kind: "training", presenter: "screen", url: DEMO_URL, by: "Owner" });
+    await settle(w.orgId, made.id);
+    askFor = "code";
+    await c.demo.record({ organizationId: w.orgId, id: made.id });
+    let v = await c.demo.get({ organizationId: w.orgId, id: made.id });
+    for (let i = 0; i < 100 && v?.asking !== "code"; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      v = await c.demo.get({ organizationId: w.orgId, id: made.id });
+    }
+    expect(v).toMatchObject({ asking: "code", step: "Waiting for the sign-in code" });
+    const simone = (await db.getEmployeeByKind(w.orgId, "coo"))!;
+    const msgs = await db.listChatMessages(w.orgId, simone.id);
+    const last = msgs[msgs.length - 1];
+    expect(last.content).toMatch(/sent a sign-in code/);
+    expect(JSON.parse(last.cards ?? "[]")[0]).toMatchObject({ type: "demo_signin", id: made.id });
+    await expect(c.demo.signIn({ organizationId: w.orgId, id: made.id, code: "no" })).rejects.toThrow(/exactly as the site sent it/);
+    await c.demo.signIn({ organizationId: w.orgId, id: made.id, code: "482910" });
+    const d = await settle(w.orgId, made.id);
+    expect(answered).toBe("482910");
+    expect(d).toMatchObject({ status: "ready", asking: null });
+  });
+
+  it("takes the email in Simone's chat when the site needs one", async () => {
+    const w = await onPlan("demo-email");
+    const made = await dv.create(w.orgId, { ask: "Book a late session", kind: "training", presenter: "screen", url: DEMO_URL, by: "Owner" });
+    await settle(w.orgId, made.id);
+    askFor = "email";
+    await dv.record(w.orgId, made.id, "Owner");
+    for (let i = 0; i < 100 && !dv.waitingSignIn(w.orgId); i++) await new Promise((r) => setTimeout(r, 20));
+    const simone = (await db.getEmployeeByKind(w.orgId, "coo"))!;
+    decision = { reply: "", action: "demo_signin", notes: "", to: "", title: "", url: "", target: "", focus: "", goal: "", message: "" };
+    const r = await caller(w.owner).chat.send({ organizationId: w.orgId, employeeId: simone.id, text: "use demo@leaddash.io" });
+    expect(r.reply.content).toMatch(/Signing in with that email/);
+    const d = await settle(w.orgId, made.id);
+    expect(answered).toBe("demo@leaddash.io");
+    expect(d).toMatchObject({ status: "ready", signInEmail: "demo@leaddash.io", asking: null });
   });
 });
 

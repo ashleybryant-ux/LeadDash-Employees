@@ -116,6 +116,37 @@ describe.skipIf(!ready)("the server's browser", () => {
     expect(ok.screenshotUrl).toMatch(/^\/files\//);
   }, 90_000);
 
+  it("asks in chat for the email and the code, waits on the same page, then types them in", async () => {
+    const asked: string[] = [];
+    let given: { email?: string; code?: string } = {};
+    seen.code = undefined;
+    const d = driver({ submit: false });
+    const r = await runBrowserTask({
+      orgId: 1,
+      goal: "read leads",
+      startUrl: base,
+      secrets: { password: "pw" },
+      ask: {
+        post: async (what) => {
+          asked.push(what);
+          // The person answers a moment later, in chat.
+          setTimeout(() => (given = { ...given, [what]: what === "email" ? "a@b.co" : "771204" }), 300);
+        },
+        take: (what) => given[what] ?? null,
+      },
+      decide: async (v, history) => {
+        const a = await d(v);
+        // No email saved yet: the AI says signing in needs one.
+        if (a.secret === "email" && !history.some((h) => /email to sign in with came/.test(h.detail))) return act({ action: "fail", result: "The site needs an email to sign in" });
+        if (a.secret === "code" && !history.some((h) => /code came in chat/.test(h.detail))) return act({ action: "need_code" });
+        return a;
+      },
+    });
+    expect(asked).toEqual(["email", "code"]);
+    expect(r.status).toBe("done");
+    expect(seen.code).toBe("771204");
+  }, 60_000);
+
   it("won't stop for a code on a page with no code box", async () => {
     let n = 0;
     const r = await runBrowserTask({

@@ -71,6 +71,11 @@ export type BrowserTask = {
   live?: { id: string; onStuck?: (reason: string) => Promise<void>; holdMs?: number; label?: string };
   /** Record the screen (a picture each time it changes) and where each click lands, for a demo video. */
   record?: boolean;
+  /**
+   * Asks the person in chat for what signing in needs (a code the site sent, or the email to sign in as)
+   * and waits up to 10 minutes on the same page. They can also take over and sign in themselves.
+   */
+  ask?: { post: (what: "code" | "email", note: string) => Promise<void>; take: (what: "code" | "email") => string | undefined | null; done?: () => void };
   /** For tests: replaces the AI's choice of action. */
   decide?: (view: PageView, history: StepLog[]) => Promise<Action>;
   /** Keep a screenshot after every action (an SOP is written from them), saved under this folder. */
@@ -448,6 +453,33 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       return true;
     };
 
+    /** Waits for a code or an email from chat; "back" when the person took over and handed back instead. */
+    const waitAsk = async (what: "code" | "email", note: string): Promise<string | "back" | null> => {
+      if (!task.ask) return null;
+      if (live) {
+        live.state = "waiting";
+        live.reason = note;
+        await capture(live);
+      }
+      await task.ask.post(what, note).catch(() => null);
+      const until = Date.now() + 10 * 60_000;
+      try {
+        while (Date.now() < until) {
+          if (live?.stop) return null;
+          const v = task.ask.take(what);
+          if (v) {
+            if (live && live.state === "waiting") live.state = "running";
+            return v;
+          }
+          if (live?.handBack) return "back";
+          await sleep(1000);
+        }
+        return null;
+      } finally {
+        task.ask.done?.();
+      }
+    };
+
     await page.goto(task.startUrl, { waitUntil: "domcontentloaded" });
     if (live) live.state = "running";
     let max = task.maxSteps ?? 30;
@@ -508,6 +540,19 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       }
       if (act.action === "fail") {
         entry(act.result || act.thought);
+        // Signing in needs an email nobody gave: ask for it in chat (or the person signs in themselves).
+        const why = act.result || act.thought;
+        if (task.ask && !task.secrets?.email && /e-?mail|sign ?in|log ?in|username/i.test(why)) {
+          const got = await waitAsk("email", why);
+          if (got === "back") continue;
+          if (got) {
+            task.secrets = { ...task.secrets, email: got };
+            entry("The email to sign in with came in chat; type it with secret email");
+            lastSig = "";
+            continue;
+          }
+          return await finish("failed", "", "Nobody gave the email to sign in with.");
+        }
         if (live && (await waitForPerson(act.result || act.thought))) continue;
         return await finish("failed", "", act.result || act.thought);
       }
@@ -522,6 +567,16 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
           continue;
         }
         entry("The site asked for a sign-in code");
+        if (task.ask) {
+          const got = await waitAsk("code", codeWords(view) || act.thought);
+          if (got === "back") continue;
+          if (got) {
+            task.secrets = { ...task.secrets, code: got };
+            entry("The code came in chat; type it with secret code");
+            lastSig = "";
+            continue;
+          }
+        }
         return await finish("need_code", "", codeWords(view) || act.thought);
       }
       const sig = `${act.action}:${act.index}:${act.secret}:${act.value}`;

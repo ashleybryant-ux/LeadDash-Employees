@@ -20,6 +20,7 @@ import { editAss } from "./editCaptions";
 import { editLookOf, spreadWords, type CutLine } from "./editLook";
 import { cardSeconds, clipFromFrames, renderDemo, stepTiming, type DemoRenderInput, type Part } from "./demoRender";
 import type { BrowserResult, BrowserTask } from "./browser";
+import { putCode, takeCode } from "./web";
 import { systemPromptFor } from "./tasks";
 
 /**
@@ -168,8 +169,17 @@ export type CreateInput = {
   fromSopId?: number | null;
   sizes?: Size[];
   makeSop?: boolean;
+  /** The email she signs in with when there's no saved Website login. */
+  signInEmail?: string | null;
   by: string;
 };
+
+/** A web address as the browser needs it ("demo.leaddash.io" becomes "https://demo.leaddash.io"). */
+export function fullUrl(url: string | null | undefined) {
+  const u = (url ?? "").trim();
+  if (!u) return "";
+  return /^https?:\/\//i.test(u) ? u : `https://${u.replace(/^\/+/, "")}`;
+}
 
 /** Where it's recorded must be safe: LeadDash EHR only in its demo practice, and only real web addresses. */
 export function checkWhere(url: string | null | undefined) {
@@ -183,6 +193,13 @@ export function checkWhere(url: string | null | undefined) {
   if (vg.appFor(url) === "ehr" && host !== "demo.leaddash.io") throw new TRPCError({ code: "BAD_REQUEST", message: "LeadDash EHR videos are recorded in the demo practice (demo.leaddash.io) only, so no client information is ever in a video." });
 }
 
+const cleanEmail = (e: string | null | undefined) => {
+  const v = (e ?? "").trim().toLowerCase();
+  if (!v) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new TRPCError({ code: "BAD_REQUEST", message: "That email doesn't look right." });
+  return v.slice(0, 200);
+};
+
 export async function create(orgId: number, input: CreateInput) {
   const ask = input.ask.replace(/\s+/g, " ").trim();
   if (!ask) throw new TRPCError({ code: "BAD_REQUEST", message: "Say what the video should show." });
@@ -192,7 +209,7 @@ export async function create(orgId: number, input: CreateInput) {
   const login = input.loginName ? findLogin(logins, input.loginName, input.url ?? "") : null;
   const sop = input.fromSopId ? db.sops.get(orgId, input.fromSopId) : null;
   if (input.fromSopId && !sop) throw new TRPCError({ code: "NOT_FOUND", message: "That SOP is not in this workspace." });
-  const url = (input.url ?? "").trim() || (login ? startIn(login) : "") || (sop ? sopSite(sop) : "") || "";
+  const url = fullUrl(input.url) || (login ? startIn(login) : "") || (sop ? sopSite(sop) : "") || "";
   if (!url && !login) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick where to record: a saved Website login or a web address." });
   checkWhere(url);
   if (input.presenter !== "screen" && !input.avatar) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick the avatar." });
@@ -217,6 +234,7 @@ export async function create(orgId: number, input: CreateInput) {
       socialStyle: input.socialStyle ?? "come",
       loginName: login?.name ?? null,
       url: url || null,
+      signInEmail: login ? null : cleanEmail(input.signInEmail),
       fromSopId: sop?.id ?? null,
       sopId: sop?.id ?? null,
       makeSop: input.makeSop !== false && !sop,
@@ -285,12 +303,28 @@ const SOCIAL_HOW: Record<SocialStyle, string> = {
   pov: `A "POV" video: the intro sets the scene in one line ("POV: you're the front desk and..."), the steps show the fix, the outro is a short call to follow.`,
 };
 
+/** Her browser for one run, watched live: stuck or signing in, she asks in chat and the person can take over. */
+async function runLive(orgId: number, d: DemoVideo, emp: AIEmployee, task: BrowserTask, label: string) {
+  const { runBrowserTask, liveStart } = await import("./browser");
+  const web = await import("./web");
+  const liveId = web.newLiveId();
+  liveStart(orgId, liveId);
+  task.live = { id: liveId, label, holdMs: 10 * 60_000, onStuck: web.stuckPoster(emp, liveId, `on "${d.title}"`) };
+  live.set(d.id, { liveId });
+  try {
+    return await web.inLine(orgId, () => runBrowserTask(task));
+  } finally {
+    live.delete(d.id);
+    const now = get(orgId, d.id);
+    if (now?.asking) update(orgId, d.id, { asking: null });
+  }
+}
+
 async function explore(orgId: number, d: DemoVideo, emp: AIEmployee) {
-  const { runBrowserTask } = await import("./browser");
   const sops = await import("./sops");
   const { task, login } = await browserTask(orgId, d, emp, sops.siteGoal(d.ask), false);
   const web = await import("./web");
-  const res = await web.inLine(orgId, () => runBrowserTask(task));
+  const res = await runLive(orgId, d, emp, task, `${d.title} (practice run)`);
   if (login) await (await import("./logins")).keepSession(orgId, login, res.storageState).catch(() => null);
   const walked = res.log.filter((l) => !["person", "blocked"].includes(l.action)).map((l) => `${l.step}. ${l.detail}${l.title ? ` (page: ${l.title})` : ""}`).join("\n");
   return `${walked}\n\nWhat I found: ${web.readResult(res.result).answer}`.slice(0, 8000);
@@ -417,11 +451,56 @@ const hoursText = (m: number) => {
 // 2. Recording
 // ==========================================
 
+const withEmail = <T extends { secrets?: Record<string, string | undefined> }>(parts: T, email: string | null) => (email ? { ...parts, secrets: { ...parts.secrets, email } } : parts);
+
+/**
+ * Signing in while she works: the site's code, or the email to sign in as, asked for in Simone's chat
+ * and on the Videos tab, and typed in on the same page when it comes. The person can also take over.
+ */
+function signInAsk(orgId: number, id: number, emp: AIEmployee): NonNullable<BrowserTask["ask"]> {
+  return {
+    post: async (what, note) => {
+      const d = update(orgId, id, { asking: what, step: what === "code" ? "Waiting for the sign-in code" : "Waiting for the email to sign in with" });
+      const site = d.loginName ?? (() => {
+        try {
+          return new URL(fullUrl(d.url)).host;
+        } catch {
+          return "The site";
+        }
+      })();
+      const text = what === "code" ? `${site} sent a sign-in code for "${d.title}". Paste it here and I'll type it in. You can also take over and sign in yourself.` : `${site} needs an email to sign in for "${d.title}". Send it here (or a code if it sends one), or take over and sign in yourself.`;
+      const { liveId } = live.get(id) ?? {};
+      await db.createChatMessage({ organizationId: orgId, employeeId: emp.id, role: "employee", authorName: emp.name, content: text, cards: JSON.stringify([{ type: "demo_signin", id, title: what === "code" ? `${site} sign-in code` : `Email for ${site}`, subtitle: note.slice(0, 200) }, ...(liveId ? [{ type: "browser_live", id: 0, title: `${emp.name}'s browser`, url: liveId }] : [])]) });
+    },
+    take: (what) => (what === "code" ? takeCode(codeKey(id)) ?? null : get(orgId, id)?.signInEmail ?? null),
+    done: () => {
+      const d = get(orgId, id);
+      if (d?.asking) update(orgId, id, { asking: null, step: d.status === "planning" ? "Finding how it's done (a practice run)" : "Recording the steps" });
+    },
+  };
+}
+const codeKey = (id: number) => `demo-${id}`;
+/** The live browser for each video while it runs (for the chat card). */
+const live = new Map<number, { liveId: string }>();
+
+/** A sign-in code or the email to sign in with, from the Videos tab or chat, for the run that's waiting. */
+export async function signIn(orgId: number, id: number, input: { code?: string | null; email?: string | null }) {
+  const d = must(orgId, id);
+  if (!input.code?.trim() && !input.email?.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "Enter the code or the email." });
+  if (input.email?.trim()) update(orgId, id, { signInEmail: cleanEmail(input.email) });
+  if (input.code?.trim()) putCode(codeKey(id), input.code);
+  return get(orgId, id)!;
+}
+/** The newest video waiting on a sign-in (for a code or email typed in Simone's chat). */
+export function waitingSignIn(orgId: number) {
+  return list(orgId).find((d) => !!d.asking) ?? null;
+}
+
 async function browserTask(orgId: number, d: DemoVideo, emp: AIEmployee, goal: string, record: boolean) {
   const { findLogin, startIn } = await import("./logins");
   const web = await import("./web");
   const login = d.loginName ? findLogin(await db.listPortalLogins(orgId), d.loginName, d.url ?? "") : null;
-  const startUrl = d.url || (login ? startIn(login) : "");
+  const startUrl = fullUrl(d.url) || (login ? startIn(login) : "");
   checkWhere(startUrl);
   const demoSite = vg.appFor(startUrl) === "ehr";
   const task: BrowserTask = {
@@ -430,7 +509,8 @@ async function browserTask(orgId: number, d: DemoVideo, emp: AIEmployee, goal: s
     actor: `${emp.name}, the owner's ${emp.roleTitle}, recording a ${d.kind === "social" ? "social" : "training"} video`,
     goal,
     startUrl,
-    ...web.loginParts(login, `demo-${d.id}`),
+    ...withEmail(web.loginParts(login, `demo-${d.id}`), login ? null : d.signInEmail),
+    ask: signInAsk(orgId, d.id, emp),
     // Pressing a plan's buttons is allowed only in a demo that saves nothing (LeadDash EHR's demo resets).
     allowSubmit: record && demoSite,
     submitWords: web.CHANGE_WORDS,
@@ -476,17 +556,12 @@ async function doRecord(orgId: number, id: number, upTo?: number): Promise<Take>
   const d = must(orgId, id);
   const emp = await simone(orgId);
   const p = planOf(d);
-  const { runBrowserTask, liveStart } = await import("./browser");
-  const web = await import("./web");
   const { task, login } = await browserTask(orgId, d, emp, recordGoal(d, p, upTo), true);
-  const liveId = web.newLiveId();
-  liveStart(orgId, liveId);
-  task.live = { id: liveId, label: d.title, holdMs: 5 * 60_000 };
   update(orgId, id, { step: "Recording the steps" });
-  const res: BrowserResult = await web.inLine(orgId, () => runBrowserTask(task));
+  const res: BrowserResult = await runLive(orgId, d, emp, task, d.title);
   if (login) await (await import("./logins")).keepSession(orgId, login, res.storageState).catch(() => null);
   try {
-    if (res.status === "need_code") throw new Error("The site asked for a sign-in code. Sign in once with that Website login from Simone's chat, then press Record it again.");
+    if (res.status === "need_code") throw new Error("The site sent a sign-in code and none came in 10 minutes. Press Record it, then paste the code when Simone asks.");
     if (res.status !== "done") throw new Error(`The recording stopped: ${res.note || "the screen didn't match the plan"}`.slice(0, 400));
     if (!res.frames?.length) throw new Error("Nothing was recorded.");
     update(orgId, id, { step: "Cutting each step" });
@@ -890,6 +965,9 @@ export async function view(d: DemoVideo) {
     fromSopId: d.fromSopId,
     hasAvatarParts: Object.values(parts).some((x) => !!x.avatar),
     clips: { intro: parts.intro?.avatar ?? null, outro: parts.outro?.avatar ?? null },
+    asking: d.asking,
+    signInEmail: d.signInEmail,
+    liveId: live.get(d.id)?.liveId ?? null,
     avatarLines: avatarKeys(d, p),
     updatedAt: d.updatedAt,
     createdAt: d.createdAt,
