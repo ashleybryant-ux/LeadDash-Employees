@@ -3128,3 +3128,10 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 .ld-dv-rec { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: var(--ld-bad); white-space: nowrap; }
 .ld-dv-rec .dot { width: 10px; height: 10px; border-radius: 999px; background: #d90020; animation: ld-dv-blink 1.2s ease-in-out infinite; }
 @media (max-width: 760px) { .ld-dv-signin { grid-template-columns: minmax(0, 1fr); } }
+
+/* Voices: the month's minutes and cost (2026-10-13). */
+.ld-vtable { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.ld-vtable th, .ld-vtable td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--ld-line2); color: var(--ld-ink); }
+.ld-vtable th { font-size: 12px; font-weight: 700; color: var(--ld-text2); }
+.ld-vtable .n { text-align: right; }
+.ld-vtable tfoot td { font-weight: 800; border-bottom: 0; }

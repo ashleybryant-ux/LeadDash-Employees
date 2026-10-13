@@ -5634,25 +5634,33 @@ export const appRouter = router({
     options: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       const v = await huddle.voiceOptions(input.organizationId);
-      // The providers and what they cost are LeadDash's trade secret: only LeadDash staff get them.
+      // The providers and what they cost LeadDash are its trade secret: only LeadDash staff get them.
+      // A workspace sees its levels (Standard, Premium) at its own price and its own month.
       if (ctx.user.role === "admin") return v;
-      const hide = { perMinute: "", detail: "", url: "" };
-      return { ...v, prices: { openai: hide, elevenlabs: hide }, elevenError: v.elevenError ? "unavailable" : v.elevenError };
+      return { ...v, prices: huddle.CUSTOMER_PRICES, usage: huddle.usageFor(input.organizationId, false), backup: [] as huddle.VoiceProvider[], elevenError: v.elevenError ? "unavailable" : v.elevenError };
     }),
-    setProvider: protectedProcedure.input(orgInput.extend({ setting: z.enum(["auto", "elevenlabs", "openai"]) })).mutation(async ({ ctx, input }) => {
+    setProvider: protectedProcedure.input(orgInput.extend({ setting: z.enum(["auto", "local", "elevenlabs", "openai"]) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "admin");
       await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Changed the voice provider", details: input.setting });
       return huddle.setProvider(input.organizationId, input.setting);
     }),
     setEmployee: protectedProcedure
-      .input(orgInput.extend({ employeeId: z.number().int(), choice: z.object({ provider: z.enum(["elevenlabs", "openai"]), voiceId: z.string().min(1).max(120), voiceName: z.string().max(120) }).nullable() }))
+      .input(orgInput.extend({ employeeId: z.number().int(), choice: z.object({ provider: z.enum(["local", "elevenlabs", "openai"]), voiceId: z.string().min(1).max(120), voiceName: z.string().max(120) }).nullable() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "admin");
         return huddle.setEmployeeVoice(input.organizationId, input.employeeId, input.choice);
       }),
+    /** The voices tried when the main one fails. LeadDash staff only, since it names the providers. */
+    setBackup: protectedProcedure.input(orgInput.extend({ order: z.array(z.enum(["local", "elevenlabs", "openai"])).max(2) })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "admin");
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Only LeadDash staff set the backup voices." });
+      await huddle.setBackup(input.organizationId, input.order);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: "Changed the backup voices", details: input.order.join(", ") || "none" });
+      return huddle.voiceOptions(input.organizationId);
+    }),
     /** A sample line in a voice; the result plays from /api/voice/audio/:id. */
     preview: protectedProcedure
-      .input(orgInput.extend({ provider: z.enum(["elevenlabs", "openai"]), voiceId: z.string().min(1).max(120), employeeId: z.number().int().optional() }))
+      .input(orgInput.extend({ provider: z.enum(["local", "elevenlabs", "openai"]), voiceId: z.string().min(1).max(120), employeeId: z.number().int().optional() }))
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "member");
         const emp = input.employeeId ? await db.getEmployeeForOrg(input.employeeId, input.organizationId) : null;

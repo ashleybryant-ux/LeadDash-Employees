@@ -7,6 +7,7 @@ import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3"
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "../drizzle/schema";
 import {
+  voiceUsage,
   users,
   loginCodes,
   sessions,
@@ -2743,3 +2744,21 @@ export const work = {
     return links.map((l) => ({ link: l, file: files.find((x) => x.id === l.fileId) })).filter((x) => x.file);
   },
 };
+
+// ==========================================
+// Voice usage (characters spoken per month and provider)
+// ==========================================
+
+export function addVoiceUsage(orgId: number, provider: "local" | "elevenlabs" | "openai", chars: number, at = new Date()) {
+  if (!orgId || chars <= 0) return;
+  const month = at.toISOString().slice(0, 7);
+  getDb()
+    .insert(voiceUsage)
+    .values({ organizationId: orgId, month, provider, chars })
+    .onConflictDoUpdate({ target: [voiceUsage.organizationId, voiceUsage.month, voiceUsage.provider], set: { chars: sql`${voiceUsage.chars} + ${chars}`, updatedAt: new Date() } })
+    .run();
+}
+
+export function listVoiceUsage(orgId: number, month: string) {
+  return getDb().select().from(voiceUsage).where(and(eq(voiceUsage.organizationId, orgId), eq(voiceUsage.month, month))).all();
+}

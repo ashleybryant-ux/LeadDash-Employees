@@ -101,8 +101,103 @@ export function lastSpeechError() {
 // Whose voice each employee speaks with
 // ==========================================
 
-export type VoiceProvider = "elevenlabs" | "openai";
+export type VoiceProvider = "local" | "elevenlabs" | "openai";
 export type VoiceChoice = { provider: VoiceProvider; id: string | null; name: string };
+export const VOICE_PROVIDERS: VoiceProvider[] = ["local", "elevenlabs", "openai"];
+const PROVIDER_LABEL: Record<VoiceProvider, string> = { local: "LeadDash voices", elevenlabs: "ElevenLabs", openai: "OpenAI" };
+
+/**
+ * LeadDash voices: Kokoro, running on this server (LOCAL_TTS_URL). Each role's
+ * standard voice, women's voices for the women and men's for the men.
+ */
+export const LOCAL_VOICES: Record<string, string> = {
+  coo: "af_bella",
+  projects: "af_sarah",
+  grants: "af_nicole",
+  speaking: "am_michael",
+  prospecting: "am_adam",
+  outreach: "af_sky",
+  leads: "am_eric",
+  social: "af_nova",
+  blog: "bm_george",
+  website: "af_jessica",
+  video: "af_heart",
+  inbox: "am_liam",
+  hiring: "bf_emma",
+  developer: "am_puck",
+  onboarding: "af_river",
+  platform: "bf_isabella",
+  ads: "am_onyx",
+  billing: "af_kore",
+  compliance: "bf_alice",
+  custom: "af_heart",
+};
+
+/** Kokoro's English voices, used when the server's own list can't be read. */
+const LOCAL_VOICE_IDS = [
+  "af_heart", "af_bella", "af_nicole", "af_sarah", "af_sky", "af_nova", "af_jessica", "af_kore", "af_river", "af_aoede", "af_alloy",
+  "am_michael", "am_adam", "am_eric", "am_liam", "am_onyx", "am_puck", "am_echo", "am_fenrir",
+  "bf_emma", "bf_isabella", "bf_alice", "bf_lily", "bm_george", "bm_lewis", "bm_daniel", "bm_fable",
+];
+const LOCAL_ID = /^[ab][fm]_[a-z]+$/;
+
+/** "af_bella" is Bella, a woman's voice with an American accent. */
+export function localVoice(id: string) {
+  const name = id.slice(3).replace(/^./, (c) => c.toUpperCase());
+  const note = `${id[1] === "f" ? "Female" : "Male"}, ${id[0] === "a" ? "American" : "British"}`;
+  return { id, name, note };
+}
+
+let localList: { at: number; ids: string[] } | null = null;
+/** The voices the Kokoro server has, for an hour; the known list when it can't be read. */
+export async function localVoices() {
+  if (!ENV.localTtsUrl) return [];
+  if (!localList || Date.now() - localList.at > 60 * 60_000) {
+    let ids = LOCAL_VOICE_IDS;
+    try {
+      const res = await fetch(`${ENV.localTtsUrl}/audio/voices`, { signal: AbortSignal.timeout(5_000) });
+      const data = res.ok ? ((await res.json()) as { voices?: unknown[] }) : null;
+      const live = (data?.voices ?? []).map((v) => (typeof v === "string" ? v : (v as { id?: string; name?: string })?.id ?? (v as { name?: string })?.name ?? "")).filter((v) => LOCAL_ID.test(v));
+      if (live.length) ids = live;
+    } catch {
+      /* the known list */
+    }
+    localList = { at: Date.now(), ids };
+  }
+  return localList.ids.map(localVoice);
+}
+
+/** Speech from LeadDash voices as MP3, or null with the reason in lastSpeechError(). */
+export async function localAudio(voice: string, text: string): Promise<Buffer | null> {
+  if (!ENV.localTtsUrl) {
+    speechError = "LeadDash voices are not set up: LOCAL_TTS_URL is missing on the server.";
+    return null;
+  }
+  try {
+    const res = await fetch(`${ENV.localTtsUrl}/audio/speech`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "kokoro", input: text.slice(0, 4000), voice, response_format: "mp3" }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      speechError = `LeadDash voices didn't make the voice (${res.status}): ${(await res.text()).slice(0, 200)}`;
+      console.warn("[huddle] local speech failed:", speechError);
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length) {
+      speechError = "LeadDash voices sent back no sound.";
+      return null;
+    }
+    speechError = null;
+    return buf;
+  } catch (err) {
+    speechError = `LeadDash voices didn't answer in time: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300);
+    console.warn("[huddle] local speech failed:", speechError);
+    return null;
+  }
+}
 
 /** OpenAI's stock voices for gpt-4o-mini-tts, with a plain line on how each sounds. */
 export const OPENAI_VOICES: { id: string; name: string; note: string }[] = [
@@ -121,22 +216,62 @@ export const OPENAI_VOICES: { id: string; name: string; note: string }[] = [
   { id: "verse", name: "Verse", note: "Smooth and even" },
 ];
 
-/** What each option costs, as the vendors publish it; shown next to the choice so nobody is surprised by a bill. */
+/** What each option costs, as the vendors publish it; shown next to the choice so nobody is surprised by a bill. centsPerMinute is the estimate the month's cost uses. */
 export const VOICE_PRICES = {
-  openai: { perMinute: "about $0.015 per minute", detail: "gpt-4o-mini-tts: $0.60 per 1M characters in, $12 per 1M audio tokens out; OpenAI's own estimate is about $0.015 per minute. Billed on your OpenAI account.", url: "https://openai.com/api/pricing/" },
+  local: { perMinute: "$0.00 per minute", detail: "Runs on the LeadDash Employees server. No charge per use.", url: "https://github.com/remsky/Kokoro-FastAPI", centsPerMinute: 0 },
+  openai: { perMinute: "about $0.015 per minute", detail: "gpt-4o-mini-tts: $0.60 per 1M characters in, $12 per 1M audio tokens out; OpenAI's own estimate is about $0.015 per minute. Billed on your OpenAI account.", url: "https://openai.com/api/pricing/", centsPerMinute: 1.5 },
   elevenlabs: {
     perMinute: "about $0.08 to $0.20 per minute",
     detail: "Monthly plans with credits: Starter $6 for 30,000, Creator $22 for 121,000, Pro $99 for 600,000, Scale $299 for 1.8M, Business $990 for 6M. A minute of speech is about 1,000 characters; the Flash model the app uses costs 0.5 credit per character, so about $0.08 to $0.10 per minute on a paid plan (the standard model is 1 credit per character, about $0.17 to $0.20). Billed on your ElevenLabs account.",
     url: "https://elevenlabs.io/pricing",
+    centsPerMinute: 9,
   },
 } as const;
+
+/** What customers pay over LeadDash's cost (1.5x, the same as texts and calls). LeadDash voices stay included. */
+export const CUSTOMER_MARKUP = 1.5;
+/** About 1,000 characters is a minute of speech. */
+const CHARS_PER_MINUTE = 1000;
 
 /** The provider this workspace speaks with when nothing else is chosen. */
 export async function providerFor(orgId: number): Promise<VoiceProvider> {
   const org = await db.getOrganizationById(orgId);
   const want = org?.voiceProvider ?? "auto";
+  const key = await elevenKeyFor(orgId);
   if (want === "openai") return "openai";
-  return (await elevenKeyFor(orgId)) ? "elevenlabs" : "openai";
+  if (want === "local" && ENV.localTtsUrl) return "local";
+  if (want === "elevenlabs" && key) return "elevenlabs";
+  // Automatic, or the chosen one is not set up: LeadDash voices, then ElevenLabs, then OpenAI.
+  if (ENV.localTtsUrl) return "local";
+  return key ? "elevenlabs" : "openai";
+}
+
+/** The voices tried, in order, when the main one fails. ElevenLabs then OpenAI unless the owner set another order. */
+export function backupOf(org: { voiceBackup?: string | null } | null | undefined): VoiceProvider[] {
+  let list: unknown = null;
+  try {
+    list = org?.voiceBackup ? JSON.parse(org.voiceBackup) : null;
+  } catch {
+    list = null;
+  }
+  if (!Array.isArray(list)) return ["elevenlabs", "openai"];
+  const all: unknown[] = list;
+  return all.filter((p, i): p is VoiceProvider => VOICE_PROVIDERS.includes(p as VoiceProvider) && all.indexOf(p) === i).slice(0, 2);
+}
+
+export async function setBackup(orgId: number, order: VoiceProvider[]) {
+  const clean = order.filter((p, i) => VOICE_PROVIDERS.includes(p) && order.indexOf(p) === i).slice(0, 2);
+  await db.updateOrganization(orgId, { voiceBackup: JSON.stringify(clean) });
+}
+
+/** Whether a provider can speak for this workspace right now. */
+function ready(p: VoiceProvider, elevenKey: string) {
+  return p === "local" ? !!ENV.localTtsUrl : p === "elevenlabs" ? !!elevenKey : !!ENV.openAiKey;
+}
+
+/** Whether words that may carry client information can go to this provider. LeadDash voices never leave the server. */
+function clientSafe(p: VoiceProvider) {
+  return p === "local" || carriesClientInfo(p);
 }
 
 /**
@@ -152,7 +287,11 @@ export async function voiceFor(orgId: number, kind: string): Promise<VoiceChoice
   const emp = await db.getEmployeeByKind(orgId, kind as never).catch(() => null);
   const provider = await providerFor(orgId);
   const key = await elevenKeyFor(orgId);
-  if (emp?.voiceProvider && emp.voiceId && (emp.voiceProvider === "openai" || key)) return { provider: emp.voiceProvider, id: emp.voiceId, name: emp.voiceName ?? emp.voiceId };
+  if (emp?.voiceProvider && emp.voiceId && (emp.voiceProvider === "openai" || (emp.voiceProvider === "local" ? !!ENV.localTtsUrl : !!key))) return { provider: emp.voiceProvider, id: emp.voiceId, name: emp.voiceName ?? emp.voiceId };
+  if (provider === "local") {
+    const id = LOCAL_VOICES[kind] ?? LOCAL_VOICES.custom;
+    return { provider, id, name: localVoice(id).name };
+  }
   if (provider === "elevenlabs") {
     const id = await elevenVoiceFor(kind, key).catch(() => null);
     return { provider, id, name: id ? elevenNames.get(id) ?? db.rosterDefaults.get(kind)?.voiceName ?? "" : "" };
@@ -178,6 +317,7 @@ export async function voiceOptions(orgId: number) {
       elevenError = err instanceof Error ? err.message : String(err);
     }
   }
+  const local = await localVoices();
   const employees = [];
   for (const e of await db.listEmployeesByOrg(orgId)) {
     const v = await voiceFor(orgId, e.kind);
@@ -186,17 +326,59 @@ export async function voiceOptions(orgId: number) {
   return {
     setting: org?.voiceProvider ?? "auto",
     provider,
+    hasLocal: !!ENV.localTtsUrl,
     hasElevenLabs: !!key,
     hasOpenAi: !!ENV.openAiKey,
+    local,
     openai: OPENAI_VOICES,
     elevenlabs: eleven,
     elevenError,
+    backup: backupOf(org),
     prices: VOICE_PRICES,
+    usage: usageFor(orgId, true),
     employees,
   };
 }
 
-export async function setProvider(orgId: number, setting: "auto" | "elevenlabs" | "openai") {
+const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+/**
+ * Minutes spoken and what they cost this month. LeadDash staff see each provider at
+ * LeadDash's cost; a workspace sees Standard (LeadDash voices and OpenAI, included)
+ * and Premium (ElevenLabs at CUSTOMER_MARKUP).
+ */
+export function usageFor(orgId: number, staff: boolean, now = new Date()) {
+  const month = now.toISOString().slice(0, 7);
+  const rows = db.listVoiceUsage(orgId, month);
+  const minutesOf = (ps: VoiceProvider[]) => rows.filter((r) => ps.includes(r.provider)).reduce((n, r) => n + r.chars, 0) / CHARS_PER_MINUTE;
+  const round = (m: number) => Math.round(m * 10) / 10;
+  const start = new Date(`${month}-01T12:00:00Z`);
+  const day = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const period = `${day(start)} to ${day(now)}, ${now.getUTCFullYear()}`;
+  if (staff) {
+    const lines = VOICE_PROVIDERS.map((p) => {
+      const minutes = minutesOf([p]);
+      return { key: p, label: PROVIDER_LABEL[p], minutes: round(minutes), cents: minutes * VOICE_PRICES[p].centsPerMinute };
+    });
+    const cents = lines.reduce((n, l) => n + l.cents, 0);
+    return { period, rows: lines.map((l) => ({ key: l.key, label: l.label, minutes: l.minutes, cost: money(l.cents) })), total: { minutes: round(lines.reduce((n, l) => n + l.minutes, 0)), cost: money(cents) } };
+  }
+  const standard = minutesOf(["local", "openai"]);
+  const premium = minutesOf(["elevenlabs"]);
+  const premiumCents = premium * VOICE_PRICES.elevenlabs.centsPerMinute * CUSTOMER_MARKUP;
+  const rowsOut = [{ key: "standard", label: "Standard", minutes: round(standard), cost: "Included" }];
+  if (premium > 0) rowsOut.push({ key: "premium", label: "Premium", minutes: round(premium), cost: money(premiumCents) });
+  return { period, rows: rowsOut, total: { minutes: round(standard + premium), cost: premiumCents > 0 ? money(premiumCents) : "Included" } };
+}
+
+/** What a workspace sees for each level: LeadDash voices included, Premium at CUSTOMER_MARKUP over ElevenLabs. */
+export const CUSTOMER_PRICES = {
+  local: { perMinute: "Included", detail: "", url: "", centsPerMinute: 0 },
+  openai: { perMinute: "Included", detail: "", url: "", centsPerMinute: 0 },
+  elevenlabs: { perMinute: "$0.12 to $0.30 per minute", detail: "", url: "", centsPerMinute: VOICE_PRICES.elevenlabs.centsPerMinute * CUSTOMER_MARKUP },
+};
+
+export async function setProvider(orgId: number, setting: "auto" | "local" | "elevenlabs" | "openai") {
   await db.updateOrganization(orgId, { voiceProvider: setting });
   return voiceOptions(orgId);
 }
@@ -206,6 +388,7 @@ export async function setEmployeeVoice(orgId: number, employeeId: number, choice
   const emp = await db.getEmployeeForOrg(employeeId, orgId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
   if (choice?.provider === "openai" && !OPENAI_VOICES.some((v) => v.id === choice.voiceId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick one of OpenAI's voices." });
+  if (choice?.provider === "local" && !LOCAL_ID.test(choice.voiceId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick one of the LeadDash voices." });
   await db.updateEmployee(employeeId, orgId, choice ? { voiceProvider: choice.provider, voiceId: choice.voiceId.slice(0, 120), voiceName: choice.voiceName.slice(0, 120) } : { voiceProvider: null, voiceId: null, voiceName: null });
   return voiceOptions(orgId);
 }
@@ -221,7 +404,12 @@ export async function previewVoice(orgId: number, provider: VoiceProvider, voice
   const org = await db.getOrganizationById(orgId);
   const text = speakable(SAMPLE(who.name, who.roleTitle), org?.name ?? "");
   let id: string | null;
-  if (provider === "elevenlabs") {
+  if (provider === "local") {
+    if (!LOCAL_ID.test(voiceId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick one of the LeadDash voices." });
+    const buf = await localAudio(voiceId, text);
+    if (!buf) throw new TRPCError({ code: "BAD_GATEWAY", message: speechError ?? "LeadDash voices didn't make the voice." });
+    id = keepAudio(buf);
+  } else if (provider === "elevenlabs") {
     const key = await elevenKeyFor(orgId);
     if (!key) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Premium voices aren't turned on in this workspace." });
     try {
@@ -234,6 +422,7 @@ export async function previewVoice(orgId: number, provider: VoiceProvider, voice
     id = await openAiSpeak({ voice: voiceId }, text);
     if (!id) throw new TRPCError({ code: "BAD_GATEWAY", message: speechError ?? "OpenAI didn't make the voice." });
   }
+  db.addVoiceUsage(orgId, provider, text.length);
   previews.set(key, { id, at: Date.now() });
   return id;
 }
@@ -377,38 +566,44 @@ export function speakable(text: string, company = "") {
 
 /**
  * One answer in the employee's voice, as MP3. Returns null when speech is not set up, so the words still show.
+ * The employee's voice goes first, then the workspace's backup order (ElevenLabs, then OpenAI unless set
+ * otherwise), so an employee never goes silent while any voice works.
  * `clientInfo`: the words can carry client information (a healthcare practice's workspace), so they are spoken
- * only by a provider under a BAA. ElevenLabs is not, so those answers use OpenAI's voices or stay text.
+ * only by LeadDash voices (which never leave the server) or a provider under a BAA.
  */
 export async function speak(kind: string, words: string, company = "", opts: { clientInfo?: boolean; orgId?: number } = {}): Promise<string | null> {
   if (process.env.NODE_ENV === "test") return null;
   const text = speakable(words, company);
   const key = opts.orgId ? await elevenKeyFor(opts.orgId) : ENV.elevenLabsKey;
-  const v = opts.orgId ? await voiceFor(opts.orgId, kind) : { provider: key ? ("elevenlabs" as const) : ("openai" as const), id: key ? null : VOICES[kind] ?? "alloy", name: "" };
-  const openAiVoice = v.provider === "openai" && v.id ? { voice: v.id } : kind;
-  if (opts.clientInfo && !carriesClientInfo("elevenlabs")) {
-    if (carriesClientInfo("openai")) return openAiSpeak(openAiVoice, text);
-    speechError = "Voices are off in this workspace: no voice provider is under a BAA for client information.";
-    return null;
-  }
-  if (v.provider === "elevenlabs" && key) {
+  const first: VoiceChoice = opts.orgId ? await voiceFor(opts.orgId, kind) : { provider: ENV.localTtsUrl ? "local" : key ? "elevenlabs" : "openai", id: null, name: "" };
+  const org = opts.orgId ? await db.getOrganizationById(opts.orgId) : null;
+  const chain = [first.provider, ...backupOf(org)].filter((p, i, all) => all.indexOf(p) === i);
+  const problems: string[] = [];
+  let tried = 0;
+  for (const p of chain) {
+    if (opts.clientInfo && !clientSafe(p)) continue;
+    if (!ready(p, key)) continue;
+    tried++;
+    const voiceId = p === first.provider ? first.id : null;
+    let buf: Buffer | null = null;
     try {
-      const id = keepAudio(await elevenSpeak(v.id ? { voiceId: v.id } : kind, text, key));
-      speechError = null;
-      return id;
+      if (p === "local") buf = await localAudio(voiceId ?? LOCAL_VOICES[kind] ?? LOCAL_VOICES.custom, text.slice(0, 1600));
+      else if (p === "elevenlabs") buf = await elevenSpeak(voiceId ? { voiceId } : kind, text, key);
+      else buf = await openAiAudio(voiceId ? { voice: voiceId } : kind, text.slice(0, 1600));
     } catch (err) {
       speechError = (err instanceof Error ? err.message : String(err)).slice(0, 300);
-      console.warn("[huddle] ElevenLabs failed:", speechError);
-      // Out of credits or a key problem: keep talking with OpenAI's voices when that key is set.
-      if (!ENV.openAiKey) return null;
-      const fallback = speechError;
-      const id = await openAiSpeak(kind, text);
-      if (id) speechError = null;
-      else speechError = `${fallback} OpenAI's voices didn't work either: ${speechError ?? "unknown error"}`.slice(0, 400);
-      return id;
+      console.warn(`[huddle] ${PROVIDER_LABEL[p]} failed:`, speechError);
     }
+    if (buf) {
+      speechError = null;
+      if (opts.orgId) db.addVoiceUsage(opts.orgId, p, text.length);
+      return keepAudio(buf);
+    }
+    problems.push(`${PROVIDER_LABEL[p]}: ${speechError ?? "no voice came back"}`);
   }
-  return openAiSpeak(openAiVoice, text);
+  if (!tried) speechError = opts.clientInfo ? "Voices are off in this workspace: no voice provider is under a BAA for client information." : "Voices are not set up on the server.";
+  else speechError = problems.join(" ").slice(0, 400);
+  return null;
 }
 
 async function openAiSpeak(voiceOrKind: { voice: string } | string, text: string): Promise<string | null> {

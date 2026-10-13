@@ -477,6 +477,13 @@
       "when": 1791863414798,
       "tag": "0067_demo_video_sign_in",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1791892763108,
+      "tag": "0068_voice_backup_usage",
+      "breakpoints": true
     }
   ]
 }

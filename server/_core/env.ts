@@ -76,6 +76,10 @@ export const ENV = {
   ehrLinkSecret: process.env.EHR_LINK_SECRET || "",
   /** OpenAI key: images, voices when ElevenLabs is not set, and web search when SEARCH_PROVIDER=openai. */
   openAiKey: process.env.OPENAI_API_KEY || "",
+  /** LeadDash voices: the Kokoro speech server on this box (OpenAI-style /v1/audio/speech), e.g. http://127.0.0.1:8880/v1. Read each time so tests can set it. */
+  get localTtsUrl() {
+    return (process.env.LOCAL_TTS_URL || "").trim().replace(/\/+$/, "");
+  },
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",
 
   // Card payments for extra work hours (Stripe Checkout). The webhook adds the hours once Stripe says it's paid.

@@ -98,5 +98,14 @@ echo "== company training (adds any section a workspace is missing; Brain edits 
 npx tsx deploy/load-training.ts --all || echo "training load skipped"
 echo "== portraits for new employees"
 npx tsx deploy/portraits.ts || echo "portraits skipped"
+echo "== LeadDash voices"
+TTS_URL=$(grep -E '^LOCAL_TTS_URL=' .env 2>/dev/null | cut -d= -f2- || true)
+if [ -z "$TTS_URL" ]; then
+  echo "not set up (no LOCAL_TTS_URL in .env), so ElevenLabs and OpenAI speak"
+elif curl -fsS -m 10 "$TTS_URL/audio/voices" > /dev/null 2>&1; then
+  echo "ready at $TTS_URL"
+else
+  echo "NOT ANSWERING at $TTS_URL, so the backup voices speak. Start it with: sudo docker start kokoro"
+fi
 echo "== checksums"
-md5sum server/routers.ts server/db.ts server/integrations.ts server/employees/bids.ts server/employees/browser.ts server/employees/sales.ts server/employees/projects.ts server/employees/coo.ts drizzle/schema.ts dist/index.js
+md5sum server/employees/huddle.ts client/src/ld/EmployeeLook.tsx server/routers.ts server/db.ts server/integrations.ts server/employees/bids.ts server/employees/browser.ts server/employees/sales.ts server/employees/projects.ts server/employees/coo.ts drizzle/schema.ts dist/index.js

@@ -118,8 +118,10 @@ export const organizations = sqliteTable("organizations", {
   ehrLocationId: text("ehrLocationId"),
   /** When the owner finished (or skipped) the one-time team setup. */
   setupAt: integer("setupAt", { mode: "timestamp" }),
-  /** Whose voices the employees speak with: auto (ElevenLabs when the server has it, else OpenAI), elevenlabs or openai. */
-  voiceProvider: text("voiceProvider", { enum: ["auto", "elevenlabs", "openai"] }).notNull().default("auto"),
+  /** Whose voices the employees speak with: auto (LeadDash voices when the server has them, else ElevenLabs, else OpenAI), local (LeadDash voices), elevenlabs or openai. */
+  voiceProvider: text("voiceProvider", { enum: ["auto", "local", "elevenlabs", "openai"] }).notNull().default("auto"),
+  /** JSON list: the voices tried, in order, when the main one fails (e.g. ["elevenlabs","openai"]). Null is that default. */
+  voiceBackup: text("voiceBackup"),
   /** Work hours (JSON): the plan this workspace is on ({plan}), set by LeadDash staff. No plan means work is not metered. */
   workHours: text("workHours"),
   /** LeadDash's own workspace (LeadDash, Legacy, the owner's brand), set by LeadDash staff. Only these get the in-house employees (Developer, Platform Specialist). */
@@ -201,7 +203,7 @@ export const aiEmployees = sqliteTable(
     name: text("name").notNull(),
     avatar: text("avatar"),
     /** This workspace's own pick of voice for the employee (null: the provider's default for the role). */
-    voiceProvider: text("voiceProvider", { enum: ["elevenlabs", "openai"] }),
+    voiceProvider: text("voiceProvider", { enum: ["local", "elevenlabs", "openai"] }),
     voiceId: text("voiceId"),
     voiceName: text("voiceName"),
     roleTitle: text("roleTitle").notNull(),
@@ -3868,3 +3870,24 @@ export const pjTaskTimes = sqliteTable(
   (t) => [index("pj_task_times_user_idx").on(t.organizationId, t.userId, t.status), index("pj_task_times_task_idx").on(t.organizationId, t.taskId)]
 );
 export type PjTaskTime = typeof pjTaskTimes.$inferSelect;
+
+/**
+ * Speech made for a workspace, per month and voice provider (2026-10-13), so
+ * the Voices card can show minutes and cost for the month. Counted in
+ * characters spoken; about 1,000 characters is a minute of speech.
+ */
+export const voiceUsage = sqliteTable(
+  "voice_usage",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    /** "2026-10" */
+    month: text("month").notNull(),
+    provider: text("provider", { enum: ["local", "elevenlabs", "openai"] }).notNull(),
+    chars: integer("chars").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("voice_usage_org_month_provider").on(t.organizationId, t.month, t.provider)]
+);
+export type VoiceUsage = typeof voiceUsage.$inferSelect;
