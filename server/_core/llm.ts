@@ -111,12 +111,21 @@ export async function generateJson<T>(opts: {
   timeoutMs?: number;
   reason?: boolean;
   clientInfo?: boolean;
+  /** A small routine decision (a browser step): runs on the cheaper browser model when it may. */
+  quick?: boolean;
 }): Promise<T> {
   if (opts.reason && reasoningReady(opts.clientInfo)) {
     try {
       return await reasonJson<T>(opts);
     } catch (err) {
       console.warn(`[ai] reasoning route failed, using the gateway: ${(err as Error).message.slice(0, 200)}`);
+    }
+  }
+  if (opts.quick && quickReady(opts.clientInfo)) {
+    try {
+      return await quickJson<T>(opts);
+    } catch (err) {
+      console.warn(`[ai] quick route failed, using the gateway: ${(err as Error).message.slice(0, 200)}`);
     }
   }
   const messages: GatewayMessage[] = [
@@ -153,6 +162,41 @@ export function reasoningReady(clientInfo?: boolean) {
   if (process.env.NODE_ENV === "test") return false;
   if (!ENV.chatReasoning || !ENV.anthropicKey) return false;
   return !clientInfo || carriesClientInfo("anthropic");
+}
+
+/**
+ * The quick route: the smaller browser model on the Anthropic key, for routine steps that
+ * carry no client information (unless Anthropic's BAA is signed). BROWSER_MODEL=off turns it off.
+ */
+export function quickReady(clientInfo?: boolean) {
+  if (process.env.NODE_ENV === "test") return false;
+  if (!ENV.browserModel || !ENV.anthropicKey) return false;
+  return !clientInfo || carriesClientInfo("anthropic");
+}
+
+/** One routine decision on the browser model, no thinking; the answer is held to the schema. */
+async function quickJson<T>(opts: { system: string; prompt: string; schema: JsonSchema; maxTokens?: number; timeoutMs?: number }): Promise<T> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: anthropicHeaders(),
+    body: JSON.stringify({
+      model: ENV.browserModel,
+      max_tokens: Math.max(2000, opts.maxTokens ?? 0),
+      system: cachedSystem(opts.system),
+      messages: [{ role: "user", content: opts.prompt }],
+      output_config: { format: { type: "json_schema", schema: opts.schema } },
+    }),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 90_000),
+  });
+  const raw = await res.text();
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${raw.slice(0, 300)}`);
+  const data = JSON.parse(raw);
+  const u = data.usage ?? {};
+  await recordTokens(ENV.browserModel, Number(u.input_tokens) || 0, Number(u.output_tokens) || 0, Number(u.cache_read_input_tokens) || 0, Number(u.cache_creation_input_tokens) || 0);
+  const text = (data.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
+  const parsed = extractJson(text);
+  if (parsed === undefined) throw new Error(`no JSON in the answer (stop: ${data.stop_reason})`);
+  return parsed as T;
 }
 
 /** One decision on the chat model with adaptive thinking; the answer is held to the schema. */

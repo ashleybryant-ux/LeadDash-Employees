@@ -22,7 +22,8 @@ import { caller, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
 import * as coo from "./employees/coo";
 import { saveOps } from "./employees/ops";
-import { reasoningReady } from "./_core/llm";
+import { quickReady, reasoningReady } from "./_core/llm";
+import { runBrowserTask } from "./employees/browser";
 
 const blank = { thinking: "", reply: "", action: "none", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
 
@@ -58,6 +59,25 @@ describe("employees reason before they act", () => {
 
   it("the reasoning route is off in tests and needs the Anthropic key", () => {
     expect(reasoningReady(false)).toBe(false);
+    expect(quickReady(false)).toBe(false);
+  });
+
+  it("browser steps are quick decisions on the smaller model, except in a healthcare workspace, where they carry client information", async () => {
+    const { orgId, owner } = await makeWorkspace("quick-browser");
+    const step = async () => {
+      calls.length = 0;
+      // One real step on a page built from the address itself, so the mocked model sees what the browser asks for.
+      await runBrowserTask({ orgId, goal: "x", startUrl: "data:text/html,<h1>Hi</h1>", maxSteps: 1, job: null }).catch(() => null);
+      return calls.find((c) => c.schemaName === "browser_action");
+    };
+    const { browserReady } = await import("./employees/browser");
+    if (!(await browserReady())) return;
+    let ask = await step();
+    expect(ask.quick).toBe(true);
+    expect(ask.clientInfo).toBe(false);
+    await caller(owner).organizations.update({ id: orgId, orgType: "healthcare" });
+    ask = await step();
+    expect(ask.clientInfo).toBe(true);
   });
 
   it("Simone writes the agenda around what the owner said instead of adding it as a line", async () => {

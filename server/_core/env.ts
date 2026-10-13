@@ -56,6 +56,12 @@ export const ENV = {
   chatReasoning: (process.env.CHAT_REASONING || "on").toLowerCase() !== "off",
   chatModel: process.env.CHAT_MODEL || process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
   chatEffort: (["low", "medium", "high"].includes((process.env.CHAT_EFFORT || "").toLowerCase()) ? process.env.CHAT_EFFORT!.toLowerCase() : "medium") as "low" | "medium" | "high",
+  /**
+   * Browser steps (which button to press next on a page) run on this smaller model through the
+   * Anthropic key when the task carries no client information; BROWSER_MODEL=off keeps them on the
+   * gateway. Planning and writing never use it.
+   */
+  browserModel: (process.env.BROWSER_MODEL ?? "claude-haiku-4-5").trim().toLowerCase() === "off" ? "" : (process.env.BROWSER_MODEL || "claude-haiku-4-5").trim(),
   searchMaxUses: parseInt(process.env.SEARCH_MAX_USES || "6", 10),
   /** Serper.dev key: Google results for opportunity searches, alongside Anthropic's web search. */
   serperKey: process.env.SERPER_API_KEY || "",

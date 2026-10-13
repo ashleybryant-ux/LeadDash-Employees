@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import { storagePut } from "../storage";
-import { getEmployeeByKind } from "../db";
+import { getEmployeeByKind, getOrganizationById } from "../db";
 import { usageContext } from "../usage";
 import * as hours from "../workHours";
 import type { JobKey } from "../workHours";
@@ -87,6 +87,8 @@ export type BrowserTask = {
   jobLabel?: string;
   /** The employee doing it, for the work-hours record. */
   employeeId?: number;
+  /** True when the pages may hold client information (a healthcare workspace): every step stays on the BAA route. */
+  clientInfo?: boolean;
 };
 
 export type PageElement = { i: number; tag: string; type: string; label: string; text: string; href: string };
@@ -302,6 +304,8 @@ function oneAtATime(task: BrowserTask): Promise<BrowserResult> {
 export async function runBrowserTask(task: BrowserTask): Promise<BrowserResult> {
   const kind = task.job === undefined ? "website" : task.job;
   if (kind) await hours.gate(task.orgId);
+  // A healthcare workspace's pages may hold client information: every step stays on the BAA route.
+  if (task.clientInfo === undefined) task.clientInfo = (await getOrganizationById(task.orgId))?.orgType === "healthcare";
   const res = await oneAtATime(task);
   if (kind && (res.status === "done" || res.status === "failed")) {
     const c = usageContext();
@@ -844,6 +848,9 @@ Rules:
     schema: task.record ? RECORD_SCHEMA : ACTION_SCHEMA,
     maxTokens: 3000,
     timeoutMs: 90_000,
+    // One step of many: the plan is written already, so the smaller browser model picks the click.
+    quick: true,
+    clientInfo: task.clientInfo ?? false,
   });
 }
 
