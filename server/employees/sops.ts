@@ -285,8 +285,8 @@ export async function writeFromChat(emp: AIEmployee, input: { title: string; sai
 // From the site: an employee walks the screens in its browser
 // ==========================================
 
-export function siteGoal(title: string) {
-  return `You are writing a step-by-step SOP titled "${title}" for a new hire, by doing it yourself on this site and keeping a screenshot after every step.
+export function siteGoal(title: string, guide?: string | null) {
+  return `${guide ? `What we know about this app (follow its labels, where the task starts, when it's done, and its Never list):\n${guide}\n\n` : ""}You are writing a step-by-step SOP titled "${title}" for a new hire, by doing it yourself on this site and keeping a screenshot after every step.
 Go through the real screens in the order a person would: open the right section, pick the right items, fill in example values where a form needs them, and stop before anything that saves, sends, submits, publishes or deletes (use done at that point and say what the final button is).
 Do not change data. Use done when every screen on the way has been visited, with result as JSON: {"answer":"one paragraph: the screens you went through, in order, with the exact names of sections and buttons, and anything a new hire should watch for","pending":"the final button you stopped before, or ''"}`;
 }
@@ -295,7 +295,8 @@ export async function startFromSite(emp: AIEmployee, input: { title: string; url
   const title = input.title.trim().replace(/\s+/g, " ").slice(0, 160);
   if (!title) throw new TRPCError({ code: "BAD_REQUEST", message: "What is the SOP for?" });
   const web = await import("./web");
-  const { task, login } = await web.startWebTask(emp, { goal: siteGoal(title), url: input.url, login: input.login, title: `SOP: ${title}`, kind: "sop", shots: `org-${emp.organizationId}/sops` });
+  const guide = (await import("./videoGuides")).guideFor(await db.getOrganizationById(emp.organizationId), { title, url: input.url, login: input.login });
+  const { task, login } = await web.startWebTask(emp, { goal: siteGoal(title, guide?.text), url: input.url, login: input.login, title: `SOP: ${title}`, kind: "sop", shots: `org-${emp.organizationId}/sops` });
   const job = db.sops.addJob({ organizationId: emp.organizationId, kind: "site", title, status: "working", stage: `Signing in to ${login ? login.name : "the site"}`, stages: "[]", webTaskId: task.id, createdBy: input.by });
   return { task, login, job };
 }
