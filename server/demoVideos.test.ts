@@ -439,6 +439,25 @@ describe("Simone's demo videos", { timeout: 60_000 }, () => {
 });
 
 describe("Signing Simone in", { timeout: 60_000 }, () => {
+  it("opens the browser demo through the team link when the team code is saved, so nobody sends her the link", async () => {
+    process.env.EHR_DEMO_TEAM_CODE = "maple-123";
+    try {
+      expect(dv.demoTeamLink("https://demo.leaddash.io/calendar-view")).toBe("https://demo.leaddash.io/calendar-view?team=maple-123");
+      expect(dv.demoTeamLink("https://ehr.leaddash.io/calendar-view")).toBeNull();
+      const w = await onPlan("demo-team");
+      const d = await dv.create(w.orgId, { ask: "Book a session", kind: "training", presenter: "screen", url: "demo.leaddash.io", by: "Owner" });
+      await settle(w.orgId, d.id);
+      const task = browserTasks[browserTasks.length - 1];
+      expect(task.startUrl).toBe("https://demo.leaddash.io");
+      expect(task.openUrl).toBe("https://demo.leaddash.io/?team=maple-123");
+      expect(task.rules).toMatch(/popup/i);
+      expect(task.rules).toMatch(/End and draft note/);
+    } finally {
+      delete process.env.EHR_DEMO_TEAM_CODE;
+    }
+    expect(dv.demoTeamLink("https://demo.leaddash.io/calendar-view")).toBeNull();
+  });
+
   it("adds https:// to a bare web address, so the browser can open it", async () => {
     const w = await onPlan("demo-url");
     const d = await dv.create(w.orgId, { ask: "Write a note", kind: "training", presenter: "screen", url: "demo.leaddash.io", signInEmail: "Demo@LeadDash.io", by: "Owner" });

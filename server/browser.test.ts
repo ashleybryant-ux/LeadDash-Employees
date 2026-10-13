@@ -29,6 +29,10 @@ beforeAll(async () => {
       return res.end(page(`<label for="g">Gender</label><input type="radio" id="g" name="g" checked><label for="eth">Ethnicity</label><select id="eth"><option>Select One</option><option>Asian</option><option selected>African American or Black</option></select><label for="bs">Business Status</label><select id="bs"><option>Select One</option><option>Operating</option></select>`));
     }
     if (url.pathname === "/home") return res.end(page(`<a href="/" target="_blank">Log In</a>`));
+    if (url.pathname === "/popup") {
+      return res.end(page(`<h1>Dashboard</h1><button id="add">Add appointment</button><div role="dialog" style="position:fixed;inset:0;background:#fff"><p>In your own account this would send the claim.</p><button id="close" onclick="this.parentNode.remove()">Got it</button></div>`));
+    }
+    if (url.pathname === "/team") return res.end(page(url.searchParams.get("team") === "secret-code" ? `<h1>Dashboard</h1>` : `<h1>Open the demo</h1>`));
     if (url.pathname === "/doc.pdf") {
       res.setHeader("content-type", "application/pdf");
       return res.end("%PDF-1.4 fake");
@@ -77,6 +81,41 @@ describe.skipIf(!ready)("the server's browser", () => {
     expect(by("Business Status").text).toMatch(/^nothing selected; options:/);
     expect(by("Gender").text).toBe("(checked)");
   }, 60_000);
+
+  it("sees a popup over the page, marks its buttons, and closes it with its button or Escape", async () => {
+    const views: PageView[] = [];
+    const res = await runBrowserTask({
+      orgId: 1,
+      goal: "add an appointment",
+      startUrl: `${base}/popup`,
+      decide: async (v) => {
+        views.push(v);
+        if (v.popup) return act({ action: "click", index: el(v, /Got it/) });
+        return act({ action: "done", result: "ok" });
+      },
+    });
+    expect(res.status).toBe("done");
+    expect(views[0].popup).toMatch(/In your own account/);
+    expect(views[0].elements.find((e) => /Got it/.test(e.text))!.label).toMatch(/^\(in the popup\)/);
+    expect(views[0].elements.find((e) => /Add appointment/.test(e.text))!.label).not.toMatch(/popup/);
+    expect(views[1].popup).toBe("");
+    // Escape works too.
+    const after: PageView[] = [];
+    await runBrowserTask({ orgId: 1, goal: "x", startUrl: `${base}/popup`, decide: async (v) => ((after.push(v), after.length === 1) ? act({ action: "press_escape" }) : act({ action: "done", result: "ok" })) });
+    expect(after[0].popup).toMatch(/In your own account/);
+  });
+
+  it("opens the address that carries a code first, and keeps that code out of the log and the live view", async () => {
+    let seenView: PageView | null = null;
+    const res = await runBrowserTask({ orgId: 1, goal: "x", startUrl: `${base}/team`, openUrl: `${base}/team?team=secret-code`, live: { id: "t1" }, decide: async (v) => ((seenView = v), act({ action: "done", result: "ok" })) });
+    expect(res.status).toBe("done");
+    expect(seenView!.text).toMatch(/Dashboard/);
+    expect(JSON.stringify(res.log)).not.toMatch(/secret-code/);
+    expect(liveView(1).url).not.toMatch(/secret-code/);
+    const plain = await runBrowserTask({ orgId: 1, goal: "x", startUrl: `${base}/team`, decide: async (v) => ((seenView = v), act({ action: "done", result: "ok" })) });
+    expect(plain.status).toBe("done");
+    expect(seenView!.text).toMatch(/Open the demo/);
+  });
 
   it("signs in with saved values the AI never sees, and stops to ask for a code", async () => {
     const views: string[] = [];

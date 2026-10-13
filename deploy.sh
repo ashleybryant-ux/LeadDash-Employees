@@ -108,4 +108,4 @@ else
   echo "NOT ANSWERING at $TTS_URL, so the backup voices speak. Start it with: sudo docker start kokoro"
 fi
 echo "== checksums"
-md5sum server/employees/huddle.ts client/src/ld/EmployeeLook.tsx server/routers.ts server/db.ts server/integrations.ts server/employees/bids.ts server/employees/browser.ts server/employees/sales.ts server/employees/projects.ts server/employees/coo.ts drizzle/schema.ts dist/index.js
+md5sum server/employees/demoVideos.ts server/employees/browser.ts server/employees/huddle.ts client/src/ld/EmployeeLook.tsx server/routers.ts server/db.ts server/integrations.ts server/employees/bids.ts server/employees/sales.ts server/employees/projects.ts server/employees/coo.ts drizzle/schema.ts dist/index.js

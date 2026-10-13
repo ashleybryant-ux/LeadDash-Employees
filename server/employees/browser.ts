@@ -50,6 +50,8 @@ export type BrowserTask = {
   orgId: number;
   goal: string;
   startUrl: string;
+  /** The address opened first when it differs from startUrl (a link that carries a code). Never shown or logged. */
+  openUrl?: string;
   secrets?: Secrets;
   /** Saved cookies from the last run, so a sign-in code is rarely needed. */
   storageState?: string | null;
@@ -88,11 +90,12 @@ export type BrowserTask = {
 };
 
 export type PageElement = { i: number; tag: string; type: string; label: string; text: string; href: string };
-export type PageView = { url: string; title: string; text: string; elements: PageElement[] };
+/** popup: the words of a dialog or panel open over the page (its heading and first line), or "" when there is none. */
+export type PageView = { url: string; title: string; text: string; elements: PageElement[]; popup?: string };
 
 export type Action = {
   thought: string;
-  action: "click" | "type" | "select" | "upload" | "press_enter" | "goto" | "wait" | "download" | "need_code" | "done" | "fail";
+  action: "click" | "type" | "select" | "upload" | "press_enter" | "press_escape" | "goto" | "wait" | "download" | "need_code" | "done" | "fail";
   index: number;
   value: string;
   secret: "" | "email" | "password" | "code" | "content";
@@ -108,7 +111,7 @@ const ACTION_SCHEMA: JsonSchema = {
   required: ["thought", "action", "index", "value", "secret", "fileIndex", "result"],
   properties: {
     thought: { type: "string", description: "One short sentence: what you see and why this action" },
-    action: { type: "string", enum: ["click", "type", "select", "upload", "press_enter", "goto", "wait", "download", "need_code", "done", "fail"] },
+    action: { type: "string", enum: ["click", "type", "select", "upload", "press_enter", "press_escape", "goto", "wait", "download", "need_code", "done", "fail"] },
     index: { type: "integer", description: "The element number for click, type, select, upload or download; -1 otherwise" },
     value: { type: "string", description: "Text to type, the option to select, or the URL for goto; '' otherwise" },
     secret: { type: "string", enum: ["", "email", "password", "code", "content"], description: "For type: fill a saved value instead of value" },
@@ -152,6 +155,8 @@ type Live = {
   notes: string[];
   /** On a recorded run: the plan step being done now. */
   plan?: number;
+  /** Rewrites an address before it is shown (a first address that carries a code is shown plain). */
+  shown?: (url: string) => string;
 };
 const lives = new Map<number, Live>();
 /** Sessions waiting their turn behind the one that is open (one browser per workspace at a time). */
@@ -274,7 +279,7 @@ async function capture(l: Live) {
   try {
     l.frame = await l.page.screenshot({ type: "jpeg", quality: 55 });
     l.frameAt = Date.now();
-    l.url = l.page.url();
+    l.url = l.shown ? l.shown(l.page.url()) : l.page.url();
   } catch {
     /* a page mid-navigation is caught on the next tick */
   }
@@ -480,7 +485,10 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       }
     };
 
-    await page.goto(task.startUrl, { waitUntil: "domcontentloaded" });
+    /** The first address may carry a code (a team link); it is shown and logged as the plain startUrl. */
+    const shown = (u: string) => (task.openUrl && u === task.openUrl ? task.startUrl : u);
+    if (live) live.shown = shown;
+    await page.goto(task.openUrl || task.startUrl, { waitUntil: "domcontentloaded" });
     if (live) live.state = "running";
     let max = task.maxSteps ?? 30;
     const finish = async (status: BrowserResult["status"], result: string, note: string): Promise<BrowserResult> => {
@@ -503,7 +511,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         live.page = null;
       }
       if (cast) await (cast as import("playwright-core").CDPSession).send("Page.stopScreencast").catch(() => null);
-      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl, helped: live?.helped ?? [], url: page.url(), ...(task.record ? { frames, recDir, view: { ...VIEW } } : {}) };
+      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl, helped: live?.helped ?? [], url: shown(page.url()), ...(task.record ? { frames, recDir, view: { ...VIEW } } : {}) };
     };
 
     let lastSig = "";
@@ -532,6 +540,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       }
       await page.waitForLoadState("domcontentloaded").catch(() => null);
       const view = hideSecrets(await snapshot(page), task.secrets);
+      view.url = shown(view.url);
       const act = task.decide ? await task.decide(view, log) : await decide(task, view, log);
       const entry = (detail: string) => log.push({ step, action: act.action, detail: detail.slice(0, 300), url: view.url, ...(task.record ? { plan: Number(act.planStep) || 0, at: since() } : {}) });
       if (act.action === "done") {
@@ -698,6 +707,9 @@ async function perform(page: import("playwright-core").Page, task: BrowserTask, 
     case "press_enter":
       await page.keyboard.press("Enter");
       return;
+    case "press_escape":
+      await page.keyboard.press("Escape");
+      return;
     case "goto":
       if (!/^https?:\/\//i.test(act.value)) throw new Error("not a web address");
       if (task.allowUrl && !task.allowUrl(act.value)) throw new Error("that address is outside what this login may open");
@@ -775,6 +787,18 @@ export async function snapshot(page: import("playwright-core").Page): Promise<Pa
       if (el.getAttribute("role") === "combobox" || el.getAttribute("aria-haspopup") === "listbox") return `shows: ${clean((el as HTMLElement).innerText || "")}`;
       return clean((el as HTMLElement).innerText || "");
     };
+    // A dialog or panel open over the page: a modal, a drawer, or a fixed box that covers most of the window.
+    const POPUP = "[role=dialog], [aria-modal=true], .modal.show, .modal.in, .offcanvas.show, dialog[open]";
+    let popup: Element | null = Array.from(document.querySelectorAll(POPUP)).filter(visible).pop() ?? null;
+    if (!popup) {
+      for (const el of Array.from(document.body?.children ?? [])) {
+        if (!visible(el)) continue;
+        const s = getComputedStyle(el as HTMLElement);
+        const r = (el as HTMLElement).getBoundingClientRect();
+        if (s.position === "fixed" && parseInt(s.zIndex || "0", 10) >= 1000 && r.width >= innerWidth * 0.6 && r.height >= innerHeight * 0.6) popup = el;
+      }
+    }
+    const popupWords = popup ? ((popup as HTMLElement).innerText || "").trim().replace(/\s+/g, " ").slice(0, 200) : "";
     let n = 0;
     document.querySelectorAll("a[href], button, input, select, textarea, [role=button], [role=link], [role=tab], [role=combobox], [onclick]").forEach((el) => {
       if (!visible(el) || n >= 250) return;
@@ -785,14 +809,14 @@ export async function snapshot(page: import("playwright-core").Page): Promise<Pa
         i: n,
         tag: el.tagName.toLowerCase(),
         type,
-        label: labelOf(el).slice(0, 120),
+        label: `${popup && popup.contains(el) ? "(in the popup) " : ""}${labelOf(el)}`.slice(0, 120),
         text: stateOf(el).slice(0, 160),
         href: (el as HTMLAnchorElement).href || "",
       });
       if (type === "password") out[out.length - 1].text = (el as HTMLInputElement).value ? "(filled)" : "";
       n++;
     });
-    return { url: location.href, title: document.title, text: (document.body?.innerText || "").replace(/\n{3,}/g, "\n\n").slice(0, 14_000), elements: out };
+    return { url: location.href, title: document.title, text: (document.body?.innerText || "").replace(/\n{3,}/g, "\n\n").slice(0, 14_000), elements: out, popup: popupWords };
   });
   return data;
 }
@@ -812,9 +836,10 @@ Rules:
 - ${task.allowSubmit ? "You are approved to press the final button this goal needs (submit, save or publish). Press it only after every required file is uploaded and every required field is filled, then capture the confirmation number or message." : "Never press a button that submits, places or finalizes a bid, application or form. If the goal would need that, use done and say what is ready."}
 - Never accept terms, pay fees, change account settings, or delete anything unless the goal says to.
 - If a sign-in page needs an email or password that isn't saved, use "fail" and say the site needs someone signed in. Never ask anyone for a password, credentials or a code, in result or anywhere else.
+- A popup (a dialog, a panel or a message box over the page) is dealt with before anything behind it. Its elements are marked "(in the popup)". If the goal needs it, do that inside it. Otherwise close it: its Close, Done, Got it, OK, X or Cancel button, or "press_escape". Never click through it.
 - If you are stuck, blocked by a CAPTCHA, or the page is not what the goal expects, use "fail" and say why in result.
 - When the goal is reached, use "done" and put the requested answer in result, in under 400 words: the facts and findings the goal asks for, not a long write-up.${task.rules ? `\n${task.rules}` : ""}`,
-    prompt: `GOAL:\n${task.goal}\n\nFILES YOU CAN UPLOAD:\n${files}\n\nSTEPS SO FAR:\n${past}\n\nCURRENT PAGE: ${view.title}\n${view.url}\n\nELEMENTS:\n${els}\n\nPAGE TEXT:\n${view.text}`,
+    prompt: `GOAL:\n${task.goal}\n\nFILES YOU CAN UPLOAD:\n${files}\n\nSTEPS SO FAR:\n${past}\n\nCURRENT PAGE: ${view.title}\n${view.url}${view.popup ? `\n\nA POPUP IS OPEN OVER THE PAGE. It says: ${view.popup}` : ""}\n\nELEMENTS:\n${els}\n\nPAGE TEXT:\n${view.text}`,
     schemaName: "browser_action",
     schema: task.record ? RECORD_SCHEMA : ACTION_SCHEMA,
     maxTokens: 3000,

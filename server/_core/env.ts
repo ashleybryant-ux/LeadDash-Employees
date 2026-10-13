@@ -80,6 +80,10 @@ export const ENV = {
   get localTtsUrl() {
     return (process.env.LOCAL_TTS_URL || "").trim().replace(/\/+$/, "");
   },
+  /** The LeadDash EHR demo's team code (demo.leaddash.io/?team=<code>): Simone's browser skips the demo's sign-up card with it. Read each time so tests can set it. */
+  get ehrDemoTeamCode() {
+    return (process.env.EHR_DEMO_TEAM_CODE || "").trim();
+  },
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2",
 
   // Card payments for extra work hours (Stripe Checkout). The webhook adds the hours once Stripe says it's paid.

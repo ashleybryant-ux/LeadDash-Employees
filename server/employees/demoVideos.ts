@@ -205,6 +205,24 @@ export function checkWhere(url: string | null | undefined, signIn?: { loginName?
   if (host !== EHR_LIVE_HOST) throw new TRPCError({ code: "BAD_REQUEST", message: `LeadDash EHR videos are recorded in the demo practice only (${EHR_DEMO_HOST}, or ${DEMO_PRACTICE} at ${EHR_LIVE_HOST}), so no client information is ever in a video.` });
   if (signIn && !(signIn.loginName?.trim() || signIn.email?.trim())) throw new TRPCError({ code: "BAD_REQUEST", message: `At ${EHR_LIVE_HOST}, sign in as someone on the ${DEMO_PRACTICE} team (the demo practice): pick its saved Website login or enter the sign-in email.` });
 }
+/**
+ * The demo's team link: demo.leaddash.io opens with a sign-up card (a real sales lead form) unless
+ * ?team=<code> is on the address. With the code saved on the server (EHR_DEMO_TEAM_CODE), Simone's
+ * browser opens every demo recording through it, so nobody has to send her the link or sign her in.
+ * Only the first address carries the code; the demo drops it from the address bar right away.
+ */
+export function demoTeamLink(url: string) {
+  const code = ENV.ehrDemoTeamCode;
+  if (!code) return null;
+  try {
+    const u = new URL(url);
+    if (u.hostname.toLowerCase() !== EHR_DEMO_HOST) return null;
+    u.searchParams.set("team", code);
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
 /** The browser's own check once it's signed in: the demo practice, or stop. */
 export const demoPracticeRule = (url: string) => {
   let host = "";
@@ -214,6 +232,21 @@ export const demoPracticeRule = (url: string) => {
     host = "";
   }
   return host === EHR_LIVE_HOST ? `\n- This is the live LeadDash EHR app. Right after signing in, read the practice name at the bottom of the left menu (under "Signed in as"). It must say "${DEMO_PRACTICE}", the demo practice. If it says anything else, use fail at once with "Signed in to <that practice>, not the demo practice" and do nothing on the page.` : "";
+};
+
+/** The popups the browser demo shows, and what to do with each. */
+const demoPopupRule = (url: string) => {
+  let host = "";
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    host = "";
+  }
+  if (host !== EHR_DEMO_HOST) return "";
+  return `
+- In this demo, DashNotes' Start recording opens a recorder window over the note: click Start recording, use wait twice, click End and draft note, use wait until it says "Your draft is written", then click Close. The note's fields behind it are filled in.
+- A dark message box that starts "In your own account this would" is the demo explaining what a real account does: press_escape to close it and go on; the step still counted.
+- If the demo's sign-up card ("Open the demo") shows, never fill it in: use fail and say the team link is missing.`;
 };
 
 const cleanEmail = (e: string | null | undefined) => {
@@ -526,12 +559,14 @@ async function browserTask(orgId: number, d: DemoVideo, emp: AIEmployee, goal: s
   const startUrl = fullUrl(d.url) || (login ? startIn(login) : "");
   checkWhere(startUrl, { loginName: login?.name ?? null, email: d.signInEmail });
   const demoSite = vg.appFor(startUrl) === "ehr";
+  const teamLink = demoTeamLink(startUrl);
   const task: BrowserTask = {
     orgId,
     employeeId: emp.id,
     actor: `${emp.name}, the owner's ${emp.roleTitle}, recording a ${d.kind === "social" ? "social" : "training"} video`,
     goal,
     startUrl,
+    ...(teamLink ? { openUrl: teamLink } : {}),
     ...withEmail(web.loginParts(login, `demo-${d.id}`), login ? null : d.signInEmail),
     ask: signInAsk(orgId, d.id, emp),
     // Pressing a plan's buttons is allowed only in a demo that saves nothing (LeadDash EHR's demo resets).
@@ -542,7 +577,8 @@ async function browserTask(orgId: number, d: DemoVideo, emp: AIEmployee, goal: s
     record,
     job: null,
     rules: `- This is ${record ? "a recording" : "a practice run"} for a video. Move like a person showing a colleague: no wandering, no extra pages.
-- Never type a real person's details, a password into a visible box, or anything private.${demoPracticeRule(startUrl)}${demoSite ? "" : "\n- If a button you need is refused, the step is shown up to that button: use wait once so the screen is seen, then go on."}`,
+- Never type a real person's details, a password into a visible box, or anything private.
+- A popup that is not part of the step (a notice, a tip, a message box) is closed first (its Close, Got it, OK or X button, or press_escape) with planStep 0, then the step goes on. A popup the step opens on purpose (a form, a recorder) is finished inside and closed with its own button before the next step.${demoPracticeRule(startUrl)}${demoSite ? demoPopupRule(startUrl) : "\n- If a button you need is refused, the step is shown up to that button: use wait once so the screen is seen, then go on."}`,
   };
   return { task, login };
 }

@@ -24,11 +24,19 @@ How to read this guide:
 
 The demo opens with a sign-up card ("Open the demo", with First name, Last name, Work email, Mobile, Practice name and "Clinicians at your practice"). That form is real: it sends the details to LeadDash as a sales lead tagged "received demo". Do not fill it in.
 
-Instead:
+Instead, the team link is used on its own: LeadDash Employees keeps the demo's team code on the server and opens every demo recording through `https://demo.leaddash.io/?team=<code>`. The sign-up card is skipped, the code is dropped from the address bar, and the app opens on the **Dashboard**, already signed in. You never type a password or a code in the demo, and you never ask anyone for the team link. If the sign-up card shows anyway, the team code is not saved on the server: stop and tell Ashley.
 
-1. Ask Ashley for the team link. It looks like `https://demo.leaddash.io/?team=` followed by a code.
-2. Open the team link in your browser. The sign-up card is skipped, and this browser skips it from then on.
-3. The app opens on the **Dashboard**, already signed in. You never type a password or a code in the demo.
+### Popups, and how to get past them
+
+A popup is a box or panel drawn over the page. Nothing behind it can be clicked until it is closed. The recording does not continue on its own: close the popup, then go on with the step.
+
+| What you see | What to do |
+|---|---|
+| A dark message box that starts "In your own account this would..." | The demo explaining what a real account does at that moment (sending a claim, taking a payment, opening a video session). Press Escape or click outside it. The step counted; go on. |
+| The DashNotes recorder window ("Ready to record") after **Start recording** | Click **Start recording**, wait a few seconds, click **End and draft note**, wait for "Your draft is written", then click **Close**. The note's fields behind it are filled in. |
+| A form the step opened on purpose (Add appointment, a payment, a claim) | Finish it inside the popup and close it with its own button (**Save**, **Book**, **Submit**), never by clicking outside. |
+| A notice, tip or "Where to start" card the step did not ask for | Close it with its **Close**, **Got it**, **OK** or **X** button, or press Escape, then go on. |
+| A browser alert ("Claim saved with 'Ready' status...") | The browser closes it on its own. Nothing to do. |
 
 Who you are in the demo: **Sarah Chen**, LPC, practice administrator. The bottom of the left menu shows "Signed in as", "Sarah Chen", "Maple Crest Counseling · Administrator", and a **My account** link. Because you are an administrator, you see every menu item a practice owner sees.
 
@@ -511,7 +519,7 @@ Tabs: **To be submitted**, **Claims**, **Unpaid claims**, **Payments**, **Client
 - Tick several Ready rows, then **Create [n] claims**. Tick rows and **Not submitting [n]** to hold them.
 - Not submitting asks **Why** (**Client is paying privately**, **Non-covered service**, **Timely filing passed**, **Duplicate session**, **Other**) and **Note (optional)**, then **Mark not submitting**. On the Not submitting tab, **Submit after all** puts a session back.
 
-**Create claim** opens the claim form: "Insurance Claim for [client]", "CMS-1500 Health Insurance Claim Form" with a status (**New**, **Draft**, **Prepared**, **Submitted**). Buttons **Print**, **Download**, **Save Claim**, **Mark as Submitted**, **Submit to Clearinghouse**. In a batch it shows "Claim [n] of [n] in this batch". In the demo, saving or submitting shows the "In your own account this would send the claim to your clearinghouse..." notice.
+**Create claim** opens the claim form: "Insurance Claim for [client]", "CMS-1500 Health Insurance Claim Form" with a status (**New**, **Draft**, **Prepared**, **Submitted**). Buttons **Print**, **Download**, **Save Claim**, **Mark as Submitted**, **Submit to Clearinghouse**. In a batch it shows "Claim [n] of [n] in this batch". In the demo, **Save Claim** saves a real claim (status **Ready**) that leaves To be submitted and shows on the Claims tab, and **Submit to Clearinghouse** marks it **Submitted** and shows the "In your own account this would send the claim to your clearinghouse..." notice. Press Escape to close the notice.
 
 **Claims** and **Unpaid claims**
 
@@ -1011,7 +1019,7 @@ Every task starts in the demo at https://demo.leaddash.io, signed in as Sarah Ch
   2. Click a row's arrow to see the checks (Diagnosis, Rendering provider, Coverage, Note, Place of service, Session).
   3. Click **Create claim**. The CMS-1500 claim form opens.
   4. Review the form.
-  5. Click **Submit to Clearinghouse**. In the demo a notice explains it would go to the clearinghouse.
+  5. Click **Submit to Clearinghouse**. The claim is saved and marked **Submitted**, and a notice explains it would go to the clearinghouse. Press Escape to close the notice.
 - Done when: the notice shows, and the claim leaves the queue in a live practice.
 - Watch out: tick several Ready rows and click **Create [n] claims** to work a batch ("Claim 1 of 3 in this batch"). **Mark as Submitted** only records a claim sent some other way. Rows marked **Needs info** or **Blocked** cannot be claimed until fixed.
 
