@@ -3530,6 +3530,86 @@ export const appRouter = router({
   }),
 
   /** Elena's video agent: storyboards, finished videos, Edit (captions, logo, music) and redos. */
+  /** Scenes: characters talking to each other, lip synced, in a real or drawn style (2026-10-13). */
+  scenes: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const sc = await import("./employees/scene");
+      return sc.list(input.organizationId).map(sc.view);
+    }),
+    get: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const ep = db.getDramaEpisode(input.id, input.organizationId);
+      return ep && ep.kind === "scene" ? (await import("./employees/scene")).view(ep) : null;
+    }),
+    write: protectedProcedure
+      .input(orgInput.extend({ what: z.string().trim().min(1).max(2000), style: z.string().max(40).nullable().optional(), me: z.boolean().optional(), seconds: z.number().int().min(10).max(60).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const sc = await import("./employees/scene");
+        const ep = await sc.writeScene(input.organizationId, input);
+        const emp = await db.getEmployeeByKind(input.organizationId, "video");
+        if (emp) await db.createChatMessage({ organizationId: input.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `Here's "${ep.title}": ${sc.view(ep).shots.length} shots where the characters talk to each other. I'm making the pictures now. Change any shot or anyone in the cast, then press Make the scene.`, cards: JSON.stringify([{ type: "scene", id: ep.id, title: ep.title }]) });
+        return sc.view(ep);
+      }),
+    saveShot: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), n: z.number().int(), who: z.string().max(60).nullable(), line: z.string().max(200), see: z.string().max(600) }))
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const sc = await import("./employees/scene");
+        return sc.view(await sc.saveShot(input.organizationId, input.id, input.n, input));
+      }),
+    saveCast: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), index: z.number().int().min(0), name: z.string().max(60), look: z.string().max(500), voiceId: z.string().max(120).nullable(), voiceName: z.string().max(120).nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const sc = await import("./employees/scene");
+        return sc.view(await sc.saveCast(input.organizationId, input.id, input.index, input));
+      }),
+    setStyle: protectedProcedure.input(orgInput.extend({ id: z.number().int(), style: z.string().min(1).max(40) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const sc = await import("./employees/scene");
+      return sc.view(await sc.setStyle(input.organizationId, input.id, input.style));
+    }),
+    rewrite: protectedProcedure.input(orgInput.extend({ id: z.number().int(), change: z.string().trim().max(1000) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const sc = await import("./employees/scene");
+      return sc.view(await sc.rewriteScene(input.organizationId, input.id, input.change));
+    }),
+    make: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const sc = await import("./employees/scene");
+      return sc.view(await sc.makeScene(input.organizationId, input.id));
+    }),
+    redo: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const sc = await import("./employees/scene");
+      return sc.view(await sc.redoPicture(input.organizationId, input.id, input.n));
+    }),
+    stop: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      const dr = await import("./employees/drama");
+      return dr.episodeView(dr.stopEpisode(input.organizationId, input.id));
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./employees/scene")).remove(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    /** Voices a made-up character can speak with, each with a sample. */
+    voices: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      return (await import("./employees/avatar")).castVoices(input.organizationId);
+    }),
+  }),
+
   videos: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
@@ -3559,6 +3639,8 @@ export const appRouter = router({
         library: broll.readyClips(input.organizationId).length,
         videoHoursPerMinute: hours.JOBS.video.minutes / 60,
         clipHours: hours.JOBS.clip.minutes / 60,
+        // Scenes (characters talking, lip synced) are paid per use like dramas, so work-hour plans don't offer them yet.
+        scenes: !hours.meteredSync(input.organizationId),
       };
     }),
     /** Plan the video: Elena writes the storyboard and posts it in her chat. Nothing is made yet. */

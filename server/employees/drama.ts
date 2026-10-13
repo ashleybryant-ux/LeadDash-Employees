@@ -12,6 +12,7 @@ import { generateJson, type JsonSchema } from "../_core/llm";
 import { storagePut, uploadsRoot } from "../storage";
 import type { DramaCastMember, DramaEpisode } from "../../drizzle/schema";
 import * as avatar from "./avatar";
+import * as styles from "./styles";
 
 /**
  * Elena's mini drama studio: cinematic vertical micro dramas, not a talking photo.
@@ -536,6 +537,26 @@ async function download(url: string) {
 /** A line read aloud in this workspace's voice for the character (never another workspace's account). */
 const speak = (orgId: number, voiceId: string, text: string) => avatar.speech(orgId, voiceId, text);
 
+/** A Scene's own cast (2026-10-13): kept with the scene, not the series. The owner plays herself when she's in it. */
+export type SceneCast = { name: string; role: string; look: string; owner?: boolean; voiceId: string | null; voiceName: string | null; portrait?: string | null };
+export type ScenePlan = { approved?: boolean; style?: string; what?: string; me?: boolean; sceneCast?: SceneCast[]; hidden?: boolean };
+export const scenePlanOf = (e: Pick<DramaEpisode, "plan">) => parse<ScenePlan>(e.plan, {});
+/** The scene's drawn style, or null for real people. */
+export async function sceneStyle(orgId: number, e: Pick<DramaEpisode, "kind" | "plan">) {
+  if (e.kind !== "scene") return null;
+  const key = scenePlanOf(e).style ?? "real";
+  return styles.isDrawn(key) ? styles.resolve(orgId, key) : null;
+}
+
+/**
+ * Who can be in an episode's shots: the series cast, or a Scene's own cast (shaped like the series cast so the
+ * rest of the studio works the same; its id is its place in the scene's list, as a negative number).
+ */
+export function castFor(orgId: number, e: Pick<DramaEpisode, "kind" | "plan">): DramaCastMember[] {
+  if (e.kind !== "scene") return db.listDramaCast(orgId);
+  return (scenePlanOf(e).sceneCast ?? []).map((c, i) => ({ id: -(i + 1), organizationId: orgId, name: c.name, role: c.role, kind: c.owner ? "owner" : "made_up", look: c.look, photoUrl: c.portrait ?? null, voiceId: c.voiceId, voiceName: c.voiceName, createdAt: new Date(0) }) as DramaCastMember);
+}
+
 /** This workspace's ElevenLabs key, for room tone and music ("" leaves them out). */
 const elevenKey = (orgId: number) => import("../elevenlabs").then((m) => m.keyFor(orgId, "video"));
 
@@ -562,13 +583,21 @@ export async function castFromDescription(orgId: number, who: string) {
 }
 
 /** A stock voice that fits a description: by the gender it reads, else any stock voice (this workspace's own voices only). */
-async function stockVoiceFor(orgId: number, look: string) {
+export async function stockVoiceFor(orgId: number, look: string) {
   // Never anyone's own cloned voice for someone who is not them.
   const stock = await avatar.castVoices(orgId);
   const wantsF = /\b(she|her|woman|female|mom|mother|lady|girl)\b/i.test(look);
   const wantsM = /\b(he|him|his|man|male|dad|father|guy|boy)\b/i.test(look);
   const fit = stock.filter((v) => (wantsF ? /female/i.test(v.gender) : wantsM ? /^male/i.test(v.gender) : true));
   return fit[0] ?? stock[0] ?? null;
+}
+
+/** A real-looking portrait for a Scene's own character, kept with the scene. */
+async function scenePortrait(orgId: number, sceneId: number, c: DramaCastMember, look: string) {
+  const r = await falRun(MODELS.portrait, { prompt: `Candid portrait photograph of ${c.name}, ${c.look}, as they look in 2026: current clothes and hair, no heavy makeup. Head and shoulders, facing the camera, neutral expression, soft window light, plain background, real skin with pores and natural shine, no beauty-filter smoothing, no orange tan, muted colors, 50mm lens. ${look}`, aspect_ratio: "3:4", num_images: 1, output_format: "png" }, 5);
+  const url = r?.images?.[0]?.url;
+  if (!url) throw new Error(`No portrait came back for ${c.name}`);
+  return (await storagePut(`org-${orgId}/drama/scene${sceneId}-cast${-c.id}-${Date.now()}.png`, await download(url), "image/png")).url;
 }
 
 /** The character's portrait, made once from their description and kept. */
@@ -600,17 +629,32 @@ function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], pr
   return `A single frame from a 2026 streaming drama series, vertical 9:16, photographed on a cinema camera with a 35mm or 50mm lens. ${s.framing} shot. ${s.action} Setting: ${s.setting}, a real lived-in place with everyday clutter and current-day objects (2026 phones, laptops, coffee cups), nothing staged or symmetrical. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features. Clothes people wear to work today, natural hair, no heavy makeup.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look} Natural depth of field with a soft, not smeared, background. Motivated light from a window, a lamp or a screen, cool daylight mixed with warm practicals. Real skin with pores and natural shine, no beauty-filter smoothing, no orange tan. Muted color grade, gentle contrast, a touch of grain, slightly off-center framing like a real operator. Not a commercial, not stock footage, not glossy, not over-saturated, not CGI. No added text, captions or watermarks.${before}`;
 }
 
+/** A Scene drawn in a style: the same shot, drawn instead of photographed, with each person kept like their reference. */
+function drawnStillPrompt(s: Shot, style: { prompt: string }, refs: Refs[], prev = false, styleRefs = 0) {
+  let at = 1;
+  const who = refs.map((r) => {
+    const from = at;
+    at += r.urls.length;
+    const which = r.urls.length > 1 ? `reference images ${from} to ${at - 1}` : `reference image ${from}`;
+    return `${r.name} (the person in ${which}${r.look ? `, ${r.look}` : ""})`;
+  });
+  const before = prev ? ` Reference image ${at++} is the shot just before this one in the same scene: keep the same room, light, colors, wardrobe and props, and continue from that moment from this new angle.` : "";
+  const look = styleRefs ? ` The last ${styleRefs === 1 ? "reference image shows" : `${styleRefs} reference images show`} the art style to match.` : "";
+  return `${style.prompt}.${look} A single frame from an animated short film, vertical 9:16. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Draw each person as a character in this exact art style while keeping them recognizable as their reference: the same face shape, skin tone, hair and outfit in every shot.` : "No people in frame."} Cinematic composition with depth (foreground, subject, background), expressive faces and clear mouths, motivated light. One frame only, no split panels. No text, letters, captions, logos or watermarks.${before}`;
+}
+
 /** The video model moves the camera and the people; it never redesigns them. */
-function motionPrompt(s: Shot, refs: Refs[]) {
+function motionPrompt(s: Shot, refs: Refs[], drawn = false) {
   const tags = refs.map((r, i) => ({ n: r.name, tag: `@Element${i + 1}` }));
   let action = s.action;
   for (const r of tags) action = action.replace(new RegExp(`\\b${r.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), r.tag);
   const talk = s.line ? ` ${tags.find((r) => r.n.toLowerCase() === s.line!.who.toLowerCase())?.tag ?? s.line.who} speaks a short line, mouth moving naturally.` : "";
+  if (drawn) return `${s.move}. ${action}${talk} Animate it in exactly the same art style as the first frame: every character, outfit and room stays exactly as drawn; only the camera and the characters move. Expressive, natural acting at normal speed: gestures, glances, blinks, small movements of the head and hands; no style change, no photorealism, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
   return `${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in the first frame; only the camera and natural movement change. Restrained, realistic motion at normal speed: subtle breathing, natural blinks, small shifts of weight and hands, the kind of micro-movement a real person makes; no surreal body motion, no slow motion, no transformations, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
 
 /** Seedance takes the still and the faces as numbered images; the still is the first frame. */
-function seedancePrompt(s: Shot, refs: Refs[]) {
+function seedancePrompt(s: Shot, refs: Refs[], drawn = false) {
   let at = 2;
   const who = refs.map((r) => {
     const tags = r.urls.slice(0, Math.max(0, 8 - (at - 2))).map(() => `@Image${at++}`);
@@ -620,6 +664,7 @@ function seedancePrompt(s: Shot, refs: Refs[]) {
   for (const r of who) action = action.replace(new RegExp(`\\b${r.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), `the person in ${r.tag}`);
   const faces = who.map((r) => `${r.n} is the person in ${r.all.join(" and ")}`).join("; ");
   const talk = s.line ? ` ${s.line.who} speaks a short line, mouth moving naturally.` : "";
+  if (drawn) return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. ` : ""}${s.move}. ${action}${talk} Animate it in exactly the same art style as @Image1: every character, outfit and room stays exactly as drawn; only the camera and the characters move. Expressive, natural acting at normal speed; no style change, no photorealism, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
   return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. Keep every face exactly like its images. ` : ""}${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in @Image1; only the camera and natural movement change. Restrained, realistic motion at normal speed: subtle breathing, natural blinks, small shifts of weight and hands, the kind of micro-movement a real person makes; no surreal body motion, no slow motion, no transformations, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
 
@@ -629,9 +674,20 @@ function takePrompt(s: Shot) {
 }
 
 const active = new Set<number>();
-const label = (e: Pick<DramaEpisode, "kind" | "number" | "title">) => (e.kind === "campaign" ? `"${e.title}"` : `Episode ${e.number}`);
+const label = (e: Pick<DramaEpisode, "kind" | "number" | "title">) => (e.kind === "campaign" || e.kind === "scene" ? `"${e.title}"` : `Episode ${e.number}`);
 const planOf = (e: Pick<DramaEpisode, "plan">) => parse<{ approved?: boolean; goal?: string; directions?: Direction[]; chosen?: number; script?: string; cta?: string }>(e.plan, {});
 export type Direction = { title: string; hook: string; story: string; metaphor: string; location: string; wardrobe: string; lighting: string; camera: string; ending: string };
+
+/** Changes one person in a Scene's own cast and keeps it with the scene. */
+export function saveSceneCastMember(orgId: number, id: number, index: number, patch: Partial<SceneCast>) {
+  const ep = db.getDramaEpisode(id, orgId);
+  if (!ep || ep.kind !== "scene") return null;
+  const plan = scenePlanOf(ep);
+  const list = [...(plan.sceneCast ?? [])];
+  if (!list[index]) return null;
+  list[index] = { ...list[index], ...patch };
+  return db.updateDramaEpisode(id, orgId, { plan: JSON.stringify({ ...plan, sceneCast: list }) });
+}
 
 /** Starts (or picks up) an episode or campaign in the background: keyframes first, then, once approved, the animation. */
 export async function startEpisode(orgId: number, id: number) {
@@ -642,7 +698,7 @@ export async function startEpisode(orgId: number, id: number) {
   const shots = shotsOf(ep);
   if (!shots.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick a direction first, so I can plan the shots." });
   const plan = planOf(ep);
-  const cast = db.listDramaCast(orgId);
+  const cast = castFor(orgId, ep);
   const emp = await elena(orgId);
   const ownerRow = cast.find((c) => c.kind === "owner");
   if (ep.kind === "drama" && ownerRow) {
@@ -671,13 +727,16 @@ export async function startEpisode(orgId: number, id: number) {
   if (needsOwner) {
     const pic = await ownerPortrait(orgId);
     if (!pic) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Add photos of yourself to the Brain first (attach them here), so you look like you in every shot." });
-    if (owner && !owner.photoUrl) db.updateDramaCast(owner.id, orgId, { photoUrl: pic });
+    if (owner && !owner.photoUrl && owner.id > 0) db.updateDramaCast(owner.id, orgId, { photoUrl: pic });
   }
   const s0 = avatar.settingsOf(emp);
   const ownVoice = s0.voiceId ? { id: s0.voiceId, name: s0.voiceName } : (await avatar.voices(orgId)).find((v) => v.own) ?? null;
-  if (owner && !owner.voiceId && ownVoice) db.updateDramaCast(owner.id, orgId, { voiceId: ownVoice.id, voiceName: ownVoice.name ?? null });
+  if (owner && !owner.voiceId && ownVoice) {
+    if (owner.id > 0) db.updateDramaCast(owner.id, orgId, { voiceId: ownVoice.id, voiceName: ownVoice.name ?? null });
+    else saveSceneCastMember(orgId, id, -owner.id - 1, { voiceId: ownVoice.id, voiceName: ownVoice.name ?? null });
+  }
   if (animating) {
-    for (const s of shots) if (s.line && !s.takeUrl && !db.listDramaCast(orgId).find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${s.line.who} doesn't have a voice yet. Pick one on the Cast tab.` });
+    for (const s of shots) if (s.line && !s.takeUrl && !castFor(orgId, db.getDramaEpisode(id, orgId)!).find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${s.line.who} doesn't have a voice yet. Pick one ${ep.kind === "scene" ? "with Edit on their card in the cast" : "on the Cast tab"}.` });
     if (shots.some((s) => s.vo && !s.takeUrl) && !ownVoice) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Pick your voice under Your avatar on my Videos tab, so the voice-over is you." });
   }
   if (hours.meteredSync(orgId)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Cinematic episodes and campaign films aren't part of work-hour plans. Talking videos on my Videos tab are." });
@@ -759,12 +818,13 @@ export async function dramaTicks(now = Date.now()) {
 async function fail(orgId: number, id: number, message: string) {
   const ep = db.updateDramaEpisode(id, orgId, { status: "failed", error: message.slice(0, 400), progress: null });
   const emp = await elena(orgId).catch(() => null);
-  if (ep && emp) await db.createChatMessage({ organizationId: orgId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `${label(ep)} stopped: ${message.slice(0, 300).replace(/\.$/, "")}. Everything already made is kept, so Make again picks up where it stopped.`, cards: JSON.stringify([{ type: "drama_episode", id: ep.id, title: ep.title }]) });
+  if (ep && emp) await db.createChatMessage({ organizationId: orgId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `${label(ep)} stopped: ${message.slice(0, 300).replace(/\.$/, "")}. Everything already made is kept, so Make again picks up where it stopped.`, cards: JSON.stringify([{ type: ep.kind === "scene" ? "scene" : "drama_episode", id: ep.id, title: ep.title }]) });
 }
 
 /** The references for the people in a shot: the owner's plate and photos, a team member's portrait, a made-up character's portrait. */
-async function refsFor(orgId: number, s: Shot, look: string) {
-  const cast = db.listDramaCast(orgId);
+async function refsFor(orgId: number, s: Shot, look: string, ep: Pick<DramaEpisode, "id" | "kind" | "plan">) {
+  const cast = castFor(orgId, ep);
+  const drawn = await sceneStyle(orgId, ep);
   const plates = settingsOf(orgId).plates ?? [];
   const refs: Refs[] = [];
   let extra = 0;
@@ -775,6 +835,15 @@ async function refsFor(orgId: number, s: Shot, look: string) {
       const plate = plates.find((p) => p.label.toLowerCase() === (s.plate ?? "").toLowerCase());
       const photos = await ownerPhotos(orgId);
       refs.push({ name: c.name, look: c.look, urls: [...(plate ? [plate.url] : []), ...photos].slice(0, 6) });
+    } else if (c.id < 0) {
+      // A Scene's own character: a portrait made once (drawn in the scene's style when it has one) and kept with the scene.
+      let url = c.photoUrl;
+      if (!url) {
+        extra += PRICE.portrait;
+        url = drawn ? await styles.draw(orgId, { prompt: styles.portraitPrompt(drawn, { name: c.name, look: c.look }), ratio: "3:4", refs: drawn.refs, name: `scene-${ep.id}-cast${-c.id}` }) : await scenePortrait(orgId, ep.id, c, look);
+        saveSceneCastMember(orgId, ep.id, -c.id - 1, { portrait: url });
+      }
+      refs.push({ name: c.name, look: c.look, urls: [url] });
     } else {
       if (!c.photoUrl) extra += PRICE.portrait;
       refs.push({ name: c.name, look: c.look, urls: [await portraitFor(orgId, c, look)] });
@@ -839,15 +908,19 @@ export async function makeEpisode(orgId: number, id: number) {
     s.status = "making";
     s.error = null;
     save(`Keyframe ${s.n} of ${shots.length}: ${s.framing.toLowerCase()}, ${s.action.slice(0, 80)}`);
-    const { refs, extra } = await refsFor(orgId, s, look);
+    const { refs, extra } = await refsFor(orgId, s, look, ep);
     const shown = (s.props ?? []).map((t) => props.find((p) => p.title.toLowerCase() === t.toLowerCase())).filter((p): p is (typeof props)[number] => Boolean(p)).slice(0, 2);
     // The shot before it in the same scene is a reference too, so the room, light and wardrobe carry over.
     const i = shots.indexOf(s);
     const prevStill = i > 0 && sceneOf(shots[i - 1]) === sceneOf(s) ? shots[i - 1].stillUrl ?? null : null;
     const all = [...[...refs.flatMap((r) => r.urls), ...shown.map((p) => p.url)].slice(0, 13), ...(prevStill ? [prevStill] : [])];
+    const drawn = await sceneStyle(orgId, ep);
+    // A drawn scene shows no props, and a custom style's own pictures come last, after the people and the shot before.
+    if (drawn) all.splice(0, all.length, ...[...refs.flatMap((r) => r.urls)].slice(0, 12), ...(prevStill ? [prevStill] : []), ...drawn.refs.slice(0, 2));
+    const prompt = drawn ? drawnStillPrompt(s, drawn, refs, !!prevStill, Math.min(2, drawn.refs.length)) : stillPrompt(s, look, refs, shown, !!prevStill);
     const res = all.length
-      ? await falRun(MODELS.still, { prompt: stillPrompt(s, look, refs, shown, !!prevStill), image_urls: await Promise.all(all.map(asInput)), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`))
-      : await falRun(MODELS.portrait, { prompt: stillPrompt(s, look, refs), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`));
+      ? await falRun(MODELS.still, { prompt, image_urls: await Promise.all(all.map(asInput)), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`))
+      : await falRun(MODELS.portrait, { prompt: drawn ? drawnStillPrompt(s, drawn, refs) : stillPrompt(s, look, refs), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`));
     const still = res?.images?.[0]?.url as string | undefined;
     if (!still) throw new Error(`No picture came back for shot ${s.n}`);
     s.stillUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-shot${s.n}-${Date.now()}.png`, await download(still), "image/png")).url;
@@ -866,21 +939,24 @@ export async function makeEpisode(orgId: number, id: number) {
       employeeId: emp.id,
       role: "employee",
       authorName: emp.name,
-      content: `The keyframes for ${label(ep)} are ready: one still for each of the ${shots.length} shots. Look them over. Redo any that aren't right, then press Animate it (about $${(est / 100).toFixed(2)} more). Nothing is animated until you approve.`,
-      cards: JSON.stringify([{ type: "drama_keyframes", id: ep.id, title: ep.title }]),
+      content: ep.kind === "scene"
+        ? `The pictures for ${label(ep)} are ready: one for each of the ${shots.length} shots. Redo any that aren't right, then press Make the scene (about $${(est / 100).toFixed(2)} more). Nothing moves until you do.`
+        : `The keyframes for ${label(ep)} are ready: one still for each of the ${shots.length} shots. Look them over. Redo any that aren't right, then press Animate it (about $${(est / 100).toFixed(2)} more). Nothing is animated until you approve.`,
+      cards: JSON.stringify([{ type: ep.kind === "scene" ? "scene" : "drama_keyframes", id: ep.id, title: ep.title }]),
     });
     return;
   }
 
   // 3. Animation, voice-over and lip sync, shot by shot (the video model moves the camera and the people, nothing else).
-  const cast = db.listDramaCast(orgId);
+  const cast = castFor(orgId, db.getDramaEpisode(id, orgId)!);
+  const drawnStyle = await sceneStyle(orgId, ep);
   const ownerVoice = cast.find((c) => c.kind === "owner")?.voiceId ?? avatar.settingsOf(emp).voiceId ?? (await avatar.voices(orgId)).find((v) => v.own)?.id ?? null;
   for (const s of shots) {
     if (s.clipUrl) continue;
     s.status = "making";
     s.error = null;
     save(`Animating shot ${s.n} of ${shots.length}: ${s.move.toLowerCase()}`);
-    const { refs } = await refsFor(orgId, s, look);
+    const { refs } = await refsFor(orgId, s, look, ep);
     if (s.takeUrl) {
       // Her own take: her movement, expressions and real voice, moved onto the approved still.
       save(`Shot ${s.n} of ${shots.length}: moving your take onto the keyframe`);
@@ -926,7 +1002,7 @@ export async function makeEpisode(orgId: number, id: number) {
       if (engine === "seedance") {
         seconds = Math.max(4, seconds);
         const faces = refs.flatMap((r) => r.urls).slice(0, 8);
-        clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(seconds), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
+        clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs, !!drawnStyle), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(seconds), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
       } else {
         // A shot that carries straight on into the next one ends exactly on the next keyframe, so there's no jump.
         const nextShot = shots[shots.indexOf(s) + 1];
@@ -934,7 +1010,7 @@ export async function makeEpisode(orgId: number, id: number) {
         clipRes = await falRun(MODELS.video, {
           start_image_url: await asInput(s.stillUrl!),
           ...(endOn ? { end_image_url: await asInput(endOn) } : {}),
-          prompt: motionPrompt(s, refs),
+          prompt: motionPrompt(s, refs, !!drawnStyle),
           duration: String(seconds),
           generate_audio: !s.line,
           negative_prompt: "blur, distortion, low quality, on-screen text, captions, watermark, extra fingers, distorted hands, warped faces, morphing, surreal motion, slow motion",
@@ -980,10 +1056,12 @@ export async function makeEpisode(orgId: number, id: number) {
     employeeId: emp.id,
     role: "employee",
     authorName: emp.name,
-    content: ep.kind === "campaign"
+    content: ep.kind === "scene"
+      ? `${label(ep)} is made: ${shots.length} shots, ${len}, $${(ep.costCents / 100).toFixed(2)}. Every line is lip synced. If a shot isn't right, press Redo picture on it and make it again.`
+      : ep.kind === "campaign"
       ? `${label(ep)} is finished: ${shots.length} shots, ${len}, $${(ep.costCents / 100).toFixed(2)}. It comes in three versions: vertical for TikTok, Reels and Shorts, square for the feed, and wide for YouTube and your site. If a shot isn't right, press Remake on it in my Campaigns tab.`
       : `Episode ${ep.number}, "${ep.title}," is cut. ${shots.length} shots, ${len} long, and it cost $${(ep.costCents / 100).toFixed(2)}. Watch it below. If a shot isn't right, open it on my Episodes tab and press Remake on that shot.`,
-    cards: JSON.stringify([{ type: "drama_episode", id: ep.id, title: ep.title }, { type: "choices", id: Date.now(), title: "", options: ep.kind === "campaign" ? ["Make another campaign", "Shorter version", "How much have I spent?"] : [`Make episode ${ep.number + 1}`, "Write the next 3 episodes", "How much have I spent?"] }]),
+    cards: JSON.stringify([{ type: ep.kind === "scene" ? "scene" : "drama_episode", id: ep.id, title: ep.title }, { type: "choices", id: Date.now(), title: "", options: ep.kind === "scene" ? ["Make another scene", "How much have I spent?"] : ep.kind === "campaign" ? ["Make another campaign", "Shorter version", "How much have I spent?"] : [`Make episode ${ep.number + 1}`, "Write the next 3 episodes", "How much have I spent?"] }]),
   });
 }
 
@@ -1378,6 +1456,27 @@ export function episodeView(e: DramaEpisode) {
     done: shots.filter((s) => s.clipUrl).length,
     stills: shots.filter((s) => s.stillUrl).length,
     plan: { goal: plan.goal ?? "", directions: plan.directions ?? [], chosen: plan.chosen ?? null, script: plan.script ?? "", cta: plan.cta ?? "", approved: Boolean(plan.approved) },
+    scene: e.kind === "scene" ? sceneView(e) : null,
+  };
+}
+
+/** A Scene's own parts for its card: style, cast, and where it is. */
+function sceneView(e: DramaEpisode) {
+  const p = scenePlanOf(e);
+  const key = p.style ?? "real";
+  const shots = shotsOf(e);
+  const total = shots.length || 1;
+  const stills = shots.filter((s) => s.stillUrl).length;
+  const clips = shots.filter((s) => s.clipUrl).length;
+  // Pictures are the first 30%, the moving shots the next 60%, the cut the last 10%.
+  const pct = e.status === "ready" ? 100 : e.status === "making" ? (planOf(e).approved ? 30 + Math.round((60 * clips) / total) + (clips === total ? 5 : 0) : Math.round((30 * stills) / total)) : stills === total ? 30 : Math.round((30 * stills) / total);
+  return {
+    style: key,
+    styleLabel: key === "real" ? "Cinematic" : styles.resolve(e.organizationId, key).label,
+    what: p.what ?? "",
+    me: Boolean(p.me),
+    cast: (p.sceneCast ?? []).map((c, i) => ({ index: i, name: c.name, role: c.role, look: c.look, owner: Boolean(c.owner), voiceId: c.voiceId, voiceName: c.voiceName, portrait: c.portrait ?? null })),
+    pct: Math.max(0, Math.min(100, pct)),
   };
 }
 

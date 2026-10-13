@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { VideoCard, VideoMaker, type V } from "../video/VideoAgent";
 import { EditUpload, VideoEditor, type EV } from "../video/Editor";
+import { SceneCard, type SceneV } from "../video/Scene";
 
 /**
  * Elena's videos made from instructions: the Videos tab (Make a video, then rows that open in
@@ -12,6 +13,8 @@ import { EditUpload, VideoEditor, type EV } from "../video/Editor";
 const PILL: Record<V["status"], string> = { draft: "amber", making: "blue", ready: "green", failed: "red" };
 const EDIT_PILL: Record<EV["status"], string> = { preparing: "blue", draft: "amber", making: "blue", ready: "green", failed: "red" };
 const COLS = "minmax(0,2fr) 150px 110px 110px 128px";
+const SCENE_PILL: Record<SceneV["status"], string> = { script: "amber", keyframes: "amber", making: "blue", ready: "green", failed: "red" };
+const SCENE_LABEL: Record<SceneV["status"], string> = { script: "Draft", keyframes: "Ready to make", making: "Making", ready: "Ready", failed: "Stopped" };
 
 /** Elena's Videos tab: every video she made from instructions. */
 export function MadeVideosTab({ empName }: { empName: string }) {
@@ -20,6 +23,9 @@ export function MadeVideosTab({ empName }: { empName: string }) {
   const rows = (list.data ?? []) as V[];
   const edits = trpc.edits.list.useQuery({ organizationId: currentOrgId }, { refetchInterval: (r) => ((r.state.data ?? []).some((e) => e.status === "preparing" || e.status === "making" || e.step) ? 5_000 : false) });
   const editRows = (edits.data ?? []) as EV[];
+  const scenes = trpc.scenes.list.useQuery({ organizationId: currentOrgId }, { refetchInterval: (r) => ((r.state.data ?? []).some((e) => e.status === "making") ? 5_000 : false) });
+  const sceneRows = (scenes.data ?? []) as SceneV[];
+  const [openScene, setOpenScene] = React.useState<number | null>(null);
   const fromUrl = typeof window !== "undefined" ? Number(new URLSearchParams(window.location.search).get("edit")) || null : null;
   const [open, setOpen] = React.useState<number | null>(null);
   const [openEdit, setOpenEdit] = React.useState<number | null>(fromUrl);
@@ -33,6 +39,7 @@ export function MadeVideosTab({ empName }: { empName: string }) {
           onPlanned={(r) => {
             setMaking(false);
             if (r.kind === "video") setOpen(r.id);
+            if (r.kind === "scene") setOpenScene(r.id);
           }}
         />
       ) : editing ? (
@@ -57,7 +64,25 @@ export function MadeVideosTab({ empName }: { empName: string }) {
           <span>Status</span>
           <span />
         </div>
-        {rows.length === 0 && editRows.length === 0 && <div className="ld-empty">{list.isLoading ? "Loading..." : `No videos yet. Press Make a video or Edit my video, or tell ${empName} in Chat what video you want.`}</div>}
+        {sceneRows.map((e) => (
+          <React.Fragment key={`scene-${e.id}`}>
+            <div className={`ld-rw ld-mv-rw ${openScene === e.id ? "open" : ""}`} style={{ gridTemplateColumns: COLS }}>
+              <span className="ld-strong" style={{ overflowWrap: "anywhere" }}>{e.title}</span>
+              <span>{`Scene · ${e.scene?.styleLabel ?? "Cinematic"}`}</span>
+              <span>9:16</span>
+              <span className={`ld-pill ${SCENE_PILL[e.status]}`} style={{ justifySelf: "start" }}>{SCENE_LABEL[e.status]}</span>
+              <button type="button" className="ld-btn sm" style={{ width: 128 }} aria-expanded={openScene === e.id} onClick={() => setOpenScene(openScene === e.id ? null : e.id)}>
+                {openScene === e.id ? "Close" : "Open"}
+              </button>
+            </div>
+            {openScene === e.id && (
+              <div className="ld-mv-open">
+                <SceneCard id={e.id} bare />
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+        {rows.length === 0 && editRows.length === 0 && sceneRows.length === 0 && <div className="ld-empty">{list.isLoading ? "Loading..." : `No videos yet. Press Make a video or Edit my video, or tell ${empName} in Chat what video you want.`}</div>}
         {editRows.map((e) => (
           <React.Fragment key={`e${e.id}`}>
             <div className={`ld-rw ld-mv-rw ${openEdit === e.id ? "open" : ""}`} style={{ gridTemplateColumns: COLS }}>

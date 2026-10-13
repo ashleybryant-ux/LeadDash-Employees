@@ -38,7 +38,7 @@ function Tile({ s, on, onClick }: { s: StyleItem; on: boolean; onClick: () => vo
 }
 
 /** The Style row on Make a video: Real footage, three styles (or the one picked), and All styles. */
-export function StyleRow({ value, onChange }: { value: string; onChange: (key: string) => void }) {
+export function StyleRow({ value, onChange, realLabel }: { value: string; onChange: (key: string) => void; realLabel?: string }) {
   const st = useStyles();
   const [open, setOpen] = React.useState(false);
   const keys = ["real", ...QUICK];
@@ -48,7 +48,7 @@ export function StyleRow({ value, onChange }: { value: string; onChange: (key: s
       <span className="ld-lbl">Style</span>
       <div className="ld-sty-quick">
         {keys.map((k) => (
-          <Tile key={k} s={st.find(k)} on={value === k} onClick={() => onChange(k)} />
+          <Tile key={k} s={k === "real" && realLabel ? { ...st.find(k), label: realLabel } : st.find(k)} on={value === k} onClick={() => onChange(k)} />
         ))}
         <button type="button" className="ld-sty-more" onClick={() => setOpen(true)}>
           All styles

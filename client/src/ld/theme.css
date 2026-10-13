@@ -2533,7 +2533,7 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 /* Elena's video agent: Make a video, the storyboard, the finished video, Edit, the b-roll library, formats */
 .ld-vm { padding: 18px 20px; display: flex; flex-direction: column; gap: 16px; max-width: 980px; }
 .ld-vm-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.ld-vm-formats { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.ld-vm-formats { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
 .ld-vm-fmt { border: 2px solid var(--ld-line); border-radius: 12px; padding: 8px 8px 12px; background: var(--ld-surface); display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: left; color: var(--ld-ink); font: inherit; }
 .ld-vm-fmt:hover { border-color: var(--ld-line4); }
 .ld-vm-fmt.on { border-color: var(--ld-accent); background: var(--ld-accent-bg); }
@@ -3153,3 +3153,35 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 
 /* A new version was deployed while this tab was open. */
 .ld-newver { position: fixed; left: 50%; transform: translateX(-50%); top: calc(12px + env(safe-area-inset-top, 0px)); z-index: 1000; display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 16px; border-radius: 10px; background: var(--ld-ink); color: var(--ld-surface); font-weight: 600; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); max-width: calc(100vw - 32px); }
+
+/* Scenes (2026-10-13): the cast and the shots, each with who speaks and the line. */
+.ld-sc-cast { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; align-items: start; }
+.ld-sc-person { border: 1px solid var(--ld-line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; background: var(--ld-surface); }
+.ld-sc-person.editing { border-color: var(--ld-accent); }
+.ld-sc-person-row { display: flex; align-items: center; gap: 10px; }
+.ld-sc-person-row b { display: block; color: var(--ld-ink); }
+.ld-sc-person-row .ld-small { display: block; color: var(--ld-text2); }
+.ld-sc-face { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; flex: none; }
+.ld-sc-face.ph { display: grid; place-items: center; background: var(--ld-accent-bg); color: var(--ld-accent-text); font-weight: 800; }
+.ld-sc-shots { display: flex; flex-direction: column; gap: 8px; }
+.ld-sc-shot { display: grid; grid-template-columns: 24px 64px minmax(0, 1fr) 120px; gap: 12px; align-items: center; border: 1px solid var(--ld-line); border-radius: 10px; padding: 10px; background: var(--ld-surface); }
+.ld-sc-shot.editing { border-color: var(--ld-accent); }
+.ld-sc-n { font-weight: 800; text-align: center; color: var(--ld-ink); }
+.ld-sc-th { width: 64px; aspect-ratio: 9 / 16; border-radius: 8px; overflow: hidden; background: var(--ld-faint2); display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: var(--ld-text2); text-align: center; padding: 2px; box-sizing: border-box; }
+.ld-sc-th img { width: 100%; height: 100%; object-fit: cover; }
+.ld-sc-say { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ld-sc-tag { align-self: flex-start; font-size: 11.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; background: var(--ld-info-bg); color: var(--ld-info); }
+.ld-sc-who { font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--ld-accent-text); }
+.ld-sc-line { font-weight: 700; color: var(--ld-ink); }
+.ld-sc-see { font-size: 13px; color: var(--ld-text2); }
+.ld-sc-acts { display: flex; flex-direction: column; gap: 6px; }
+.ld-sc-acts .ld-btn { width: 120px; }
+.ld-sc-form { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 12px; align-items: center; }
+.ld-sc-shotedit { border: 1px solid var(--ld-accent); border-radius: 10px; padding: 10px; margin-top: -4px; }
+.ld-sc-player { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.ld-sc-player video { width: 100%; border-radius: 10px; background: #000000; }
+@media (max-width: 640px) {
+  .ld-sc-shot { grid-template-columns: 22px 52px minmax(0, 1fr); }
+  .ld-sc-acts { grid-column: 1 / -1; flex-direction: row; }
+  .ld-sc-form, .ld-sc-player { grid-template-columns: minmax(0, 1fr); }
+}

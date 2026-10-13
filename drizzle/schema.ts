@@ -2118,7 +2118,8 @@ export const dramaEpisodes = sqliteTable(
     /** The score under the episode: mood, tempo and where it builds. */
     music: text("music").notNull().default(""),
     /** drama: an episode of the series. campaign: a branded video (directions, voice-over, captions, call to action). */
-    kind: text("kind", { enum: ["drama", "campaign"] }).notNull().default("drama"),
+    /** scene: a one-off Scene from the Make a video card (2026-10-13), with its own cast and style in plan. */
+    kind: text("kind", { enum: ["drama", "campaign", "scene"] }).notNull().default("drama"),
     /** JSON plan: campaign goal, the three directions, the chosen one, script, call to action; keyframes approved. */
     plan: text("plan").notNull().default("{}"),
     /** JSON finished versions: {"9:16": url, "1:1": url, "16:9": url}. */

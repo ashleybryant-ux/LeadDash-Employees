@@ -17,12 +17,13 @@ import { StylePicker, StyleRow } from "./Styles";
  */
 
 export type V = NonNullable<Outputs["videos"]["get"]>;
-type FormatKey = "ad" | "broll" | "explainer" | "talking" | "story" | "audio";
+type FormatKey = "scene" | "ad" | "broll" | "explainer" | "talking" | "story" | "audio";
 type StartKey = "idea" | "script" | "link" | "audio";
 type Size = "vertical" | "square" | "wide";
 type Src = V["shots"][number]["src"];
 
 export const FORMATS: { key: FormatKey; title: string; note: string }[] = [
+  { key: "scene", title: "Scene", note: "Characters talk to each other, lip synced." },
   { key: "ad", title: "Ad", note: "Sell one offer in 15 to 30 seconds." },
   { key: "broll", title: "B-roll story", note: "Real footage under your voice." },
   { key: "explainer", title: "Explainer", note: "Motion text that teaches one idea." },
@@ -49,6 +50,7 @@ const lengthText = (l: number) => (l < 120 ? `${l}s` : `${l / 60} min`);
  * the story bars along the top and the caption in the Bold pop style.
  */
 const FRAME: Record<FormatKey, { cap: [string, string, string]; extra?: "shop" | "wave" | "big" | "rec" }> = {
+  scene: { cap: ["You're", "still", "typing?"] },
   ad: { cap: ["20% off", "this", "week"], extra: "shop" },
   broll: { cap: ["Mornings", "just", "got easier"] },
   explainer: { cap: ["One", "big", "idea"], extra: "big" },
@@ -56,7 +58,7 @@ const FRAME: Record<FormatKey, { cap: [string, string, string]; extra?: "shop" |
   story: { cap: ["The day", "it", "changed"] },
   audio: { cap: ["Your", "words,", "seen"], extra: "wave" },
 };
-const COLOR: Record<FormatKey, string> = { ad: "linear-gradient(170deg,#f7b3a6,#e46a7d)", broll: "linear-gradient(170deg,#e9c17d,#3c5a45)", explainer: "linear-gradient(170deg,#b7a6ff,#5a3fd0)", talking: "linear-gradient(170deg,#8aa6d8,#22355f)", story: "linear-gradient(170deg,#ffd38a,#e4708f)", audio: "linear-gradient(170deg,#7b5cff,#1b1145)" };
+const COLOR: Record<FormatKey, string> = { scene: "linear-gradient(170deg,#c98b5f,#2e4a7a)", ad: "linear-gradient(170deg,#f7b3a6,#e46a7d)", broll: "linear-gradient(170deg,#e9c17d,#3c5a45)", explainer: "linear-gradient(170deg,#b7a6ff,#5a3fd0)", talking: "linear-gradient(170deg,#8aa6d8,#22355f)", story: "linear-gradient(170deg,#ffd38a,#e4708f)", audio: "linear-gradient(170deg,#7b5cff,#1b1145)" };
 
 function FrameOverlay({ k }: { k: FormatKey }) {
   const f = FRAME[k];
@@ -100,7 +102,7 @@ function Chip({ on, onClick, children, disabled }: { on: boolean; onClick: () =>
 // Make a video
 // ==========================================
 
-export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: string; onPlanned?: (r: { kind: "video" | "talking"; id: number }) => void; onCancel?: () => void }) {
+export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: string; onPlanned?: (r: { kind: "video" | "talking" | "scene"; id: number }) => void; onCancel?: () => void }) {
   const { currentOrgId } = useTenant();
   const utils = trpc.useUtils();
   const opts = trpc.videos.options.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
@@ -122,6 +124,13 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   // Drawn videos move like a short film by default; Moving pictures is the no-hours choice.
   const [motion, setMotion] = React.useState<"pictures" | "clips">("clips");
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const [me, setMe] = React.useState(true);
+  const writeScene = trpc.scenes.write.useMutation({
+    onSuccess: async (r) => {
+      await Promise.all([utils.chat.list.invalidate(), utils.scenes.list.invalidate()]);
+      onPlanned?.({ kind: "scene", id: r.id });
+    },
+  });
   const write = trpc.videos.write.useMutation({
     onSuccess: async (r) => {
       await Promise.all([utils.chat.list.invalidate(), utils.videos.list.invalidate(), utils.avatar.invalidate()]);
@@ -134,6 +143,7 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   const voiceId = voice ?? myVoice?.id ?? coral?.id ?? null;
   const logoPick = logo ?? (o?.hasLogo ? "br" : "off");
   const talking = format === "talking";
+  const scene = format === "scene";
   const isAudio = format === "audio" || start === "audio";
   const pickFormat = (f: FormatKey) => {
     setFormat(f);
@@ -185,7 +195,7 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   const plan = () =>
     write.mutate({
       organizationId: currentOrgId,
-      format: isAudio ? "audio" : format,
+      format: isAudio ? "audio" : format === "scene" ? "broll" : format,
       start: isAudio ? "audio" : start,
       text,
       sourceUrl: isAudio ? audio?.url ?? null : start === "link" ? link.trim() : null,
@@ -204,7 +214,7 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
       <div className="ld-vm-field">
         <span className="ld-lbl">Format</span>
         <div className="ld-vm-formats" role="radiogroup" aria-label="Format">
-          {FORMATS.map((f) => (
+          {FORMATS.filter((f) => f.key !== "scene" || o?.scenes).map((f) => (
             <button key={f.key} type="button" role="radio" aria-checked={format === f.key} className={`ld-vm-fmt ${format === f.key ? "on" : ""}`} onClick={() => pickFormat(f.key)}>
               <span className="ld-vm-fmt-img" style={{ background: COLOR[f.key] }}>
                 <img src={`/api/video-pictures/${f.key}`} alt="" loading="lazy" onError={(e) => (e.currentTarget.style.visibility = "hidden")} />
@@ -222,6 +232,43 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
         </div>
       </div>
 
+      {scene ? (
+        <>
+          <div className="ld-vm-field">
+            <span className="ld-lbl">What happens</span>
+            <textarea className="ld-vm-text" value={text} onChange={(e) => setText(e.target.value)} placeholder="Who is in it and what happens between them. One or two lines is enough." aria-label="What happens" />
+          </div>
+          <StyleRow value={style} onChange={setStyle} realLabel="Cinematic" />
+          <div className="ld-vm-grid">
+            <div className="ld-vm-field">
+              <span className="ld-lbl">Who is in it</span>
+              <div className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>
+                <Chip on={me} onClick={() => setMe(true)}>Me, in my voice</Chip>
+                <Chip on={!me} onClick={() => setMe(false)}>Made-up characters only</Chip>
+              </div>
+            </div>
+            <div className="ld-vm-field">
+              <span className="ld-lbl">Length</span>
+              <div className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>
+                {[15, 30, 60].map((l) => (
+                  <Chip key={l} on={Math.min(60, seconds) === l} onClick={() => setSeconds(l)}>{lengthText(l)}</Chip>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="ld-vm-foot">
+            <span className="ld-vm-hours">Paid per use, like your dramas. The cost shows before anything moves.</span>
+            <div className="ld-row" style={{ gap: 8 }}>
+              {onCancel && <button type="button" className="ld-btn" style={{ width: 150 }} onClick={onCancel}>Cancel</button>}
+              <button type="button" className="ld-btn p" style={{ width: 150 }} disabled={!text.trim() || writeScene.isPending} onClick={() => writeScene.mutate({ organizationId: currentOrgId, what: text.trim(), style, me, seconds: Math.min(60, seconds) })}>
+                {writeScene.isPending ? "Writing..." : "Write the scene"}
+              </button>
+            </div>
+          </div>
+          <ErrorLine error={writeScene.error} />
+        </>
+      ) : (
+      <>
       {!talking && <StyleRow value={style} onChange={pickStyle} />}
 
       <div className="ld-vm-field">
@@ -354,6 +401,8 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
         </div>
       </div>
       <ErrorLine error={write.error} />
+      </>
+      )}
     </div>
   );
 }
