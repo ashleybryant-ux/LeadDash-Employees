@@ -119,7 +119,8 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   const [logo, setLogo] = React.useState<"br" | "tr" | "off" | null>(null);
   const [music, setMusic] = React.useState("calm");
   const [style, setStyle] = React.useState("real");
-  const [motion, setMotion] = React.useState<"pictures" | "clips">("pictures");
+  // Drawn videos move like a short film by default; Moving pictures is the no-hours choice.
+  const [motion, setMotion] = React.useState<"pictures" | "clips">("clips");
   const fileRef = React.useRef<HTMLInputElement>(null);
   const write = trpc.videos.write.useMutation({
     onSuccess: async (r) => {

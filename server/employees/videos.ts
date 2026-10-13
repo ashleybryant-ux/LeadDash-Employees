@@ -322,7 +322,7 @@ function cleanCast(raw: unknown): styles.CastMember[] {
 }
 
 /** How a drawn style changes what Elena writes. */
-const drawnHow = (label: string) => `This video is drawn in a style (${label}), not filmed: every scene is one picture of one moment, with the people in it by name in "who". Describe the cast once (age, hair, skin, clothes) so they're drawn the same in every scene. src is "art" for every scene except motion text ("text") and the closing logo card ("logo"). Never a real client.`;
+const drawnHow = (label: string) => `This whole video is drawn in one style (${label}), not filmed, and every scene shows it: no motion text cards and no word cards, whatever the format says. Each scene is one moment with something happening (who is doing what, where), with the people in it by name in "who"; the words are said in the voice-over, never written on screen. Describe the cast once (age, hair, skin, clothes) so they're drawn the same in every scene. src is "art" for every scene except the closing logo card ("logo"). Never a real client.`;
 const sceneCount = (seconds: number) => (seconds <= 30 ? "3 to 8" : seconds <= 90 ? "6 to 16" : `${Math.max(12, Math.round(seconds / 8))} to ${maxScenes(seconds)}`);
 
 /** What Elena knows to pick from: their library and their photos. */
@@ -340,10 +340,12 @@ async function materials(orgId: number, kind: Kind) {
  * match), their photo, licensed stock, then a new AI clip. Motion text and the logo card stay as they are.
  */
 export async function assignSources(orgId: number, kind: Kind, size: Size, shots: VShot[], keep = false, drawn = false): Promise<VShot[]> {
-  // A drawn style: every scene is drawn (motion text and the logo card stay), so nothing clashes with the look.
+  // A drawn style: every scene is drawn, so nothing clashes with the look. Only the logo end card stays a card;
+  // a motion text scene is drawn from what's said over it, so a claymation video never turns into word cards.
   if (drawn) {
     return shots.map((s) => {
-      if (s.src === "text" || s.src === "logo") return { ...s, file: null };
+      if (s.src === "logo") return { ...s, file: null };
+      if (s.src === "text") return { at: s.at, see: s.say || s.see, say: s.say, src: "art" as const, ...(s.who?.length ? { who: s.who } : {}) };
       if (keep && s.src === "art") return s;
       return { at: s.at, see: s.see, say: s.say, src: "art" as const, ...(s.who?.length ? { who: s.who } : {}) };
     });
@@ -578,7 +580,8 @@ export async function writeVideo(orgId: number, input: WriteInput) {
   const drawn = styles.isDrawn(style) ? styles.resolve(orgId, style) : null;
   // Over 90 seconds is drawn with moving pictures (or your recording over pictures).
   const seconds = Math.max(10, Math.min(drawn ? 600 : 120, Math.round(input.seconds || 30)));
-  const motion = drawn && seconds <= 90 && input.motion === "clips" ? "clips" : "pictures";
+  // A drawn video up to 90 seconds moves like a short film unless she picks Moving pictures.
+  const motion = drawn && seconds <= 90 && input.motion !== "pictures" ? "clips" : "pictures";
   let words: Word[] | null = null;
   let segment: Script["segment"] = null;
   let s: Written;
@@ -823,7 +826,8 @@ export async function changeStyle(orgId: number, id: number, style: string, moti
   const shots = await assignSources(orgId, v.kind, v.size, cleared, !drawn, drawn);
   // The people are drawn again in the new look.
   const cast = castOf(v).map((c) => ({ name: c.name, look: c.look }));
-  const nextMotion = !drawn ? "pictures" : motion === "clips" && v.seconds <= 90 ? "clips" : motion === "pictures" ? "pictures" : v.motion;
+  const wasDrawn = styles.isDrawn(v.style);
+  const nextMotion = !drawn ? "pictures" : motion === "pictures" || v.seconds > 90 ? "pictures" : motion === "clips" || !wasDrawn ? "clips" : v.motion;
   update(orgId, id, { style: next, motion: nextMotion, cast: JSON.stringify(drawn ? cast : []), script: JSON.stringify({ ...sc, shots }), status: v.status === "ready" ? "ready" : "draft", error: null });
   return drawn ? startDrawing(orgId, id)! : must(orgId, id);
 }

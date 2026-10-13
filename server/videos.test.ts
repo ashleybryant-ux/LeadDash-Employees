@@ -449,12 +449,17 @@ describe("Story videos in a drawn style", () => {
     const { orgId, owner } = await onPlan("vid-drawn");
     script = STORY;
     const v = await vd.writeVideo(orgId, { instructions: "A therapist gets his evenings back", style: "claymation", motion: "pictures" });
-    expect(v).toMatchObject({ style: "claymation", motion: "pictures", drawing: "0/2" });
-    expect(vd.scriptOf(v).shots.map((s) => s.src)).toEqual(["art", "art", "text", "logo"]);
+    // Every scene is drawn in the style: a motion text scene is drawn from what's said over it, never a word card.
+    expect(v).toMatchObject({ style: "claymation", motion: "pictures", drawing: "0/3" });
+    expect(vd.scriptOf(v).shots.map((s) => s.src)).toEqual(["art", "art", "art", "logo"]);
+    expect(vd.scriptOf(v).shots[2].see).toBe("Now his notes are done before his last client leaves.");
+    const { generateJson } = await import("./_core/llm");
+    const asked = (generateJson as any).mock.calls.filter((c: any) => c[0].schemaName === "video_script").at(-1)[0];
+    expect(asked.system).toMatch(/no motion text cards and no word cards/);
     await vd.drawJobFor(v.id);
     const drawn = vd.get(orgId, v.id)!;
     expect(drawn.drawing).toBeNull();
-    expect(vd.scriptOf(drawn).shots.slice(0, 2).every((s) => s.still)).toBe(true);
+    expect(vd.scriptOf(drawn).shots.slice(0, 3).every((s) => s.still)).toBe(true);
     // Marcus's portrait first, in the style; then his scene drawn from that portrait so he looks the same.
     const plain = posted("fal-ai/nano-banana-pro");
     const edits = posted("fal-ai/nano-banana-pro/edit");
@@ -464,6 +469,7 @@ describe("Story videos in a drawn style", () => {
     expect(edits[0].prompt).toMatch(/Marcus at his desk late at night.*look exactly like their reference portraits: Marcus/);
     // The hallway has nobody in it, so it needs no reference.
     expect(plain[1].prompt).toMatch(/An empty clinic hallway at sunrise/);
+    expect(plain[2].prompt).toMatch(/Now his notes are done before his last client leaves/);
     expect(vd.castOf(drawn)[0].portrait).toMatch(/^\/files\/org-\d+\/videos\/cast-/);
     const view = (await caller(owner).videos.get({ organizationId: orgId, id: v.id }))!;
     expect(view).toMatchObject({ style: "claymation", styleLabel: "Claymation", motion: "pictures", drawing: null, hours: "4 work hours" });
@@ -494,7 +500,7 @@ describe("Story videos in a drawn style", () => {
     expect(w.styleLabel).toBe("Watercolor");
     await vd.drawJobFor(v.id);
     expect(posted("fal-ai/nano-banana-pro").concat(posted("fal-ai/nano-banana-pro/edit")).every((b) => /^Loose watercolor illustration/.test(b.prompt))).toBe(true);
-    expect(posted("fal-ai/nano-banana-pro").concat(posted("fal-ai/nano-banana-pro/edit"))).toHaveLength(3);
+    expect(posted("fal-ai/nano-banana-pro").concat(posted("fal-ai/nano-banana-pro/edit"))).toHaveLength(4);
   });
 
   it("animates each drawn scene with Animated clips, for 2 work hours each 5 seconds", async () => {
@@ -502,16 +508,16 @@ describe("Story videos in a drawn style", () => {
     script = STORY;
     const v = await vd.writeVideo(orgId, { instructions: "A therapist gets his evenings back", style: "animation", motion: "clips" });
     await vd.drawJobFor(v.id);
-    expect(vd.view(vd.get(orgId, v.id)!).newClips).toBe(2);
+    expect(vd.view(vd.get(orgId, v.id)!).newClips).toBe(3);
     await vd.makeVideo(orgId, v.id);
     await vd.jobFor(v.id);
     const done = vd.get(orgId, v.id)!;
     expect(done.status).toBe("ready");
     const moved = posted("fal-ai/kling-video/v3/pro/image-to-video");
-    expect(moved).toHaveLength(2);
+    expect(moved).toHaveLength(3);
     expect(moved[0].start_image_url).toMatch(/^data:image\/jpeg;base64,/);
-    expect(rendered[0].clips.map((c) => !!c.video)).toEqual([true, true, false, false]);
-    expect((await hours.balance(orgId)).usedMinutes).toBe(240 + 2 * 120);
+    expect(rendered[0].clips.map((c) => !!c.video)).toEqual([true, true, true, false]);
+    expect((await hours.balance(orgId)).usedMinutes).toBe(240 + 3 * 120);
     // Drawn clips stay with the video, not in the b-roll library.
     expect(br.listClips(orgId)).toHaveLength(0);
   });
@@ -529,6 +535,13 @@ describe("Story videos in a drawn style", () => {
     expect(real.seconds).toBe(120);
     const auto = await vd.writeVideo(orgId, { instructions: "Our story", style: "auto" });
     expect(auto.style).toBe("animation");
+    // A drawn video up to 90 seconds moves like a short film unless Moving pictures is picked.
+    expect(auto.motion).toBe("clips");
+    expect(real.motion).toBe("pictures");
+    // Real footage changed to a drawn style moves too; over 90 seconds it stays moving pictures.
+    const short = await vd.writeVideo(orgId, { instructions: "Our story", seconds: 30 });
+    expect((await vd.changeStyle(orgId, short.id, "claymation"))!.motion).toBe("clips");
+    expect((await vd.changeStyle(orgId, real.id, "claymation"))!.motion).toBe("pictures");
     await expect(vd.writeVideo(orgId, { instructions: "Our story", style: "custom:999" })).rejects.toThrow(/isn't in this workspace/);
     await Promise.all([long, auto].map((x) => vd.drawJobFor(x.id)));
   });
@@ -548,7 +561,7 @@ describe("Story videos in a drawn style", () => {
     const v = await vd.writeVideo(orgId, { instructions: "Our story", style: st.key });
     await vd.drawJobFor(v.id);
     const edits = posted("fal-ai/nano-banana-pro/edit");
-    expect(edits).toHaveLength(2);
+    expect(edits).toHaveLength(3);
     expect(edits.every((b) => b.image_urls.length === 1 && /same art style/.test(b.prompt))).toBe(true);
     expect(vd.view(vd.get(orgId, v.id)!).styleLabel).toBe("Print look");
   });

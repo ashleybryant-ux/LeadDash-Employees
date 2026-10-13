@@ -3604,7 +3604,7 @@ export const appRouter = router({
           sourceUrl: input.sourceUrl,
           voiceId: input.voiceId,
           style: input.style ?? "real",
-          motion: input.motion ?? "pictures",
+          motion: input.motion,
           look: { captions: input.captions === "off" ? { on: false } : { on: true, style: input.captions }, logo: input.logo === "off" ? { on: false } : { on: true, corner: input.logo }, music: { track: track as never } },
         });
         const view = vd.view(v);
