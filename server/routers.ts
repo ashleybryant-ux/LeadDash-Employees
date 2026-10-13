@@ -3718,6 +3718,179 @@ export const appRouter = router({
   }),
 
   /** Elena's b-roll library: clips she made and clips people uploaded. Sienna and Jordan can use them too. */
+  /** Edit my video: an upload of someone talking, edited by Elena. */
+  edits: router({
+    list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const ed = await import("./employees/editor");
+      return ed.list(input.organizationId).map(ed.view);
+    }),
+    get: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const ed = await import("./employees/editor");
+      const e = ed.get(input.organizationId, input.id);
+      return e ? ed.view(e) : null;
+    }),
+    /** What the editor offers: caption styles, transitions, languages, emojis, music, stock and the logo. */
+    options: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const [lk, tr, b, cap, hours] = await Promise.all([import("./employees/editLook"), import("./employees/transitions"), import("./employees/broll"), import("./employees/editCaptions"), import("./workHours")]);
+      const org = await db.getOrganizationById(input.organizationId);
+      const colors = (() => {
+        try {
+          return (JSON.parse(org?.brandColors || "[]") as string[]).filter((c) => /^#[0-9a-f]{6}$/i.test(c));
+        } catch {
+          return [];
+        }
+      })();
+      return {
+        captionStyles: lk.CAP_KEYS.map((k) => ({ key: k, label: lk.CAP_STYLES[k], group: lk.CAP_GROUP[k] })),
+        transitions: tr.TRANS_KEYS.map((k) => ({ key: k, label: tr.TRANSITIONS[k].label, group: tr.TRANSITIONS[k].group })),
+        languages: [...lk.LANGUAGES],
+        emojis: Object.fromEntries(Object.entries(cap.EMOJIS)),
+        tracks: b.TRACK_KEYS.map((k) => ({ key: k, name: b.TRACKS[k].name })),
+        stock: b.hasStock(),
+        hasLogo: !!org?.logoUrl,
+        logoUrl: org?.logoUrl ?? null,
+        brandColor: colors[0] ?? null,
+        editHoursPerMinute: hours.JOBS.edit.minutes / 60,
+        greenHoursPerMinute: hours.JOBS.green.minutes / 60,
+        clipHours: hours.JOBS.clip.minutes / 60,
+        maxMinutes: 30,
+      };
+    }),
+    changeLook: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().int(),
+          captions: z.object({ on: z.boolean(), style: z.enum(["pop", "gold", "boxed", "clean", "neon", "hook", "type", "highlight", "outline", "shadow", "pill", "lower"]), position: z.enum(["top", "middle", "bottom"]), highlight: z.enum(["gold", "brand", "none"]), size: z.enum(["s", "m", "l"]), emojis: z.boolean() }).partial().optional(),
+          tools: z
+            .object({
+              autoBroll: z.boolean(),
+              transitions: z.boolean(),
+              zooms: z.boolean(),
+              hook: z.object({ on: z.boolean(), text: z.string().max(80) }).partial(),
+              cleanAudio: z.boolean(),
+              silences: z.boolean(),
+              badTakes: z.boolean(),
+              translate: z.object({ on: z.boolean(), lang: z.string().max(40) }).partial(),
+            })
+            .partial()
+            .optional(),
+          music: z.object({ on: z.boolean(), track: z.enum(["calm", "upbeat", "piano", "upload"]), url: z.string().max(500).nullable(), name: z.string().max(80).nullable(), volume: z.number().int().min(0).max(60) }).partial().optional(),
+          transition: z.object({ speed: z.enum(["quick", "normal", "slow"]) }).partial().optional(),
+          layout: z
+            .object({
+              kind: z.enum(["full", "split", "green", "pip"]),
+              split: z.object({ you: z.enum(["top", "bottom"]), other: z.enum(["auto", "clip", "video"]), when: z.enum(["whole", "broll"]), clipId: z.number().int().nullable(), videoUrl: z.string().max(500).nullable(), videoName: z.string().max(120).nullable() }).partial(),
+              green: z.object({ bg: z.enum(["color", "clip", "picture", "style"]), color: z.string().regex(/^#[0-9a-fA-F]{6}$/), clipId: z.number().int().nullable(), url: z.string().max(500).nullable(), style: z.string().max(40).nullable(), place: z.string().max(200).nullable() }).partial(),
+              pip: z.object({ corner: z.enum(["tl", "tr", "bl", "br"]) }).partial(),
+            })
+            .partial()
+            .optional(),
+          logo: z.object({ on: z.boolean(), corner: z.enum(["tl", "tr", "bl", "br"]), size: z.enum(["s", "m", "l"]) }).partial().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const ed = await import("./employees/editor");
+        const { organizationId, id, ...patch } = input;
+        const own = (u: string | null | undefined) => !u || u.startsWith(`/files/org-${organizationId}/`);
+        if (!own(patch.music?.url) || !own(patch.layout?.split?.videoUrl) || !own(patch.layout?.green?.url)) throw new TRPCError({ code: "BAD_REQUEST", message: "That file is not in this workspace." });
+        if (patch.tools?.translate?.lang) {
+          const lk = await import("./employees/editLook");
+          if (!(lk.LANGUAGES as readonly string[]).includes(patch.tools.translate.lang)) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick a language from the list." });
+        }
+        return ed.view(await ed.changeLook(organizationId, id, patch as never));
+      }),
+    rename: protectedProcedure.input(orgInput.extend({ id: z.number().int(), title: z.string().max(80).optional(), caption: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ed = await import("./employees/editor");
+      return ed.view(ed.rename(input.organizationId, input.id, input));
+    }),
+    saveLine: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0), text: z.string().max(400) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ed = await import("./employees/editor");
+      return ed.view(ed.saveLine(input.organizationId, input.id, input.n, input.text));
+    }),
+    setBroll: protectedProcedure
+      .input(
+        orgInput.extend({
+          id: z.number().int(),
+          n: z.number().int().min(0),
+          pick: z.discriminatedUnion("src", [
+            z.object({ src: z.literal("library"), clipId: z.number().int() }),
+            z.object({ src: z.literal("stock"), url: z.string().url().max(1000), page: z.string().max(1000), thumb: z.string().max(1000), credit: z.string().max(200), query: z.string().max(100) }),
+            z.object({ src: z.literal("none") }),
+          ]),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        blockReviewer(ctx);
+        await requireMember(ctx, input.organizationId, "member");
+        const ed = await import("./employees/editor");
+        return ed.view(await ed.setBroll(input.organizationId, input.id, input.n, input.pick));
+      }),
+    /** Stock clips for the words, to pick from on a line. */
+    stock: protectedProcedure.input(orgInput.extend({ query: z.string().min(1).max(100), size: z.enum(["vertical", "square", "wide"]) })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const b = await import("./employees/broll");
+      return (await b.stockList(input.query, input.size, 8)).map((s) => ({ url: s.url, page: s.page, thumb: s.thumb, credit: s.credit, seconds: Math.round(s.seconds) }));
+    }),
+    aiClip: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0), see: z.string().max(600) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ed = await import("./employees/editor");
+      return ed.view(await ed.aiClip(input.organizationId, input.id, input.n, input.see, ctx.user.name || ctx.user.email));
+    }),
+    setTransition: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0), key: z.string().max(20), every: z.boolean().optional(), speed: z.enum(["quick", "normal", "slow"]).optional() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ed = await import("./employees/editor");
+      return ed.view(ed.setTransition(input.organizationId, input.id, input.n, input.key as never, { every: input.every, speed: input.speed }));
+    }),
+    redoAutoBroll: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ed = await import("./employees/editor");
+      return ed.view(ed.redoAutoBroll(input.organizationId, input.id));
+    }),
+    shortClips: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ed = await import("./employees/editor");
+      return ed.view(ed.shortClips(input.organizationId, input.id));
+    }),
+    retryCutout: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ed = await import("./employees/editor");
+      return ed.view(ed.startCutout(input.organizationId, input.id));
+    }),
+    export: protectedProcedure.input(orgInput.extend({ id: z.number().int(), sizes: z.array(z.enum(["vertical", "square", "wide"])).min(1).max(3) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ed = await import("./employees/editor");
+      return ed.view(await ed.exportEdit(input.organizationId, input.id, input.sizes));
+    }),
+    toSienna: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ed = await import("./employees/editor");
+      await ed.toSienna(input.organizationId, input.id, ctx.user.name || ctx.user.email);
+      return { success: true };
+    }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      (await import("./employees/editor")).remove(input.organizationId, input.id);
+      return { success: true };
+    }),
+  }),
+
   broll: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

@@ -1,0 +1,31 @@
+CREATE TABLE `video_edits` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`organizationId` integer NOT NULL,
+	`title` text NOT NULL,
+	`status` text DEFAULT 'preparing' NOT NULL,
+	`step` text,
+	`sourceUrl` text,
+	`previewUrl` text,
+	`thumbUrl` text,
+	`width` integer,
+	`height` integer,
+	`tenths` integer,
+	`lines` text DEFAULT '[]' NOT NULL,
+	`look` text DEFAULT '{}' NOT NULL,
+	`cutoutUrl` text,
+	`matteUrl` text,
+	`cutoutPreviewUrl` text,
+	`sizes` text DEFAULT '["vertical"]' NOT NULL,
+	`videoUrls` text DEFAULT '{}' NOT NULL,
+	`videoUrl` text,
+	`outTenths` integer,
+	`caption` text DEFAULT '' NOT NULL,
+	`paidMinutes` integer DEFAULT 0 NOT NULL,
+	`parentId` integer,
+	`error` text,
+	`createdBy` text,
+	`createdAt` integer NOT NULL,
+	`updatedAt` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `video_edits_org_idx` ON `video_edits` (`organizationId`);

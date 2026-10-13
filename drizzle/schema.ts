@@ -1677,6 +1677,59 @@ export const brollClips = sqliteTable(
 );
 export type BrollClip = typeof brollClips.$inferSelect;
 
+/**
+ * Edit my video: a video someone uploaded of themselves talking, edited by Elena (captions,
+ * b-roll by line with transitions, zooms, layouts, green screen) and cut in every size.
+ */
+export const videoEdits = sqliteTable(
+  "video_edits",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    title: text("title").notNull(),
+    /** preparing: made playable and captioned after upload. draft: ready to edit. making: exporting. */
+    status: text("status", { enum: ["preparing", "draft", "making", "ready", "failed"] }).notNull().default("preparing"),
+    /** While preparing or exporting: what's happening now, like "Writing captions". */
+    step: text("step"),
+    /** The upload as a plain MP4 (H.264, at most 1080 on its short side). */
+    sourceUrl: text("sourceUrl"),
+    /** A small copy for the preview in the editor. */
+    previewUrl: text("previewUrl"),
+    thumbUrl: text("thumbUrl"),
+    width: integer("width"),
+    height: integer("height"),
+    /** The upload's length in tenths of a second. */
+    tenths: integer("tenths"),
+    /** JSON EditLine[]: every line said, with its words and times, b-roll and transition. */
+    lines: text("lines").notNull().default("[]"),
+    /** JSON EditLook: captions, tools, layout, logo, music. */
+    look: text("look").notNull().default("{}"),
+    /** Green screen: the person cut out of the room (RGB and matte, from fal.ai), and a preview with see-through background. */
+    cutoutUrl: text("cutoutUrl"),
+    matteUrl: text("matteUrl"),
+    cutoutPreviewUrl: text("cutoutPreviewUrl"),
+    /** JSON: every size to export, like ["vertical", "square"]. */
+    sizes: text("sizes").notNull().default('["vertical"]'),
+    /** JSON: the finished file for each size. */
+    videoUrls: text("videoUrls").notNull().default("{}"),
+    videoUrl: text("videoUrl"),
+    /** The finished length in tenths of a second. */
+    outTenths: integer("outTenths"),
+    /** The post caption Elena wrote for it. */
+    caption: text("caption").notNull().default(""),
+    /** Work minutes already used for its length, so exporting again uses none. */
+    paidMinutes: integer("paidMinutes").notNull().default(0),
+    /** Short clips: the edit it was cut from. */
+    parentId: integer("parentId"),
+    error: text("error"),
+    createdBy: text("createdBy"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("video_edits_org_idx").on(t.organizationId)]
+);
+export type VideoEdit = typeof videoEdits.$inferSelect;
+
 /** A video style a workspace made from its own pictures (Add style). */
 export const videoStyles = sqliteTable(
   "video_styles",

@@ -32,6 +32,8 @@ export const JOBS = {
   video: { label: "Talking video, per minute (Pro quality: 16 hr)", minutes: 480 },
   interview: { label: "Interview answer from the bench", minutes: 5 },
   clip: { label: "New AI b-roll clip, per 5 seconds", minutes: 120 },
+  edit: { label: "Your video edited, per minute", minutes: 120 },
+  green: { label: "Green screen on your video, per minute", minutes: 120 },
 } as const;
 export type JobKey = keyof typeof JOBS;
 

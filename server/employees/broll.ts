@@ -334,41 +334,49 @@ export const hasStock = () => !!(ENV.pexelsKey || ENV.pixabayKey);
 
 /** One stock clip for the words, in the shape of the video: Pexels first, then Pixabay. Null when neither is set up or has a match. */
 export async function stockFor(query: string, size: Size): Promise<Stock | null> {
-  if (!query.trim()) return null;
-  return (await pexels(query, size)) ?? (await pixabay(query, size));
+  return (await stockList(query, size, 1))[0] ?? null;
 }
 
-async function pexels(query: string, size: Size): Promise<Stock | null> {
-  if (!ENV.pexelsKey) return null;
+/** Several stock clips for the words, best first, for someone to pick from: Pexels first, then Pixabay. */
+export async function stockList(query: string, size: Size, count = 8): Promise<Stock[]> {
+  if (!query.trim()) return [];
+  const first = await pexels(query, size);
+  if (first.length) return first.slice(0, count);
+  return (await pixabay(query, size)).slice(0, count);
+}
+
+async function pexels(query: string, size: Size): Promise<Stock[]> {
+  if (!ENV.pexelsKey) return [];
   const orientation = size === "vertical" ? "portrait" : size === "wide" ? "landscape" : "square";
   const q = new URLSearchParams({ query: query.trim().slice(0, 100), orientation, size: "medium", per_page: "8" });
   const res = await fetch(`https://api.pexels.com/v1/videos/search?${q}`, { headers: { Authorization: ENV.pexelsKey }, signal: AbortSignal.timeout(15_000) }).catch(() => null);
-  if (!res?.ok) return null;
+  if (!res?.ok) return [];
   const data = (await res.json().catch(() => ({}))) as { videos?: { url: string; image: string; duration: number; user?: { name?: string }; video_files?: { link: string; width: number | null; height: number | null; file_type: string; quality: string }[] }[] };
   const target = size === "wide" ? 1080 : 1920;
+  const out: Stock[] = [];
   for (const v of data.videos ?? []) {
     if ((v.duration ?? 0) < 3) continue;
     const files = (v.video_files ?? []).filter((f) => f.file_type === "video/mp4" && f.width && f.height && f.quality !== "hls");
     if (!files.length) continue;
     // The file closest to full HD on its long side, without going far over.
     const pick = files.sort((a, b) => Math.abs(Math.max(a.width!, a.height!) - target) - Math.abs(Math.max(b.width!, b.height!) - target))[0];
-    return { url: pick.link, page: v.url, thumb: v.image, credit: v.user?.name ? `${v.user.name} on Pexels` : "Pexels", seconds: v.duration, width: pick.width!, height: pick.height! };
+    out.push({ url: pick.link, page: v.url, thumb: v.image, credit: v.user?.name ? `${v.user.name} on Pexels` : "Pexels", seconds: v.duration, width: pick.width!, height: pick.height! });
   }
-  return null;
+  return out;
 }
 
 type PixabayHit = { pageURL: string; duration: number; user?: string; videos?: Record<string, { url: string; width: number; height: number; thumbnail?: string }> };
 /** Pixabay asks that searches be kept for 24 hours rather than asked again. */
 const pixabayCache = new Map<string, { at: number; hits: PixabayHit[] }>();
 
-async function pixabay(query: string, size: Size): Promise<Stock | null> {
-  if (!ENV.pixabayKey) return null;
+async function pixabay(query: string, size: Size): Promise<Stock[]> {
+  if (!ENV.pixabayKey) return [];
   const words = query.trim().slice(0, 100).toLowerCase();
   let hits = pixabayCache.get(words);
   if (!hits || Date.now() - hits.at > 24 * 3600_000) {
     const q = new URLSearchParams({ key: ENV.pixabayKey, q: words, video_type: "film", safesearch: "true", per_page: "20" });
     const res = await fetch(`https://pixabay.com/api/videos/?${q}`, { signal: AbortSignal.timeout(15_000) }).catch(() => null);
-    if (!res?.ok) return null;
+    if (!res?.ok) return [];
     const data = (await res.json().catch(() => ({}))) as { hits?: PixabayHit[] };
     hits = { at: Date.now(), hits: data.hits ?? [] };
     pixabayCache.set(words, hits);
@@ -376,19 +384,24 @@ async function pixabay(query: string, size: Size): Promise<Stock | null> {
   // Pixabay has no shape filter: the clip whose shape is closest to the video's, then the size closest to full HD.
   const want = size === "vertical" ? 9 / 16 : size === "wide" ? 16 / 9 : 1;
   const target = size === "wide" ? 1080 : 1920;
-  let best: { hit: PixabayHit; file: { url: string; width: number; height: number; thumbnail?: string }; score: number } | null = null;
+  const ranked: { hit: PixabayHit; file: { url: string; width: number; height: number; thumbnail?: string }; score: number }[] = [];
   for (const hit of hits.hits) {
     if ((hit.duration ?? 0) < 3) continue;
+    let best: (typeof ranked)[number] | null = null;
     for (const file of Object.values(hit.videos ?? {})) {
       if (!file?.url || !file.width || !file.height) continue;
       const shape = Math.abs(Math.log(file.width / file.height / want));
       const score = shape * 4 + Math.abs(Math.max(file.width, file.height) - target) / 1000;
       if (!best || score < best.score) best = { hit, file, score };
     }
+    if (best) ranked.push(best);
   }
-  if (!best) return null;
-  const thumb = best.file.thumbnail ?? Object.values(best.hit.videos ?? {}).find((f) => f?.thumbnail)?.thumbnail ?? "";
-  return { url: best.file.url, page: best.hit.pageURL, thumb, credit: best.hit.user ? `${best.hit.user} on Pixabay` : "Pixabay", seconds: best.hit.duration, width: best.file.width, height: best.file.height };
+  return ranked
+    .sort((a, b) => a.score - b.score)
+    .map((b) => {
+      const thumb = b.file.thumbnail ?? Object.values(b.hit.videos ?? {}).find((f) => f?.thumbnail)?.thumbnail ?? "";
+      return { url: b.file.url, page: b.hit.pageURL, thumb, credit: b.hit.user ? `${b.hit.user} on Pixabay` : "Pixabay", seconds: b.hit.duration, width: b.file.width, height: b.file.height };
+    });
 }
 
 /** A stock clip kept with the video (only that video uses it), so Edit and redos don't fetch it again. */

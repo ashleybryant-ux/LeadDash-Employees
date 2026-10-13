@@ -39,6 +39,7 @@ import { SpokenTag, TalkButton, VoiceBar, useOneOnOne } from "./chat/OneOnOne";
 import { AvatarVideoCard } from "./chat/Avatar";
 import { MadeVideoCard } from "./work/MadeVideos";
 import { VideoMaker } from "./video/VideoAgent";
+import { EditCard } from "./video/Editor";
 import Broll from "./video/Broll";
 import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 import { Composer, type Mentionable } from "./team/Composer";
@@ -132,7 +133,7 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
 // ==========================================
 
 type Card = {
-  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "receipt" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note" | "made_video" | "video_maker";
+  type: "opportunity" | "application" | "application_draft" | "answer" | "choices" | "layout_choice" | "question" | "submitted" | "receipt" | "grant" | "event" | "video" | "page" | "post" | "article" | "reply" | "prospect" | "candidate" | "schedule_plan" | "prospect_sales" | "launch_plan" | "meeting_agenda" | "meeting_notes" | "onboarding" | "onboarding_q" | "bidprime_code" | "portal_code" | "bidprime_screen" | "browser_live" | "avatar_video" | "dev_change" | "web_task" | "web_code" | "platform_findings" | "platform_page" | "schedule" | "drama_season" | "drama_episode" | "drama_keyframes" | "campaign_directions" | "press_brief" | "press_story" | "press_campaign" | "cold_hot" | "cold_review" | "precall" | "avery_brief" | "doc" | "deck" | "ad_budget" | "ad_set" | "sop" | "image" | "limit_note" | "made_video" | "video_maker" | "video_edit";
   items?: BriefItem[];
   counts?: { decisions: number; meetings: number; waiting: number; handled: number };
   id: number;
@@ -329,6 +330,8 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
                       <AvatarVideoCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "made_video" ? (
                       <MadeVideoCard key={`${c.type}-${c.id}`} id={c.id} />
+                    ) : c.type === "video_edit" ? (
+                      <EditCard key={`${c.type}-${c.id}`} id={c.id} />
                     ) : c.type === "video_maker" ? (
                       <VideoMaker key={`${c.type}-${c.id}`} initial={c.title} />
                     ) : c.type === "dev_change" ? (
