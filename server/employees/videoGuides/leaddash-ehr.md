@@ -17,7 +17,8 @@ How to read this guide:
 - Web address: **https://demo.leaddash.io**
 - The demo is the real LeadDash EHR app, running against a fictional practice called **Maple Crest Counseling**. Every client, note, claim and payment in it is made up and is built inside your own browser tab. Nothing you do in the demo reaches the LeadDash server, a payer, a clearinghouse, a phone or an inbox.
 - A dark bar runs along the bottom of every demo screen. It reads **DEMO**, then "Maple Crest Counseling is a fictional practice. Nothing here is real and nothing you do is saved." On the right it has **What to look at**, **Start over** and **Start your practice**.
-- Never use the live app (app.leaddash.io or any address other than demo.leaddash.io). The live app holds real practices and real clients.
+- The same fictional practice also exists inside the live app, at **https://ehr.leaddash.io**, as the Demo Account. It is filled with the same kind of made-up data (Maple Crest Counseling, its six team members, 30 fictional clients), and there your changes are saved, so a video can show a whole task end to end. You sign in there as one of its team (Sarah Chen, Marcus Ortega, Priya Bell, Alicia Grant, Rosa Delgado or Tom Nakamura) with the email Ashley gives you; the site sends a sign-in code, which Ashley pastes in when you ask. Right after signing in, read the practice name at the bottom of the left menu: it must say **Maple Crest Counseling**. If it says any other practice, stop at once and tell Ashley; never work in it.
+- Never use any other practice in the live app, and never any LeadDash address other than demo.leaddash.io and ehr.leaddash.io. The live app holds real practices and real clients.
 
 ### How you get in
 
@@ -1397,7 +1398,7 @@ These are shown through the Live preview in Practice Settings, **Portal and book
 
 ## Never
 
-- Never use a real practice or real client data. Work only at https://demo.leaddash.io. Never sign in at app.leaddash.io or any other LeadDash address.
+- Never use a real practice or real client data. Work only at https://demo.leaddash.io, or at https://ehr.leaddash.io signed in to Maple Crest Counseling (the Demo Account). Never sign in at app.leaddash.io or any other LeadDash address, and never in any other practice.
 - Never fill in the demo's sign-up form ("Open the demo"). It sends a real lead to LeadDash. Use the team link from Ashley.
 - Never type a real person's name, birth date, phone, email, address, insurance number, diagnosis or any health detail anywhere, even in the demo. Use made-up names, 555 phone numbers and example.com emails.
 - Never send real messages, faxes, texts or emails to real people. Do not use the "Send a test" email button with a real address.

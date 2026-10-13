@@ -12,7 +12,7 @@ import path from "node:path";
  */
 
 export const APPS = {
-  ehr: { label: "LeadDash EHR", file: "leaddash-ehr.md", hosts: ["demo.leaddash.io", "app.leaddash.io"], names: /leaddash ehr|\behr\b|demo\.leaddash/i },
+  ehr: { label: "LeadDash EHR", file: "leaddash-ehr.md", hosts: ["demo.leaddash.io", "ehr.leaddash.io", "app.leaddash.io"], names: /leaddash ehr|\behr\b|demo\.leaddash/i },
   employees: { label: "LeadDash Employees", file: "leaddash-employees.md", hosts: ["employees.leaddash.io"], names: /leaddash employees|employees\.leaddash/i },
   events: { label: "LeadDash Events", file: "leaddash-events.md", hosts: ["events.leaddash.io"], names: /leaddash events|events\.leaddash/i },
 } as const;

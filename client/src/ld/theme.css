@@ -2992,6 +2992,10 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 .ld-dv-spin { width: 16px; height: 16px; border-radius: 999px; border: 3px solid var(--ld-line); border-top-color: var(--ld-accent); animation: ld-dv-spin 0.9s linear infinite; flex-shrink: 0; }
 @keyframes ld-dv-spin { to { transform: rotate(360deg); } }
 .ld-dv-err { padding: 12px 18px; font-size: 14px; color: var(--ld-bad); border-color: var(--ld-bad); }
+.ld-dv-kept { padding: 12px 18px; font-size: 14px; font-weight: 600; color: var(--ld-warn); border-color: var(--ld-warn); background: var(--ld-warn-bg); }
+.ld-dv-rec { margin-left: 8px; vertical-align: 2px; }
+.ld-dv-shotrow { padding: 0 18px 12px 114px; border-bottom: 1px solid var(--ld-line2); }
+.ld-dv-shot { width: 220px; max-width: 100%; border-radius: 6px; border: 1px solid var(--ld-line); display: block; }
 .ld-dv-q { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
 .ld-dv-plan { display: grid; grid-template-columns: 80px minmax(0, 1fr) minmax(0, 1.3fr) 96px; gap: 16px; align-items: center; }
 .ld-dv-prow { padding: 12px 18px; font-size: 14px; line-height: 1.45; border-bottom: 1px solid var(--ld-line2); }
@@ -3051,6 +3055,7 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
   .ld-dv-cols { grid-template-columns: minmax(0, 1fr) 128px; }
   .ld-dv-cols > :nth-child(2), .ld-dv-cols > :nth-child(3), .ld-dv-cols > :nth-child(4) { display: none; }
   .ld-dv-plan { grid-template-columns: 76px minmax(0, 1fr) 96px; gap: 8px 12px; }
+  .ld-dv-shotrow { padding-left: 18px; }
   .ld-dv-plan > :nth-child(3) { grid-column: 2 / 3; }
   .ld-dv-plan > :nth-child(4) { grid-column: 3; grid-row: 1; }
   .ld-hd.ld-dv-plan > :nth-child(3) { display: none; }

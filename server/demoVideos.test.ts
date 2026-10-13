@@ -8,6 +8,8 @@ import { createRequire } from "node:module";
 // The browser is scripted here: a practice run, then a recorded run with real pictures of the screen.
 const browserTasks: any[] = [];
 let recordFails = false;
+/** A recorded run stopped by the person after step 1 finished (its result was on screen). */
+let stopAfterOne = false;
 /** A recorded run that has to sign in first: it asks, then waits for the answer like the real browser. */
 let askFor: "code" | "email" | null = null;
 let answered: string | null = null;
@@ -21,6 +23,15 @@ vi.mock("./employees/browser", async (orig) => {
       const base = { storageState: null, downloads: [], screenshotUrl: null, helped: [], url: task.startUrl, note: "", result: '{"answer":"recorded"}' };
       if (!task.record) return { ...base, status: "done", log: [{ step: 1, action: "click", detail: "Opened Calendar", url: task.startUrl }], result: '{"answer":"The calendar has a Book anyway button."}' };
       if (recordFails) return { ...base, status: "failed", note: "The Book anyway button wasn't on the screen", log: [] };
+      if (stopAfterOne) {
+        const rec = fs.mkdtempSync(path.join(os.tmpdir(), "rec-"));
+        const frames = ["red", "green"].map((c, i) => {
+          const f = path.join(rec, `${i}.jpg`);
+          fs.copyFileSync(path.join(frameDir, `${c}.jpg`), f);
+          return { t: i * 2, file: f };
+        });
+        return { ...base, status: "failed", note: "Stopped by you.", frames, recDir: rec, view: { width: 320, height: 200 }, log: [{ step: 1, action: "click", detail: "Clicked Calendar", url: task.startUrl, at: 0.3, end: 0.8, box: { x: 10, y: 20, w: 60, h: 20 }, plan: 1 }] };
+      }
       if (askFor && task.ask) {
         await task.ask.post(askFor, "Enter the code we emailed you");
         for (let i = 0; i < 400 && !answered; i++) {
@@ -121,6 +132,7 @@ beforeEach(() => {
   rendered = [];
   browserTasks.length = 0;
   recordFails = false;
+  stopAfterOne = false;
   askFor = null;
   answered = null;
   planOut = PLAN;
@@ -183,8 +195,16 @@ async function readyTwin(orgId: number) {
 }
 
 describe("Simone's demo videos", { timeout: 60_000 }, () => {
-  it("records LeadDash EHR only in the demo practice", () => {
+  it("records LeadDash EHR only in the demo practice: the browser demo, or Maple Crest Counseling in the live app with a sign-in", () => {
     expect(() => dv.checkWhere("https://app.leaddash.io/calendar")).toThrow(/demo practice/);
+    expect(() => dv.checkWhere("https://demo.leaddash.io/calendar")).not.toThrow();
+    expect(() => dv.checkWhere("https://ehr.leaddash.io/calendar-view", { loginName: null, email: null })).toThrow(/Maple Crest Counseling team/);
+    expect(() => dv.checkWhere("https://ehr.leaddash.io/calendar-view", { loginName: null, email: "sarah@example.com" })).not.toThrow();
+    expect(dv.demoPracticeRule("https://ehr.leaddash.io/calendar-view")).toMatch(/must say "Maple Crest Counseling"/);
+    expect(dv.demoPracticeRule("https://demo.leaddash.io/calendar")).toBe("");
+    expect(dv.stepsDone({ frames: [{ t: 0, file: "" }, { t: 2, file: "" }], log: [{ at: 0.3, end: 0.8, plan: 1 } as any] }, 2)).toBe(1);
+    expect(dv.stepsDone({ frames: [{ t: 0, file: "" }, { t: 1, file: "" }], log: [{ at: 0.3, end: 0.8, plan: 1 } as any] }, 2)).toBe(0);
+    expect(dv.stepsDone({ frames: [{ t: 0, file: "" }, { t: 9, file: "" }], log: [{ at: 0.3, end: 0.8, plan: 1 } as any, { at: 2, end: 2.5, plan: 2 } as any] }, 2)).toBe(2);
     expect(() => dv.checkWhere(DEMO_URL)).not.toThrow();
     expect(() => dv.checkWhere("https://events.leaddash.io/admin")).not.toThrow();
   });
@@ -283,6 +303,47 @@ describe("Simone's demo videos", { timeout: 60_000 }, () => {
     expect(d.status).toBe("plan");
     expect(d.error).toMatch(/Book anyway button/);
     expect((await hours.balance(w.orgId)).usedMinutes).toBe(0);
+  });
+
+  it("a stopped recording keeps the steps that finished: keep going records the rest, or stop and build makes the video from them", async () => {
+    const w = await onPlan("demo-keep");
+    const made = await dv.create(w.orgId, { ask: "Book a late session", kind: "training", presenter: "screen", url: DEMO_URL, by: "Owner" });
+    await settle(w.orgId, made.id);
+    stopAfterOne = true;
+    await dv.record(w.orgId, made.id, "Owner");
+    let d = await settle(w.orgId, made.id);
+    expect(d.status).toBe("plan");
+    expect(d.error).toMatch(/Stopped by you\. Steps 1 to 1 of 2 are recorded\. Keep going from step 2/);
+    expect(dv.takeOf(d).steps).toHaveLength(1);
+    expect(dv.takeOf(d).steps[0].shot).toBeTruthy();
+    expect((await dv.view(d)).recordedUpTo).toBe(1);
+    expect((await hours.balance(w.orgId)).usedMinutes).toBe(0);
+    // Keep going: the browser is told steps 1 to 1 are done; step 1's clip is the kept one.
+    stopAfterOne = false;
+    const kept = dv.takeOf(d).steps[0].clip;
+    await dv.record(w.orgId, made.id, "Owner", { from: 1 });
+    d = await settle(w.orgId, made.id);
+    expect(d.status).toBe("ready");
+    expect(browserTasks[browserTasks.length - 1].goal).toContain("Steps 1 to 1 are recorded already");
+    expect(dv.takeOf(d).steps).toHaveLength(2);
+    expect(dv.takeOf(d).steps[0].clip).toBe(kept);
+    expect((await dv.view(d)).recordedUpTo).toBe(0);
+
+    // Stop and build: the video is made from step 1 alone, and the plan is cut to it.
+    const w2 = await onPlan("demo-build");
+    const m2 = await dv.create(w2.orgId, { ask: "Book a late session", kind: "training", presenter: "screen", url: DEMO_URL, by: "Owner" });
+    await settle(w2.orgId, m2.id);
+    stopAfterOne = true;
+    await dv.record(w2.orgId, m2.id, "Owner");
+    await settle(w2.orgId, m2.id);
+    rendered = [];
+    await dv.buildRecorded(w2.orgId, m2.id, "Owner");
+    const b = await settle(w2.orgId, m2.id);
+    expect(b.status).toBe("ready");
+    expect(dv.planOf(b).steps).toHaveLength(1);
+    expect(dv.planOf(b).doneWhen).toBe("The week view");
+    expect(rendered[0].parts.map((p) => p.kind)).toEqual(["card", "step", "card"]);
+    await expect(dv.record(w2.orgId, m2.id, "Owner", { from: 1 })).rejects.toThrow(/Nothing is recorded yet|Record it/);
   });
 
   it("makes the avatar say every line in the corner, in the twin's look and voice, and counts avatar time by the half minute", async () => {

@@ -284,7 +284,7 @@ function MakeForm({ empName, onCancel, onStarted }: { empName: string; onCancel?
         )}
         <span />
         <span className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.45 }}>
-          {`${empName} signs in with your saved Website login. LeadDash EHR is recorded in the demo practice only, so no client information is ever in a video.`}
+          {`${empName} signs in with your saved Website login. LeadDash EHR is recorded in the demo practice only (demo.leaddash.io, or Maple Crest Counseling at ehr.leaddash.io), so no client information is ever in a video.`}
           {!logins.length && <> Add logins under <Link href="/integrations?tab=logins">Website logins</Link>.</>}
         </span>
         <span className="ld-lbl">Who it's for</span>
@@ -468,9 +468,12 @@ function PlanView({ d }: { d: DV }) {
   const replan = trpc.demo.replan.useMutation({ onSuccess: refresh });
   const answer = trpc.demo.answer.useMutation({ onSuccess: refresh });
   const remove = trpc.demo.remove.useMutation({ onSuccess: refresh });
+  const build = trpc.demo.buildRecorded.useMutation({ onSuccess: refresh });
   const busy = d.status === "planning" || d.status === "making";
-  const go = () => {
-    const run = () => record.mutate({ organizationId: orgId, id: d.id });
+  // A recording that stopped part way: what's recorded is kept, and she can keep going or build from it.
+  const partial = d.recordedUpTo > 0;
+  const go = (keepGoing = false) => {
+    const run = () => record.mutate({ organizationId: orgId, id: d.id, keepGoing });
     if (d.estimateMinutes >= 180) hours.confirm(`rec-${d.id}`, `This video uses ${d.hours}`, run);
     else run();
   };
@@ -481,7 +484,15 @@ function PlanView({ d }: { d: DV }) {
           <>
             {d.plan.steps.length > 0 && <span className="ld-pill amber">Uses {d.hours.replace("No work hours", "no work hours")}</span>}
             <button type="button" className="ld-btn" style={{ width: 140 }} disabled={replan.isPending} onClick={() => replan.mutate({ organizationId: orgId, id: d.id })}>Start over</button>
-            {d.plan.steps.length > 0 && <button type="button" className="ld-btn p" style={{ width: 140 }} disabled={record.isPending} onClick={go}>{record.isPending ? "Starting..." : "Record it"}</button>}
+            {partial ? (
+              <>
+                <button type="button" className="ld-btn" style={{ width: 140 }} disabled={record.isPending || build.isPending} onClick={() => go(false)}>Record again</button>
+                <button type="button" className="ld-btn" style={{ width: 140 }} disabled={record.isPending || build.isPending} onClick={() => build.mutate({ organizationId: orgId, id: d.id })}>{build.isPending ? "Starting..." : "Stop and build"}</button>
+                <button type="button" className="ld-btn p" style={{ width: 140 }} disabled={record.isPending || build.isPending} onClick={() => go(true)}>{record.isPending ? "Starting..." : "Keep going"}</button>
+              </>
+            ) : (
+              d.plan.steps.length > 0 && <button type="button" className="ld-btn p" style={{ width: 140 }} disabled={record.isPending} onClick={() => go(false)}>{record.isPending ? "Starting..." : "Record it"}</button>
+            )}
           </>
         ) : d.status === "asking" ? (
           <span className="ld-pill amber">Question</span>
@@ -493,8 +504,8 @@ function PlanView({ d }: { d: DV }) {
       {busy && <div className="ld-card ld-dv-busy"><span className="ld-dv-spin" aria-hidden="true" />{d.step ?? "Working"}...</div>}
       {d.asking && <SignInBox d={d} />}
       {d.status === "planning" && d.liveId && <BrowserCard card={{ type: "browser_live", id: 0, title: "Simone's browser", url: d.liveId }} />}
-      {d.error && <div className="ld-card ld-dv-err">{d.error}</div>}
-      <ErrorLine error={record.error ?? replan.error ?? answer.error ?? remove.error} />
+      {d.error && <div className={`ld-card ${partial ? "ld-dv-kept" : "ld-dv-err"}`}>{d.error}</div>}
+      <ErrorLine error={record.error ?? replan.error ?? answer.error ?? remove.error ?? build.error} />
       {d.status === "asking" && d.plan.question && (
         <div className="ld-card ld-dv-q">
           <b>{d.plan.question.text}</b>
@@ -553,10 +564,16 @@ function StepRow({ d, n, open, onToggle, locked }: { d: DV; n: number; open: boo
     <>
       <div className={`ld-dv-plan ld-dv-prow ${open ? "open" : ""}`}>
         <span className={`ld-dv-n ${open ? "on" : ""}`}>{n + 1}</span>
-        <span>{s.do}</span>
+        <span>
+          {s.do}
+          {d.recordedUpTo > 0 && (n < d.recordedUpTo ? <span className="ld-pill green ld-dv-rec">Recorded</span> : <span className="ld-pill ld-dv-rec">Not yet</span>)}
+        </span>
         <span>{s.say}</span>
         <button type="button" className="ld-btn sm" disabled={locked} onClick={onToggle}>{open ? "Close" : "Edit"}</button>
       </div>
+      {d.recordedUpTo > 0 && n < d.recordedUpTo && d.take[n]?.shot && !open && (
+        <div className="ld-dv-shotrow"><img src={d.take[n].shot!} alt={`Step ${n + 1} as recorded`} className="ld-dv-shot" /></div>
+      )}
       {open && (
         <div className="ld-dv-pedit">
           <div className="ld-dv-pform">

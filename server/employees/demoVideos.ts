@@ -181,8 +181,18 @@ export function fullUrl(url: string | null | undefined) {
   return /^https?:\/\//i.test(u) ? u : `https://${u.replace(/^\/+/, "")}`;
 }
 
-/** Where it's recorded must be safe: LeadDash EHR only in its demo practice, and only real web addresses. */
-export function checkWhere(url: string | null | undefined) {
+/** The fictional practice LeadDash EHR videos are recorded in: the browser demo, and the Demo Account practice in the live app. */
+export const DEMO_PRACTICE = "Maple Crest Counseling";
+export const EHR_DEMO_HOST = "demo.leaddash.io";
+export const EHR_LIVE_HOST = "ehr.leaddash.io";
+
+/**
+ * Where it's recorded must be safe: LeadDash EHR only in its demo practice, and only real web addresses.
+ * The demo practice is in two places: demo.leaddash.io (the browser demo, signs itself in) and the
+ * Demo Account practice in the live app (ehr.leaddash.io), which needs a sign-in as one of its team.
+ * Any other practice in the live app is refused; the browser also checks the practice name once it's in.
+ */
+export function checkWhere(url: string | null | undefined, signIn?: { loginName?: string | null; email?: string | null }) {
   if (!url) return;
   let host = "";
   try {
@@ -190,8 +200,21 @@ export function checkWhere(url: string | null | undefined) {
   } catch {
     throw new TRPCError({ code: "BAD_REQUEST", message: "That web address isn't valid." });
   }
-  if (vg.appFor(url) === "ehr" && host !== "demo.leaddash.io") throw new TRPCError({ code: "BAD_REQUEST", message: "LeadDash EHR videos are recorded in the demo practice (demo.leaddash.io) only, so no client information is ever in a video." });
+  if (vg.appFor(url) !== "ehr") return;
+  if (host === EHR_DEMO_HOST) return;
+  if (host !== EHR_LIVE_HOST) throw new TRPCError({ code: "BAD_REQUEST", message: `LeadDash EHR videos are recorded in the demo practice only (${EHR_DEMO_HOST}, or ${DEMO_PRACTICE} at ${EHR_LIVE_HOST}), so no client information is ever in a video.` });
+  if (signIn && !(signIn.loginName?.trim() || signIn.email?.trim())) throw new TRPCError({ code: "BAD_REQUEST", message: `At ${EHR_LIVE_HOST}, sign in as someone on the ${DEMO_PRACTICE} team (the demo practice): pick its saved Website login or enter the sign-in email.` });
 }
+/** The browser's own check once it's signed in: the demo practice, or stop. */
+export const demoPracticeRule = (url: string) => {
+  let host = "";
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    host = "";
+  }
+  return host === EHR_LIVE_HOST ? `\n- This is the live LeadDash EHR app. Right after signing in, read the practice name at the bottom of the left menu (under "Signed in as"). It must say "${DEMO_PRACTICE}", the demo practice. If it says anything else, use fail at once with "Signed in to <that practice>, not the demo practice" and do nothing on the page.` : "";
+};
 
 const cleanEmail = (e: string | null | undefined) => {
   const v = (e ?? "").trim().toLowerCase();
@@ -211,7 +234,7 @@ export async function create(orgId: number, input: CreateInput) {
   if (input.fromSopId && !sop) throw new TRPCError({ code: "NOT_FOUND", message: "That SOP is not in this workspace." });
   const url = fullUrl(input.url) || (login ? startIn(login) : "") || (sop ? sopSite(sop) : "") || "";
   if (!url && !login) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick where to record: a saved Website login or a web address." });
-  checkWhere(url);
+  checkWhere(url, { loginName: login?.name ?? null, email: input.signInEmail ?? null });
   if (input.presenter !== "screen" && !input.avatar) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick the avatar." });
   if (input.kind === "social" && !input.avatar) throw new TRPCError({ code: "BAD_REQUEST", message: "A social video needs an avatar for the hook. Pick one." });
   const presenter = input.kind === "social" ? null : input.presenter === "screen" ? null : input.avatar ?? null;
@@ -501,7 +524,7 @@ async function browserTask(orgId: number, d: DemoVideo, emp: AIEmployee, goal: s
   const web = await import("./web");
   const login = d.loginName ? findLogin(await db.listPortalLogins(orgId), d.loginName, d.url ?? "") : null;
   const startUrl = fullUrl(d.url) || (login ? startIn(login) : "");
-  checkWhere(startUrl);
+  checkWhere(startUrl, { loginName: login?.name ?? null, email: d.signInEmail });
   const demoSite = vg.appFor(startUrl) === "ehr";
   const task: BrowserTask = {
     orgId,
@@ -519,50 +542,112 @@ async function browserTask(orgId: number, d: DemoVideo, emp: AIEmployee, goal: s
     record,
     job: null,
     rules: `- This is ${record ? "a recording" : "a practice run"} for a video. Move like a person showing a colleague: no wandering, no extra pages.
-- Never type a real person's details, a password into a visible box, or anything private.${demoSite ? "" : "\n- If a button you need is refused, the step is shown up to that button: use wait once so the screen is seen, then go on."}`,
+- Never type a real person's details, a password into a visible box, or anything private.${demoPracticeRule(startUrl)}${demoSite ? "" : "\n- If a button you need is refused, the step is shown up to that button: use wait once so the screen is seen, then go on."}`,
   };
   return { task, login };
 }
 
-function recordGoal(d: DemoVideo, p: Plan, upTo?: number) {
+function recordGoal(d: DemoVideo, p: Plan, upTo?: number, from = 0) {
   const steps = p.steps.slice(0, upTo ?? p.steps.length);
   return `Record this video plan. Do the steps in order, one action at a time, and set planStep on every action to the number of the step it belongs to (0 for signing in or getting to the start).
 Starts on: ${p.startsOn || "the site's first page after signing in"}
 ${steps.map((s, i) => `${i + 1}. Do: ${s.do}\n   Then you should see: ${s.expect}`).join("\n")}
-${upTo ? `Stop after step ${upTo}.` : `Done when: ${p.doneWhen}`}
+${from > 0 ? `Steps 1 to ${from} are recorded already: do them again exactly as written (the site starts over), without pausing, then carry on from step ${from + 1}.\n` : ""}${upTo ? `Stop after step ${upTo}.` : `Done when: ${p.doneWhen}`}
 Before each step, check the screen shows what the step before it expects. If it doesn't, use fail and say exactly what you see instead; never take a different path. When the last step's result is on screen, use done with result {"answer":"recorded"}.`;
 }
 
-/** Record it: the browser does the plan while the screen is recorded, then the video is made. */
-export async function record(orgId: number, id: number, by: string) {
+/** A recording that stopped (by the person, or a screen that didn't match) with some steps finished: they're kept. */
+class StoppedEarly extends Error {
+  constructor(public take: Take, public why: string) {
+    super(why);
+  }
+}
+/** How many plan steps finished before a run stopped: the last step counts only if its result was on screen for a moment. */
+export function stepsDone(res: Pick<BrowserResult, "log" | "frames">, total: number) {
+  const acts = res.log.filter((l) => typeof l.at === "number" && (l.plan ?? 0) > 0);
+  if (!acts.length || !res.frames?.length) return 0;
+  const max = Math.max(...acts.map((a) => a.plan!));
+  const last = acts.filter((a) => a.plan === max).sort((a, b) => a.at! - b.at!).pop()!;
+  const lastEnd = last.end ?? last.at! + 1;
+  const seen = res.frames[res.frames.length - 1].t - lastEnd >= 1;
+  return Math.min(total, seen ? max : max - 1);
+}
+
+/** The take with steps 1 to `from` kept from before and the rest from the new run. */
+const mergeTake = (old: Take, fresh: Take, from: number): Take => ({ ...fresh, steps: [...old.steps.slice(0, from), ...fresh.steps.slice(from)] });
+const stoppedMessage = (n: number, total: number, why: string) => `${why.replace(/\.?$/, ".")} Steps 1 to ${n} of ${total} are recorded. Keep going from step ${n + 1}, or stop and build the video from what's recorded.`;
+
+/**
+ * Record it: the browser does the plan while the screen is recorded, then the video is made.
+ * Keep going (from > 0): steps already recorded are kept; the browser redoes them quickly and
+ * records from the next one. A stop with finished steps keeps them and asks what to do next.
+ */
+export async function record(orgId: number, id: number, by: string, opts: { from?: number } = {}) {
   const d = must(orgId, id);
   idle(d);
   if (d.status === "asking") throw new TRPCError({ code: "BAD_REQUEST", message: "Answer the question first." });
-  if (!planOf(d).steps.length) throw new TRPCError({ code: "BAD_REQUEST", message: "The plan has no steps yet." });
+  const p = planOf(d);
+  if (!p.steps.length) throw new TRPCError({ code: "BAD_REQUEST", message: "The plan has no steps yet." });
+  const have = takeOf(d).steps.length;
+  const from = opts.from ? Math.min(opts.from, have, p.steps.length - 1) : 0;
+  if (opts.from && from < 1) throw new TRPCError({ code: "BAD_REQUEST", message: "Nothing is recorded yet. Press Record it." });
   const e = estimate(d);
   if (e.minutes > 0) await hours.gate(orgId);
   const started = update(orgId, id, { status: "recording", step: "Signing in", error: null });
   void background(orgId, id, async () => {
-    const take = await doRecord(orgId, id);
-    // A new recording: every size is cut again from it.
-    update(orgId, id, { take: JSON.stringify(take), videoUrls: "{}" });
+    const old = takeOf(get(orgId, id)!);
+    try {
+      const take = await doRecord(orgId, id, undefined, from);
+      // A new recording: every size is cut again from it.
+      update(orgId, id, { take: JSON.stringify(from ? mergeTake(old, take, from) : take), videoUrls: "{}" });
+    } catch (err) {
+      if (!(err instanceof StoppedEarly)) throw err;
+      const kept = from ? mergeTake(old, err.take, from) : err.take;
+      update(orgId, id, { status: "plan", step: null, take: JSON.stringify(kept), videoUrls: "{}", error: stoppedMessage(kept.steps.length, p.steps.length, err.why) });
+      return;
+    }
     await make(orgId, id, by);
   }, "plan");
   return started;
 }
 
+/** Stop and build: the video is made from the steps recorded so far; the plan is cut to them. */
+export async function buildRecorded(orgId: number, id: number, by: string) {
+  const d = must(orgId, id);
+  idle(d);
+  const p = planOf(d);
+  const n = takeOf(d).steps.length;
+  if (!n) throw new TRPCError({ code: "BAD_REQUEST", message: "Nothing is recorded yet. Press Record it." });
+  if (n < p.steps.length) {
+    const steps = p.steps.slice(0, n);
+    update(orgId, id, { plan: JSON.stringify({ ...p, steps, doneWhen: steps[n - 1].expect }), parts: JSON.stringify(Object.fromEntries(Object.entries(partsOf(d)).filter(([k]) => !/^s\d+$/.test(k) || Number(k.slice(1)) < n))) });
+  }
+  const started = update(orgId, id, { status: "making", step: "Reading the lines", error: null });
+  void background(orgId, id, () => make(orgId, id, by), "plan");
+  return started;
+}
+
 /** Runs the plan in the browser with the screen recorded; returns each step's clip. */
-async function doRecord(orgId: number, id: number, upTo?: number): Promise<Take> {
+async function doRecord(orgId: number, id: number, upTo?: number, from = 0): Promise<Take> {
   const d = must(orgId, id);
   const emp = await simone(orgId);
   const p = planOf(d);
-  const { task, login } = await browserTask(orgId, d, emp, recordGoal(d, p, upTo), true);
+  const { task, login } = await browserTask(orgId, d, emp, recordGoal(d, p, upTo, from), true);
   update(orgId, id, { step: "Recording the steps" });
   const res: BrowserResult = await runLive(orgId, d, emp, task, d.title);
   if (login) await (await import("./logins")).keepSession(orgId, login, res.storageState).catch(() => null);
   try {
     if (res.status === "need_code") throw new Error("The site sent a sign-in code and none came in 10 minutes. Press Record it, then paste the code when Simone asks.");
-    if (res.status !== "done") throw new Error(`The recording stopped: ${res.note || "the screen didn't match the plan"}`.slice(0, 400));
+    if (res.status !== "done") {
+      const why = `The recording stopped: ${res.note || "the screen didn't match the plan"}`.slice(0, 300);
+      // Finished steps are kept (a redo of one step keeps nothing: that step didn't finish).
+      const done = upTo ? 0 : stepsDone(res, p.steps.length);
+      if (done > 0 && res.frames?.length) {
+        update(orgId, id, { step: "Keeping the steps that finished" });
+        throw new StoppedEarly(await cutTake(orgId, d, p, res, done), why);
+      }
+      throw new Error(why);
+    }
     if (!res.frames?.length) throw new Error("Nothing was recorded.");
     update(orgId, id, { step: "Cutting each step" });
     return await cutTake(orgId, d, p, res, upTo);
@@ -947,6 +1032,8 @@ export async function view(d: DemoVideo) {
     error: d.error,
     plan: p,
     take: take.steps.map((s, i) => ({ n: i, shot: s.shot, seconds: s.seconds, clicks: s.clicks.length })),
+    /** Steps recorded so far when a recording stopped early (0 when none, or all of them). */
+    recordedUpTo: take.steps.length && take.steps.length < p.steps.length ? take.steps.length : 0,
     lines: [
       { key: "intro", label: d.kind === "social" ? "Hook" : "Opening", text: p.intro },
       ...p.steps.map((s, i) => ({ key: `s${i}`, label: String(i + 1), text: s.say, shot: take.steps[i]?.shot ?? null })),

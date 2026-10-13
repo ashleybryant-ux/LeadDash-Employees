@@ -4003,11 +4003,18 @@ export const appRouter = router({
       const { organizationId, id, ...rest } = input;
       return dv.view(dv.savePlanInfo(organizationId, id, rest));
     }),
-    record: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+    record: protectedProcedure.input(orgInput.extend({ id: z.number().int(), keepGoing: z.boolean().optional() })).mutation(async ({ ctx, input }) => {
       blockReviewer(ctx);
       await requireMember(ctx, input.organizationId, "member");
       const dv = await import("./employees/demoVideos");
-      return dv.view(await dv.record(input.organizationId, input.id, ctx.user.name || ctx.user.email));
+      const from = input.keepGoing ? dv.takeOf(dv.get(input.organizationId, input.id) ?? { take: "" }).steps.length : 0;
+      return dv.view(await dv.record(input.organizationId, input.id, ctx.user.name || ctx.user.email, { from }));
+    }),
+    buildRecorded: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(await dv.buildRecorded(input.organizationId, input.id, ctx.user.name || ctx.user.email));
     }),
     redoStep: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int().min(0) })).mutation(async ({ ctx, input }) => {
       blockReviewer(ctx);
