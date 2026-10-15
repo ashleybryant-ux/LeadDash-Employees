@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -82,7 +83,7 @@ export const sizesOf = (d: Pick<DemoVideo, "sizes">): Size[] => {
   const s = parse<string[]>(d.sizes, []).filter((x): x is Size => x in SIZES);
   return s.length ? Array.from(new Set(s)) : ["wide"];
 };
-const urlsOf = (d: Pick<DemoVideo, "videoUrls">) => parse<Partial<Record<Size, string>>>(d.videoUrls, {});
+export const urlsOf = (d: Pick<DemoVideo, "videoUrls">) => parse<Partial<Record<Size, string>>>(d.videoUrls, {});
 export const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
 // ==========================================
@@ -977,6 +978,17 @@ export function changeLook(orgId: number, id: number, patch: Partial<DemoLook>, 
 }
 
 /** Export: the sizes picked; a new size is cut from what's already made. */
+/** Share with anyone: a public page at /v/<key> with the video, no sign-in; off again clears the key so the old link stops. */
+export function setPublic(orgId: number, id: number, on: boolean) {
+  const d = must(orgId, id);
+  if (on && d.publicKey) return d;
+  return update(orgId, id, { publicKey: on ? crypto.randomBytes(15).toString("base64url") : null });
+}
+export function byPublicKey(key: string) {
+  if (!/^[A-Za-z0-9_-]{16,}$/.test(key)) return null;
+  return db.getDb().select().from(demoVideos).where(eq(demoVideos.publicKey, key)).get() ?? null;
+}
+
 export function setSizes(orgId: number, id: number, sizes: Size[], by: string) {
   const d = must(orgId, id);
   idle(d);
@@ -1100,6 +1112,8 @@ export async function view(d: DemoVideo) {
     ratios: sizesOf(d).map((s) => SIZES[s].ratio),
     videoUrls: urlsOf(d),
     videoUrl: d.videoUrl,
+    /** The public page anyone can watch, or null while the video is not shared. */
+    publicUrl: d.publicKey ? `/v/${d.publicKey}` : null,
     length: d.tenths ? fmt(d.tenths / 10) : `About ${fmt(e.seconds)}`,
     hours: e.minutes > 0 ? hoursText(e.minutes) : "No work hours",
     estimateMinutes: e.minutes,

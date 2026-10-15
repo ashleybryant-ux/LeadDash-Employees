@@ -93,6 +93,7 @@ import { twins, twinLooks, outboundItems } from "../drizzle/schema";
 import { and, eq } from "drizzle-orm";
 
 const ff = () => createRequire(import.meta.url)("ffmpeg-static") as string;
+const realFetch = globalThis.fetch;
 let dir: string;
 let mp3: Buffer;
 let talkMp4: Buffer;
@@ -151,6 +152,8 @@ beforeEach(() => {
   let n = 0;
   vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
     const u = String(url);
+    // The public video page test talks to a real local server.
+    if (u.startsWith("http://127.0.0.1:")) return realFetch(url, init);
     calls.push({ url: u, init });
     if (u === "https://api.openai.com/v1/audio/speech") return new Response(mp3, { status: 200 });
     if (u.startsWith("https://rest.fal.ai/storage/upload/initiate")) return Response.json({ upload_url: "https://fal-up/put1", file_url: "https://fal.media/source" });
@@ -297,6 +300,39 @@ describe("Simone's demo videos", { timeout: 60_000 }, () => {
     const both = await settle(w.orgId, d.id);
     expect(Object.keys(JSON.parse(both.videoUrls)).sort()).toEqual(["vertical", "wide"]);
     expect((await hours.balance(w.orgId)).usedMinutes).toBe(120);
+
+    // Share with anyone (2026-10-15): a public page and the file itself open with no sign-in; Stop sharing kills the link.
+    expect((await dv.view(both)).publicUrl).toBeNull();
+    const shared = dv.setPublic(w.orgId, d.id, true);
+    expect(shared.publicKey).toMatch(/^[A-Za-z0-9_-]{16,}$/);
+    expect(dv.setPublic(w.orgId, d.id, true).publicKey).toBe(shared.publicKey);
+    const { registerVideoPages } = await import("./video-pages");
+    const express = (await import("express")).default;
+    const app = express();
+    registerVideoPages(app);
+    const server = app.listen(0);
+    await new Promise((r) => server.once("listening", r));
+    const base = `http://127.0.0.1:${(server.address() as any).port}`;
+    try {
+      const page = await fetch(`${base}/v/${shared.publicKey}`);
+      expect(page.status).toBe(200);
+      const html = await page.text();
+      expect(html).toContain(d.title.replace(/'/g, "&#39;"));
+      expect(html).toContain(`/v/${shared.publicKey}/wide.mp4`);
+      expect(html).toContain("9:16");
+      const file = await fetch(`${base}/v/${shared.publicKey}/vertical.mp4`);
+      expect(file.status).toBe(200);
+      expect(file.headers.get("content-type")).toContain("video/mp4");
+      expect((await file.arrayBuffer()).byteLength).toBeGreaterThan(0);
+      expect((await fetch(`${base}/v/${shared.publicKey}/square.mp4`)).status).toBe(404);
+      expect((await fetch(`${base}/v/nope-not-a-key-at-all`)).status).toBe(404);
+      const off = dv.setPublic(w.orgId, d.id, false);
+      expect(off.publicKey).toBeNull();
+      expect((await fetch(`${base}/v/${shared.publicKey}`)).status).toBe(404);
+      expect((await fetch(`${base}/v/${shared.publicKey}/wide.mp4`)).status).toBe(404);
+    } finally {
+      server.close();
+    }
   });
 
   it("stops the take instead of improvising when the screen doesn't match, and keeps the plan", async () => {

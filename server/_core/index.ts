@@ -25,6 +25,7 @@ import { registerPublicPages } from "../public-pages";
 import { registerSalesPages } from "../sales-pages";
 import { registerCareers } from "../careers";
 import { registerProjectPages } from "../project-pages";
+import { registerVideoPages } from "../video-pages";
 
 async function startServer() {
   // Open the database and run any pending migrations before taking traffic.
@@ -199,6 +200,7 @@ async function startServer() {
   registerSalesPages(app);
   registerCareers(app);
   registerProjectPages(app);
+  registerVideoPages(app);
 
   app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
 

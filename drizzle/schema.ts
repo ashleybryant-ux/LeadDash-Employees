@@ -1779,6 +1779,8 @@ export const demoVideos = sqliteTable(
     sizes: text("sizes").notNull().default('["wide"]'),
     videoUrls: text("videoUrls").notNull().default("{}"),
     videoUrl: text("videoUrl"),
+    /** A random key for the public page (/v/<key>) anyone can watch without signing in; null while not shared. */
+    publicKey: text("publicKey"),
     tenths: integer("tenths"),
     /** Work minutes already used (screen time, and avatar time), so a re-cut uses none. */
     paidMinutes: integer("paidMinutes").notNull().default(0),

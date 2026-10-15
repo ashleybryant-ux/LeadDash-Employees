@@ -916,15 +916,23 @@ function ExportSec({ d, url, shown, locked }: { d: DV; url: string | null; shown
     const next = cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s];
     if (next.length) sizes.mutate({ organizationId: orgId, id: d.id, sizes: next });
   };
-  const copy = async () => {
-    if (!url) return;
+  const [pcopied, setPcopied] = React.useState(false);
+  const share = trpc.demo.setPublic.useMutation({ onSuccess: refresh });
+  const put = async (link: string, done: (v: boolean) => void) => {
     try {
-      await navigator.clipboard.writeText(new URL(url, window.location.origin).toString());
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      await navigator.clipboard.writeText(new URL(link, window.location.origin).toString());
+      done(true);
+      setTimeout(() => done(false), 2500);
     } catch {
       /* none */
     }
+  };
+  const copy = () => url && put(url, setCopied);
+  // The public link: anyone with it can watch, signed out. Made on the first copy; "Stop sharing" clears it, so the old link stops.
+  const copyPublic = async () => {
+    if (d.publicUrl) return put(d.publicUrl, setPcopied);
+    const next = await share.mutateAsync({ organizationId: orgId, id: d.id, on: true });
+    if (next.publicUrl) await put(next.publicUrl, setPcopied);
   };
   return (
     <div className="ld-card ld-vm-sec">
@@ -941,11 +949,22 @@ function ExportSec({ d, url, shown, locked }: { d: DV; url: string | null; shown
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {url ? <a className="ld-btn p" style={{ width: "100%" }} href={url} download={`${d.title} ${RATIO[shown].replace(":", "x")}.mp4`}>Download</a> : <button type="button" className="ld-btn p" style={{ width: "100%" }} disabled>Download</button>}
         <button type="button" className="ld-btn" style={{ width: "100%" }} disabled={!url} onClick={copy}>{copied ? "Link copied" : "Copy link"}</button>
+        <button type="button" className="ld-btn" style={{ width: "100%" }} disabled={!url || share.isPending} onClick={copyPublic}>{pcopied ? "Public link copied" : share.isPending ? "Sharing..." : "Copy public link"}</button>
         <button type="button" className="ld-btn" style={{ width: "100%" }} disabled={sienna.isPending || sent || !url} onClick={() => sienna.mutate({ organizationId: orgId, id: d.id })}>{sent ? "Sent to Sienna" : sienna.isPending ? "Sending..." : "Send to Sienna"}</button>
       </div>
-      {copied && <span className="ld-small" style={{ color: "var(--ld-text2)" }}>Anyone on your workspace can open the link.</span>}
+      {copied && <span className="ld-small" style={{ color: "var(--ld-text2)" }}>Copy link: anyone on your workspace can open it after signing in.</span>}
+      {d.publicUrl && (
+        <div className="ld-dv-lkv">
+          <span>Public link</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+            <a href={d.publicUrl} target="_blank" rel="noreferrer" className="ld-small" style={{ overflowWrap: "anywhere" }}>{new URL(d.publicUrl, window.location.origin).toString()}</a>
+            <span className="ld-small" style={{ color: "var(--ld-text2)" }}>Anyone with this link can watch and download it, no sign-in. Stop sharing and the link stops working.</span>
+            <button type="button" className="ld-btn sm" style={{ width: 140 }} disabled={share.isPending} onClick={() => share.mutate({ organizationId: orgId, id: d.id, on: false })}>Stop sharing</button>
+          </div>
+        </div>
+      )}
       {sent && <span className="ld-small">It's in Sienna's drafts with a caption. <Link href="/chats/social/work">Open her posts</Link></span>}
-      <ErrorLine error={sizes.error ?? sienna.error} />
+      <ErrorLine error={sizes.error ?? sienna.error ?? share.error} />
     </div>
   );
 }

@@ -4166,6 +4166,12 @@ export const appRouter = router({
         const { organizationId, id, ...patch } = input;
         return dv.view(dv.changeLook(organizationId, id, patch as never, ctx.user.name || ctx.user.email));
       }),
+    setPublic: protectedProcedure.input(orgInput.extend({ id: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const dv = await import("./employees/demoVideos");
+      return dv.view(dv.setPublic(input.organizationId, input.id, input.on));
+    }),
     setSizes: protectedProcedure.input(orgInput.extend({ id: z.number().int(), sizes: z.array(z.enum(["wide", "vertical", "square"])).min(1).max(3) })).mutation(async ({ ctx, input }) => {
       blockReviewer(ctx);
       await requireMember(ctx, input.organizationId, "member");

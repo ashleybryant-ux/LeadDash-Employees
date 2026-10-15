@@ -1,0 +1,1 @@
+ALTER TABLE `demo_videos` ADD `publicKey` text;
