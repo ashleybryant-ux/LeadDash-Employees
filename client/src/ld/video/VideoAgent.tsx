@@ -124,7 +124,7 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   // Drawn videos move like a short film by default; Moving pictures is the no-hours choice.
   const [motion, setMotion] = React.useState<"pictures" | "clips">("clips");
   const fileRef = React.useRef<HTMLInputElement>(null);
-  const [me, setMe] = React.useState(true);
+  const [me, setMe] = React.useState(false);
   const writeScene = trpc.scenes.write.useMutation({
     onSuccess: async (r) => {
       await Promise.all([utils.chat.list.invalidate(), utils.scenes.list.invalidate()]);
@@ -243,8 +243,8 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
             <div className="ld-vm-field">
               <span className="ld-lbl">Who is in it</span>
               <div className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>
-                <Chip on={me} onClick={() => setMe(true)}>Me, in my voice</Chip>
-                <Chip on={!me} onClick={() => setMe(false)}>Made-up characters only</Chip>
+                <Chip on={!me} onClick={() => setMe(false)}>Without me</Chip>
+                <Chip on={me} onClick={() => setMe(true)}>Me in a small part</Chip>
               </div>
             </div>
             <div className="ld-vm-field">

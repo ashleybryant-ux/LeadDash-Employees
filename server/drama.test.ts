@@ -137,7 +137,7 @@ describe("Elena's mini drama studio", () => {
     expect(r.reply.content).toMatch(/^I wrote an episode of Session Notes\. Each opens on a hook and ends on a cliffhanger, cut from about 4 shots with real camera moves\. You play Dr\. Ashley Bryant, from your photo and your voice\. The other character is made up, and no real clients/);
     expect(JSON.parse(r.reply.cards!)[0].type).toBe("drama_season");
     const st = await c.drama.studio({ organizationId: orgId });
-    expect(st.cast.map((x) => [x.name, x.kind, x.photoUrl === pic.url, x.voiceName])).toEqual([["Dr. Ashley Bryant", "owner", true, "Ashley"], ["Renee Cole", "made_up", false, null]]);
+    expect(st.cast.map((x) => [x.name, x.kind, x.photoUrl === pic.url, x.voiceName])).toEqual([["Dr. Ashley Bryant", "owner", true, "Ashley"], ["Renee Cole", "made_up", false, "Marin"]]);
     const ep = st.episodes[0];
     // A character nobody cast is dropped from the shot and can't speak.
     expect(ep.shots[3]).toMatchObject({ cast: [], line: null });
@@ -229,6 +229,8 @@ describe("Elena's mini drama studio", () => {
     const w = await drama.writeEpisodes(orgId, { brief: "", count: 1, ownerName: "Ashley" });
     void elena;
     const id = w.episodes[0].id;
+    // Made-up characters now get a voice of their own when written; take Renee's away to check the guard.
+    db.updateDramaCast(w.cast.find((x) => x.name === "Renee Cole")!.id, orgId, { voiceId: null, voiceName: null });
     // Keyframes don't need voices; animating does.
     await c.drama.make({ organizationId: orgId, id });
     await waitFor(() => db.getDramaEpisode(id, orgId)!.status === "keyframes");
@@ -400,7 +402,8 @@ describe("Elena's mini drama studio", () => {
       ] }],
     };
     const r = await drama.writeEpisodes(orgId, { brief: "I'm the therapist and I talk", count: 1, ownerName: "Dr. Ashley Bryant" });
-    expect(prompts.drama_season).toMatch(/she is never played by anyone else/);
+    expect(prompts.drama_season).toMatch(/owner's character is never played by anyone else/);
+    expect(prompts.drama_season).toMatch(/The lead is a made-up character, never the owner/);
     const shots = drama.shotsOf(r.episodes[0]);
     expect(shots[0]).toMatchObject({ cast: ["Ashley"], vo: "Another night of notes I shouldn't have to write." });
     expect(shots[1]).toMatchObject({ cast: ["Ashley"], line: { who: "Ashley", text: "It's already done." } });
@@ -544,5 +547,27 @@ describe("Elena's mini drama studio", () => {
     expect(downs).toBe(0);
     expect(drama.TRANSIENT.test("fal.ai said no (504): Downstream service unavailable")).toBe(true);
     expect(drama.TRANSIENT.test("fal.ai said no (422): image too small")).toBe(false);
+  });
+});
+
+describe("Every made-up person gets their own voice (2026-10-15)", () => {
+  it("never hands two people in one cast the same voice while another fitting voice is free", async () => {
+    const { pickVoice } = await import("./employees/drama");
+    const stock = [
+      { id: "f1", gender: "female", description: "warm" },
+      { id: "f2", gender: "female", description: "young" },
+      { id: "f3", gender: "female", description: "middle aged" },
+      { id: "m1", gender: "male", description: "deep" },
+    ];
+    const a = pickVoice(stock, "woman, 40s, braids, linen shirt")!;
+    const b = pickVoice(stock, "woman, 30s, curly hair", [a.id])!;
+    const c = pickVoice(stock, "woman, 50s, silver bob", [a.id, b.id])!;
+    expect(new Set([a.id, b.id, c.id]).size).toBe(3);
+    expect([a, b, c].every((v) => v.gender === "female")).toBe(true);
+    expect(pickVoice(stock, "a man in his 30s", [a.id])!.id).toBe("m1");
+    // A young woman gets the young voice when it's free.
+    expect(pickVoice(stock, "woman, 24, hoodie")!.id).toBe("f2");
+    // Only when every fitting voice is taken does one repeat, and it is still a woman's voice.
+    expect(pickVoice(stock, "woman", ["f1", "f2", "f3"])!.gender).toBe("female");
   });
 });

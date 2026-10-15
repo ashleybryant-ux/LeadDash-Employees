@@ -57,7 +57,7 @@ const SCHEMA: JsonSchema = {
           setting: str,
           cast: { type: "array", items: str },
           line_who: { type: "string", description: "Who speaks in this shot, '' when nobody does." },
-          line_text: { type: "string", description: "Their line, 12 words at most, '' when nobody speaks." },
+          line_text: { type: "string", description: "Their line, 6 to 20 words, answering the line before it; '' when nobody speaks." },
           seconds: { type: "integer" },
           sound: str,
         },
@@ -93,12 +93,13 @@ function cleanStyle(orgId: number, style: string | null | undefined) {
  * The voice an AI team member speaks with in a scene: the voice they use in huddles when a video
  * can read it aloud (a standard voice, or ElevenLabs when this workspace has it), else a stock voice.
  */
-async function teamVoice(orgId: number, kind: string, look: string) {
+async function teamVoice(orgId: number, kind: string, look: string, taken: string[] = []) {
   const huddle = await import("./huddle");
   const v = await huddle.voiceFor(orgId, kind).catch(() => null);
-  if (v?.id && v.provider === "openai") return { id: `${avatar.STANDARD}${v.id}`, name: v.name };
-  if (v?.id && v.provider === "elevenlabs" && (await avatar.hasElevenLabs(orgId))) return { id: v.id, name: v.name };
-  return drama.stockVoiceFor(orgId, look);
+  const own = v?.id && v.provider === "openai" ? { id: `${avatar.STANDARD}${v.id}`, name: v.name } : v?.id && v.provider === "elevenlabs" && (await avatar.hasElevenLabs(orgId)) ? { id: v.id, name: v.name } : null;
+  // Two team members can share a default huddle voice; in one scene the second gets a free one instead.
+  if (own && !taken.includes(own.id)) return own;
+  return drama.stockVoiceFor(orgId, look, taken);
 }
 
 /**
@@ -133,9 +134,9 @@ async function write(orgId: number, input: { what: string; style: string; me: bo
     prompt: `Write one scene of about ${input.seconds} seconds: ${input.what}
 ${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artist draws them the same every time.` : "It is shot with real-looking people like a 2026 streaming drama."}
 - ${shotsWanted} shots, 3 to 7 seconds each, in 1 or 2 places. Open in the middle of the moment, never on an introduction.
-- The characters talk to each other: most shots have one short spoken line (12 words at most) by someone in that shot, lip synced to their face. No narrator and no voice-over.
+- The characters talk to each other. Write their conversation first, the way people really talk: each line answers the line before it, plain words and contractions, 6 to 20 words a line, no slogans or sales lines. Then cut it into shots: most shots carry one line by someone in that shot, lip synced to their face. No narrator and no voice-over.
 - Mix the shots like a film: a wide to set the place, two-shots and over-the-shoulder shots for the conversation, close-ups for reactions.
-- ${input.me ? `The owner plays herself: a character named ${ownerName} (mark owner true) who speaks some of the lines. ` : "Nobody plays the owner (owner false). "}Two to four characters in all, never a real client.
+- ${input.me ? `The owner is not the lead: the lead is one of the AI team or someone outside the business. The owner plays herself in a supporting part: a character named ${ownerName} (mark owner true) who speaks a few of the lines. ` : "Nobody plays the owner (owner false). "}Two to four characters in all, never a real client.
 - The AI team members can play themselves, shown as people with their own faces and voices: ${team.map((e) => `${e.name} (${e.roleTitle})`).join(", ") || "none"}. Anyone who works for the business on screen is one of them, by these exact names, in the role they really have; never make up a coworker, assistant or staff member. Have them hand work to each other in their lines. Only people outside the business (a client, a caller) are made up, with plain names.
 - Every shot lists the people in it by name in cast, spelled exactly as in the cast list.${current}`,
     schemaName: "scene",
@@ -157,7 +158,7 @@ ${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artis
         cast.push(kept);
         continue;
       }
-      const voice = await teamVoice(orgId, member.kind, `${c.gender === "female" ? "woman" : c.gender === "male" ? "man" : ""} ${c.look}`);
+      const voice = await teamVoice(orgId, member.kind, `${c.gender === "female" ? "woman" : c.gender === "male" ? "man" : ""} ${c.look}`, cast.map((x) => x.voiceId).filter((x): x is string => !!x));
       cast.push({ name: member.name.slice(0, 60), role: (member.roleTitle || c.role).trim().slice(0, 80), look: c.look.trim().slice(0, 500), owner: false, team: member.kind, voiceId: voice?.id ?? null, voiceName: voice?.name ?? null, portrait: teamPortrait(member.kind, member.avatar ?? null) });
       continue;
     }
@@ -165,7 +166,8 @@ ${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artis
       cast.push(kept);
       continue;
     }
-    const voice = owner ? (ownVoice?.voiceId ? { id: ownVoice.voiceId, name: ownVoice.voiceName ?? "Your voice" } : null) : await drama.stockVoiceFor(orgId, `${c.gender === "female" ? "woman" : c.gender === "male" ? "man" : ""} ${c.look}`);
+    // Each made-up person gets a voice nobody else in this scene has.
+    const voice = owner ? (ownVoice?.voiceId ? { id: ownVoice.voiceId, name: ownVoice.voiceName ?? "Your voice" } : null) : await drama.stockVoiceFor(orgId, `${c.gender === "female" ? "woman" : c.gender === "male" ? "man" : ""} ${c.look}`, cast.map((x) => x.voiceId).filter((x): x is string => !!x));
     cast.push({ name, role: c.role.trim().slice(0, 80), look: c.look.trim().slice(0, 500), owner, voiceId: voice?.id ?? null, voiceName: voice?.name ?? null, portrait: null });
   }
   if (!cast.length) throw new Error("I couldn't write the cast. Tell me a little more about who is in it.");
@@ -173,7 +175,7 @@ ${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artis
   const shots: drama.Shot[] = (out.shots ?? []).slice(0, 12).map((x, i) => {
     const inShot = Array.from(new Set((x.cast ?? []).map((n) => n.trim()).filter((n) => names.has(n.toLowerCase())))).slice(0, 3);
     const who = cast.find((c) => c.name.toLowerCase() === (x.line_who || "").trim().toLowerCase())?.name ?? null;
-    const line = who && x.line_text?.trim() ? { who, text: x.line_text.trim().slice(0, 140) } : null;
+    const line = who && x.line_text?.trim() ? { who, text: x.line_text.trim().slice(0, 200) } : null;
     return {
       n: i + 1,
       framing: x.framing.slice(0, 80),
@@ -193,6 +195,8 @@ ${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artis
     if (i === shots.length - 1 || shots[i + 1].scene !== sh.scene) sh.flow = "cut";
   });
   if (!shots.length) throw new Error("I couldn't write the shots. Tell me a little more about what happens.");
+  // Read the conversation start to finish and smooth any line that doesn't follow the one before it.
+  await drama.polishLines(sys.system, out.title || "Scene", shots, cast).catch((err) => console.warn("[scene] dialogue pass skipped:", err instanceof Error ? err.message : err));
   return { title: (out.title || "Scene").trim().slice(0, 120), logline: (out.logline || "").trim().slice(0, 400), music: (out.music || "").slice(0, 500), cast, shots };
 }
 

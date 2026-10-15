@@ -106,7 +106,7 @@ export type Beat = { label: string; at: string; text: string };
 export const STYLE = `You work like a creative director, cinematographer and editor together, never "make me a video." You plan the story, the shots, the sound and the cut before anything is generated.
 Story:
 - Open in the middle of a conflict, never on an introduction. The first 2 seconds are the hook: a reveal, a confrontation or something that shouldn't be there. Raise the stakes every 10 to 15 seconds. End on a cliffhanger (a reveal, a threat or a line that changes everything), then cut to black.
-- Show the problem in pictures before anyone explains it. Faces and hands tell the story; dialogue is the last resort.
+- Show the problem in pictures before anyone explains it. Faces and hands tell the story alongside the dialogue.
 Shots (the shot list comes first, every time):
 - 10 to 16 shots for a 60 to 90 second episode, each 3 to 7 seconds. Mix them like a film: an establishing wide of the place (2 to 3 seconds), medium two-shots, over-the-shoulder shots for conversations, close-ups for emotion, extreme close-up inserts (hands, a phone screen, a file, a door handle) and reaction shots.
 - Build depth in every frame: something in the foreground, the subject in the middle, the room behind. Compose for a vertical phone screen, not a cropped wide film.
@@ -118,14 +118,17 @@ Camera:
 Light and color:
 - Motivated, directional light from real sources: a window, a desk lamp, a monitor, a phone screen. Rim or backlight to separate people from the background. Daylight is cool and soft, practicals are warm, and the two mix in the same frame. Realistic skin with pores and natural shine, no beauty-filter smoothing, no orange tan. One consistent, muted color grade for the series with gentle contrast and a touch of grain; never the glossy, over-lit, over-saturated look of stock footage or a car ad. Night is moody, never murky.
 The world (what keeps it from looking like AI):
-- Real places with real clutter: a therapy office with a worn couch, a water bottle and a stack of folders; a kitchen with mail on the counter; a car with a charging cable. Nothing staged, nothing symmetrical, nothing brand new.
+- Real, lived-in places that look like 2026: a modern therapy or group practice office with clean lines, a neutral palette (white, warm gray, wood, one or two plants), a current sofa or two armchairs in a solid fabric, good daylight, a laptop, a water bottle and a few folders; a kitchen with mail on the counter; a car with a charging cable. A busy, well-run place, tidy but not staged and not symmetrical. Never dated: no floral, plaid or patterned upholstery, no rugs over carpet, no fringed or antique lamps, no doilies or knickknacks, nothing that reads as a grandparent's living room.
 - Current life: 2026 phones, laptops, badges, coffee cups, clothes people wear to work now (knit, linen, sneakers, a blazer over a tee), current hair. No period-film wardrobe, no uniforms unless the story needs them.
-- People look like people: slightly tired eyes, a stray hair, an untucked shirt, hands doing something. Expressions are small and read from the eyes.
+- People look like people: rested, engaged and at ease at work, with real skin, a stray hair, hands doing something, and a natural smile when it fits. Expressions are small and read from the eyes. Nobody looks exhausted, drained or overworked unless the story is about exactly that.
 Sound (planned per shot):
 - Room tone always, plus the sounds the action makes: footsteps, a door latch, keyboard taps, a phone vibrating, paper sliding, HVAC hum, rain on a window. A silent beat before a reveal.
 - The score: one music cue per episode with a mood, a tempo and the moment it builds or drops out.
 Dialogue:
-- Short lines, 12 words at most, with subtext. Let silence and looks carry beats. Reactions matter as much as lines.
+- Write the conversation first, as people really talk, then cut it into shots. Every line answers or reacts to the line before it, so the scene reads as one exchange, never a string of separate statements.
+- Plain spoken English with contractions, 6 to 20 words a line. No slogans, taglines, product pitches or lines that explain the plot to the audience. Read it out loud: if a line sounds written, rewrite it.
+- Each character sounds like themselves: their own words, rhythm and reason for being in the room.
+- Let silence and looks carry some beats. Reactions matter as much as lines.
 Character bible:
 - Each character keeps the same face, hair, skin tone, wardrobe and jewelry within an episode, and the same lighting treatment. The owner is played by the owner from her own photos.
 Never:
@@ -229,7 +232,7 @@ const SEASON_SCHEMA: JsonSchema = {
                 setting: { type: "string", description: "The room or place, described the same way every time it returns" },
                 cast: { type: "array", items: { type: "string" }, description: "Names of the characters on screen" },
                 line_who: { type: "string", description: "Who speaks in this shot, or ''" },
-                line_text: { type: "string", description: "The one line spoken, 12 words at most, or ''" },
+                line_text: { type: "string", description: "The one line spoken, 6 to 20 words, answering the line before it, or ''" },
                 voice_over: { type: "string", description: "The owner's character's inner voice over this shot, in her own voice, 15 words at most, or ''. Never in a shot that has a spoken line" },
                 seconds: { type: "integer", description: "3 to 7" },
                 sound: { type: "string", description: "Room tone and the sounds this shot makes (footsteps, a door latch, a phone buzzing), or a silent beat" },
@@ -275,6 +278,40 @@ ${shots.map((x) => `${x.n}. Scene ${x.scene}, ${x.framing}, ${x.move}. ${x.actio
   }
 }
 
+const LINES_SCHEMA: JsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["lines"],
+  properties: {
+    lines: { type: "array", items: { type: "object", additionalProperties: false, required: ["n", "text"], properties: { n: { type: "integer" }, text: { type: "string", description: "The line as that person would say it, 6 to 20 words" } } } },
+  },
+};
+
+/**
+ * A dialogue editor's pass (2026-10-15): the lines are read in order as one conversation and any
+ * line that doesn't answer the one before it, sounds written instead of spoken, or sounds like the
+ * other characters is rewritten. Who speaks, and in which shot, stays the same.
+ */
+export async function polishLines(system: string, title: string, shots: Shot[], cast: { name: string; role: string }[]) {
+  const spoken = shots.filter((x) => x.line);
+  if (spoken.length < 2) return;
+  const r = await generateJson<{ lines: { n: number; text: string }[] }>({
+    system: `${system}
+You are now the dialogue editor. Read the lines out loud in order, as one conversation. Rewrite only the lines that need it: a line that doesn't answer or react to the line before it, a line that sounds written instead of spoken (no contractions, stiff, a slogan, a sales pitch, explaining the plot to the audience), or a line that sounds like a different character. Plain everyday English with contractions, 6 to 20 words a line. Each person keeps their own way of talking. Keep who says each line and keep the story. Return only the lines you changed.`,
+    prompt: `Scene: ${title}
+Who's who: ${cast.map((c) => `${c.name} (${c.role})`).join("; ")}
+${shots.map((x) => `${x.n}. ${x.action}${x.line ? `\n   ${x.line.who}: "${x.line.text}"` : ""}`).join("\n")}`,
+    schemaName: "drama_lines",
+    schema: LINES_SCHEMA,
+    maxTokens: 3000,
+  });
+  for (const f of r.lines ?? []) {
+    const sh = shots.find((x) => x.n === f.n);
+    const text = f.text?.trim();
+    if (sh?.line && text) sh.line = { ...sh.line, text: text.slice(0, 200) };
+  }
+}
+
 /** Writes episodes (and the series and cast the first time). New episodes continue from the last one. */
 export async function writeEpisodes(orgId: number, input: { brief: string; count: number; ownerName: string; replace?: DramaEpisode }) {
   const emp = await elena(orgId);
@@ -288,7 +325,7 @@ export async function writeEpisodes(orgId: number, input: { brief: string; count
   const sys = await (await import("./tasks")).systemPromptAbout(emp, input.brief, `You are ${emp.name}, the owner's video producer and showrunner. You write cinematic micro dramas.\n${STYLE}`);
   const out = await generateJson<Written>({
     system: sys.system,
-    prompt: `${series ? `The series: ${series.title}. ${series.premise}\nLook: ${series.look}\nCast:\n${cast.map((c) => `- ${c.name} (${c.kind === "owner" ? "played by the owner" : "made up"}): ${c.role}. ${c.look}`).join("\n")}\nEpisodes so far:\n${eps.map((e) => `${e.number}. ${e.title}: ${e.logline}`).join("\n") || "none"}\nKeep the same title, premise, look and cast (add a character only if the story needs one).` : `This is a new series. The owner plays one character herself (${input.ownerName}): mark that character owner. Make up the rest of the cast (2 to 4 characters), all fictional.`}
+    prompt: `${series ? `The series: ${series.title}. ${series.premise}\nLook: ${series.look}\nCast:\n${cast.map((c) => `- ${c.name} (${c.kind === "owner" ? "played by the owner" : "made up"}): ${c.role}. ${c.look}`).join("\n")}\nEpisodes so far:\n${eps.map((e) => `${e.number}. ${e.title}: ${e.logline}`).join("\n") || "none"}\nKeep the same title, premise, look and cast (add a character only if the story needs one).` : `This is a new series. The owner plays one supporting character herself (${input.ownerName}): mark that character owner. Make up the rest of the cast (2 to 4 characters), all fictional, with a made-up character as the lead.`}
 What the owner asked for: ${input.brief || "the next episodes"}
 ${input.replace ? `Rewrite episode ${input.replace.number}, "${input.replace.title}" (${input.replace.logline}), as one episode, 60 to 90 seconds, following what she asked for.` : `Write ${count} new episode${count === 1 ? "" : "s"}${eps.length ? `, starting at episode ${eps.length + 1}` : ""}, each 60 to 90 seconds.`} Each one works on its own and ends on a cliffhanger that leads into the next.
 Make it flow like one film, not separate clips:
@@ -296,8 +333,8 @@ Make it flow like one film, not separate clips:
 - Inside a scene, each shot picks up exactly where the last one ended: same position, same eyeline, same wardrobe, same props, same light, the action continuing. Cut on motion (she stands, the next shot finishes the stand). Never jump to a different room or time inside a scene.
 - Describe a scene's setting in exactly the same words in every shot of that scene.
 - Mark flow "continue" when the camera carries straight on into the next shot (a slow push that lands on the next framing); otherwise "cut". The last shot of a scene is always "cut".
-The owner's character is the lead and she talks, in her own cloned voice: she speaks a line (lip synced to her face) in about half of the shots she is in, and when she's alone, give her a few short voice_over lines (her thoughts, in her voice). An episode is never silent, and she is never played by anyone else. Every shot she appears in lists her name in cast, spelled exactly as her character's name.
-Voices you can cast: ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(0, 60).join(", ") || "none listed; leave voice ''"}. The owner's character always uses her own voice: leave voice '' for her.`,
+The lead is a made-up character, never the owner. The owner's character is a supporting part: she appears in some scenes, not every one, and speaks a few lines there in her own cloned voice (lip synced to her face). Give voice_over only to the owner's character and only when she is alone on screen; most episodes need none. An episode is never silent, and the owner's character is never played by anyone else. Every shot she appears in lists her name in cast, spelled exactly as her character's name.
+Voices you can cast: ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(0, 60).join(", ") || "none listed; leave voice ''"}. Give every character a different voice. The owner's character always uses her own voice: leave voice '' for her.`,
     schemaName: "drama_season",
     schema: SEASON_SCHEMA,
     maxTokens: 12000,
@@ -310,7 +347,10 @@ Voices you can cast: ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(
   for (const c of out.cast ?? []) {
     const name = c.name.trim().slice(0, 80);
     if (!name || db.listDramaCast(orgId).some((x) => x.name.toLowerCase() === name.toLowerCase() || (c.owner && x.kind === "owner"))) continue;
-    const v = voiceList.find((x) => x.name.toLowerCase() === (c.voice || "").toLowerCase());
+    // The voice Elena picked, unless someone in the cast already has it: then the next one that fits and is free.
+    const taken = db.listDramaCast(orgId).map((x) => x.voiceId).filter((x): x is string => !!x);
+    const picked = voiceList.find((x) => !x.own && x.name.toLowerCase() === (c.voice || "").toLowerCase());
+    const v = c.owner ? null : picked && !taken.includes(picked.id) ? picked : await stockVoiceFor(orgId, c.look, taken);
     db.createDramaCast({ organizationId: orgId, name, role: c.role.slice(0, 120), kind: c.owner ? "owner" : "made_up", look: c.look.slice(0, 500), photoUrl: c.owner ? ownerPhoto : null, voiceId: c.owner ? ownerVoice.voiceId : v?.id ?? null, voiceName: c.owner ? ownerVoice.voiceName : v?.name ?? null });
   }
   const names = new Set(db.listDramaCast(orgId).map((c) => c.name.toLowerCase()));
@@ -327,7 +367,7 @@ Voices you can cast: ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(
       action: x.action.slice(0, 600),
       setting: x.setting.slice(0, 300),
       cast: withOwner(Array.from(new Set((x.cast ?? []).map(fix))).filter((c) => names.has(c.toLowerCase())), x.action, ownerRow?.name ?? null, aliases).slice(0, 3),
-      line: x.line_text?.trim() && names.has(fix(x.line_who || "").toLowerCase()) ? { who: fix(x.line_who), text: x.line_text.trim().slice(0, 140) } : null,
+      line: x.line_text?.trim() && names.has(fix(x.line_who || "").toLowerCase()) ? { who: fix(x.line_who), text: x.line_text.trim().slice(0, 200) } : null,
       vo: ownerRow && x.voice_over?.trim() && !x.line_text?.trim() ? x.voice_over.trim().slice(0, 160) : undefined,
       seconds: Math.max(3, Math.min(7, Math.round(x.seconds || 5))),
       sound: (x.sound ?? "").slice(0, 200),
@@ -340,6 +380,7 @@ Voices you can cast: ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(
       if (i === shots.length - 1 || shots[i + 1].scene !== sh.scene) sh.flow = "cut";
     });
     await checkContinuity(sys.system, e.title, shots).catch((err) => console.warn("[drama] continuity check skipped:", err instanceof Error ? err.message : err));
+    await polishLines(sys.system, e.title, shots, db.listDramaCast(orgId)).catch((err) => console.warn("[drama] dialogue pass skipped:", err instanceof Error ? err.message : err));
     if (!shots.length) continue;
     if (input.replace) {
       made.push(db.updateDramaEpisode(input.replace.id, orgId, { title: e.title.slice(0, 120), logline: e.logline.slice(0, 400), beats: JSON.stringify((e.beats ?? []).slice(0, 6)), shots: JSON.stringify(shots), music: (e.music ?? "").slice(0, 500), costCents: estimateEpisode(shots), status: "script", plan: "{}", error: null, progress: null, videoUrl: null })!);
@@ -601,18 +642,35 @@ export async function castFromDescription(orgId: number, who: string) {
   const m = text.match(/^([A-Z][\w'-]{1,30}(?:\s[A-Z][\w'-]{1,30})?)\s*[:,]\s*(.+)$/);
   const name = (m ? m[1] : `Creator ${existing.length + 1}`).slice(0, 80);
   const look = (m ? m[2] : text).slice(0, 500);
-  const voice = await stockVoiceFor(orgId, look);
+  const voice = await stockVoiceFor(orgId, look, existing.map((c) => c.voiceId).filter((x): x is string => !!x));
   return db.createDramaCast({ organizationId: orgId, name, role: "On camera", kind: "made_up", look, photoUrl: null, voiceId: voice?.id ?? null, voiceName: voice?.name ?? null });
 }
 
-/** A stock voice that fits a description: by the gender it reads, else any stock voice (this workspace's own voices only). */
-export async function stockVoiceFor(orgId: number, look: string) {
+/** How the standard (OpenAI) voices read, since they carry no labels: so a woman is never cast with a man's voice. */
+const STANDARD_GENDER: Record<string, "female" | "male"> = { marin: "female", coral: "female", nova: "female", shimmer: "female", sage: "female", alloy: "female", cedar: "male", ash: "male", echo: "male", onyx: "male", ballad: "male", verse: "male", fable: "male" };
+
+/**
+ * A stock voice that fits a description and nobody in the cast already has (2026-10-15: it used to
+ * hand every woman the first female voice on the list, so a whole scene sounded like one person).
+ * Matches the gender the description reads, prefers a matching age, and skips the voices in taken;
+ * only when every fitting voice is taken does a voice repeat. This workspace's own voices only.
+ */
+export async function stockVoiceFor(orgId: number, look: string, taken: string[] = []) {
   // Never anyone's own cloned voice for someone who is not them.
-  const stock = await avatar.castVoices(orgId);
-  const wantsF = /\b(she|her|woman|female|mom|mother|lady|girl)\b/i.test(look);
-  const wantsM = /\b(he|him|his|man|male|dad|father|guy|boy)\b/i.test(look);
-  const fit = stock.filter((v) => (wantsF ? /female/i.test(v.gender) : wantsM ? /^male/i.test(v.gender) : true));
-  return fit[0] ?? stock[0] ?? null;
+  const stock = (await avatar.castVoices(orgId)).map((v) => ({ ...v, gender: v.gender || (v.standard ? STANDARD_GENDER[v.id.split(":").pop() ?? ""] ?? "" : "") }));
+  return pickVoice(stock, look, taken);
+}
+
+/** The choice itself, kept apart so it can be tested without a voice account. */
+export function pickVoice<V extends { id: string; gender: string; description?: string }>(stock: V[], look: string, taken: string[] = []): V | null {
+  const wantsF = /\b(she|her|woman|women|female|mom|mother|lady|girl|wife|sister|daughter)\b/i.test(look);
+  const wantsM = !wantsF && /\b(he|him|his|man|men|male|dad|father|guy|boy|husband|brother|son)\b/i.test(look);
+  const fit = stock.filter((v) => (wantsF ? /^female/i.test(v.gender) : wantsM ? /^male/i.test(v.gender) : true));
+  const pool = fit.length ? fit : stock;
+  const age = /\b(1\d|2\d|twenties|young)\b/i.test(look) ? /young/i : /\b(5\d|6\d|7\d|fifties|sixties|older|gray|grey|silver)\b/i.test(look) ? /old|middle/i : null;
+  const free = pool.filter((v) => !taken.includes(v.id));
+  const aged = age ? free.filter((v) => age.test(v.description ?? "")) : [];
+  return aged[0] ?? free[0] ?? pool[taken.length % Math.max(1, pool.length)] ?? null;
 }
 
 /** A real-looking portrait for a Scene's own character, kept with the scene. */
