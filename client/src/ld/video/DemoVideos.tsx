@@ -217,7 +217,7 @@ function MakeForm({ empName, onCancel, onStarted }: { empName: string; onCancel?
       </div>
       <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <span className="ld-lbl">What to show</span>
-        <textarea className="ld-in ld-dv-ta" rows={2} value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Show a new front desk person how to take an insurance payment" />
+        <textarea className="ld-in ld-dv-ta" rows={6} maxLength={4000} value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Show a new front desk person how to take an insurance payment" />
       </label>
       <div className="ld-dv-kv">
         <span className="ld-lbl">Kind</span>

@@ -221,6 +221,11 @@ describe("Simone's demo videos", { timeout: 60_000 }, () => {
     expect(browserTasks).toHaveLength(1);
     expect(browserTasks[0]).toMatchObject({ record: false, allowSubmit: false });
     expect(browserTasks[0].goal).toMatch(/every option in every dropdown/);
+    // A long brief keeps its lines (2026-10-15).
+    const long = await dv.create(w.orgId, { ask: "Complete a progress note\n- Show the Note Style card\n- " + "Name every format. ".repeat(80), kind: "training", presenter: "screen", url: DEMO_URL, by: "Owner" });
+    expect(long.ask.length).toBeGreaterThan(1000);
+    expect(long.ask).toContain("\n- Show the Note Style card");
+    await settle(w.orgId, long.id);
     const v = await c.demo.get({ organizationId: w.orgId, id: d.id });
     expect(v!.plan.steps.map((s) => s.do)).toEqual(["Click Calendar", "Click Thursday at 6 PM"]);
     expect(v!.lines.map((l) => l.label)).toEqual(["Opening", "1", "2", "Closing"]);

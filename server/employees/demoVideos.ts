@@ -257,7 +257,9 @@ const cleanEmail = (e: string | null | undefined) => {
 };
 
 export async function create(orgId: number, input: CreateInput) {
-  const ask = input.ask.replace(/\s+/g, " ").trim();
+  /* A full brief (2026-10-15): up to 4,000 characters, line breaks kept, so
+     a list of what to show reaches the planner as a list. */
+  const ask = input.ask.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   if (!ask) throw new TRPCError({ code: "BAD_REQUEST", message: "Say what the video should show." });
   await simone(orgId);
   const logins = await db.listPortalLogins(orgId);
@@ -279,13 +281,13 @@ export async function create(orgId: number, input: CreateInput) {
     .insert(demoVideos)
     .values({
       organizationId: orgId,
-      title: ask.slice(0, 80),
+      title: ask.split("\n")[0].slice(0, 80),
       kind: input.kind,
       presenter: input.kind === "social" ? "bookends" : input.presenter,
       avatar: JSON.stringify(av ?? {}),
       voiceId: voice.id,
       voiceName: voice.name,
-      ask: ask.slice(0, 1000),
+      ask: ask.slice(0, 4000),
       audience: (input.audience ?? "").slice(0, 80),
       socialStyle: input.socialStyle ?? "come",
       loginName: login?.name ?? null,

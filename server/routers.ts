@@ -4069,7 +4069,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(
         orgInput.extend({
-          ask: z.string().trim().min(1).max(1000),
+          ask: z.string().trim().min(1).max(4000),
           kind: z.enum(["training", "social"]),
           presenter: z.enum(["screen", "corner", "bookends"]),
           avatar: z.union([z.object({ type: z.literal("twin"), twinId: z.number().int(), lookId: z.number().int().nullable().optional() }), z.object({ type: z.literal("photo") }), z.object({ type: z.literal("cast"), castId: z.number().int() })]).nullable().optional(),
