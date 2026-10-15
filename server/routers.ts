@@ -1863,21 +1863,36 @@ export const appRouter = router({
   teamChat: router({
     /** Unread counts in every workspace the person is in, for the switcher and the badge on the workspace name. */
     unreadEverywhere: protectedProcedure.query(async ({ ctx }) => (await import("./team")).unreadEverywhere(ctx.user.id)),
+    /** Unread direct messages from people in the person's other workspaces, with the workspace they came from. The open workspace's own conversations are left out. */
+    dmsElsewhere: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const screens = new Map<number, (t: string) => string>();
+      const screen = async (orgId: number) => {
+        if (!screens.has(orgId)) screens.set(orgId, (await clientNamesFor(ctx, orgId)).screen);
+        return screens.get(orgId)!;
+      };
+      const rows = await (await import("./team")).dmsElsewhere(ctx.user.id, input.organizationId);
+      for (const r of rows) r.lastText = (await screen(r.orgId))(r.lastText);
+      return rows;
+    }),
     channels: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "chat");
-      return (await import("./team")).channels(input.organizationId, ctx.user.id);
+      const { screen } = await clientNamesFor(ctx, input.organizationId);
+      return (await import("./team")).channels(input.organizationId, ctx.user.id, screen);
     }),
     messages: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40) })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "chat");
-      return (await import("./team")).messages(input.organizationId, ctx.user.id, input.channel);
+      const { screen } = await clientNamesFor(ctx, input.organizationId);
+      return (await import("./team")).messages(input.organizationId, ctx.user.id, input.channel, screen);
     }),
     thread: protectedProcedure.input(orgInput.extend({ messageId: z.number().int() })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "chat");
-      return (await import("./team")).thread(input.organizationId, ctx.user.id, input.messageId);
+      const { screen } = await clientNamesFor(ctx, input.organizationId);
+      return (await import("./team")).thread(input.organizationId, ctx.user.id, input.messageId, screen);
     }),
     details: protectedProcedure.input(orgInput.extend({ channel: z.string().max(40) })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "chat");
-      return (await import("./team")).details(input.organizationId, ctx.user.id, input.channel);
+      const { screen } = await clientNamesFor(ctx, input.organizationId);
+      return (await import("./team")).details(input.organizationId, ctx.user.id, input.channel, screen);
     }),
     send: protectedProcedure
       .input(orgInput.extend({ channel: z.string().max(40), content: z.string().max(8000), attachmentIds: z.array(z.number().int()).max(10).default([]), threadOf: z.number().int().nullable().optional(), alsoToChannel: z.boolean().optional() }))
@@ -1968,14 +1983,16 @@ export const appRouter = router({
       .input(orgInput.extend({ q: z.string().max(200), from: z.number().int().nullable().optional(), in: z.string().max(40).nullable().optional(), files: z.boolean().optional(), days: z.number().int().nullable().optional() }))
       .query(async ({ ctx, input }) => {
         await requireMember(ctx, input.organizationId, "chat");
-        return (await import("./team")).search(input.organizationId, ctx.user.id, input.q, { from: input.from, in: input.in, files: input.files, days: input.days });
+        const { screen } = await clientNamesFor(ctx, input.organizationId);
+        return (await import("./team")).search(input.organizationId, ctx.user.id, input.q, { from: input.from, in: input.in, files: input.files, days: input.days }, screen);
       }),
     view: protectedProcedure.input(orgInput.extend({ kind: z.enum(["unreads", "mentions", "saved"]) })).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "chat");
+      const { screen } = await clientNamesFor(ctx, input.organizationId);
       const t = await import("./team");
-      if (input.kind === "unreads") return { kind: "unreads" as const, groups: await t.unreads(input.organizationId, ctx.user.id) };
-      if (input.kind === "mentions") return { kind: "mentions" as const, messages: await t.mentions(input.organizationId, ctx.user.id) };
-      return { kind: "saved" as const, messages: await t.saved(input.organizationId, ctx.user.id) };
+      if (input.kind === "unreads") return { kind: "unreads" as const, groups: await t.unreads(input.organizationId, ctx.user.id, screen) };
+      if (input.kind === "mentions") return { kind: "mentions" as const, messages: await t.mentions(input.organizationId, ctx.user.id, screen) };
+      return { kind: "saved" as const, messages: await t.saved(input.organizationId, ctx.user.id, screen) };
     }),
     // Slack import: the zip goes through /api/upload/slack, which returns a plan; this runs it.
     slackPlan: protectedProcedure.input(orgInput.extend({ token: z.string().max(80) })).query(async ({ ctx, input }) => {

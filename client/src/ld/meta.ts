@@ -239,6 +239,18 @@ export function fmtWhen(d: Date | string | number | null | undefined) {
   return isSameDay(date, new Date()) ? fmtTime(date) : fmtDate(date);
 }
 
+/** "just now", "5 minutes ago", "3 hours ago"; a day or more back, the date with its year. */
+export function fmtAgo(d: Date | string | number | null | undefined) {
+  if (!d) return "";
+  const date = d instanceof Date ? d : new Date(d);
+  const mins = Math.round((Date.now() - date.getTime()) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return fmtDate(date);
+}
+
 export function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   if (!raw) return fallback;
   try {

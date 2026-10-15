@@ -72,6 +72,9 @@ function typingIn(orgId: number, channel: string, me: number): number[] {
 
 type Me = { id: number; name: string };
 const ROLE: Record<string, string> = { owner: "Owner", admin: "Admin", member: "Member", chat: "Team chat only" };
+/** A text the way the reader chose to see client names (Show, Initial or Hide); the default leaves it as written. */
+export type Screen = (text: string) => string;
+const asIs: Screen = (t) => t;
 
 /** The people who can chat: everyone in the workspace except the app reviewer (team chat only people included). */
 export async function people(orgId: number) {
@@ -278,7 +281,7 @@ export function joinable(orgId: number, me: number) {
 // The list
 // ==========================================
 
-export async function channels(orgId: number, me: number) {
+export async function channels(orgId: number, me: number, screen: Screen = asIs) {
   markSeen(orgId, me);
   await repairStaff(orgId);
   const list = await people(orgId);
@@ -288,7 +291,7 @@ export async function channels(orgId: number, me: number) {
     const last = db.team.last(orgs, key);
     const read = db.team.read(orgs, me, key);
     const u = db.team.unread(orgs, me, key, read?.lastReadId ?? 0);
-    return { last: last ? { text: last.content || (last.attachments ? "Sent a file" : ""), author: last.authorName, mine: last.userId === me, at: last.createdAt } : null, unread: u.count, mentions: u.mentions };
+    return { last: last ? { text: screen(last.content) || (last.attachments ? "Sent a file" : ""), author: last.authorName, mine: last.userId === me, at: last.createdAt } : null, unread: u.count, mentions: u.mentions };
   };
   const chans = [];
   for (const c of visibleChannels(orgId, me)) {
@@ -332,6 +335,37 @@ export async function unreadEverywhere(me: number) {
   return out.sort((x, y) => x.orgId - y.orgId);
 }
 
+/**
+ * Unread direct messages from people in the person's other workspaces, for the
+ * list and the bar in the open workspace, so a message there is seen without
+ * switching. Someone who is also in this workspace is left out: their
+ * conversation already shows here. The unread math is unreadEverywhere's.
+ */
+export async function dmsElsewhere(me: number, orgId: number) {
+  const here = new Set((await people(orgId)).map((p) => p.userId));
+  const out: { orgId: number; orgName: string; orgLogoUrl: string | null; userId: number; name: string; avatar: string | null; key: string; lastText: string; lastAt: Date; unread: number }[] = [];
+  for (const o of await db.listOrganizationsForUser(me)) {
+    if (o.id === orgId) continue;
+    const m = await db.getOrganizationMembership(o.id, me);
+    if (!m || m.role === "reviewer") continue;
+    for (const p of await people(o.id)) {
+      if (p.userId === me || here.has(p.userId)) continue;
+      const key = dmKey(me, p.userId);
+      const orgs = await sharedOrgs(o.id, me, p.userId);
+      const u = db.team.unread(orgs, me, key, db.team.read(orgs, me, key)?.lastReadId ?? 0);
+      if (!u.count) continue;
+      const last = db.team.last(orgs, key);
+      if (!last) continue;
+      // One row per person: a conversation shared by several workspaces is listed under the one it was last written in.
+      const have = out.find((r) => r.userId === p.userId);
+      if (have && (have.orgId === last.organizationId || o.id !== last.organizationId)) continue;
+      if (have) out.splice(out.indexOf(have), 1);
+      out.push({ orgId: o.id, orgName: o.name, orgLogoUrl: o.logoUrl ?? null, userId: p.userId, name: p.name || p.email, avatar: p.avatarUrl ?? null, key, lastText: last.content || (last.attachments ? "Sent a file" : ""), lastAt: last.createdAt, unread: u.count });
+    }
+  }
+  return out.sort((x, y) => y.lastAt.getTime() - x.lastAt.getTime());
+}
+
 // ==========================================
 // Messages
 // ==========================================
@@ -371,8 +405,25 @@ async function employeesFor(orgId: number) {
   return (await db.listEmployeesByOrg(orgId)).map((e) => ({ id: e.id, name: e.name, roleTitle: e.roleTitle, kind: e.kind, avatar: e.avatar ?? null, status: e.status }));
 }
 
+type Att = { id?: number; name: string; size?: number; kind?: string; url?: string | null };
+const atts = (raw: string | null): Att[] => {
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+};
+
+/** The attachments JSON with each file name screened for client names; untouched when names show in full. */
+function screenAtts(raw: string | null, screen: Screen) {
+  if (!raw || screen === asIs) return raw;
+  const list = atts(raw);
+  return list.length ? JSON.stringify(list.map((a) => ({ ...a, name: screen(a.name) }))) : raw;
+}
+
 /** A message as the screen shows it: reactions grouped, thread summary, pinned and saved flags. */
-function shape(rows: db.TeamMessageRow[], me: number, orgs: number | number[]) {
+function shape(rows: db.TeamMessageRow[], me: number, orgs: number | number[], screen: Screen = asIs) {
   const ids = rows.map((r) => r.id);
   const reactions = db.team.reactions(ids);
   const threads = db.team.threadInfo(orgs, ids);
@@ -405,8 +456,8 @@ function shape(rows: db.TeamMessageRow[], me: number, orgs: number | number[]) {
       userId: m.userId,
       employeeId: m.employeeId,
       authorName: m.authorName,
-      content: m.deletedAt ? "" : m.content,
-      attachments: m.deletedAt ? null : m.attachments,
+      content: m.deletedAt ? "" : screen(m.content),
+      attachments: m.deletedAt ? null : screenAtts(m.attachments, screen),
       threadOf: m.threadOf,
       mentions: parseMentions(m.mentions),
       editedAt: m.editedAt,
@@ -422,7 +473,7 @@ function shape(rows: db.TeamMessageRow[], me: number, orgs: number | number[]) {
 }
 export type ShapedMessage = ReturnType<typeof shape>[number];
 
-export async function messages(orgId: number, me: number, key: string) {
+export async function messages(orgId: number, me: number, key: string, screen: Screen = asIs) {
   markSeen(orgId, me);
   await repairStaff(orgId);
   const where = await channelFor(orgId, me, key);
@@ -459,19 +510,19 @@ export async function messages(orgId: number, me: number, key: string) {
     people: list.map((p) => ({ userId: p.userId, name: p.name || p.email, avatarUrl: p.avatarUrl })),
     employees: ch?.aiAllowed && !(await chatOnly(orgId, me)) ? await employeesFor(orgId) : [],
     lastReadId: read?.lastReadId ?? 0,
-    messages: shape(rows, me, orgs),
+    messages: shape(rows, me, orgs, screen),
     seenAt,
   };
 }
 
-export async function thread(orgId: number, me: number, parentId: number) {
+export async function thread(orgId: number, me: number, parentId: number, screen: Screen = asIs) {
   const parent = db.team.get(await orgsOfMessage(orgId, me, parentId), parentId);
   if (!parent) throw new TRPCError({ code: "NOT_FOUND", message: "That message is gone." });
   await channelFor(orgId, me, parent.channel);
   const orgs = await scopeOf(orgId, me, parent.channel);
   const replies = db.team.replies(orgs, parentId);
-  const [p] = shape([parent], me, orgs);
-  return { parent: p, replies: shape(replies, me, orgs), channelName: await nameOf(orgId, me, parent.channel) };
+  const [p] = shape([parent], me, orgs, screen);
+  return { parent: p, replies: shape(replies, me, orgs, screen), channelName: await nameOf(orgId, me, parent.channel) };
 }
 
 async function nameOf(orgId: number, me: number, key: string) {
@@ -676,17 +727,7 @@ export async function presence(orgId: number, me: number, key: string) {
 // Channel details, search, and the Unreads, Mentions and Saved views
 // ==========================================
 
-type Att = { id?: number; name: string; size?: number; kind?: string; url?: string | null };
-const atts = (raw: string | null): Att[] => {
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-};
-
-export async function details(orgId: number, me: number, key: string) {
+export async function details(orgId: number, me: number, key: string, screen: Screen = asIs) {
   const where = await channelFor(orgId, me, key);
   const orgs = await scopeOf(orgId, me, key);
   const list = await people(orgId);
@@ -695,10 +736,10 @@ export async function details(orgId: number, me: number, key: string) {
   const rows = ch ? db.team.members(ch.id) : [];
   const all = db.team.all(orgs, key).filter((m) => !m.deletedAt);
   const files = all
-    .flatMap((m) => atts(m.attachments).map((a) => ({ ...a, messageId: m.id, by: m.authorName, at: m.createdAt })))
+    .flatMap((m) => atts(m.attachments).map((a) => ({ ...a, name: screen(a.name), messageId: m.id, by: m.authorName, at: m.createdAt })))
     .reverse()
     .slice(0, 40);
-  const pinned = shape(db.team.pinned(orgs, key), me, orgs);
+  const pinned = shape(db.team.pinned(orgs, key), me, orgs, screen);
   const mine = ch ? memberRow(ch.id, me) : null;
   return {
     key,
@@ -726,14 +767,14 @@ async function readable(orgId: number, me: number) {
   return { chans, dms };
 }
 
-async function withNames(orgId: number, me: number, rows: db.TeamMessageRow[]) {
+async function withNames(orgId: number, me: number, rows: db.TeamMessageRow[], screen: Screen = asIs) {
   const orgs = Array.from(new Set([orgId, ...rows.map((r) => r.organizationId)]));
   const names = new Map<string, string>();
   for (const key of Array.from(new Set(rows.map((r) => r.channel)))) names.set(key, await nameOf(orgId, me, key));
-  return shape(rows, me, orgs).map((m) => ({ ...m, channelName: names.get(m.channel) ?? m.channel, dm: m.channel.startsWith("dm:") }));
+  return shape(rows, me, orgs, screen).map((m) => ({ ...m, channelName: names.get(m.channel) ?? m.channel, dm: m.channel.startsWith("dm:") }));
 }
 
-export async function search(orgId: number, me: number, q: string, opts: { from?: number | null; in?: string | null; files?: boolean; days?: number | null }) {
+export async function search(orgId: number, me: number, q: string, opts: { from?: number | null; in?: string | null; files?: boolean; days?: number | null }, screen: Screen = asIs) {
   const { chans, dms } = await readable(orgId, me);
   const keys = opts.in ? [opts.in].filter((k) => chans.includes(k) || dms.includes(k)) : [...chans, ...dms];
   const since = opts.days ? new Date(Date.now() - opts.days * 86_400_000) : null;
@@ -747,11 +788,11 @@ export async function search(orgId: number, me: number, q: string, opts: { from?
     if (Array.isArray(orgs) && orgs.length > 1) extra.push(...db.team.search(orgs.filter((o) => o !== orgId), [key], text, { from: opts.from ?? undefined, files: opts.files, since }));
   }
   const all = [...rows, ...extra].sort((a, b) => b.id - a.id).slice(0, 60);
-  return { hits: await withNames(orgId, me, all) };
+  return { hits: await withNames(orgId, me, all, screen) };
 }
 
 /** Unreads: every message after the person's last read, by channel. */
-export async function unreads(orgId: number, me: number) {
+export async function unreads(orgId: number, me: number, screen: Screen = asIs) {
   const { chans, dms } = await readable(orgId, me);
   const out: { channel: string; channelName: string; dm: boolean; messages: ShapedMessage[] }[] = [];
   for (const key of [...chans, ...dms]) {
@@ -761,17 +802,17 @@ export async function unreads(orgId: number, me: number) {
     if (!u.ids.length) continue;
     const rows = u.ids.map((id) => db.team.get(orgs, id)).filter((m): m is db.TeamMessageRow => !!m && !m.threadOf);
     if (!rows.length) continue;
-    out.push({ channel: key, channelName: await nameOf(orgId, me, key), dm: key.startsWith("dm:"), messages: shape(rows, me, orgs) });
+    out.push({ channel: key, channelName: await nameOf(orgId, me, key), dm: key.startsWith("dm:"), messages: shape(rows, me, orgs, screen) });
   }
   return out;
 }
 
-export async function mentions(orgId: number, me: number) {
+export async function mentions(orgId: number, me: number, screen: Screen = asIs) {
   const { chans } = await readable(orgId, me);
-  return withNames(orgId, me, db.team.mentionsOf(orgId, chans, me));
+  return withNames(orgId, me, db.team.mentionsOf(orgId, chans, me), screen);
 }
 
-export async function saved(orgId: number, me: number) {
+export async function saved(orgId: number, me: number, screen: Screen = asIs) {
   const ids = db.team.saved(orgId, me).map((s) => s.messageId);
   const rows: db.TeamMessageRow[] = [];
   for (const id of ids) {
@@ -781,5 +822,5 @@ export async function saved(orgId: number, me: number) {
   }
   const { chans, dms } = await readable(orgId, me);
   const ok = rows.filter((m) => chans.includes(m.channel) || dms.includes(m.channel));
-  return withNames(orgId, me, ok);
+  return withNames(orgId, me, ok, screen);
 }

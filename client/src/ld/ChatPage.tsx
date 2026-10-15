@@ -43,7 +43,7 @@ import { VideoMaker } from "./video/VideoAgent";
 import { EditCard } from "./video/Editor";
 import DemoVideosTab, { DemoSignInCard, DemoVideoCard } from "./video/DemoVideos";
 import Broll from "./video/Broll";
-import { AnswerCard, ApplicationDraftCard, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
+import { AnswerCard, ApplicationDraftCard, DropFiles, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
 import { Composer, type Mentionable } from "./team/Composer";
 import { DeckCard, DocCard } from "./chat/Talk";
 import AdsWork from "./work/Ads";
@@ -271,7 +271,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   let lastDay: Date | null = null;
 
   return (
-    <div className="ld-chatpane" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <DropFiles className="ld-chatpane" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }} onDrop={files.onDrop}>
       <div className="ld-chatmsgs" style={{ flex: 1, padding: "24px 32px", display: "flex", flexDirection: "column", gap: 22, maxWidth: 900, boxSizing: "border-box", width: "100%" }}>
         {list.length === 0 && pending === null && (
           <div className="ld-empty" style={{ textAlign: "left", padding: "8px 0" }}>
@@ -450,12 +450,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             </button>
           ))}
         </div>}
-        <div
-          onDrop={(e) => {
-            e.preventDefault();
-            files.onDrop(e.dataTransfer.files);
-          }}
-        >
+        <div>
           <Composer
             value={text}
             onChange={setText}
@@ -483,11 +478,12 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             note={files.note}
             extra={<TalkButton o={talk} name={emp.name} />}
             employeeNote="AI employee, gets this in their own chat"
+            onFiles={files.onDrop}
             compact
           />
         </div>
       </div>
-    </div>
+    </DropFiles>
   );
 }
 

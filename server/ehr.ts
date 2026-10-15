@@ -236,15 +236,17 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * Every client name in a text, shortened or hidden. Names are matched whole
  * (word boundaries, any case), longest first so "Ann Lee-Parker" is not cut at
  * "Ann Lee"; the "A. Price" form of each name is matched too, so a reply
- * already shortened hides cleanly.
+ * already shortened hides cleanly, and so is the way people write a client in
+ * chat, first name and last initial ("Avery P" or "Avery P.").
  */
 export function redactText(mode: NameMode, text: string, names: Iterable<string>) {
   if (mode === "show" || !text) return text;
   const list = Array.from(new Set(Array.from(names).map((n) => n.trim()).filter((n) => n.split(/\s+/).length >= 2))).sort((a, b) => b.length - a.length);
   let out = text;
   for (const name of list) {
-    const forms = [name, initialForm(name)];
-    const re = new RegExp(`(?<![\\p{L}\\p{N}])(?:${forms.map(esc).join("|")})(?![\\p{L}\\p{N}])`, "giu");
+    const parts = name.split(/\s+/);
+    const forms = [esc(name), esc(initialForm(name)), `${esc(parts[0])}\\s+${esc(parts[parts.length - 1][0])}\\.?`];
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])(?:${forms.join("|")})(?![\\p{L}\\p{N}])`, "giu");
     out = out.replace(re, mode === "hide" ? HIDDEN : initialForm(name));
   }
   return out;

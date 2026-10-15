@@ -320,4 +320,12 @@ describe("A healthcare practice workspace", () => {
     expect(ehr.forScreen(orgId, "hide", "Kim Lee at 11:00 AM; Kimberly Lee-Smith is not a known client.")).toBe(`${ehr.HIDDEN} at 11:00 AM; Kimberly Lee-Smith is not a known client.`);
     expect(ehr.initialForm("Cher")).toBe("Cher");
   });
+
+  it("shortens or hides a client written as first name and last initial, the way people write in chat", () => {
+    const names = ["Christina Gonzales", "Avery Price"];
+    expect(ehr.redactText("initial", "Christina G called; Christina G. is rebooking. Avery Price and A. Price too.", names)).toBe("C. Gonzales called; C. Gonzales is rebooking. A. Price and A. Price too.");
+    expect(ehr.redactText("hide", "christina g. at 2", names)).toBe(`${ehr.HIDDEN} at 2`);
+    // Not a client: the first name on its own, or followed by another word.
+    expect(ehr.redactText("initial", "Christina Gets it. Christina is here.", names)).toBe("Christina Gets it. Christina is here.");
+  });
 });

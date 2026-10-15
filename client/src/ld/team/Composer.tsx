@@ -59,9 +59,11 @@ type Props = {
   employeeNote?: string;
   /** Pasted text longer than this many characters goes to onLongPaste (attached as a file) instead of the box. */
   longPaste?: { over: number; onPaste: (text: string) => void };
+  /** Files pasted into the box (a screenshot, a copied file) go with the next message. */
+  onFiles?: (files: FileList) => void;
 };
 
-export function Composer({ value, onChange, onSend, placeholder, who, disabled, busy, sendLabel = "Send", attach, chips, note, extra, compact, autoFocus, onCancel, employeeNote = "AI employee, answers in a thread", longPaste }: Props) {
+export function Composer({ value, onChange, onSend, placeholder, who, disabled, busy, sendLabel = "Send", attach, chips, note, extra, compact, autoFocus, onCancel, employeeNote = "AI employee, answers in a thread", longPaste, onFiles }: Props) {
   const ta = React.useRef<HTMLTextAreaElement>(null);
   const [emoji, setEmoji] = React.useState(false);
   const [mention, setMention] = React.useState<{ at: number; q: string } | null>(null);
@@ -214,6 +216,11 @@ export function Composer({ value, onChange, onSend, placeholder, who, disabled, 
           onChange={(e) => onInput(e.target.value, e.target.selectionStart)}
           onKeyDown={keyDown}
           onPaste={(e) => {
+            if (onFiles && e.clipboardData.files.length) {
+              e.preventDefault();
+              onFiles(e.clipboardData.files);
+              return;
+            }
             if (!longPaste) return;
             const t = e.clipboardData.getData("text/plain");
             if (t.length <= longPaste.over) return;
@@ -252,7 +259,7 @@ export function Composer({ value, onChange, onSend, placeholder, who, disabled, 
           <button type="button" className="tc-ib" aria-label="Mention someone" onClick={() => insert(value && !value.endsWith(" ") ? " @" : "@")}>@</button>
           {extra}
         </span>
-        {!compact && <span className="ld-small ld-muted tc-hint">Enter sends · Shift+Enter for a new line</span>}
+        {!compact && <span className="ld-small ld-muted tc-hint">Enter sends · Shift+Enter for a new line{onFiles ? " · Attach, paste or drop files" : ""}</span>}
         <span className="ld-row">
           {onCancel && <button type="button" className="ld-btn sm" onClick={onCancel}>Cancel</button>}
           <button type="button" className="ld-btn p sm" disabled={disabled || busy} onClick={onSend}>{sendLabel}</button>

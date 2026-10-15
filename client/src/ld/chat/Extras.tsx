@@ -120,6 +120,63 @@ export function useAttachments(orgId: number, employeeId: number, slot: "chat" |
   return { button, chips, ready, uploading, clear: () => setStaged([]), note: note ?? (errors.length ? errors.join(" ") : null), onDrop: add, addText };
 }
 
+const UPLOAD = (
+  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 16V4M6 10l6-6 6 6M4 20h16" />
+  </svg>
+);
+
+/**
+ * Wraps a chat so files dragged over it go with the next message. The overlay
+ * shows while a file is over the pane; the counter keeps it from flickering
+ * as the drag passes over children.
+ */
+export function DropFiles({ onDrop, children, className, style }: { onDrop: (files: FileList) => void; children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+  const [over, setOver] = React.useState(false);
+  const depth = React.useRef(0);
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes("Files");
+  return (
+    <div
+      className={`ld-dropzone ${className ?? ""}`}
+      style={style}
+      onDragEnter={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        depth.current += 1;
+        setOver(true);
+      }}
+      onDragOver={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(e) => {
+        if (!hasFiles(e)) return;
+        depth.current = Math.max(0, depth.current - 1);
+        if (!depth.current) setOver(false);
+      }}
+      onDrop={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        depth.current = 0;
+        setOver(false);
+        onDrop(e.dataTransfer.files);
+      }}
+    >
+      {children}
+      {over && (
+        <div className="ld-dropover" role="status">
+          <div>
+            {UPLOAD}
+            <b>Drop to attach</b>
+            <span>{`Up to ${MAX_FILES} files, ${MAX_BYTES / 1_000_000} MB each. They go with your next message.`}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MessageAttachments({ raw }: { raw: string | null | undefined }) {
   const list = parseJson<Attached[]>(raw ?? null, []);
   if (!list.length) return null;

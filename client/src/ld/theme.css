@@ -1446,6 +1446,27 @@ html[data-theme="dark"] .gp-page mark { color: #14221c !important; }
 .ld-trow .b { background: #c2410c; color: #fff; font-size: 11px; font-weight: 800; border-radius: 999px; padding: 0 7px; line-height: 18px; flex-shrink: 0; }
 .ld-tjoin { margin: 2px 10px 6px; padding: 8px 10px; border: 1px dashed var(--ld-line3); border-radius: 8px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 
+/* From other workspaces: unread direct messages in the workspaces that are not open. A row switches there and opens the conversation. */
+.ld-tgroup-n { font-style: normal; background: #c2410c; color: #fff; border-radius: 999px; padding: 0 6px; font-size: 11px; line-height: 16px; margin-left: 6px; letter-spacing: 0; }
+.ld-xrow { border: 0; background: transparent; font: inherit; width: calc(100% - 20px); text-align: left; cursor: pointer; padding: 6px 10px; align-items: center; }
+.ld-xrow .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ld-xrow .last { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--ld-text2); }
+.ld-xrow .last .gp-ell { flex: 1; min-width: 0; }
+.ld-xtag { align-self: flex-start; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em; color: var(--ld-accent-dark); background: var(--ld-accent-bg); border: 1px solid var(--ld-accent-line); border-radius: 6px; padding: 0 6px; line-height: 16px; }
+
+/* The bar under a chat's header: the newest unread direct message from another workspace. */
+.tc-xbar { display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: var(--ld-accent-bg); border-bottom: 1px solid var(--ld-accent-line); color: var(--ld-ink); font-size: 13.5px; }
+.tc-xbar .tx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tc-xbar .ld-btn { width: 84px; flex-shrink: 0; }
+
+/* Drop files on a chat: the overlay shows while a file is over the pane. */
+.ld-dropzone { position: relative; }
+.ld-dropover { position: absolute; inset: 0; z-index: 30; pointer-events: none; background: color-mix(in srgb, var(--ld-page) 82%, transparent); }
+.ld-dropover > div { position: sticky; top: 0; box-sizing: border-box; height: 100vh; max-height: 100%; margin: 0; padding: 24px; border: 3px dashed var(--ld-accent); border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; color: var(--ld-ink); }
+.ld-dropover svg { color: var(--ld-accent-text); }
+.ld-dropover b { font-size: 18px; font-weight: 800; color: var(--ld-ink); }
+.ld-dropover span { font-size: 14px; font-weight: 600; color: var(--ld-text2); }
+
 .tc-wrap { flex: 1; display: flex; min-height: 0; min-width: 0; }
 .tc-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tc-head2 { box-sizing: border-box; min-height: 64px; padding: 8px 20px; background: var(--ld-surface); border-bottom: 1px solid var(--ld-line); display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; }
@@ -1587,7 +1608,11 @@ html[data-theme="dark"] .gp-page mark { color: #14221c !important; }
   .tc-sidehead { padding-top: calc(8px + env(safe-area-inset-top)); }
   .tc-msgs { padding: 12px 10px !important; }
   .tc-compwrap { padding: 8px 10px calc(10px + env(safe-area-inset-bottom)) !important; }
-  .tc-head2 { padding: 8px 12px; gap: 8px; }
+  .tc-head2 { padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
+  .tc-head2 .ld-names { flex-basis: 100%; justify-content: center; }
+  .tc-head2 .ld-names button { padding: 0 9px; font-size: 12px; height: 28px; }
+  .tc-xbar { padding: 8px 12px; }
+  .tc-xbar .tx { white-space: normal; }
   .tc-hbtns { gap: 6px; }
   .tc-members { display: none; }
   .tc-hint, .tc-fmt { display: none; }

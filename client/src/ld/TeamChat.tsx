@@ -3,10 +3,10 @@ import { Link, useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { ChatList, ErrorLine, PersonAvatar, Rail, useIsMobile } from "./ui";
+import { ChatList, ClientNamesSwitch, ErrorLine, PersonAvatar, Rail, useDmsElsewhere, useIsMobile, useOpenElsewhere } from "./ui";
 import { Menu } from "./goals/shared";
-import { fmtTime, isSameDay } from "./meta";
-import { useAttachments } from "./chat/Extras";
+import { fmtAgo, fmtTime, isSameDay } from "./meta";
+import { DropFiles, useAttachments } from "./chat/Extras";
 import { Composer, type Mentionable } from "./team/Composer";
 import { Message, type Emp, type Person } from "./team/Message";
 import { Thread } from "./team/Thread";
@@ -125,7 +125,7 @@ function TypingLine({ who }: { who: Face[] }) {
 }
 
 function TeamPane({ channel }: { channel: string }) {
-  const { currentOrgId } = useTenant();
+  const { currentOrgId, currentOrg } = useTenant();
   const { user } = useAuth();
   const utils = trpc.useUtils();
   const [, go] = useLocation();
@@ -143,6 +143,9 @@ function TeamPane({ channel }: { channel: string }) {
   const markRead = trpc.teamChat.markRead.useMutation({ onSuccess: () => utils.teamChat.channels.invalidate() });
   const setNotify = trpc.teamChat.setNotify.useMutation({ onSuccess: () => Promise.all([utils.teamChat.messages.invalidate(), utils.teamChat.channels.invalidate()]) });
   const files = useAttachments(currentOrgId, 0, "team");
+  // The newest unread direct message from another workspace, for the bar under the header.
+  const elsewhere = useDmsElsewhere();
+  const openElsewhere = useOpenElsewhere();
   const [text, setText] = React.useState("");
   const send = trpc.teamChat.send.useMutation({
     onSuccess: async () => {
@@ -270,8 +273,18 @@ function TeamPane({ channel }: { channel: string }) {
               <button type="button" className={`tc-ic ${info ? "on" : ""}`} aria-label="Details" title="Details" onClick={() => setUrl({ info: info ? null : "1", thread: null })}>ⓘ</button>
             </span>
           )}
+          {currentOrg?.orgType === "healthcare" && <ClientNamesSwitch />}
         </header>
-        <div className="ld-chatpane tc-body">
+        {elsewhere.length > 0 && (
+          <div className="tc-xbar" role="status">
+            <PersonAvatar name={elsewhere[0].name} src={elsewhere[0].avatar} size={24} />
+            <span className="tx">
+              <b>{elsewhere[0].name}</b> messaged you in <b>{elsewhere[0].orgName}</b> {fmtAgo(elsewhere[0].lastAt)}.
+            </span>
+            <button type="button" className="ld-btn sm" onClick={() => openElsewhere(elsewhere[0])}>Open</button>
+          </div>
+        )}
+        <DropFiles className="ld-chatpane tc-body" onDrop={files.onDrop}>
           <div className="ld-chatmsgs tc-msgs">
             <ErrorLine error={q.error} />
             {d && list.length === 0 && <div className="ld-empty" style={{ textAlign: "left", padding: "8px 0" }}>{isDm ? `Only you and ${d.title} see this conversation.` : `Say hello. ${d.general ? "Everyone in this workspace sees this channel." : d.private ? "Only its members see this channel." : "Everyone in this workspace can see this channel."}`}</div>}
@@ -295,9 +308,9 @@ function TeamPane({ channel }: { channel: string }) {
             <div ref={bottom} />
           </div>
           <div className="ld-composer tc-compwrap">
-            <Composer value={text} onChange={onChange} onSend={submit} placeholder={`Message ${d ? (isDm ? d.title : `#${d.title}`) : "your team"}`} who={who} busy={send.isPending || files.uploading} attach={files.button} chips={files.chips} note={files.note} />
+            <Composer value={text} onChange={onChange} onSend={submit} placeholder={`Message ${d ? (isDm ? d.title : `#${d.title}`) : "your team"}`} who={who} busy={send.isPending || files.uploading} attach={files.button} chips={files.chips} note={files.note} onFiles={files.onDrop} />
           </div>
-        </div>
+        </DropFiles>
       </div>
       {side}
     </div>

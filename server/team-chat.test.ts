@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { caller, makeUser, makeWorkspace } from "./test/helpers";
 import * as db from "./db";
 import { pingsFor, readSound } from "./notify";
+import * as ehr from "./ehr";
 
 async function setup(slug: string) {
   const ws = await makeWorkspace(slug);
@@ -180,5 +181,53 @@ describe("Team chat", () => {
     // Her reply from the first workspace reaches the owner in the second.
     await her.teamChat.send({ organizationId: a, channel: key, content: "Yes, they look good." });
     expect((await me.teamChat.messages({ organizationId: b, channel: key })).messages.map((m) => m.content)).toEqual(["Did you see the webinar slides?", "Yes, they look good."]);
+  });
+
+  it("lists unread direct messages from other workspaces, with the workspace name, so they are seen without switching", async () => {
+    const { orgId: a, owner, caroline } = await setup("tc-else-a");
+    const staff = (await db.getUserByEmail("staff@leaddash.io"))!;
+    // The owner's second workspace, where Jordan is; Caroline is only in the first.
+    const b = (await caller(staff).organizations.create({ name: "Jordan's workspace", slug: "tc-else-b", plan: "growth", state: "Oklahoma", ownerEmail: owner.email })).id!;
+    const jordan = await makeUser("jordan@tc-else-b.test", "user", "Jordan Lee");
+    await db.addOrganizationMember({ organizationId: b, userId: jordan.id, role: "member" });
+    const me = caller(owner);
+    const key = `dm:${Math.min(owner.id, jordan.id)}-${Math.max(owner.id, jordan.id)}`;
+    expect(await me.teamChat.dmsElsewhere({ organizationId: a })).toEqual([]);
+    await caller(jordan).teamChat.send({ organizationId: b, channel: key, content: "Can you approve the invoice?" });
+    await caller(jordan).teamChat.send({ organizationId: b, channel: key, content: "It is due Friday." });
+    const rows = await me.teamChat.dmsElsewhere({ organizationId: a });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ orgId: b, orgName: "Jordan's workspace", userId: jordan.id, name: "Jordan Lee", key, lastText: "It is due Friday.", unread: 2 });
+    // From the second workspace nothing is elsewhere: Jordan's conversation is right there, and Caroline has not written.
+    expect(await me.teamChat.dmsElsewhere({ organizationId: b })).toEqual([]);
+    // Caroline writes in the first workspace: from the second, hers is the one elsewhere.
+    const ck = `dm:${Math.min(owner.id, caroline.id)}-${Math.max(owner.id, caroline.id)}`;
+    await caller(caroline).teamChat.send({ organizationId: a, channel: ck, content: "Promo copy is in." });
+    expect((await me.teamChat.dmsElsewhere({ organizationId: b })).map((r) => [r.orgId, r.name, r.unread])).toEqual([[a, "Caroline Jones", 1]]);
+    // Read, and it is gone.
+    await me.teamChat.markRead({ organizationId: b, channel: key, lastId: (await me.teamChat.messages({ organizationId: b, channel: key })).messages.at(-1)!.id });
+    expect(await me.teamChat.dmsElsewhere({ organizationId: a })).toEqual([]);
+  });
+
+  it("shows client names in team chat the way the reader chose: full, initial or hidden", async () => {
+    const { orgId, owner, caroline } = await setup("tc-names");
+    const me = caller(owner);
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    ehr.rememberNames(orgId, ["Christina Gonzales"]);
+    const f = db.createChatFile({ organizationId: orgId, employeeId: 0, userId: caroline.id, name: "Christina Gonzales intake.pdf", mime: "application/pdf", size: 10, kind: "document", fileUrl: "/files/intake.pdf", text: "" });
+    await caller(caroline).teamChat.send({ organizationId: orgId, channel: "everyone", content: "Christina Gonzales called about Thursday. Christina G wants 3pm.", attachmentIds: [f.id] });
+    // Show: as written.
+    expect((await me.teamChat.messages({ organizationId: orgId, channel: "everyone" })).messages.at(-1)!.content).toBe("Christina Gonzales called about Thursday. Christina G wants 3pm.");
+    // Initial: the message, the list preview, search and the file name.
+    await me.ehr.setNameMode({ mode: "initial" });
+    const m = (await me.teamChat.messages({ organizationId: orgId, channel: "everyone" })).messages.at(-1)!;
+    expect(m.content).toBe("C. Gonzales called about Thursday. C. Gonzales wants 3pm.");
+    expect(JSON.parse(m.attachments!)[0].name).toBe("C. Gonzales intake.pdf");
+    expect((await me.teamChat.channels({ organizationId: orgId })).channels[0].last!.text).toBe("C. Gonzales called about Thursday. C. Gonzales wants 3pm.");
+    expect((await me.teamChat.search({ organizationId: orgId, q: "Thursday" })).hits[0].content).toContain("C. Gonzales called");
+    // The writer kept Show, and the stored message is untouched.
+    expect((await caller(caroline).teamChat.messages({ organizationId: orgId, channel: "everyone" })).messages.at(-1)!.content).toContain("Christina Gonzales called");
+    await me.ehr.setNameMode({ mode: "hide" });
+    expect((await me.teamChat.messages({ organizationId: orgId, channel: "everyone" })).messages.at(-1)!.content).toBe(`${ehr.HIDDEN} called about Thursday. ${ehr.HIDDEN} wants 3pm.`);
   });
 });

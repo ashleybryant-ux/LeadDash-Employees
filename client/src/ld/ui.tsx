@@ -303,6 +303,24 @@ export function useUnreadElsewhere() {
   return { by, elsewhere, total };
 }
 
+/** Unread direct messages from people in the workspaces that are not open: the From other workspaces rows and the bar over a chat. */
+export function useDmsElsewhere() {
+  const { currentOrgId } = useTenant();
+  const q = trpc.teamChat.dmsElsewhere.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 20_000, refetchIntervalInBackground: true });
+  return q.data ?? [];
+}
+export type DmElsewhere = ReturnType<typeof useDmsElsewhere>[number];
+
+/** Opens a direct message from another workspace: switch to that workspace, then go to the conversation so its data loads there. */
+export function useOpenElsewhere() {
+  const { switchOrganization } = useTenant();
+  const [, go] = useLocation();
+  return (row: { orgId: number; key: string }) => {
+    switchOrganization(row.orgId);
+    go(`/chats/team/${row.key}`);
+  };
+}
+
 const badge: React.CSSProperties = { background: "#c2410c", color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "0 7px", lineHeight: "18px", flexShrink: 0 };
 
 /** The active workspace at the top of a white sidebar: logo, name and a caret; click it to switch workspaces. */
@@ -575,6 +593,8 @@ function TeamGroup({ activeKind }: { activeKind: string | null }) {
   const [, go] = useLocation();
   const utils = trpc.useUtils();
   const q = trpc.teamChat.channels.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0, refetchInterval: 10_000 });
+  const elsewhere = useDmsElsewhere();
+  const openElsewhere = useOpenElsewhere();
   const join = trpc.teamChat.joinChannel.useMutation({ onSuccess: () => utils.teamChat.channels.invalidate() });
   const [newChannel, setNewChannel] = React.useState(false);
   const [browse, setBrowse] = React.useState(false);
@@ -597,6 +617,7 @@ function TeamGroup({ activeKind }: { activeKind: string | null }) {
       </Link>
     );
   };
+  const elsewhereUnread = elsewhere.reduce((n, r) => n + r.unread, 0);
   return (
     <div className="ld-teamlist">
       {newChannel && <NewChannel onClose={() => setNewChannel(false)} onMade={(key) => { setNewChannel(false); go(`/chats/team/${key}`); }} />}
@@ -614,6 +635,26 @@ function TeamGroup({ activeKind }: { activeKind: string | null }) {
         {pill("mentions", "Mentions", d.counts.mentions)}
         {pill("saved", "Saved", d.counts.saved)}
       </div>
+      {elsewhere.length > 0 && (
+        <>
+          <div className="ld-tgroup">
+            <span>From other workspaces<i className="ld-tgroup-n">{elsewhereUnread}</i></span>
+          </div>
+          {elsewhere.map((r) => (
+            <button key={`${r.orgId}-${r.userId}`} type="button" className="ld-trow ld-xrow unread" onClick={() => openElsewhere(r)} title={`Open in ${r.orgName}`}>
+              <PersonAvatar name={r.name} src={r.avatar} size={30} />
+              <span className="tx">
+                <span className="nm gp-ell">{r.name}</span>
+                <span className="ld-xtag">{r.orgName}</span>
+                <span className="last">
+                  <span className="gp-ell">{r.lastText}</span>
+                </span>
+              </span>
+              <span className="b">{r.unread}</span>
+            </button>
+          ))}
+        </>
+      )}
       <div className="ld-tgroup">
         <span>Channels</span>
         <Menu label="Add a channel" button="+" buttonClass="ld-tadd">
@@ -671,24 +712,49 @@ const NAME_ICONS = {
 
 type Emp = { id: number; name: string; roleTitle: string; kind: string; status: string; avatar: string | null; interview?: string | null };
 
-export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines" | "broll" | "videos"; base: string }) {
-  const { currentOrgId, currentOrg } = useTenant();
+/**
+ * The Show, Initial and Hide switch for client names, one choice per person
+ * for every screen: the employee chats, the Work tabs, the chat list and team
+ * chat follow it at once.
+ */
+export function ClientNamesSwitch({ style }: { style?: React.CSSProperties }) {
   const utils = trpc.useUtils();
-  const [leave, setLeave] = React.useState<LeaveMode | null>(null);
-  const manage = useCanManage();
-  const work = KIND_META[(emp.kind as Kind) ?? "custom"].work;
-  const clientInfo = worksWithClientInfo(emp.kind, currentOrg?.orgType);
-  // Client names on this person's screen: Show, Initial (A. Price) or Hide (a black box). Chat and the Work tabs follow it at once.
-  const nameMode = trpc.ehr.nameMode.useQuery(undefined, { enabled: clientInfo });
+  const nameMode = trpc.ehr.nameMode.useQuery();
   const setNameMode = trpc.ehr.setNameMode.useMutation({
     onSuccess: () => {
       utils.ehr.nameMode.invalidate();
       utils.ehr.view.invalidate();
       utils.chat.list.invalidate();
       utils.chat.summaries.invalidate();
+      utils.teamChat.messages.invalidate();
+      utils.teamChat.thread.invalidate();
+      utils.teamChat.channels.invalidate();
+      utils.teamChat.details.invalidate();
+      utils.teamChat.search.invalidate();
+      utils.teamChat.view.invalidate();
+      utils.teamChat.dmsElsewhere.invalidate();
     },
   });
   const mode = setNameMode.variables?.mode ?? nameMode.data?.mode ?? "show";
+  return (
+    <div className="ld-pg-toggle ld-names" role="radiogroup" aria-label="Client names" title="How client names show on your screen: in full, as first initial and last name, or hidden" style={style}>
+      <span className="ld-names-lbl" aria-hidden="true">{NAME_ICONS.lock}<span>Client names</span></span>
+      {(["show", "initial", "hide"] as const).map((m) => (
+        <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} disabled={setNameMode.isPending} onClick={() => mode !== m && setNameMode.mutate({ mode: m })}>
+          {NAME_ICONS[m]}
+          {m === "show" ? "Show" : m === "initial" ? "Initial" : "Hide"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines" | "broll" | "videos"; base: string }) {
+  const { currentOrg } = useTenant();
+  const [leave, setLeave] = React.useState<LeaveMode | null>(null);
+  const manage = useCanManage();
+  const work = KIND_META[(emp.kind as Kind) ?? "custom"].work;
+  const clientInfo = worksWithClientInfo(emp.kind, currentOrg?.orgType);
   const paused = emp.status === "paused";
   const tab = (on: boolean): React.CSSProperties => ({
     display: "inline-flex",
@@ -727,17 +793,7 @@ export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "w
         <Link href={`${base}/onboarding`} style={tab(active === "onboarding")}>Onboarding</Link>
         <Link href={`${base}/guidelines`} style={tab(active === "guidelines")}>Guidelines</Link>
       </nav>
-      {clientInfo && (
-        <div className="ld-pg-toggle ld-names" role="radiogroup" aria-label="Client names" title="How client names show on your screen: in full, as first initial and last name, or hidden" style={{ marginLeft: "auto" }}>
-          <span className="ld-names-lbl" aria-hidden="true">{NAME_ICONS.lock}<span>Client names</span></span>
-          {(["show", "initial", "hide"] as const).map((m) => (
-            <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} disabled={setNameMode.isPending} onClick={() => mode !== m && setNameMode.mutate({ mode: m })}>
-              {NAME_ICONS[m]}
-              {m === "show" ? "Show" : m === "initial" ? "Initial" : "Hide"}
-            </button>
-          ))}
-        </div>
-      )}
+      {clientInfo && <ClientNamesSwitch style={{ marginLeft: "auto" }} />}
       <div className="ld-row ld-emphead-status" style={{ marginLeft: clientInfo ? 0 : "auto" }}>
         <span className={`ld-pill ${paused ? "gray" : "green"}`}>{paused ? "On the bench" : emp.status === "working" ? "Working" : "Ready"}</span>
         {!paused && manage && (
