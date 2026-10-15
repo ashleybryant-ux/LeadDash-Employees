@@ -97,7 +97,7 @@ export type PageView = { url: string; title: string; text: string; elements: Pag
 
 export type Action = {
   thought: string;
-  action: "click" | "type" | "select" | "upload" | "press_enter" | "press_escape" | "goto" | "wait" | "download" | "need_code" | "done" | "fail";
+  action: "click" | "type" | "select" | "upload" | "press_enter" | "press_escape" | "goto" | "wait" | "download" | "show" | "scroll" | "need_code" | "done" | "fail";
   index: number;
   value: string;
   secret: "" | "email" | "password" | "code" | "content";
@@ -113,9 +113,9 @@ const ACTION_SCHEMA: JsonSchema = {
   required: ["thought", "action", "index", "value", "secret", "fileIndex", "result"],
   properties: {
     thought: { type: "string", description: "One short sentence: what you see and why this action" },
-    action: { type: "string", enum: ["click", "type", "select", "upload", "press_enter", "press_escape", "goto", "wait", "download", "need_code", "done", "fail"] },
-    index: { type: "integer", description: "The element number for click, type, select, upload or download; -1 otherwise" },
-    value: { type: "string", description: "Text to type, the option to select, or the URL for goto; '' otherwise" },
+    action: { type: "string", enum: ["click", "type", "select", "upload", "press_enter", "press_escape", "goto", "wait", "download", "show", "scroll", "need_code", "done", "fail"] },
+    index: { type: "integer", description: "The element number for click, type, select, upload, download or show; -1 otherwise" },
+    value: { type: "string", description: "Text to type, the option to select, the URL for goto, or down/up/top/bottom for scroll; '' otherwise" },
     secret: { type: "string", enum: ["", "email", "password", "code", "content"], description: "For type: fill a saved value instead of value" },
     fileIndex: { type: "integer", description: "For upload: which file from the file list; -1 otherwise" },
     result: { type: "string", description: "For done: the answer the goal asks for (JSON when asked); for fail: why; '' otherwise" },
@@ -592,7 +592,8 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         }
         return await finish("need_code", "", codeWords(view) || act.thought);
       }
-      const sig = `${act.action}:${act.index}:${act.secret}:${act.value}`;
+      // Scrolling down a long page is the same action several times on purpose, so it is not a stuck loop.
+      const sig = act.action === "scroll" ? `scroll:${step}` : `${act.action}:${act.index}:${act.secret}:${act.value}`;
       repeats = sig === lastSig ? repeats + 1 : 0;
       lastSig = sig;
       if (repeats >= 2) {
@@ -605,14 +606,20 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
       // Recorded runs: where the click lands (for the zoom and the ring), with a beat before it so the viewer sees the screen first.
       let box: Box | null = null;
       let at = 0;
-      if (task.record && ["click", "type", "select", "upload", "download"].includes(act.action) && act.index >= 0) {
-        const bb = await page.locator(`[data-ld-i="${act.index}"]`).first().boundingBox().catch(() => null);
+      if (task.record && ["click", "type", "select", "upload", "download", "show"].includes(act.action) && act.index >= 0) {
+        // Bring it into view first: the click would scroll there anyway, and a box measured before the
+        // scroll put the zoom and the ring where the element used to be, not where the viewer sees it.
+        const target = page.locator(`[data-ld-i="${act.index}"]`).first();
+        if (act.action !== "show") await target.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => null);
+        else await perform(page, task, view, act).catch(() => null);
+        await page.waitForTimeout(400);
+        const bb = await target.boundingBox().catch(() => null);
         box = bb ? { x: Math.round(bb.x), y: Math.round(bb.y), w: Math.round(bb.width), h: Math.round(bb.height) } : null;
         await page.waitForTimeout(350);
       }
       at = since();
       try {
-        await perform(page, task, view, act);
+        if (!(task.record && act.action === "show")) await perform(page, task, view, act);
         entry(describe(act, view));
       } catch (err) {
         entry(`Could not ${act.action}: ${(err as Error).message.split("\n")[0]}`);
@@ -668,6 +675,8 @@ function describe(act: Action, view: PageView) {
   if (act.action === "type") return `Typed ${act.secret ? `the saved ${act.secret}` : `"${act.value.slice(0, 60)}"`} into ${what}`;
   if (act.action === "goto") return `Opened ${act.value}`;
   if (act.action === "upload") return `Uploaded a file to ${what}`;
+  if (act.action === "show") return `Showed ${what}`;
+  if (act.action === "scroll") return `Scrolled ${act.value || "down"}`;
   return `${act.action} ${what}`.trim();
 }
 
@@ -736,6 +745,27 @@ async function perform(page: import("playwright-core").Page, task: BrowserTask, 
     case "wait":
       await page.waitForTimeout(2000);
       return;
+    // Recorded runs: bring the part of the page a step talks about into the middle of the screen, so the
+    // viewer sees it while the line is read. Nothing is clicked.
+    case "show":
+      await page.evaluate((i) => {
+        const el = document.querySelector(`[data-ld-i="${i}"]`);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      }, act.index);
+      await page.waitForTimeout(900);
+      return;
+    // Move down (or up) the page by most of a screen, so a long page is seen a part at a time.
+    case "scroll": {
+      const v = (act.value || "down").toLowerCase();
+      await page.evaluate((dir) => {
+        const h = Math.round(innerHeight * 0.75);
+        if (dir === "top") window.scrollTo({ top: 0, behavior: "smooth" });
+        else if (dir === "bottom") window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+        else window.scrollBy({ top: dir === "up" ? -h : h, behavior: "smooth" });
+      }, v);
+      await page.waitForTimeout(900);
+      return;
+    }
   }
 }
 
@@ -841,7 +871,8 @@ Rules:
 - Never accept terms, pay fees, change account settings, or delete anything unless the goal says to.
 - If a sign-in page needs an email or password that isn't saved, use "fail" and say the site needs someone signed in. Never ask anyone for a password, credentials or a code, in result or anywhere else.
 - A popup (a dialog, a panel or a message box over the page) is dealt with before anything behind it. Its elements are marked "(in the popup)". If the goal needs it, do that inside it. Otherwise close it: its Close, Done, Got it, OK, X or Cancel button, or "press_escape". Never click through it.
-- If you are stuck, blocked by a CAPTCHA, or the page is not what the goal expects, use "fail" and say why in result.
+- If you are stuck, blocked by a CAPTCHA, or the page is not what the goal expects, use "fail" and say why in result.${task.record ? `
+- The screen is being recorded, and the viewer only sees what is on screen right now. A step that shows or explains part of the page without clicking ("Show the Note Style card", "Point out the formats") is done with "show" on the element it talks about, so the camera moves there; never answer such a step with "wait". A page longer than the screen is walked with "scroll" (value down, up, top or bottom) so each part is seen in turn. Before you click something that is not on screen, "show" it first.` : ""}
 - When the goal is reached, use "done" and put the requested answer in result, in under 400 words: the facts and findings the goal asks for, not a long write-up.${task.rules ? `\n${task.rules}` : ""}`,
     prompt: `GOAL:\n${task.goal}\n\nFILES YOU CAN UPLOAD:\n${files}\n\nSTEPS SO FAR:\n${past}\n\nCURRENT PAGE: ${view.title}\n${view.url}${view.popup ? `\n\nA POPUP IS OPEN OVER THE PAGE. It says: ${view.popup}` : ""}\n\nELEMENTS:\n${els}\n\nPAGE TEXT:\n${view.text}`,
     schemaName: "browser_action",

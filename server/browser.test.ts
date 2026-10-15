@@ -29,6 +29,7 @@ beforeAll(async () => {
       return res.end(page(`<label for="g">Gender</label><input type="radio" id="g" name="g" checked><label for="eth">Ethnicity</label><select id="eth"><option>Select One</option><option>Asian</option><option selected>African American or Black</option></select><label for="bs">Business Status</label><select id="bs"><option>Select One</option><option>Operating</option></select>`));
     }
     if (url.pathname === "/home") return res.end(page(`<a href="/" target="_blank">Log In</a>`));
+    if (url.pathname === "/long") return res.end(page(`<h1>Note</h1><div style="height:2400px">Top of the page</div><section id="risk"><h2>Risk assessment</h2><button id="denied">All denied</button></section><div style="height:1200px"></div>`));
     if (url.pathname === "/popup") {
       return res.end(page(`<h1>Dashboard</h1><button id="add">Add appointment</button><div role="dialog" style="position:fixed;inset:0;background:#fff"><p>In your own account this would send the claim.</p><button id="close" onclick="this.parentNode.remove()">Got it</button></div>`));
     }
@@ -80,6 +81,31 @@ describe.skipIf(!ready)("the server's browser", () => {
     expect(by("Ethnicity").text).toMatch(/^selected: African American or Black; options: Select One \| Asian \| African American or Black$/);
     expect(by("Business Status").text).toMatch(/^nothing selected; options:/);
     expect(by("Gender").text).toBe("(checked)");
+  }, 60_000);
+
+  it("recording: show brings a part of the page into view, scroll walks the page, and a click's box is measured where the viewer sees it", async () => {
+    let n = 0;
+    const res = await runBrowserTask({
+      orgId: 1,
+      goal: "show the risk section, then set it",
+      startUrl: `${base}/long`,
+      record: true,
+      decide: async (v) => {
+        n += 1;
+        if (n === 1) return { ...act({ action: "show", index: el(v, /All denied/) }), planStep: 1 } as Action;
+        if (n === 2) return { ...act({ action: "scroll", value: "top" }), planStep: 1 } as Action;
+        if (n === 3) return { ...act({ action: "click", index: el(v, /All denied/) }), planStep: 2 } as Action;
+        return { ...act({ action: "done", result: "ok" }), planStep: 2 } as Action;
+      },
+    });
+    expect(res.status).toBe("done");
+    const click = res.log.find((l) => l.action === "click")!;
+    expect(click.box).toBeTruthy();
+    // The button sits 2400px down the page; after the scroll into view its box is inside the 900px tall screen.
+    expect(click.box!.y).toBeGreaterThanOrEqual(0);
+    expect(click.box!.y).toBeLessThan(900);
+    expect(res.log.some((l) => /^Showed All denied/.test(l.detail))).toBe(true);
+    expect(res.log.some((l) => /^Scrolled top/.test(l.detail))).toBe(true);
   }, 60_000);
 
   it("sees a popup over the page, marks its buttons, and closes it with its button or Escape", async () => {

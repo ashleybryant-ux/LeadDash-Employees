@@ -433,7 +433,7 @@ Top bar:
 
 Main column:
 
-- **Note Style** card: **Formats for** (**Therapy**, **Prescriber**, **Case management**, **Peer recovery support**, **All formats**) and the format, such as **SOAP**, **DAP**, **BIRP**, **GIRP**, **Initial Intake**, **Comprehensive**, **Free-form**.
+- **Note Style** card: **Formats for** (**Therapy**, **Prescriber**, **Case management**, **Peer recovery support**, **All formats**) and the format. Therapy: **Initial Intake** (presenting problem, history, formulation, plan), **SOAP** (Subjective, Objective, Assessment, Plan), **DAP** (Data, Assessment, Plan), **BIRP** (Behavior, Intervention, Response, Plan), **GIRP** (Goals, Intervention, Response, Plan), **Comprehensive** (full clinical note with MSE), **Free-form** (simple narrative). Prescriber: **Medication Management** (E/M visit with MDM scoring), **Psychiatric Evaluation**, **Med Mgmt + Therapy**, **Free-form**. Case management: **Case Management Contact**, **Service Plan**. Peer recovery support: **Peer Support Session**. The family a clinician sees first follows their role; **All formats** shows every one.
 - **DashNotes recorder** (when DashNotes is on): choose **In person**, **Telehealth** or **Dictate**, see the client's recording consent pill, then **Start recording** or **Start dictating**. After the recording, the draft is written into the note. **Not what you wanted?** offers **Length**: **Detailed** or **Concise**.
 - Session details: **Date of service**, **Start time**, **Stop time**, **Duration** (presets 15 to 90 min), **Session type** (**Individual**, **Family**, **Group**), **Delivered** (**In person (office)**, **Telehealth, client at home**, **Telehealth, client elsewhere**), **Service**, **Procedure code**, **Session total**.
 - **Diagnosis** (search ICD-10 or **Enter it manually**, **Add another diagnosis**).
@@ -886,14 +886,20 @@ Every task starts in the demo at https://demo.leaddash.io, signed in as Sarah Ch
 - Needs in the demo: a session marked Needs note (the six most recent past sessions).
 - Steps:
   1. Click **Write note** on a row. The note editor opens on **Progress note** with the session date and time filled in.
-  2. In **Note Style**, leave **Formats for** on **Therapy** and choose **SOAP**.
-  3. Check **Service** and **Procedure code**.
-  4. Fill in **S Subjective**, **O Objective**, **A Assessment**, **P Plan** with made-up text.
-  5. Set **Risk assessment** to **All denied** if that fits the made-up session.
-  6. Click **Sign** at the top right. **Sign and Lock Note** opens.
-  7. Type the name in "Enter your full legal name to sign this note". A signature preview appears.
-  8. Click **Sign and Lock Note**.
+  2. Show the top bar: the client's name with date of birth and age, the session date and time, the tabs **Progress note**, **Chart note** and **Treatment progress**, and **Save as draft** and **Sign**. Say what each tab is for: Progress note is the session note, Chart note is a short note on the chart outside a session, Treatment progress records work against the plan.
+  3. Show the **Note Style** card. Name every **Formats for** group and what it is for: **Therapy** (counseling sessions), **Prescriber** (medication visits), **Case management**, **Peer recovery support**, and **All formats**.
+  4. Name every format under Therapy and when a clinician uses it: **SOAP** (Subjective, Objective, Assessment, Plan: the most common), **DAP** (Data, Assessment, Plan: shorter), **BIRP** (Behavior, Intervention, Response, Plan: ties the note to what the clinician did), **GIRP** (Goal, Intervention, Response, Plan: ties it to the treatment plan goal), **Initial Intake** (the first session), **Comprehensive** (a full assessment), **Free-form** (one open box). Say the sections below change with the format and that every format signs the same way. Then choose **SOAP** for the example.
+  5. Show the **DashNotes recorder** card and say it can write the draft from a recording or dictation; this video types the note instead.
+  6. Scroll to the session details. Check **Date of service**, **Start time**, **Stop time**, **Duration**, **Session type**, **Delivered**, **Service** and **Procedure code**, naming each.
+  7. Show **Diagnosis**: the diagnosis on the chart is already there; **Add another diagnosis** adds one.
+  8. Fill in **S Subjective**, **O Objective**, **A Assessment**, **P Plan** with made-up text, scrolling so each section is on screen as it is filled. Mention **Last note** on each section shows the previous note's words.
+  9. Scroll to **Risk assessment** and set it to **All denied** if that fits the made-up session; say **Needs attention** opens the three risk questions.
+  10. Show **Psychotherapy notes** and say they are private to the clinician and never part of the record.
+  11. Scroll to the top and click **Sign**. **Sign and Lock Note** opens.
+  12. Type the name in "Enter your full legal name to sign this note". A signature preview appears.
+  13. Click **Sign and Lock Note**.
 - Done when: the note reads "This note is signed and locked." and the session shows **Signed** on the chart.
+- Length: this is a 4 to 5 minute video. If the ask is only how to sign a note, or only the formats, make that part alone.
 - Watch out: **Save as draft** keeps it unsigned. A signed note cannot be edited; a wrong note is fixed with **⋯**, **Entered in error**. Never type real client information.
 
 ### Draft a note with DashNotes
