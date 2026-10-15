@@ -3,6 +3,7 @@ import * as db from "./db";
 import { authenticateRequest } from "./_core/context";
 import { storagePut, storagePutStream } from "./storage";
 import { describeImage } from "./_core/llm";
+import { cleanSvgFile, isSvg, svgName, svgToPng } from "./svg";
 import { readFile, unsupportedNote } from "./employees/docs";
 import { indexKnowledge } from "./employees/kb";
 import { addOpportunity, parse, type Attachment, type Extras, type Award } from "./employees/apply";
@@ -433,6 +434,13 @@ export function registerUploads(app: Express) {
       // A file attached in an employee's chat: photos are described, documents are read.
       // Team chat: a file one person shares with the others. Nothing here goes to the AI.
       if (slot === "team" || slot === "work") {
+        if (isSvg(buf)) {
+          const svg = cleanSvgFile(buf);
+          const file = svgName(name);
+          const saved = await storagePut(`org-${orgId}/${slot}/${file}`, svg, "image/svg+xml");
+          const f = db.createChatFile({ organizationId: orgId, employeeId: 0, userId: user.id, name: file, mime: "image/svg+xml", size: svg.length, kind: "image", fileUrl: saved.url, text: "", pages: null });
+          return res.json({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl });
+        }
         const imageType = sniffImageType(buf);
         const saved = await storagePut(`org-${orgId}/${slot}/${name}`, buf, imageType ?? mime);
         const f = db.createChatFile({ organizationId: orgId, employeeId: 0, userId: user.id, name, mime: imageType ?? mime, size: buf.length, kind: imageType ? "image" : "document", fileUrl: saved.url, text: "", pages: null });
@@ -441,6 +449,16 @@ export function registerUploads(app: Express) {
       if (slot === "chat") {
         const emp = await db.getEmployeeForOrg(Number(req.query.employeeId), orgId);
         if (!emp) return res.status(404).json({ error: "That employee is not in this workspace." });
+        if (isSvg(buf)) {
+          // A logo or web graphic: kept as the clean SVG; the employee reads a picture of it.
+          const svg = cleanSvgFile(buf);
+          const file = svgName(name);
+          const saved = await storagePut(`org-${orgId}/chat/${file}`, svg, "image/svg+xml");
+          const canRead = await photosAllowed(orgId, emp.kind);
+          const text = canRead ? await describeImage(await svgToPng(svg), "image/png").then((t) => `SVG graphic (vector, see-through background). ${t}`).catch(() => "SVG graphic (vector, see-through background).") : "";
+          const f = db.createChatFile({ organizationId: orgId, employeeId: emp.id, userId: user.id, name: file, mime: "image/svg+xml", size: svg.length, kind: "image", fileUrl: saved.url, text, pages: null });
+          return res.json({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl });
+        }
         const imageType = sniffImageType(buf);
         let text = "";
         let pages: number | null = null;
@@ -480,18 +498,23 @@ export function registerUploads(app: Express) {
           return res.json({ id: item.id });
         }
         let img = buf;
-        let type = sniffImageType(img);
+        let type: string | null = sniffImageType(img);
+        if (!type && isSvg(img)) {
+          // A logo or web graphic for pages and posts: stored as the clean SVG so it stays sharp and see-through.
+          img = cleanSvgFile(img);
+          type = "image/svg+xml";
+        }
         if (!type) {
           const heic = img.subarray(4, 12).toString().match(/^ftyp(heic|heix|hevc|mif1|msf1)/);
-          return res.status(400).json({ error: heic ? "iPhone HEIC photos can't be read. On your phone, share the photo as JPG (or set Camera, Formats to Most Compatible), then upload it." : "Photos must be PNG, JPG, WebP or GIF." });
+          return res.status(400).json({ error: heic ? "iPhone HEIC photos can't be read. On your phone, share the photo as JPG (or set Camera, Formats to Most Compatible), then upload it." : "Photos must be PNG, JPG, WebP, GIF or SVG." });
         }
         // Big photos are scaled down so employees and pages can use them.
-        if (img.length > 8_000_000 && type !== "image/gif") {
+        if (img.length > 8_000_000 && type !== "image/gif" && type !== "image/svg+xml") {
           const sharp = (await import("sharp")).default;
           img = await sharp(img).rotate().resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
           type = "image/jpeg";
         }
-        const ext = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif" }[type];
+        const ext = ({ "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif", "image/svg+xml": ".svg" } as Record<string, string>)[type];
         const saved = await storagePut(`org-${orgId}/brain/image${ext}`, img, type);
         const note = String(req.query.note || "").slice(0, 2000);
         const item = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", title, category: "mission_profile", content: note, fileUrl: saved.url });
@@ -499,7 +522,9 @@ export function registerUploads(app: Express) {
         await db.logAction({ organizationId: orgId, actorType: "human_user", actorName: who, action: "Added image to Brain", details: title });
         if (!note.trim()) {
           const finalType = type;
-          void describeImage(img, finalType)
+          const forReading = finalType === "image/svg+xml" ? svgToPng(img).then((png) => ({ buf: png, type: "image/png" })) : Promise.resolve({ buf: img, type: finalType });
+          void forReading
+            .then((r) => describeImage(r.buf, r.type))
             .then(async (text) => {
               if (!text) return;
               const next = await db.updateKnowledgeItem(item.id, orgId, { content: text });

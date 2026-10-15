@@ -386,7 +386,7 @@ function AddEditor({ onDone }: { onDone: () => void }) {
             id={`${id}-file`}
             type="file"
             className="ld-small"
-            accept={kind === "image" ? "image/png,image/jpeg,image/webp,image/gif,.heic,.heif" : ".pdf,.docx,.pptx,.xlsx,.txt,.md,.csv"}
+            accept={kind === "image" ? "image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.svg,.heic,.heif" : ".pdf,.docx,.pptx,.xlsx,.txt,.md,.csv"}
             multiple={kind === "image"}
             onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
           />

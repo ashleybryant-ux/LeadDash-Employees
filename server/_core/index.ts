@@ -26,6 +26,7 @@ import { registerSalesPages } from "../sales-pages";
 import { registerCareers } from "../careers";
 import { registerProjectPages } from "../project-pages";
 import { registerVideoPages } from "../video-pages";
+import { SVG_HEADERS } from "../svg";
 
 async function startServer() {
   // Open the database and run any pending migrations before taking traffic.
@@ -147,6 +148,8 @@ async function startServer() {
     const full = path.resolve(root, row.fileKey);
     if (!full.startsWith(root + path.sep)) return res.status(404).send("Not found");
     res.setHeader("Cache-Control", "public, max-age=604800");
+    // A shared SVG shows as a picture, with nothing in it allowed to run.
+    if (/\.svg$/i.test(full)) for (const [k, v] of Object.entries(SVG_HEADERS)) res.setHeader(k, v);
     return res.sendFile(full, (err) => {
       if (err && !res.headersSent) res.status(404).send("Not found");
     });
@@ -155,14 +158,17 @@ async function startServer() {
   // Stored files (W-9s, licenses, RFPs, videos, downloads, images). Keys are
   // random, and every request must also come from a signed-in person on the
   // workspace the file belongs to (org-<id>/...). LeadDash staff have support access.
-  // Web pages and SVGs people upload are never run on this site: they download as text.
+  // Web pages people upload are never run on this site: they download as text. SVGs show as
+  // pictures with nothing in them allowed to run (they were also cleaned when uploaded).
   const files = express.static(uploadsRoot(), {
     fallthrough: false,
     maxAge: "1h",
     dotfiles: "deny",
     setHeaders: (res, filePath) => {
       res.setHeader("X-Content-Type-Options", "nosniff");
-      if (/\.(html?|xhtml|svg|xml)$/i.test(filePath)) {
+      if (/\.svg$/i.test(filePath)) {
+        for (const [k, v] of Object.entries(SVG_HEADERS)) res.setHeader(k, v);
+      } else if (/\.(html?|xhtml|xml)$/i.test(filePath)) {
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.setHeader("Content-Disposition", "attachment");
       }

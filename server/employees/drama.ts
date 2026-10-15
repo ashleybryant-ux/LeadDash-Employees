@@ -512,7 +512,7 @@ function dataUri(buf: Buffer, mime: string) {
 }
 function mimeOf(url: string) {
   const ext = url.split("?")[0].split(".").pop()?.toLowerCase();
-  return ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : ext === "mp4" ? "video/mp4" : "image/jpeg";
+  return ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : ext === "svg" ? "image/svg+xml" : ext === "mp4" ? "video/mp4" : "image/jpeg";
 }
 async function readStored(fileUrl: string) {
   if (fileUrl.startsWith("/avatars/")) {
@@ -530,6 +530,8 @@ const MIN_SIDE = 512;
 /** A small picture enlarged so its shorter side is MIN_SIDE; anything else, or a file sharp can't read, is left as it is. */
 export async function bigEnough(buf: Buffer, mime: string): Promise<{ buf: Buffer; mime: string }> {
   if (!mime.startsWith("image/")) return { buf, mime };
+  // The image and video models can't read SVG: a logo from the Brain goes as a sharp PNG with its see-through background.
+  if (mime === "image/svg+xml") return { buf: await (await import("../svg")).svgToPng(buf), mime: "image/png" };
   try {
     const meta = await sharp(buf).metadata();
     const short = Math.min(meta.width ?? 0, meta.height ?? 0);
