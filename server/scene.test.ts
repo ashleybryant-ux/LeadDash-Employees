@@ -263,6 +263,9 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     const v = await c.scenes.write({ organizationId: orgId, what: "Ask the AI team if we're on pace for revenue", style: "real", me: true, seconds: 15 });
     // The writer is told who on the team can play themselves.
     expect(prompts.scene).toContain(`${nora.name} (${nora.roleTitle})`);
+    // LeadDash's own workspace can cast anyone on the roster, and never makes up a coworker.
+    expect(prompts.scene).toContain("Harper (Billing Specialist)");
+    expect(prompts.scene).toMatch(/never make up a coworker/);
     const cast = v.scene!.cast;
     expect(cast.map((x) => [x.name, x.owner, x.team])).toEqual([["Ashley", true, false], [simone.name, false, true], [nora.name, false, true]]);
     // Their real role and their own portrait, not one made up from the description.
