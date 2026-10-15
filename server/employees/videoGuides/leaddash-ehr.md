@@ -439,7 +439,7 @@ Main column:
 - **DashNotes recorder** (when DashNotes is on): choose **In person**, **Telehealth** or **Dictate**, see the client's recording consent pill, then **Start recording** or **Start dictating**. After the recording, the draft is written into the note. **Not what you wanted?** offers **Length**: **Detailed** or **Concise**.
 - Session details: **Date of service**, **Start time**, **Stop time**, **Duration** (presets 15 to 90 min), **Session type** (**Individual**, **Family**, **Group**), **Delivered** (**In person (office)**, **Telehealth, client at home**, **Telehealth, client elsewhere**), **Service**, **Procedure code**, **Session total**.
 - **Diagnosis** (search ICD-10 or **Enter it manually**, **Add another diagnosis**).
-- The note sections for the chosen format (for SOAP: **S Subjective**, **O Objective**, **A Assessment**, **P Plan**, each with **Last note** to see the previous one).
+- The note sections for the chosen format (for SOAP: **S Subjective**, **O Objective**, **A Assessment**, **P Plan**, each with **Last note** to see the previous one). Each section is a rich text box with Bold, Italic, Underline and List above it; in your browser's element list it reads as `editable`, named by its placeholder, and is typed into like any text box.
 - **Objectives addressed** when the client has a signed plan.
 - **Risk assessment** (**All denied** or **Needs attention**, Suicidal ideation, Homicidal ideation, Self-harm).
 - **Psychotherapy notes**: private process notes, "Private to you", kept apart from the chart.

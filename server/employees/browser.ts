@@ -695,13 +695,15 @@ async function perform(page: import("playwright-core").Page, task: BrowserTask, 
     case "type": {
       const value = act.secret ? task.secrets?.[act.secret] ?? "" : act.value;
       if (act.secret && !value) throw new Error(`no saved ${act.secret}`);
-      if (act.secret === "content") {
-        // Code editors (the kind a custom HTML box uses) ignore fill, so the block is pasted where the cursor is.
-        const ok = await loc().fill(value, { timeout: 5000 }).then(() => true, () => false);
+      if (act.secret === "content" || el?.tag === "editable") {
+        // Code editors and rich text boxes (a note's sections) ignore fill, so the words are typed where
+        // the cursor is, replacing what was there.
+        const ok = el?.tag === "editable" ? false : await loc().fill(value, { timeout: 5000 }).then(() => true, () => false);
         if (!ok) {
           await loc().click();
           await page.keyboard.press("Control+A");
           await page.keyboard.insertText(value);
+          await page.keyboard.press("End").catch(() => null);
         }
         return;
       }
@@ -834,16 +836,30 @@ export async function snapshot(page: import("playwright-core").Page): Promise<Pa
     }
     const popupWords = popup ? ((popup as HTMLElement).innerText || "").trim().replace(/\s+/g, " ").slice(0, 200) : "";
     let n = 0;
-    document.querySelectorAll("a[href], button, input, select, textarea, [role=button], [role=link], [role=tab], [role=combobox], [onclick]").forEach((el) => {
+    // A rich text box (contenteditable) is a text box too (2026-10-15): the note editor's sections are
+    // these, and without them the AI could see the page but never write a note in it. Named by its
+    // own label or placeholder, otherwise by the heading of the card it sits in.
+    const editableLabel = (el: Element) => {
+      const own = labelOf(el) || (el.getAttribute("data-placeholder") || "").trim();
+      if (own) return own.replace(/\s+/g, " ").slice(0, 120);
+      let node: Element | null = el.parentElement;
+      for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
+        const h = node.querySelector("h1, h2, h3, h4, h5, h6, legend, label, .card-title, .section-title");
+        if (h && (h as HTMLElement).innerText.trim()) return (h as HTMLElement).innerText.trim().replace(/\s+/g, " ").slice(0, 120);
+      }
+      return "text box";
+    };
+    document.querySelectorAll("a[href], button, input, select, textarea, [role=button], [role=link], [role=tab], [role=combobox], [onclick], [contenteditable=''], [contenteditable='true'], [contenteditable='plaintext-only']").forEach((el) => {
       if (!visible(el) || n >= 250) return;
       const type = (el.getAttribute("type") || "").toLowerCase();
       if (type === "hidden") return;
+      const editable = el.hasAttribute("contenteditable") && el.getAttribute("contenteditable") !== "false" && !["input", "textarea", "select", "button", "a"].includes(el.tagName.toLowerCase());
       el.setAttribute("data-ld-i", String(n));
       out.push({
         i: n,
-        tag: el.tagName.toLowerCase(),
+        tag: editable ? "editable" : el.tagName.toLowerCase(),
         type,
-        label: `${popup && popup.contains(el) ? "(in the popup) " : ""}${labelOf(el)}`.slice(0, 120),
+        label: `${popup && popup.contains(el) ? "(in the popup) " : ""}${editable ? editableLabel(el) : labelOf(el)}`.slice(0, 120),
         text: stateOf(el).slice(0, 160),
         href: (el as HTMLAnchorElement).href || "",
       });
@@ -863,7 +879,7 @@ async function decide(task: BrowserTask, view: PageView, history: StepLog[]): Pr
   return generateJson<Action>({
     system: `You are ${task.actor ?? "an assistant"} operating a web browser for the person you work for. Pick exactly one next action toward the goal.
 Rules:
-- Use only elements from the numbered list. Never invent an element number.
+- Use only elements from the numbered list. Never invent an element number. An element tagged "editable" is a rich text box (a note section, a message body): use "type" on it exactly like a textarea.
 - Each element shows what it holds now: "selected: X" for a dropdown, "(checked)" for a ticked box, the typed text for a filled box. A field that already holds the right value is done: move on to the next empty required field, never set it again.
 - To fill a saved value, use action "type" with secret "email", "password", "code" or "content" and leave value empty ("content" pastes the whole block you were given, like a page's HTML). Saved values available: ${saved}.
 - If the site asks for a one-time sign-in or verification code and no code is saved, use "need_code".

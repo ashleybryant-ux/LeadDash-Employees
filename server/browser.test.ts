@@ -29,6 +29,7 @@ beforeAll(async () => {
       return res.end(page(`<label for="g">Gender</label><input type="radio" id="g" name="g" checked><label for="eth">Ethnicity</label><select id="eth"><option>Select One</option><option>Asian</option><option selected>African American or Black</option></select><label for="bs">Business Status</label><select id="bs"><option>Select One</option><option>Operating</option></select>`));
     }
     if (url.pathname === "/home") return res.end(page(`<a href="/" target="_blank">Log In</a>`));
+    if (url.pathname === "/note") return res.end(page(`<section><h3>S Subjective</h3><div class="box" contenteditable="true" data-placeholder="What the client reports"></div></section><section><h3>P Plan</h3><div class="box" contenteditable="true"></div></section><button id="sign">Sign</button>`));
     if (url.pathname === "/long") return res.end(page(`<h1>Note</h1><div style="height:2400px">Top of the page</div><section id="risk"><h2>Risk assessment</h2><button id="denied">All denied</button></section><div style="height:1200px"></div>`));
     if (url.pathname === "/popup") {
       return res.end(page(`<h1>Dashboard</h1><button id="add">Add appointment</button><div role="dialog" style="position:fixed;inset:0;background:#fff"><p>In your own account this would send the claim.</p><button id="close" onclick="this.parentNode.remove()">Got it</button></div>`));
@@ -106,6 +107,27 @@ describe.skipIf(!ready)("the server's browser", () => {
     expect(click.box!.y).toBeLessThan(900);
     expect(res.log.some((l) => /^Showed All denied/.test(l.detail))).toBe(true);
     expect(res.log.some((l) => /^Scrolled top/.test(l.detail))).toBe(true);
+  }, 60_000);
+
+  it("types into a rich text box (a note section), named by its placeholder or its heading", async () => {
+    const views: PageView[] = [];
+    let n = 0;
+    const res = await runBrowserTask({
+      orgId: 1,
+      goal: "write the note",
+      startUrl: `${base}/note`,
+      decide: async (v) => {
+        views.push(v); n += 1;
+        if (n === 1) return act({ action: "type", index: el(v, /What the client reports/), value: "Client reports better sleep this week." });
+        if (n === 2) return act({ action: "type", index: el(v, /P Plan/), value: "Continue weekly sessions." });
+        return act({ action: "done", result: "ok" });
+      },
+    });
+    expect(res.status).toBe("done");
+    const boxes = views[0].elements.filter((e) => e.tag === "editable");
+    expect(boxes.map((e) => e.label)).toEqual(["What the client reports", "P Plan"]);
+    expect(views[2].elements.find((e) => e.label === "What the client reports")!.text).toBe("Client reports better sleep this week.");
+    expect(views[2].elements.find((e) => e.label === "P Plan")!.text).toBe("Continue weekly sessions.");
   }, 60_000);
 
   it("sees a popup over the page, marks its buttons, and closes it with its button or Escape", async () => {
