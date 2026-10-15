@@ -589,6 +589,30 @@ describe("The demo cut (real ffmpeg)", { timeout: 180_000 }, () => {
     const z = zoomExpr([{ at: 1, cx: 160, cy: 100 }], 320, 200)!;
     expect(z.z).toMatch(/^1\+0\.6\*/);
     expect(z.cx).toContain("160");
+    expect(z.filter).toMatch(/^zoompan=/);
+  });
+
+  it("zooms in on the thing that was clicked, not the top left corner (2026-10-15)", async () => {
+    // A 1280x800 screen with a red box at the far right; the click is on the box.
+    const clip = path.join(dir, "redbox.mp4");
+    execFileSync(ff(), ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x224466:s=1280x800:d=4:r=30", "-vf", "drawbox=x=1100:y=300:w=150:h=100:color=red:t=fill", "-pix_fmt", "yuv420p", clip]);
+    const buf = await renderDemo({ w: 1280, h: 800, screen: { w: 1280, h: 800 }, parts: [{ kind: "step", clip, clipSeconds: 4, clicks: [{ at: 1.5, x: 1100, y: 300, w: 150, h: 100 }], audio: null, audioSeconds: 3, text: "" }], zoom: true, captions: null, logo: null, music: null, brand: "#1b6b4a" });
+    const out = path.join(dir, "redbox-out.mp4");
+    fs.writeFileSync(out, buf);
+    const png = path.join(dir, "redbox-hold.png");
+    // 2.6 seconds in: the zoom is held at 1.6x on the click.
+    execFileSync(ff(), ["-y", "-loglevel", "error", "-ss", "2.6", "-i", out, "-frames:v", "1", png]);
+    const sharp = (await import("sharp")).default;
+    const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+    const px = (x: number, y: number) => [data[(y * info.width + x) * info.channels], data[(y * info.width + x) * info.channels + 1], data[(y * info.width + x) * info.channels + 2]];
+    // The window is pushed to the right edge, so the box sits at about x 1112, y 400 of the output, under the ring.
+    const [r, g, b] = px(1112, 400);
+    expect(r).toBeGreaterThan(150);
+    expect(g).toBeLessThan(90);
+    expect(b).toBeLessThan(90);
+    // And the top left of the screen is no longer what is shown.
+    const [r2] = px(40, 40);
+    expect(r2).toBeLessThan(90);
   });
 
   async function parts(mode: "screen" | "corner" | "bookends" | "social", w: number, h: number) {

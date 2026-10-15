@@ -967,7 +967,7 @@ export function BrowserCard({ card }: { card: Card }) {
             tabIndex={control ? 0 : -1}
             role={control ? "application" : undefined}
             aria-label={control ? "The site. Click to click there; typing goes to the site." : undefined}
-            style={{ position: "relative", aspectRatio: "1280 / 900", background: "#f4f6f8", cursor: control ? "pointer" : "default", outline: "none" }}
+            style={{ position: "relative", aspectRatio: `${v?.view?.width ?? 1280} / ${v?.view?.height ?? 900}`, background: "#f4f6f8", cursor: control ? "pointer" : "default", outline: "none" }}
             onClick={(e) => {
               if (!control) return;
               const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();

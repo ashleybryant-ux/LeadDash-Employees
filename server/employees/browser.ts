@@ -157,6 +157,8 @@ type Live = {
   notes: string[];
   /** On a recorded run: the plan step being done now. */
   plan?: number;
+  /** The browser's size, so the live view keeps its shape and clicks land where they were made. */
+  view?: { width: number; height: number };
   /** Rewrites an address before it is shown (a first address that carries a code is shown plain). */
   shown?: (url: string) => string;
 };
@@ -167,8 +169,8 @@ const queued = new Map<number, string[]>();
 export function liveView(orgId: number) {
   const l = lives.get(orgId);
   const waiting = queued.get(orgId) ?? [];
-  if (!l) return { id: "", state: "none" as const, step: "", url: "", reason: "", frame: null as string | null, frameAt: 0, queued: waiting, plan: 0 };
-  return { id: l.id, state: l.state, step: l.step, url: l.url, reason: l.reason, frame: l.frame ? `data:image/jpeg;base64,${l.frame.toString("base64")}` : null, frameAt: l.frameAt, queued: waiting, plan: l.plan ?? 0 };
+  if (!l) return { id: "", state: "none" as const, step: "", url: "", reason: "", frame: null as string | null, frameAt: 0, queued: waiting, plan: 0, view: { ...VIEW } };
+  return { id: l.id, state: l.state, step: l.step, url: l.url, reason: l.reason, frame: l.frame ? `data:image/jpeg;base64,${l.frame.toString("base64")}` : null, frameAt: l.frameAt, queued: waiting, plan: l.plan ?? 0, view: l.view ?? { ...VIEW } };
 }
 
 /** Shows "Opening the browser" for a session that is about to start; one already open keeps the screen and the new one waits in line. */
@@ -241,8 +243,9 @@ async function doInput(orgId: number, id: string, input: LiveInput) {
   if (l.state !== "control" || !l.page) throw new Error("Press Take over first.");
   const page = l.page;
   if (input.kind === "click") {
-    const x = Math.round(Math.max(0, Math.min(1, input.x)) * VIEW.width);
-    const y = Math.round(Math.max(0, Math.min(1, input.y)) * VIEW.height);
+    const size = page.viewportSize() ?? VIEW;
+    const x = Math.round(Math.max(0, Math.min(1, input.x)) * size.width);
+    const y = Math.round(Math.max(0, Math.min(1, input.y)) * size.height);
     const what = await page
       .evaluate(([px, py]) => {
         const el = document.elementFromPoint(px, py) as HTMLElement | null;
@@ -289,6 +292,9 @@ async function capture(l: Live) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const VIEW = { width: 1280, height: 900 };
+/** Recorded runs are 16:9 at the video's own size (2026-10-15), so the screen fills a 1920x1080 video sharp instead of being blown up with blurred bars either side. */
+const RECORD_VIEW = { width: 1920, height: 1080 };
+const viewOf = (task: { record?: boolean }) => (task.record ? RECORD_VIEW : VIEW);
 
 /** One browser at a time keeps memory flat on a small server. */
 function oneAtATime(task: BrowserTask): Promise<BrowserResult> {
@@ -385,7 +391,8 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
   let ticker: ReturnType<typeof setInterval> | undefined;
   try {
     const state = task.storageState ? JSON.parse(task.storageState) : undefined;
-    const context = await browser.newContext({ storageState: state, acceptDownloads: true, viewport: VIEW, userAgent: DESKTOP_UA, locale: "en-US", timezoneId: "America/Chicago" });
+    const view = viewOf(task);
+    const context = await browser.newContext({ storageState: state, acceptDownloads: true, viewport: view, userAgent: DESKTOP_UA, locale: "en-US", timezoneId: "America/Chicago" });
     const watch = (pg: import("playwright-core").Page) => {
       pg.setDefaultTimeout(20_000);
       pg.on("download", async (d) => {
@@ -418,7 +425,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         frames.push({ t: now - t0, file });
         c.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => null);
       });
-      await c.send("Page.startScreencast", { format: "jpeg", quality: 88, maxWidth: VIEW.width, maxHeight: VIEW.height, everyNthFrame: 1 }).catch(() => null);
+      await c.send("Page.startScreencast", { format: "jpeg", quality: 88, maxWidth: view.width, maxHeight: view.height, everyNthFrame: 1 }).catch(() => null);
     };
     const since = () => (t0 ? Date.now() / 1000 - t0 : 0);
     await startCast(page);
@@ -434,7 +441,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
     let live: Live | null = null;
     if (task.live) {
       const prev = lives.get(task.orgId);
-      live = { id: task.live.id, orgId: task.orgId, state: "starting", step: "Opening the site", url: task.startUrl, reason: "", frame: null, frameAt: 0, page, stop: prev?.id === task.live.id && prev.stop, handBack: false, helped: [], notes: prev?.id === task.live.id ? prev.notes : [] };
+      live = { id: task.live.id, orgId: task.orgId, state: "starting", step: "Opening the site", url: task.startUrl, reason: "", frame: null, frameAt: 0, page, stop: prev?.id === task.live.id && prev.stop, handBack: false, helped: [], notes: prev?.id === task.live.id ? prev.notes : [], view: { ...view } };
       lives.set(task.orgId, live);
       liveDequeue(task.orgId, task.live.id);
       const l = live;
@@ -515,7 +522,7 @@ async function run(task: BrowserTask): Promise<BrowserResult> {
         live.page = null;
       }
       if (cast) await (cast as import("playwright-core").CDPSession).send("Page.stopScreencast").catch(() => null);
-      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl, helped: live?.helped ?? [], url: shown(page.url()), ...(task.record ? { frames, recDir, view: { ...VIEW } } : {}) };
+      return { status, result, note, storageState, downloads: [...downloads, ...directDownloads(task)], log, screenshotUrl, helped: live?.helped ?? [], url: shown(page.url()), ...(task.record ? { frames, recDir, view: { ...view } } : {}) };
     };
 
     let lastSig = "";

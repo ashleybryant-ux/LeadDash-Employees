@@ -53,14 +53,26 @@ export function stepTiming(clipSeconds: number, audioSeconds: number) {
 }
 export const cardSeconds = (audioSeconds: number, avatar: boolean) => (avatar ? Math.max(1.5, audioSeconds + LEAD + 0.3) : Math.max(2.5, audioSeconds + LEAD + 0.6));
 
-/** The zoom on each click: in over 0.35 seconds, held, out again; and where it centers. */
+/**
+ * The zoom on each click: in over 0.35 seconds, held, out again; and where it centers.
+ * Written for zoompan, which works out the zoom and the window on every frame. A scale
+ * and crop pair did not (2026-10-15): the crop read its position once, so every zoom
+ * sat in the top left corner while the ring was drawn where the click really was.
+ * Time is the frame number over 30, since the clip is at 30 frames a second by then.
+ */
 export function zoomExpr(clicks: { at: number; cx: number; cy: number }[], sw: number, sh: number) {
   if (!clicks.length) return null;
-  const env = (c: { at: number }) => `clip((t-${f3(c.at - 0.35)})/0.35,0,1)*clip((${f3(c.at + 1.25)}-t)/0.35,0,1)`;
+  const t = "(in/30)";
+  const env = (c: { at: number }) => `clip((${t}-${f3(c.at - 0.35)})/0.35,0,1)*clip((${f3(c.at + 1.25)}-${t})/0.35,0,1)`;
   const z = `1+${+(ZMAX - 1).toFixed(3)}*${clicks.reduce((acc, c) => (acc ? `max(${acc},${env(c)})` : env(c)), "")}`;
   // The center of the click being shown (the screen's middle when none is).
-  const pick = (k: "cx" | "cy", dflt: number) => clicks.reduceRight((acc, c) => `if(between(t,${f3(c.at - 0.4)},${f3(c.at + 1.65)}),${Math.round(c[k])},${acc})`, String(dflt));
-  return { z, cx: pick("cx", sw / 2), cy: pick("cy", sh / 2) };
+  const pick = (k: "cx" | "cy", dflt: number) => clicks.reduceRight((acc, c) => `if(between(${t},${f3(c.at - 0.4)},${f3(c.at + 1.65)}),${Math.round(c[k])},${acc})`, String(dflt));
+  const cx = pick("cx", sw / 2);
+  const cy = pick("cy", sh / 2);
+  // The window's top left, in the screen's own pixels, kept inside the screen.
+  const x = `clip((${cx})-iw/zoom/2,0,iw-iw/zoom)`;
+  const y = `clip((${cy})-ih/zoom/2,0,ih-ih/zoom)`;
+  return { z, cx, cy, filter: `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${sw}x${sh}:fps=30` };
 }
 
 async function ringPng(size: number, dir: string, i: number, color: string) {
@@ -146,7 +158,7 @@ async function renderPart(p: Part, i: number, input: DemoRenderInput, dir: strin
   const clicks = p.clicks.map((c) => ({ ...c, at: c.at / speed, cx: c.x + c.w / 2, cy: c.y + c.h / 2 }));
   let chain = `[${ci}:v]setpts=PTS/${speed.toFixed(4)},fps=30,scale=${sw}:${sh},setsar=1,tpad=stop_mode=clone:stop_duration=${f3(T + 1)},trim=duration=${f3(T)},setpts=PTS-STARTPTS`;
   const zx = input.zoom ? zoomExpr(clicks, sw, sh) : null;
-  if (zx) chain += `,scale=w='trunc(iw*(${zx.z})/2)*2':h='trunc(ih*(${zx.z})/2)*2':eval=frame,crop=${sw}:${sh}:x='clip((${zx.cx})*in_w/${sw}-${sw / 2},0,in_w-${sw})':y='clip((${zx.cy})*in_h/${sh}-${sh / 2},0,in_h-${sh})'`;
+  if (zx) chain += `,${zx.filter},setpts=PTS-STARTPTS`;
   g.push(`${chain}[scr0]`);
   let cur = "[scr0]";
   // A ring on what was clicked, while the zoom holds on it.
