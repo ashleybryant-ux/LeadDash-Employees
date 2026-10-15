@@ -3,6 +3,7 @@ import * as db from "../db";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import * as hours from "../workHours";
 import * as avatar from "./avatar";
+import { teamPortrait } from "./campaign";
 import * as drama from "./drama";
 import * as styles from "./styles";
 import type { DramaEpisode } from "../../drizzle/schema";
@@ -87,6 +88,18 @@ function cleanStyle(orgId: number, style: string | null | undefined) {
   return key;
 }
 
+/**
+ * The voice an AI team member speaks with in a scene: the voice they use in huddles when a video
+ * can read it aloud (a standard voice, or ElevenLabs when this workspace has it), else a stock voice.
+ */
+async function teamVoice(orgId: number, kind: string, look: string) {
+  const huddle = await import("./huddle");
+  const v = await huddle.voiceFor(orgId, kind).catch(() => null);
+  if (v?.id && v.provider === "openai") return { id: `${avatar.STANDARD}${v.id}`, name: v.name };
+  if (v?.id && v.provider === "elevenlabs" && (await avatar.hasElevenLabs(orgId))) return { id: v.id, name: v.name };
+  return drama.stockVoiceFor(orgId, look);
+}
+
 /** Writes (or rewrites) the scene: its cast with voices, and the shots with who says what. */
 async function write(orgId: number, input: { what: string; style: string; me: boolean; seconds: number; current?: DramaEpisode; change?: string }) {
   const emp = await elena(orgId);
@@ -94,6 +107,8 @@ async function write(orgId: number, input: { what: string; style: string; me: bo
   const ownerName = (org?.signerName || "").trim() || "the owner";
   const drawn = input.style !== "real" ? styles.resolve(orgId, input.style).label : null;
   const shotsWanted = input.seconds <= 20 ? "3 to 5" : input.seconds <= 40 ? "5 to 8" : "8 to 12";
+  // The AI team can play themselves, with their own portraits and voices.
+  const team = (await db.listEmployeesByOrg(orgId)).filter((e) => e.kind !== "custom" && e.name.trim());
   const sys = await (await import("./tasks")).systemPromptAbout(emp, input.what, `You are ${emp.name}, the owner's video producer. You write short cinematic scenes where the characters talk to each other.\n${drama.STYLE}`);
   const current = input.current
     ? `\nThe scene so far: ${input.current.title}. ${input.current.logline}\n${drama.shotsOf(input.current).map((s) => `${s.n}. ${s.action}${s.line ? ` ${s.line.who}: "${s.line.text}"` : ""}`).join("\n")}\nChange: ${input.change || "write it again"}. Keep what wasn't asked to change.`
@@ -105,7 +120,8 @@ ${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artis
 - ${shotsWanted} shots, 3 to 7 seconds each, in 1 or 2 places. Open in the middle of the moment, never on an introduction.
 - The characters talk to each other: most shots have one short spoken line (12 words at most) by someone in that shot, lip synced to their face. No narrator and no voice-over.
 - Mix the shots like a film: a wide to set the place, two-shots and over-the-shoulder shots for the conversation, close-ups for reactions.
-- ${input.me ? `The owner plays herself: a character named ${ownerName} (mark owner true) who speaks some of the lines. ` : "Every character is made up (owner false). "}Two to three characters in all, never a real client.
+- ${input.me ? `The owner plays herself: a character named ${ownerName} (mark owner true) who speaks some of the lines. ` : "Nobody plays the owner (owner false). "}Two to four characters in all, never a real client.
+- The AI team members can play themselves, shown as people with their own faces and voices: ${team.map((e) => `${e.name} (${e.roleTitle})`).join(", ") || "none"}. When the scene is about the AI team, use them by these exact names, give them the role they really have, and have them hand work to each other in their lines. Anyone else is made up with a plain name.
 - Every shot lists the people in it by name in cast, spelled exactly as in the cast list.${current}`,
     schemaName: "scene",
     schema: SCHEMA,
@@ -119,6 +135,17 @@ ${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artis
     if (!name || cast.some((x) => x.name.toLowerCase() === name.toLowerCase())) continue;
     const owner = Boolean(input.me && c.owner) && !cast.some((x) => x.owner);
     const kept = input.current ? drama.scenePlanOf(input.current).sceneCast?.find((x) => x.name.toLowerCase() === name.toLowerCase()) : null;
+    const member = owner ? null : team.find((e) => e.name.trim().toLowerCase() === name.toLowerCase());
+    if (member) {
+      // An AI team member plays themselves: their portrait and voice, not a made-up face.
+      if (kept?.team === member.kind) {
+        cast.push(kept);
+        continue;
+      }
+      const voice = await teamVoice(orgId, member.kind, `${c.gender === "female" ? "woman" : c.gender === "male" ? "man" : ""} ${c.look}`);
+      cast.push({ name: member.name.trim().slice(0, 60), role: (member.roleTitle || c.role).trim().slice(0, 80), look: c.look.trim().slice(0, 500), owner: false, team: member.kind, voiceId: voice?.id ?? null, voiceName: voice?.name ?? null, portrait: teamPortrait(member.kind, member.avatar ?? null) });
+      continue;
+    }
     if (kept && kept.look === c.look.trim().slice(0, 500)) {
       cast.push(kept);
       continue;
@@ -230,10 +257,12 @@ export async function saveCast(orgId: number, id: number, index: number, input: 
   const list = [...(p.sceneCast ?? [])];
   const c = list[index];
   if (!c) throw new TRPCError({ code: "NOT_FOUND", message: "That person isn't in this scene." });
-  const name = input.name.trim().slice(0, 60) || c.name;
+  // A team member keeps their own name.
+  const name = c.team ? c.name : input.name.trim().slice(0, 60) || c.name;
   if (list.some((x, i) => i !== index && x.name.toLowerCase() === name.toLowerCase())) throw new TRPCError({ code: "BAD_REQUEST", message: "Someone in the cast already has that name." });
   const look = input.look.trim().slice(0, 500) || c.look;
-  const lookChanged = !c.owner && look !== c.look;
+  // The owner's face comes from her photos and a team member's from their portrait, so only a made-up look redraws.
+  const lookChanged = !c.owner && !c.team && look !== c.look;
   list[index] = { ...c, name, look, voiceId: input.voiceId, voiceName: input.voiceName, ...(lookChanged ? { portrait: null } : {}) };
   const shots = drama.shotsOf(ep).map((s) => {
     const inIt = s.cast.some((x) => x.toLowerCase() === c.name.toLowerCase());
@@ -254,7 +283,7 @@ export async function setStyle(orgId: number, id: number, style: string) {
   const p = drama.scenePlanOf(ep);
   if ((p.style ?? "real") === key) return ep;
   const shots = drama.shotsOf(ep).map((s) => ({ ...s, stillUrl: null, clipUrl: null, rawClipUrl: null, status: "todo" as const, costCents: 0 }));
-  db.updateDramaEpisode(id, orgId, { plan: JSON.stringify({ ...p, style: key, approved: false, sceneCast: (p.sceneCast ?? []).map((c) => ({ ...c, portrait: null })) }), shots: JSON.stringify(shots), status: "script", videoUrl: null, costCents: drama.estimateEpisode(shots) });
+  db.updateDramaEpisode(id, orgId, { plan: JSON.stringify({ ...p, style: key, approved: false, sceneCast: (p.sceneCast ?? []).map((c) => (c.team ? c : { ...c, portrait: null })) }), shots: JSON.stringify(shots), status: "script", videoUrl: null, costCents: drama.estimateEpisode(shots) });
   return startPictures(orgId, id);
 }
 

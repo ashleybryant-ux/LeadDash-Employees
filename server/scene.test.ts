@@ -233,4 +233,57 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect((await c.videos.options({ organizationId: orgId })).scenes).toBe(false);
     await expect(c.scenes.write({ organizationId: orgId, what: "Two people talk", style: "real" })).rejects.toThrow(/work-hour plans/);
   }, 240_000);
+  it("the AI team plays themselves: their own portraits and voices, never a made-up face, and the scene comes in every size", async () => {
+    const { orgId, owner } = await makeWorkspace("scene-team");
+    const c = caller(owner);
+    const elena = (await db.getEmployeeByKind(orgId, "video"))!;
+    const pic = await storagePut(`org-${orgId}/brain/front.jpg`, Buffer.from("jpeg-bytes"), "image/jpeg");
+    const img = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "Ashley headshot", content: "Front", fileUrl: pic.url });
+    await c.avatar.saveSettings({ organizationId: orgId, imageId: img.id, voiceId: "voice-ashley", voiceName: "Ashley", quality: "standard", limitCents: 5000 });
+    const nora = (await db.getEmployeeByKind(orgId, "projects"))!;
+    const simone = (await db.getEmployeeByKind(orgId, "coo"))!;
+    // Each speaks in the voice they use in huddles.
+    await db.updateEmployee(nora.id, orgId, { voiceProvider: "elevenlabs", voiceId: "voice-nora", voiceName: "Nora's voice" });
+    await db.updateEmployee(simone.id, orgId, { voiceProvider: "elevenlabs", voiceId: "voice-simone", voiceName: "Simone's voice" });
+    sceneOut = {
+      title: "On Pace",
+      logline: "A therapist asks if the week is on pace; her AI team answers and hands off the follow-up.",
+      music: "Warm, light pulse",
+      cast: [
+        { name: "Ashley", role: "Therapist", look: "Woman in her 40s, dark green blazer", owner: true, gender: "female" },
+        { name: simone.name, role: "Made-up role", look: "Woman in her 30s", owner: false, gender: "female" },
+        { name: nora.name, role: "Made-up role", look: "Woman in her 30s", owner: false, gender: "female" },
+      ],
+      shots: [
+        { scene: 1, flow: "cut", framing: "Medium", move: "Static", action: "Ashley at her desk", setting: "A therapy office", cast: ["Ashley"], line_who: "Ashley", line_text: "Are we on pace this week?", seconds: 4, sound: "" },
+        { scene: 1, flow: "cut", framing: "Close-up", move: "Push-in", action: `${simone.name} checks the numbers`, setting: "A therapy office", cast: [simone.name], line_who: simone.name, line_text: "On track. Three invoices are overdue.", seconds: 4, sound: "" },
+        { scene: 1, flow: "cut", framing: "Medium", move: "Static", action: `${nora.name} nods`, setting: "A therapy office", cast: [nora.name], line_who: nora.name, line_text: "Noted. Adding it to the plan.", seconds: 4, sound: "" },
+      ],
+    };
+    const v = await c.scenes.write({ organizationId: orgId, what: "Ask the AI team if we're on pace for revenue", style: "real", me: true, seconds: 15 });
+    // The writer is told who on the team can play themselves.
+    expect(prompts.scene).toContain(`${nora.name} (${nora.roleTitle})`);
+    const cast = v.scene!.cast;
+    expect(cast.map((x) => [x.name, x.owner, x.team])).toEqual([["Ashley", true, false], [simone.name, false, true], [nora.name, false, true]]);
+    // Their real role and their own portrait, not one made up from the description.
+    expect(cast[2]).toMatchObject({ role: nora.roleTitle, portrait: "/avatars/projects.webp" });
+    expect(cast[2]).toMatchObject({ voiceId: "voice-nora", voiceName: "Nora's voice" });
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    expect(posts(drama.MODELS.portrait).filter((b) => /Candid portrait photograph/.test(b.prompt))).toHaveLength(0);
+
+    // A new look can't swap a team member's face, and they keep their name.
+    const kept = await c.scenes.saveCast({ organizationId: orgId, id: v.id, index: 2, name: "Someone Else", look: "A man in his 60s", voiceId: cast[2].voiceId, voiceName: cast[2].voiceName });
+    expect(kept.scene!.cast[2]).toMatchObject({ name: nora.name, portrait: "/avatars/projects.webp" });
+
+    // Made: vertical, square and wide, so it fits a website pop-up and a social post alike.
+    await c.scenes.make({ organizationId: orgId, id: v.id });
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    const done = (await c.scenes.get({ organizationId: orgId, id: v.id }))!;
+    expect(done.error).toBeNull();
+    expect(done.status).toBe("ready");
+    expect(Object.keys(done.versions).sort()).toEqual(["16:9", "1:1", "9:16"]);
+    expect(calls.some((x) => x.url.includes("text-to-speech/voice-nora"))).toBe(true);
+    expect(calls.some((x) => x.url.includes("text-to-speech/voice-simone"))).toBe(true);
+    expect(elena.id).toBeTruthy();
+  }, 240_000);
 });

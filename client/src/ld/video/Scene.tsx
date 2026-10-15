@@ -74,18 +74,26 @@ function CastCard({ v, c, busy }: { v: SceneV; c: NonNullable<SceneV["scene"]>["
         {c.portrait ? <img className="ld-sc-face" src={c.portrait} alt="" /> : <span className="ld-sc-face ph">{initial(c.name)}</span>}
         <span style={{ minWidth: 0, flex: 1 }}>
           <b>{c.name}</b>
-          <span className="ld-small">{`${c.role || "In the scene"} · ${c.owner ? "your voice" : c.voiceName ?? "no voice yet"}`}</span>
+          <span className="ld-small">{`${c.team ? "Your AI team" : c.role || "In the scene"} · ${c.owner ? "your voice" : c.voiceName ?? "no voice yet"}`}</span>
         </span>
         <button type="button" className="ld-btn sm" style={{ width: 90 }} disabled={busy} onClick={() => (edit ? setEdit(false) : open())}>{edit ? "Cancel" : "Edit"}</button>
       </div>
       {edit && (
         <div className="ld-sc-form">
-          <span className="ld-lbl">Name</span>
-          <input className="ld-in xs" aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          {!c.team && (
+            <>
+              <span className="ld-lbl">Name</span>
+              <input className="ld-in xs" aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+            </>
+          )}
           {!c.owner && (
             <>
-              <span className="ld-lbl">Look</span>
-              <input className="ld-in xs" aria-label="Look" value={look} onChange={(e) => setLook(e.target.value)} />
+              {!c.team && (
+                <>
+                  <span className="ld-lbl">Look</span>
+                  <input className="ld-in xs" aria-label="Look" value={look} onChange={(e) => setLook(e.target.value)} />
+                </>
+              )}
               <span className="ld-lbl">Voice</span>
               <select className="ld-in xs" aria-label="Voice" value={voice} onChange={(e) => setVoice(e.target.value)}>
                 {!voice && <option value="">Pick a voice</option>}
@@ -106,13 +114,13 @@ function CastCard({ v, c, busy }: { v: SceneV; c: NonNullable<SceneV["scene"]>["
               disabled={save.isPending}
               onClick={() => {
                 const pick = (voices.data ?? []).find((x) => x.id === voice);
-                save.mutate({ organizationId: orgId, id: v.id, index: c.index, name, look: c.owner ? c.look : look, voiceId: c.owner ? c.voiceId : voice || null, voiceName: c.owner ? c.voiceName : pick?.name ?? (voice === c.voiceId ? c.voiceName : null) });
+                save.mutate({ organizationId: orgId, id: v.id, index: c.index, name, look: c.owner || c.team ? c.look : look, voiceId: c.owner ? c.voiceId : voice || null, voiceName: c.owner ? c.voiceName : pick?.name ?? (voice === c.voiceId ? c.voiceName : null) });
               }}
             >
               {save.isPending ? "Saving" : "Save"}
             </button>
           </div>
-          {!c.owner && look.trim() !== c.look && <span className="ld-small" style={{ gridColumn: "1 / -1" }}>A new look means a new portrait, and the shots they're in are drawn again.</span>}
+          {!c.owner && !c.team && look.trim() !== c.look && <span className="ld-small" style={{ gridColumn: "1 / -1" }}>A new look means a new portrait, and the shots they're in are drawn again.</span>}
           <ErrorLine error={save.error} />
         </div>
       )}

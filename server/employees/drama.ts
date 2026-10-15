@@ -538,7 +538,8 @@ async function download(url: string) {
 const speak = (orgId: number, voiceId: string, text: string) => avatar.speech(orgId, voiceId, text);
 
 /** A Scene's own cast (2026-10-13): kept with the scene, not the series. The owner plays herself when she's in it. */
-export type SceneCast = { name: string; role: string; look: string; owner?: boolean; voiceId: string | null; voiceName: string | null; portrait?: string | null };
+/** team: an AI team member playing themselves (their employee kind): their portrait and voice, never a made-up face. */
+export type SceneCast = { name: string; role: string; look: string; owner?: boolean; team?: string | null; voiceId: string | null; voiceName: string | null; portrait?: string | null };
 export type ScenePlan = { approved?: boolean; style?: string; what?: string; me?: boolean; sceneCast?: SceneCast[]; hidden?: boolean };
 export const scenePlanOf = (e: Pick<DramaEpisode, "plan">) => parse<ScenePlan>(e.plan, {});
 /** The scene's drawn style, or null for real people. */
@@ -554,7 +555,7 @@ export async function sceneStyle(orgId: number, e: Pick<DramaEpisode, "kind" | "
  */
 export function castFor(orgId: number, e: Pick<DramaEpisode, "kind" | "plan">): DramaCastMember[] {
   if (e.kind !== "scene") return db.listDramaCast(orgId);
-  return (scenePlanOf(e).sceneCast ?? []).map((c, i) => ({ id: -(i + 1), organizationId: orgId, name: c.name, role: c.role, kind: c.owner ? "owner" : "made_up", look: c.look, photoUrl: c.portrait ?? null, voiceId: c.voiceId, voiceName: c.voiceName, createdAt: new Date(0) }) as DramaCastMember);
+  return (scenePlanOf(e).sceneCast ?? []).map((c, i) => ({ id: -(i + 1), organizationId: orgId, name: c.name, role: c.role, kind: c.owner ? "owner" : c.team ? "team" : "made_up", look: c.look, photoUrl: c.portrait ?? null, voiceId: c.voiceId, voiceName: c.voiceName, createdAt: new Date(0) }) as DramaCastMember);
 }
 
 /** This workspace's ElevenLabs key, for room tone and music ("" leaves them out). */
@@ -1047,7 +1048,7 @@ export async function makeEpisode(orgId: number, id: number) {
     const bed = await ambience(await elevenKey(orgId), inScene[0].setting, inScene.map((x) => x.sound).filter(Boolean).join("; "), inScene.reduce((t, x) => t + x.seconds, 0)).catch((err) => (console.warn("[drama] room tone skipped:", err instanceof Error ? err.message : err), null));
     if (bed) beds[key] = bed;
   }
-  const versions = await stitch(orgId, `${ep.kind}-${ep.id}`, shots, { music, cta: ep.kind === "campaign" ? plan.cta ?? "" : "", versions: ep.kind === "campaign", beds });
+  const versions = await stitch(orgId, `${ep.kind}-${ep.id}`, shots, { music, cta: ep.kind === "campaign" ? plan.cta ?? "" : "", versions: ep.kind === "campaign" || ep.kind === "scene", beds });
   ep = db.updateDramaEpisode(id, orgId, { status: "ready", videoUrl: versions["9:16"], versions: JSON.stringify(versions), progress: null, error: null, costCents: shots.reduce((t, x) => t + (x.costCents ?? 0), 0) })!;
   const secs = total;
   const len = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
@@ -1475,7 +1476,7 @@ function sceneView(e: DramaEpisode) {
     styleLabel: key === "real" ? "Cinematic" : styles.resolve(e.organizationId, key).label,
     what: p.what ?? "",
     me: Boolean(p.me),
-    cast: (p.sceneCast ?? []).map((c, i) => ({ index: i, name: c.name, role: c.role, look: c.look, owner: Boolean(c.owner), voiceId: c.voiceId, voiceName: c.voiceName, portrait: c.portrait ?? null })),
+    cast: (p.sceneCast ?? []).map((c, i) => ({ index: i, name: c.name, role: c.role, look: c.look, owner: Boolean(c.owner), team: Boolean(c.team), voiceId: c.voiceId, voiceName: c.voiceName, portrait: c.portrait ?? null })),
     pct: Math.max(0, Math.min(100, pct)),
   };
 }

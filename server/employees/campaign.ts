@@ -25,7 +25,8 @@ const DIRECTOR = `You are Elena, the owner's AI cinematic video director. You cr
 - Every campaign is a transformation story: show the problem in pictures before the answer appears.
 - It should feel like a campaign from a professional creative agency.`;
 
-function teamPortrait(kind: string, avatarUrl: string | null) {
+/** An AI team member's portrait: the workspace's own pick, else the one that ships with the app. */
+export function teamPortrait(kind: string, avatarUrl: string | null) {
   if (avatarUrl) return avatarUrl;
   const file = `/avatars/${kind}.webp`;
   for (const base of ["dist/public", "client/public"]) if (fs.existsSync(path.resolve(process.cwd(), base, file.slice(1)))) return file;
