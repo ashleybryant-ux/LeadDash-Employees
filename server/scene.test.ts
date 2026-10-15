@@ -159,7 +159,7 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(v.scene!.cast.map((x) => [x.name, x.owner, x.voiceName])).toEqual([["Ashley", true, "Ashley"], ["Maya", false, expect.anything()]]);
     expect(v.shots.map((s) => s.line?.who ?? null)).toEqual(["Ashley", "Maya", null]);
     // Characters talk to each other: no narrator, and the writer was told so.
-    expect(prompts.scene).toMatch(/No narrator and no voice-over/);
+    expect(prompts.scene).toMatch(/There is no narrator or voice-over track/);
     expect(prompts.scene).toMatch(/drawn in Claymation/);
     const posted = (await db.listChatMessages(orgId, elena.id, 5)).pop()!;
     expect(JSON.parse(posted.cards!)[0]).toMatchObject({ type: "scene", id: v.id });

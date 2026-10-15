@@ -132,11 +132,11 @@ async function write(orgId: number, input: { what: string; style: string; me: bo
   const out = await generateJson<Written>({
     system: sys.system,
     prompt: `Write one scene of about ${input.seconds} seconds: ${input.what}
-${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artist draws them the same every time.` : "It is shot with real-looking people like a 2026 streaming drama."}
-- ${shotsWanted} shots, 3 to 7 seconds each, in 1 or 2 places. Open in the middle of the moment, never on an introduction.
-- The characters talk to each other. Write their conversation first, the way people really talk: each line answers the line before it, plain words and contractions, 6 to 20 words a line, no slogans or sales lines. Then cut it into shots: most shots carry one line by someone in that shot, lip synced to their face. No narrator and no voice-over.
-- Mix the shots like a film: a wide to set the place, two-shots and over-the-shoulder shots for the conversation, close-ups for reactions.
-- ${input.me ? `The owner is not the lead: the lead is one of the AI team or someone outside the business. The owner plays herself in a supporting part: a character named ${ownerName} (mark owner true) who speaks a few of the lines. ` : "Nobody plays the owner (owner false). "}Two to four characters in all, never a real client.
+${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artist draws them the same every time.` : "It is shot with real-looking people, in whatever genre and tone she asked for (a trailer, an ad, a drama, a comedy)."}
+What she asked for decides the shape: the places, the pace, how it opens and how it ends. Give it the shape that kind of piece really has.
+- About ${shotsWanted} shots, 3 to 7 seconds each, in as many places as the piece needs.
+- When people talk, write their conversation first, the way people really talk: each line answers the line before it, plain words and contractions. Then cut it into shots: a shot carries at most one line, by someone in that shot, lip synced to their face. Shots with no line are fine wherever the picture says it better. There is no narrator or voice-over track.
+- ${input.me ? `The owner is not the lead: the lead is one of the AI team or someone outside the business. The owner plays herself in a supporting part: a character named ${ownerName} (mark owner true) who speaks a few of the lines. ` : "Nobody plays the owner (owner false). "}As many characters as the piece needs, up to six, never a real client.
 - The AI team members can play themselves, shown as people with their own faces and voices: ${team.map((e) => `${e.name} (${e.roleTitle})`).join(", ") || "none"}. Anyone who works for the business on screen is one of them, by these exact names, in the role they really have; never make up a coworker, assistant or staff member. Have them hand work to each other in their lines. Only people outside the business (a client, a caller) are made up, with plain names.
 - Every shot lists the people in it by name in cast, spelled exactly as in the cast list.${current}`,
     schemaName: "scene",
@@ -146,7 +146,7 @@ ${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artis
   });
   const ownVoice = input.me ? avatar.settingsOf(emp) : null;
   const cast: drama.SceneCast[] = [];
-  for (const c of (out.cast ?? []).slice(0, 4)) {
+  for (const c of (out.cast ?? []).slice(0, 6)) {
     const name = c.name.trim().slice(0, 60);
     if (!name || cast.some((x) => x.name.toLowerCase() === name.toLowerCase())) continue;
     const owner = Boolean(input.me && c.owner) && !cast.some((x) => x.owner);
