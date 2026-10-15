@@ -8,6 +8,7 @@ import { useHoursAsk } from "../HoursAsk";
 import { ErrorLine } from "../ui";
 import { fmtDate } from "../meta";
 import { BrowserCard } from "../ChatPage";
+import { makingStep } from "@shared/makingStep";
 
 /**
  * Simone's Videos tab: demo and training videos of a website or app, and social "Come with me" videos.
@@ -430,6 +431,7 @@ export function DemoView({ id, onOpen }: { id: number; onOpen?: (id: number) => 
   if (!d) return <div className="ld-card ld-empty">{loading ? "Loading..." : "This video was removed."}</div>;
   if (d.status === "recording") return <Recording d={d} />;
   if (d.status === "ready" || (d.status === "making" && Object.keys(d.videoUrls).length > 0)) return d.kind === "social" ? <SocialDone d={d} onOpen={onOpen} /> : <Finished d={d} />;
+  if (d.status === "making" && d.take.length > 0) return <Making d={d} />;
   return <PlanView d={d} />;
 }
 
@@ -683,6 +685,54 @@ function Recording({ d }: { d: DV }) {
         </div>
       </div>
       <ErrorLine error={stop.error} />
+    </>
+  );
+}
+
+// ==========================================
+// Making: after the recording, while the lines are read and the video is cut
+// ==========================================
+
+function Making({ d }: { d: DV }) {
+  const total = d.plan.steps.length;
+  const at = makingStep(d.step, total);
+  const cur = at === null ? 0 : at === "all" ? total + 1 : at;
+  const shot = (at === "all" || at === null ? d.take[d.take.length - 1] : d.take[at - 1])?.shot ?? null;
+  const stage = at === "all" && /^Making/i.test(d.step ?? "") ? "Cutting the video" : "Reading the lines";
+  return (
+    <>
+      <div className="ld-dv-rechd">
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+          <b style={{ fontSize: 17, overflowWrap: "anywhere" }}>{d.title}</b>
+          <span className="ld-small" style={{ color: "var(--ld-text2)", display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span className="ld-dv-spin" aria-hidden="true" />
+            {`Recorded ${d.take.length} of ${total} steps · ${stage}${at !== null && at !== "all" ? ` · step ${at} of ${total}` : ""}`}
+          </span>
+        </div>
+        <span className="ld-pill blue">Making</span>
+      </div>
+      <div className="ld-dv-recgrid">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <div className="ld-card ld-dv-screen">
+            <div className="ld-dv-frame">{shot ? <img src={shot} alt="" /> : <span className="ld-muted">{d.step ?? "Making it"}...</span>}</div>
+          </div>
+          <span className="ld-small" style={{ color: "var(--ld-text2)" }}>{d.step ?? "Making it"}...</span>
+        </div>
+        <div className="ld-card ld-dv-steps">
+          <b style={{ fontSize: 15, marginBottom: 6 }}>Steps</b>
+          {d.plan.steps.map((s, i) => {
+            const state = i + 1 < cur ? "done" : i + 1 === cur ? "now" : "next";
+            return (
+              <div key={i} className={`ld-dv-st ${state}`}>
+                <span className="dot">{state === "done" ? "✓" : i + 1}</span>
+                {state === "now" ? <b>{s.do}</b> : <span>{s.do}</span>}
+              </div>
+            );
+          })}
+          <span className="ld-small" style={{ color: "var(--ld-text2)", lineHeight: 1.45, marginTop: "auto", paddingTop: 10 }}>Every step is recorded. Simone is reading each line in her voice, then cutting the video. The player appears here when it is ready.</span>
+        </div>
+      </div>
+      {d.error && <div className="ld-card ld-dv-err">{d.error}</div>}
     </>
   );
 }

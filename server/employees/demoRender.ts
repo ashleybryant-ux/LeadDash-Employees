@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Box } from "./browser";
+import type { EWord } from "./editLook";
 
 /**
  * The ffmpeg side of Simone's demo videos. Each part becomes its own clip at the video's size,
@@ -22,8 +23,8 @@ const fail = (what: string) => (e: any) => {
 
 export type Click = Box & { at: number };
 export type Part =
-  | { kind: "card"; title: string; sub?: string; audio: string | null; audioSeconds: number; avatar?: string | null; text: string }
-  | { kind: "step"; clip: string; clipSeconds: number; clicks: Click[]; audio: string | null; audioSeconds: number; avatar?: string | null; bubble?: string | null; text: string };
+  | { kind: "card"; title: string; sub?: string; audio: string | null; audioSeconds: number; avatar?: string | null; text: string; words?: EWord[] | null }
+  | { kind: "step"; clip: string; clipSeconds: number; clicks: Click[]; audio: string | null; audioSeconds: number; avatar?: string | null; bubble?: string | null; text: string; words?: EWord[] | null };
 export type DemoRenderInput = {
   w: number;
   h: number;
@@ -32,7 +33,7 @@ export type DemoRenderInput = {
   parts: Part[];
   zoom: boolean;
   /** An ASS file's text for the captions, made from the part times this returns; null for none. */
-  captions: ((times: { from: number; to: number; text: string; lead: number; audioSeconds: number }[]) => string | null) | null;
+  captions: ((times: { from: number; to: number; text: string; lead: number; audioSeconds: number; words?: EWord[] | null }[]) => string | null) | null;
   logo: { file: string } | null;
   music: { file: string; volume: number } | null;
   brand: string;
@@ -200,7 +201,7 @@ export async function renderDemo(input: DemoRenderInput): Promise<Buffer> {
     const total = made.reduce((a, m) => a + m.seconds, 0);
     let at = 0;
     const times = input.parts.map((p, i) => {
-      const t = { from: at, to: at + made[i].seconds, text: p.text, lead: LEAD, audioSeconds: p.audioSeconds };
+      const t = { from: at, to: at + made[i].seconds, text: p.text, lead: LEAD, audioSeconds: p.audioSeconds, words: p.words ?? null };
       at += made[i].seconds;
       return t;
     });

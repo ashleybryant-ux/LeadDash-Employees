@@ -17,7 +17,8 @@ import * as broll from "./broll";
 import * as presenters from "./presenters";
 import * as vg from "./videoGuides";
 import { editAss } from "./editCaptions";
-import { editLookOf, spreadWords, type CutLine } from "./editLook";
+import { editLookOf, spreadWords, type CutLine, type EWord } from "./editLook";
+import { wordTimes } from "./wordTimes";
 import { cardSeconds, clipFromFrames, renderDemo, stepTiming, type DemoRenderInput, type Part } from "./demoRender";
 import type { BrowserResult, BrowserTask } from "./browser";
 import { putCode, takeCode } from "./web";
@@ -53,7 +54,7 @@ export type PlanStep = { do: string; say: string; expect: string };
 export type Plan = { startsOn: string; needs: string[]; doneWhen: string; intro: string; outro: string; steps: PlanStep[]; question?: { text: string; options: string[] } | null; app?: string | null };
 export type TakeStep = { clip: string; seconds: number; clicks: { at: number; x: number; y: number; w: number; h: number }[]; shot: string | null };
 export type Take = { steps: TakeStep[]; screen: { w: number; h: number }; at?: string };
-export type PartFile = { text: string; voiceId: string; voice: string; tenths: number; avatar?: string | null; avatarFor?: string | null };
+export type PartFile = { text: string; voiceId: string; voice: string; tenths: number; avatar?: string | null; avatarFor?: string | null; /** When each word is said, from the start of the voice file (2026-10-15); the captions follow these. */ words?: EWord[] | null };
 export type DemoLook = { zoom: boolean; captions: { on: boolean; position: "bottom" | "top" }; cards: boolean; logo: boolean; music: { track: broll.TrackKey | "none"; volume: number } };
 export const DEFAULT_LOOK: DemoLook = { zoom: true, captions: { on: true, position: "bottom" }, cards: true, logo: true, music: { track: "none", volume: 12 } };
 
@@ -808,9 +809,17 @@ export async function make(orgId: number, id: number, by: string, opts: { recut?
       update(orgId, id, { step: `Reading ${k === "intro" ? "the opening" : k === "outro" ? "the closing" : `step ${Number(k.slice(1)) + 1}`}` });
       const buf = await avatar.speech(orgId, d.voiceId || `${avatar.STANDARD}coral`, text);
       const saved = await storagePut(`org-${orgId}/demo/line.mp3`, buf, "audio/mpeg");
-      parts[k] = { text, voiceId: d.voiceId ?? "", voice: saved.url, tenths: avatar.mp3Tenths(buf), avatar: null, avatarFor: null };
+      const tenths = avatar.mp3Tenths(buf);
+      update(orgId, id, { step: `Timing the captions for ${k === "intro" ? "the opening" : k === "outro" ? "the closing" : `step ${Number(k.slice(1)) + 1}`}` });
+      const words = await wordTimes(buf, text, tenths / 10);
+      parts[k] = { text, voiceId: d.voiceId ?? "", voice: saved.url, tenths, avatar: null, avatarFor: null, words };
     }
     if (!text) delete parts[k];
+    // A line read before the captions followed the voice (2026-10-15): timed now from the file already made.
+    if (parts[k] && parts[k].words === undefined && fs.existsSync(broll.localFile(parts[k].voice))) {
+      update(orgId, id, { step: `Timing the captions for ${k === "intro" ? "the opening" : k === "outro" ? "the closing" : `step ${Number(k.slice(1)) + 1}`}` });
+      parts[k].words = await wordTimes(fs.readFileSync(broll.localFile(parts[k].voice)), parts[k].text, parts[k].tenths / 10);
+    }
     if (needAvatar && parts[k] && parts[k].avatarFor !== parts[k].voice) {
       update(orgId, id, { step: `The avatar says ${k === "intro" ? "the opening" : k === "outro" ? "the closing" : `step ${Number(k.slice(1)) + 1}`}` });
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-av-"));
@@ -882,7 +891,7 @@ export async function planRender(d: DemoVideo, size: Size, b: { color: string; l
     if (!avatar && !look.cards && !social) {
       if (!part) return;
     }
-    out.push({ kind: "card", title: key === "intro" ? d.title : "", sub: key === "intro" ? "" : "", audio: await file(part?.voice, `${key}.mp3`), audioSeconds: (part?.tenths ?? 0) / 10, avatar, text: part?.text ?? "" });
+    out.push({ kind: "card", title: key === "intro" ? d.title : "", sub: key === "intro" ? "" : "", audio: await file(part?.voice, `${key}.mp3`), audioSeconds: (part?.tenths ?? 0) / 10, avatar, text: part?.text ?? "", words: part?.words ?? null });
   };
   await card("intro");
   // Social: the bubble is a still of the presenter from the hook.
@@ -897,7 +906,7 @@ export async function planRender(d: DemoVideo, size: Size, b: { color: string; l
     const st = take.steps[i];
     if (!st) continue;
     const part = parts[`s${i}`];
-    out.push({ kind: "step", clip: await local(st.clip, tmp, `step-${i}.mp4`), clipSeconds: st.seconds, clicks: st.clicks.map((c) => ({ ...c })), audio: await file(part?.voice, `s${i}.mp3`), audioSeconds: (part?.tenths ?? 0) / 10, avatar: d.presenter === "corner" && !social ? await file(part?.avatar, `s${i}-av.mp4`) : null, bubble, text: part?.text ?? "" });
+    out.push({ kind: "step", clip: await local(st.clip, tmp, `step-${i}.mp4`), clipSeconds: st.seconds, clicks: st.clicks.map((c) => ({ ...c })), audio: await file(part?.voice, `s${i}.mp3`), audioSeconds: (part?.tenths ?? 0) / 10, avatar: d.presenter === "corner" && !social ? await file(part?.avatar, `s${i}-av.mp4`) : null, bubble, text: part?.text ?? "", words: part?.words ?? null });
   }
   await card("outro");
   const music = look.music.track !== "none" ? await broll.trackFile(look.music.track).catch(() => null) : null;
@@ -917,7 +926,8 @@ export async function planRender(d: DemoVideo, size: Size, b: { color: string; l
             .map((t, i) => {
               const from = t.from + t.lead;
               const to = from + t.audioSeconds;
-              const words = spreadWords(t.text, from, to);
+              // The words as the voice says them, shifted to where the part sits; spread evenly when the voice was not listened to.
+              const words = t.words?.length ? t.words.map((w) => ({ text: w.text, start: +(from + w.start).toFixed(3), end: +(from + w.end).toFixed(3) })) : spreadWords(t.text, from, to);
               return { i, from, to, words, line: { from, to, text: t.text, words } };
             });
           return editAss(w, h, cut, capLook, { brand: b.color });
