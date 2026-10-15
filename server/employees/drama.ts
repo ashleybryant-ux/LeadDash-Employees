@@ -992,7 +992,7 @@ export async function makeEpisode(orgId: number, id: number) {
       seconds = Math.max(seconds, Math.ceil(avatar.mp3Tenths(vo) / 10) + 1);
     }
     seconds = Math.max(3, Math.min(10, seconds));
-    const engine = engineFor(s);
+    let engine = engineFor(s);
     let clip: string | undefined;
     if (s.rawClipUrl) {
       // Animated on an earlier try; only the lip sync is left.
@@ -1000,15 +1000,11 @@ export async function makeEpisode(orgId: number, id: number) {
       seconds = s.seconds;
     } else {
       let clipRes: any;
-      if (engine === "seedance") {
-        seconds = Math.max(4, seconds);
-        const faces = refs.flatMap((r) => r.urls).slice(0, 8);
-        clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs, !!drawnStyle), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(seconds), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
-      } else {
+      const withKling = async () => {
         // A shot that carries straight on into the next one ends exactly on the next keyframe, so there's no jump.
         const nextShot = shots[shots.indexOf(s) + 1];
         const endOn = s.flow === "continue" && nextShot?.stillUrl && !s.line ? nextShot.stillUrl : null;
-        clipRes = await falRun(MODELS.video, {
+        return falRun(MODELS.video, {
           start_image_url: await asInput(s.stillUrl!),
           ...(endOn ? { end_image_url: await asInput(endOn) } : {}),
           prompt: motionPrompt(s, refs, !!drawnStyle),
@@ -1017,6 +1013,23 @@ export async function makeEpisode(orgId: number, id: number) {
           negative_prompt: "blur, distortion, low quality, on-screen text, captions, watermark, extra fingers, distorted hands, warped faces, morphing, surreal motion, slow motion",
           ...(refs.length ? { elements: await Promise.all(refs.map(async (r) => ({ frontal_image_url: await asInput(r.urls[0]), reference_image_urls: await Promise.all((r.urls.length > 1 ? r.urls.slice(1, 4) : r.urls).map(asInput)) }))) } : {}),
         }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
+      };
+      if (engine === "seedance") {
+        const faces = refs.flatMap((r) => r.urls).slice(0, 8);
+        try {
+          clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs, !!drawnStyle), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(Math.max(4, seconds)), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
+          seconds = Math.max(4, seconds);
+        } catch (err) {
+          // Seedance refuses real faces as references (ByteDance's likeness rule). The picture
+          // already has everyone in it, so the shot moves with Kling instead of stopping the scene.
+          if (!refusesFaces(err)) throw err;
+          console.warn(`[drama] shot ${s.n}: Seedance refused the faces, animating with Kling`);
+          engine = "kling";
+          s.engine = "kling";
+          clipRes = await withKling();
+        }
+      } else {
+        clipRes = await withKling();
       }
       clip = clipRes?.video?.url as string | undefined;
       if (!clip) throw new Error(`No video came back for shot ${s.n}`);
@@ -1280,6 +1293,12 @@ export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "cl
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** A provider turning down a shot because its references show real people (Seedance's likeness rule). */
+export function refusesFaces(err: unknown) {
+  const m = err instanceof Error ? err.message : String(err);
+  return /\(422\)/.test(m) && /likeness|real people/i.test(m);
 }
 
 /** Whether a clip has sound, and how long it is. */

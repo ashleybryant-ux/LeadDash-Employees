@@ -62,6 +62,7 @@ const SEASON = {
 };
 
 let calls: { url: string; init: any }[] = [];
+let refuseSeedance = false;
 let clip: Buffer;
 let mp3: Buffer;
 const before = { fal: ENV.falKey, eleven: ENV.elevenLabsKey };
@@ -89,6 +90,9 @@ beforeEach(() => {
     if (u.includes("api.elevenlabs.io/v1/text-to-speech/")) return new Response(mp3, { status: 200 }); // a real MP3
     if (u.startsWith("https://api.elevenlabs.io/v1/music")) return new Response(mp3, { status: 200 });
     if (u.startsWith("https://api.elevenlabs.io/v1/sound-generation")) return new Response(mp3, { status: 200 });
+    if (refuseSeedance && u.startsWith("https://queue.fal.run/bytedance/seedance") && init.method === "POST") {
+      return Response.json({ detail: [{ msg: "The images or videos provided may contain likenesses of real people or other private information that cannot be processed." }] }, { status: 422 });
+    }
     if (u.startsWith("https://queue.fal.run/") && init.method === "POST") {
       const id = `r${++n}`;
       const model = u.replace("https://queue.fal.run/", "");
@@ -106,6 +110,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  refuseSeedance = false;
   vi.unstubAllGlobals();
   (ENV as any).falKey = before.fal;
   (ENV as any).elevenLabsKey = before.eleven;
@@ -288,5 +293,29 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(calls.some((x) => x.url.includes("text-to-speech/voice-nora"))).toBe(true);
     expect(calls.some((x) => x.url.includes("text-to-speech/voice-simone"))).toBe(true);
     expect(elena.id).toBeTruthy();
+  }, 240_000);
+
+  it("a two-person shot Seedance refuses for real faces moves with Kling instead of stopping the scene", async () => {
+    const { orgId, owner } = await makeWorkspace("scene-faces");
+    const c = caller(owner);
+    const pic = await storagePut(`org-${orgId}/brain/front.jpg`, Buffer.from("jpeg-bytes"), "image/jpeg");
+    const img = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "Ashley headshot", content: "Front", fileUrl: pic.url });
+    await c.avatar.saveSettings({ organizationId: orgId, imageId: img.id, voiceId: "voice-ashley", voiceName: "Ashley", quality: "standard", limitCents: 5000 });
+    sceneOut = {
+      ...SCENE,
+      shots: [{ scene: 1, flow: "cut", framing: "Two-shot", move: "Static", action: "Ashley and Maya talk", setting: "A therapy office", cast: ["Ashley", "Maya"], line_who: "Ashley", line_text: "Four notes left, and it's already six.", seconds: 5, sound: "" }],
+    };
+    const v = await c.scenes.write({ organizationId: orgId, what: "Two coworkers talk", style: "real", me: true, seconds: 10 });
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    refuseSeedance = true;
+    calls = [];
+    await c.scenes.make({ organizationId: orgId, id: v.id });
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    const done = (await c.scenes.get({ organizationId: orgId, id: v.id }))!;
+    expect(done.error).toBeNull();
+    expect(done.status).toBe("ready");
+    expect(posts(drama.MODELS.video)).toHaveLength(1);
+    expect(done.shots[0].engine).toBe("kling");
+    expect(drama.refusesFaces(new Error("fal.ai said no (500): busy"))).toBe(false);
   }, 240_000);
 });
