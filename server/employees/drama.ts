@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
 import { TRPCError } from "@trpc/server";
+import sharp from "sharp";
 import * as hours from "../workHours";
 import * as db from "../db";
 import { ENV } from "../_core/env";
@@ -523,10 +524,29 @@ async function readStored(fileUrl: string) {
   }
   return fs.promises.readFile(path.join(uploadsRoot(), fileUrl.replace(/^\/files\//, "")));
 }
+/** The smallest side a picture is sent at: Kling refuses references under 300 pixels (team portraits ship at 256). */
+const MIN_SIDE = 512;
+
+/** A small picture enlarged so its shorter side is MIN_SIDE; anything else, or a file sharp can't read, is left as it is. */
+export async function bigEnough(buf: Buffer, mime: string): Promise<{ buf: Buffer; mime: string }> {
+  if (!mime.startsWith("image/")) return { buf, mime };
+  try {
+    const meta = await sharp(buf).metadata();
+    const short = Math.min(meta.width ?? 0, meta.height ?? 0);
+    if (!short || short >= MIN_SIDE) return { buf, mime };
+    const scale = MIN_SIDE / short;
+    const out = await sharp(buf).resize(Math.round((meta.width ?? 0) * scale), Math.round((meta.height ?? 0) * scale), { kernel: "lanczos3" }).png().toBuffer();
+    return { buf: out, mime: "image/png" };
+  } catch {
+    return { buf, mime };
+  }
+}
+
 /** A stored file as something fal.ai can read. */
 async function asInput(fileUrl: string) {
   if (/^https?:/i.test(fileUrl)) return fileUrl;
-  return dataUri(await readStored(fileUrl), mimeOf(fileUrl));
+  const file = await bigEnough(await readStored(fileUrl), mimeOf(fileUrl));
+  return dataUri(file.buf, file.mime);
 }
 async function download(url: string) {
   const res = await fetch(url, { signal: AbortSignal.timeout(180_000) });

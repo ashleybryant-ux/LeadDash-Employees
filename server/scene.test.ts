@@ -318,4 +318,14 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(done.shots[0].engine).toBe("kling");
     expect(drama.refusesFaces(new Error("fal.ai said no (500): busy"))).toBe(false);
   }, 240_000);
+
+  it("small team portraits are enlarged before they're sent, since Kling refuses references under 300 pixels", async () => {
+    const sharp = (await import("sharp")).default;
+    const small = await sharp({ create: { width: 256, height: 256, channels: 3, background: "#336655" } }).webp().toBuffer();
+    const out = await drama.bigEnough(small, "image/webp");
+    const meta = await sharp(out.buf).metadata();
+    expect([meta.width, meta.height, out.mime]).toEqual([512, 512, "image/png"]);
+    const big = await sharp({ create: { width: 900, height: 1200, channels: 3, background: "#336655" } }).png().toBuffer();
+    expect((await drama.bigEnough(big, "image/png")).buf).toBe(big);
+  }, 240_000);
 });
