@@ -329,7 +329,7 @@ const PLAN_SCHEMA: JsonSchema = {
   required: ["title", "questionText", "questionOptions", "startsOn", "needs", "doneWhen", "intro", "outro", "steps"],
   properties: {
     title: { type: "string", description: "The task in plain words, at most 8 words, like Booking outside a clinician's availability." },
-    questionText: { type: "string", description: "Only when the ask could mean two or more different tasks or ways in this app: the question to ask first. Otherwise ''." },
+    questionText: { type: "string", description: "Only when the words could mean two different things and the plan would be wrong for one of them: the question to ask first. Otherwise '' (take the fuller reading and say so in the intro)." },
     questionOptions: { type: "array", items: { type: "string" }, description: "2 or 3 short fixed choices for the question (at most 5 words each), the last may be 'Both, as two videos'. [] when there's no question." },
     startsOn: { type: "string", description: "The exact screen and state the video opens on." },
     needs: { type: "array", items: { type: "string" }, description: "Sample data or settings that must exist first." },
@@ -376,14 +376,20 @@ async function runLive(orgId: number, d: DemoVideo, emp: AIEmployee, task: Brows
   }
 }
 
-async function explore(orgId: number, d: DemoVideo, emp: AIEmployee) {
-  const sops = await import("./sops");
-  const { task, login } = await browserTask(orgId, d, emp, sops.siteGoal(d.ask), false);
+/** What the practice run looks for: the screens the ask covers, every part of each, every option on each. */
+function surveyGoal(ask: string, guide: string | null) {
+  return `${guide ? `Background on this app (its labels, where things are, its Never list):\n${guide}\n\n` : ""}You are about to record a training video: "${ask}". First look at the real screens it covers, so the plan comes from what is on them today and not from memory.
+Go to the screen or screens the ask is about, the way a person would from the menu. On each one, look at every part from top to bottom: each card and section and its heading, each tab, each button, each field, and every option in every dropdown or format list (open it, read the options, close it). Open anything that reveals choices (a tab, a menu, a row's details) and close it again. Fill in nothing, save nothing, change nothing; stop before any button that saves, sends, signs, submits or deletes.
+Use done when every part has been seen, with result as JSON: {"answer":"the screens in order; for each, every section top to bottom with its exact heading, the buttons and fields in it, and every option each choice offers with what it is for, as the screen describes it","pending":"the final button you stopped before, or ''"}`;
+}
+
+async function explore(orgId: number, d: DemoVideo, emp: AIEmployee, guide: string | null) {
+  const { task, login } = await browserTask(orgId, d, emp, surveyGoal(d.ask, guide), false);
   const web = await import("./web");
   const res = await runLive(orgId, d, emp, task, `${d.title} (practice run)`);
   if (login) await (await import("./logins")).keepSession(orgId, login, res.storageState).catch(() => null);
   const walked = res.log.filter((l) => !["person", "blocked"].includes(l.action)).map((l) => `${l.step}. ${l.detail}${l.title ? ` (page: ${l.title})` : ""}`).join("\n");
-  return `${walked}\n\nWhat I found: ${web.readResult(res.result).answer}`.slice(0, 8000);
+  return `${walked}\n\nWhat I found: ${web.readResult(res.result).answer}`.slice(0, 12_000);
 }
 
 async function plan(orgId: number, id: number, extra = "") {
@@ -394,27 +400,29 @@ async function plan(orgId: number, id: number, extra = "") {
   const sop = d.fromSopId ? db.sops.get(orgId, d.fromSopId) : null;
   const sopText = sop ? (await import("./sops")).stepsOf(sop).map((s, i) => `${i + 1}. ${s.title}${s.detail ? `: ${s.detail}` : ""}`).join("\n") : "";
   let notes = "";
-  if (!guide && !sopText && (d.url || d.loginName)) {
-    update(orgId, id, { step: "Finding how it's done (a practice run)" });
-    notes = await explore(orgId, d, emp).catch(() => "");
+  // She looks at the real screens before every plan, guide or not (2026-10-15): the guide says where things are, the
+  // screen says what is on it today, every card and every option, and the plan is written from the screen.
+  if (d.url || d.loginName) {
+    update(orgId, id, { step: "Looking at the screens (a practice run)" });
+    notes = await explore(orgId, d, emp, guide?.text ?? null).catch(() => "");
   }
   update(orgId, id, { step: "Writing the plan" });
   const { system } = await systemPromptFor(emp, `Plan a ${d.kind === "social" ? "social video" : "training video"} of a task on a website, following this playbook:\n\n${vg.playbook()}`);
   const prompt = [
     `What to show: ${d.ask}${extra ? `\nThey chose: ${extra}` : ""}`,
     d.audience ? `Who will watch: ${d.audience}` : "",
-    d.kind === "social" ? SOCIAL_HOW[(d.socialStyle as SocialStyle) in SOCIAL_HOW ? (d.socialStyle as SocialStyle) : "come"] : "A training video: clear and calm, one task.",
+    d.kind === "social" ? SOCIAL_HOW[(d.socialStyle as SocialStyle) in SOCIAL_HOW ? (d.socialStyle as SocialStyle) : "come"] : "A training video: clear and calm. A task is shown end to end; a screen or feature is walked through whole, every part and every option, the way a trainer would show a new hire.",
     `Where: ${d.url ?? ""}${d.loginName ? ` (saved login: ${d.loginName})` : ""}`,
     guide ? `\n${guide.text}` : "",
     sopText ? `\nThe SOP for this task:\n${sopText}` : "",
-    notes ? `\nWhat a practice run on the site found:\n${notes}` : "",
+    notes ? `\nWhat the screens hold today (from the practice run; this is what the viewer will see, so every part and option listed here that belongs to the ask gets its step):\n${notes}` : "",
     extra ? "\nThey answered the question, so do not ask again: write the plan." : "",
   ]
     .filter(Boolean)
     .join("\n");
   const out = await generateJson<{ title: string; questionText: string; questionOptions: string[]; startsOn: string; needs: string[]; doneWhen: string; intro: string; outro: string; steps: PlanStep[] }>({ system, prompt, schemaName: "demo_plan", schema: PLAN_SCHEMA, maxTokens: 6000, timeoutMs: 4 * 60_000 });
   const asking = !extra && out.questionText?.trim() && (out.questionOptions ?? []).filter(Boolean).length >= 2;
-  const steps = (out.steps ?? []).filter((s) => s?.do?.trim()).slice(0, 25).map((s) => ({ do: s.do.trim().slice(0, 300), say: (s.say ?? "").trim().slice(0, 400), expect: (s.expect ?? "").trim().slice(0, 300) }));
+  const steps = (out.steps ?? []).filter((s) => s?.do?.trim()).slice(0, 40).map((s) => ({ do: s.do.trim().slice(0, 300), say: (s.say ?? "").trim().slice(0, 400), expect: (s.expect ?? "").trim().slice(0, 300) }));
   if (!asking && !steps.length) throw new Error("I couldn't work out the steps. Add an SOP for it, or say more about what to show.");
   const p: Plan = {
     startsOn: (out.startsOn ?? "").slice(0, 300),
@@ -573,7 +581,7 @@ async function browserTask(orgId: number, d: DemoVideo, emp: AIEmployee, goal: s
     allowSubmit: record && demoSite,
     submitWords: web.CHANGE_WORDS,
     neverWords: web.NEVER_WORDS,
-    maxSteps: 80,
+    maxSteps: 160,
     record,
     job: null,
     rules: `- This is ${record ? "a recording" : "a practice run"} for a video. Move like a person showing a colleague: no wandering, no extra pages.
@@ -589,7 +597,7 @@ function recordGoal(d: DemoVideo, p: Plan, upTo?: number, from = 0) {
 Starts on: ${p.startsOn || "the site's first page after signing in"}
 ${steps.map((s, i) => `${i + 1}. Do: ${s.do}\n   Then you should see: ${s.expect}`).join("\n")}
 ${from > 0 ? `Steps 1 to ${from} are recorded already: do them again exactly as written (the site starts over), without pausing, then carry on from step ${from + 1}.\n` : ""}${upTo ? `Stop after step ${upTo}.` : `Done when: ${p.doneWhen}`}
-Before each step, check the screen shows what the step before it expects. If it doesn't, use fail and say exactly what you see instead; never take a different path. When the last step's result is on screen, use done with result {"answer":"recorded"}.`;
+Before each step, check the screen shows what the step before it expects. A small difference is handled and the step goes on: a label worded a little differently, a notice or tip in the way (close it), a section further down than expected (show or scroll to it), a value already filled in (leave it). Use fail only when the step cannot be done on this screen at all, or the screen is a different one from the plan; say exactly what you see. When the last step's result is on screen, use done with result {"answer":"recorded"}.`;
 }
 
 /** A recording that stopped (by the person, or a screen that didn't match) with some steps finished: they're kept. */

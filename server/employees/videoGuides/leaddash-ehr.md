@@ -2,6 +2,8 @@
 
 A guide for recording demo videos, training videos and written SOPs of the LeadDash EHR web app. Every label here was read from the app's code on Oct 12, 2026. If a screen on the day looks different from this guide, trust the screen, note the difference, and tell Ashley.
 
+This guide says where things are and what the labels mean. It is not a list of the only videos that can be made: every screen in it, and every task a practice does on one, can be a video, and the way to plan any of them is to open the screen in the demo and walk it top to bottom, naming every part and every option, before writing the steps. The tasks at the end are worked examples of that.
+
 How to read this guide:
 
 - Labels in **bold** are the exact words on the screen. Click or type exactly what is in bold.

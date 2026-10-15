@@ -209,7 +209,7 @@ describe("Simone's demo videos", { timeout: 60_000 }, () => {
     expect(() => dv.checkWhere("https://events.leaddash.io/admin")).not.toThrow();
   });
 
-  it("plans first (a practice run when there's no guide), and records nothing until Record it", async () => {
+  it("plans first (a practice run that looks at every part of the screens, guide or not), and records nothing until Record it", async () => {
     const w = await onPlan("demo-plan");
     const c = caller(w.owner);
     const made = await c.demo.create({ organizationId: w.orgId, ask: "Book a session outside a clinician's availability", kind: "training", presenter: "screen", url: DEMO_URL, audience: "Front desk" });
@@ -220,6 +220,7 @@ describe("Simone's demo videos", { timeout: 60_000 }, () => {
     // The practice run never presses a button that changes anything.
     expect(browserTasks).toHaveLength(1);
     expect(browserTasks[0]).toMatchObject({ record: false, allowSubmit: false });
+    expect(browserTasks[0].goal).toMatch(/every option in every dropdown/);
     const v = await c.demo.get({ organizationId: w.orgId, id: d.id });
     expect(v!.plan.steps.map((s) => s.do)).toEqual(["Click Calendar", "Click Thursday at 6 PM"]);
     expect(v!.lines.map((l) => l.label)).toEqual(["Opening", "1", "2", "Closing"]);
