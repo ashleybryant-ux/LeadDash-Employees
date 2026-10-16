@@ -261,7 +261,7 @@ describe("Elena's mini drama studio", () => {
 
     const dir = (t: string) => ({ title: t, hook: "A phone buzzes at 9:47 PM.", story: "Late nights, then one screen.", metaphor: "Two screens become one", location: "Home office", wardrobe: "Green blazer", lighting: "Desk lamp", camera: "Slow push-ins", ending: "One login. Everything." });
     directions = { title: "Double entry ad", goal: "Practice owners feel seen and book a demo.", directions: [dir("The 9:47 PM Desk"), dir("Two Front Doors"), dir("Monday")] };
-    decision = { ...blank, action: "write_campaign", notes: "A 30-second LeadDash ad about double entry" };
+    decision = { ...blank, action: "write_campaign", notes: "A 30-second LeadDash ad about double entry, with me as the founder" };
     const r1 = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make a 30-second LeadDash ad about double entry" });
     expect(JSON.parse(r1.reply.cards!)[0].type).toBe("campaign_directions");
     // Her style references are in every plan.
@@ -317,6 +317,39 @@ describe("Elena's mini drama studio", () => {
     expect(db.getDramaEpisode(camp.id, orgId)!.status).toBe("ready");
     expect(posts(drama.MODELS.video).length).toBe(before);
   }, 400_000);
+
+  it("keeps the owner off camera unless she puts herself in it, and has a narrator read the voice-over (2026-10-15)", async () => {
+    const { orgId, owner } = await makeWorkspace("campaign-noowner");
+    const ownerName = (await db.getOrganizationById(orgId))?.signerName || owner.name!;
+    const malik = (await db.getEmployeeByKind(orgId, "leads"))!;
+    const dir = (t: string) => ({ title: t, hook: "A phone buzzes.", story: "The team answers it.", metaphor: "One screen", location: "Office", wardrobe: "Knit", lighting: "Daylight", camera: "Push-ins", ending: "Book a demo" });
+    directions = { title: "Trailer", goal: "Show the AI team at work.", directions: [dir("On Pace"), dir("Two"), dir("Three")] };
+    // "I want" is not "I'm in it".
+    const ep = await (await import("./employees/campaign")).writeDirections(orgId, "I want a cinematic trailer where a therapist asks her AI team if they're on pace");
+    expect(prompts.campaign_directions).toMatch(/She is not on camera in this one/);
+    expect(prompts.campaign_directions).not.toMatch(/featuring the owner as the recurring founder character/);
+    campaignPlan = {
+      title: "On Pace", script: "One question. A whole team answers.", music: "Pulse", cta: "Book a demo",
+      cast: [ownerName, malik.name],
+      shots: [
+        { framing: "Medium", move: "Push-in", action: `${ownerName} asks a question.`, setting: "Office", cast: [ownerName], plate: "Seated", props: [], vo: "One question.", caption: "", seconds: 3, sound: "" },
+        { framing: "Medium", move: "Static", action: `${malik.name} answers.`, setting: "Office", cast: [malik.name], plate: "", props: [], vo: "A whole team answers.", caption: "", seconds: 3, sound: "" },
+      ],
+    };
+    const planned = await (await import("./employees/campaign")).planCampaign(orgId, ep.id, 1, owner.name!);
+    expect(prompts.campaign_plan).toMatch(/The owner is not on screen/);
+    expect(prompts.campaign_plan).toMatch(/read by a narrator, not the owner/);
+    // Even if the plan names her, she isn't cast; the team member is.
+    const shots = drama.shotsOf(planned);
+    expect(shots[0].cast).toEqual([]);
+    expect(shots[0].plate).toBe("");
+    expect(shots[1].cast).toEqual([malik.name]);
+    expect(db.listDramaCast(orgId).some((x) => x.kind === "owner")).toBe(false);
+    // A narrator voice is cast for the voice-over, never her own.
+    const narrator = JSON.parse(planned.plan).narrator;
+    expect(narrator?.id).toBeTruthy();
+    expect(narrator.id).not.toBe("voice-ashley");
+  }, 120_000);
 
   it("uses Seedance for two people, the owner's own take for her line, and Redo with the other model", async () => {
     const { orgId, owner } = await makeWorkspace("takes");

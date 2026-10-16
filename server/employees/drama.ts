@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import type { Ratio } from "@shared/videoRatio";
+import { ownerWantsIn, type Ratio } from "@shared/videoRatio";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -314,7 +314,7 @@ export async function writeEpisodes(orgId: number, input: { brief: string; count
   const sys = await (await import("./tasks")).systemPromptAbout(emp, input.brief, `You are ${emp.name}, the owner's video producer and showrunner. You write cinematic micro dramas.\n${STYLE}`);
   const out = await generateJson<Written>({
     system: sys.system,
-    prompt: `${series ? `The series: ${series.title}. ${series.premise}\nLook: ${series.look}\nCast:\n${cast.map((c) => `- ${c.name} (${c.kind === "owner" ? "played by the owner" : "made up"}): ${c.role}. ${c.look}`).join("\n")}\nEpisodes so far:\n${eps.map((e) => `${e.number}. ${e.title}: ${e.logline}`).join("\n") || "none"}\nKeep the same title, premise, look and cast (add a character only if the story needs one).` : `This is a new series. The owner plays one supporting character herself (${input.ownerName}): mark that character owner. Make up the rest of the cast (2 to 4 characters), all fictional, with a made-up character as the lead.`}
+    prompt: `${series ? `The series: ${series.title}. ${series.premise}\nLook: ${series.look}\nCast:\n${cast.map((c) => `- ${c.name} (${c.kind === "owner" ? "played by the owner" : "made up"}): ${c.role}. ${c.look}`).join("\n")}\nEpisodes so far:\n${eps.map((e) => `${e.number}. ${e.title}: ${e.logline}`).join("\n") || "none"}\nKeep the same title, premise, look and cast (add a character only if the story needs one).` : ownerWantsIn(input.brief) ? `This is a new series. The owner plays one supporting character herself (${input.ownerName}): mark that character owner. Make up the rest of the cast (2 to 4 characters), all fictional, with a made-up character as the lead.` : `This is a new series. The owner is not in it: every character is made up (owner false), 2 to 4 of them, with a made-up lead.`}
 What the owner asked for: ${input.brief || "the next episodes"}
 ${input.replace ? `Rewrite episode ${input.replace.number}, "${input.replace.title}" (${input.replace.logline}), as one episode, 60 to 90 seconds, following what she asked for.` : `Write ${count} new episode${count === 1 ? "" : "s"}${eps.length ? `, starting at episode ${eps.length + 1}` : ""}, each 60 to 90 seconds.`} Each one works on its own and, unless she asked for something else, ends on a cliffhanger that leads into the next.
 Make it flow like one film, not separate clips:
@@ -322,7 +322,7 @@ Make it flow like one film, not separate clips:
 - Inside a scene, each shot picks up exactly where the last one ended: same position, same eyeline, same wardrobe, same props, same light, the action continuing. Cut on motion (she stands, the next shot finishes the stand). Never jump to a different room or time inside a scene.
 - Describe a scene's setting in exactly the same words in every shot of that scene.
 - Mark flow "continue" when the camera carries straight on into the next shot (a slow push that lands on the next framing); otherwise "cut". The last shot of a scene is always "cut".
-The lead is a made-up character, never the owner. The owner's character is a supporting part: she appears in some scenes, not every one, and speaks a few lines there in her own cloned voice (lip synced to her face). Give voice_over only to the owner's character and only when she is alone on screen; most episodes need none. An episode is never silent, and the owner's character is never played by anyone else. Every shot she appears in lists her name in cast, spelled exactly as her character's name.
+${cast.some((c) => c.kind === "owner") || ownerWantsIn(input.brief) ? `The lead is a made-up character, never the owner. The owner's character is a supporting part: she appears in some scenes, not every one, and speaks a few lines there in her own cloned voice (lip synced to her face). Give voice_over only to the owner's character and only when she is alone on screen; most episodes need none. An episode is never silent, and the owner's character is never played by anyone else. Every shot she appears in lists her name in cast, spelled exactly as her character's name.` : "Nobody plays the owner: every character is made up (owner false), and voice_over stays ''."}
 Voices you can cast: ${voiceList.filter((v) => !v.own).map((v) => v.name).slice(0, 60).join(", ") || "none listed; leave voice ''"}. Give every character a different voice. The owner's character always uses her own voice: leave voice '' for her.`,
     schemaName: "drama_season",
     schema: SEASON_SCHEMA,
@@ -751,7 +751,8 @@ function takePrompt(s: Shot) {
 
 const active = new Set<number>();
 const label = (e: Pick<DramaEpisode, "kind" | "number" | "title">) => (e.kind === "campaign" || e.kind === "scene" ? `"${e.title}"` : `Episode ${e.number}`);
-const planOf = (e: Pick<DramaEpisode, "plan">) => parse<{ approved?: boolean; goal?: string; directions?: Direction[]; chosen?: number; script?: string; cta?: string }>(e.plan, {});
+/** narrator: a campaign the owner isn't in is read by this voice instead of hers (2026-10-15). */
+const planOf = (e: Pick<DramaEpisode, "plan">) => parse<{ approved?: boolean; goal?: string; directions?: Direction[]; chosen?: number; script?: string; cta?: string; narrator?: { id: string; name: string } | null }>(e.plan, {});
 export type Direction = { title: string; hook: string; story: string; metaphor: string; location: string; wardrobe: string; lighting: string; camera: string; ending: string };
 
 /** Changes one person in a Scene's own cast and keeps it with the scene. */
@@ -798,7 +799,8 @@ export async function startEpisode(orgId: number, id: number) {
   }
   const animating = Boolean(plan.approved);
   if (animating && shots.some((s) => !s.takeUrl && !s.clipUrl && (s.line || s.vo)) && !ENV.openAiKey && !(await avatar.hasElevenLabs(orgId))) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Voices aren't set up on the server yet." });
-  const needsOwner = shots.some((s) => s.vo || s.cast.some((n) => cast.find((c) => c.name.toLowerCase() === n.toLowerCase())?.kind === "owner")) || (ep.kind === "drama" && cast.some((c) => c.kind === "owner"));
+  // Her photos are needed only when she is on screen, or the voice-over is hers.
+  const needsOwner = shots.some((s) => (s.vo && !plan.narrator) || s.cast.some((n) => cast.find((c) => c.name.toLowerCase() === n.toLowerCase())?.kind === "owner")) || (ep.kind === "drama" && cast.some((c) => c.kind === "owner"));
   const owner = cast.find((c) => c.kind === "owner");
   if (needsOwner) {
     const pic = await ownerPortrait(orgId);
@@ -813,7 +815,7 @@ export async function startEpisode(orgId: number, id: number) {
   }
   if (animating) {
     for (const s of shots) if (s.line && !s.takeUrl && !castFor(orgId, db.getDramaEpisode(id, orgId)!).find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${s.line.who} doesn't have a voice yet. Pick one ${ep.kind === "scene" ? "with Edit on their card in the cast" : "on the Cast tab"}.` });
-    if (shots.some((s) => s.vo && !s.takeUrl) && !ownVoice) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Pick your voice under Your avatar on my Videos tab, so the voice-over is you." });
+    if (shots.some((s) => s.vo && !s.takeUrl) && !ownVoice && !plan.narrator) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Pick your voice under Your avatar on my Videos tab, so the voice-over is you." });
   }
   if (hours.meteredSync(orgId)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Cinematic episodes and campaign films aren't part of work-hour plans. Talking videos on my Videos tab are." });
   const estimate = animating ? estimateEpisode(shots) : estimateStills(shots);
@@ -1028,7 +1030,8 @@ export async function makeEpisode(orgId: number, id: number) {
   // 3. Animation, voice-over and lip sync, shot by shot (the video model moves the camera and the people, nothing else).
   const cast = castFor(orgId, db.getDramaEpisode(id, orgId)!);
   const drawnStyle = await sceneStyle(orgId, ep);
-  const ownerVoice = cast.find((c) => c.kind === "owner")?.voiceId ?? avatar.settingsOf(emp).voiceId ?? (await avatar.voices(orgId)).find((v) => v.own)?.id ?? null;
+  // The voice-over is hers, unless she isn't in it: then the narrator Elena cast reads it.
+  const ownerVoice = plan.narrator?.id ?? cast.find((c) => c.kind === "owner")?.voiceId ?? avatar.settingsOf(emp).voiceId ?? (await avatar.voices(orgId)).find((v) => v.own)?.id ?? null;
   for (const s of shots) {
     if (s.clipUrl) continue;
     s.status = "making";

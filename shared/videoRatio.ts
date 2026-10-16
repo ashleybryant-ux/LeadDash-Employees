@@ -28,3 +28,22 @@ export function ratioFromText(text: string): Ratio | null {
   hits.sort((a, b) => a[0] - b[0]);
   return hits[0]?.[1] ?? null;
 }
+
+/**
+ * Whether the owner asked to be in the video herself (2026-10-15). Saying "I" or "me" doesn't
+ * count ("I want a trailer", "make me an ad"); she has to put herself in it: "I play the
+ * therapist", "I'm in it", "put me in it", "with me as the narrator", "starring me", "I'll
+ * play myself". Elena casts the owner only then.
+ */
+export function ownerWantsIn(text: string): boolean {
+  const t = ` ${text.toLowerCase().replace(/[’]/g, "'")} `;
+  return [
+    /\b(?:i|i'm|i am|i'll|i will|i'd|i would|let me)\s+(?:be\s+)?(?:play|playing|star|starring|appear|appearing|cameo|narrate|narrating)\b/,
+    /\b(?:i'm|i am|i'll be|i will be|i want to be|i'd like to be|i should be)\s+(?:in it|in this|in the (?:video|scene|trailer|film|ad|commercial|story|series)|on camera|the (?:lead|star|narrator|main character))\b/,
+    /\b(?:feature|featuring|starring|cast|put|include|including|use)\s+me\b/,
+    /\bwith me\s+(?:as|in it|on camera|playing)\b/,
+    /\bme\s+(?:as the|as a|playing|on camera|in it)\b/,
+    /\bplay(?:ing)?\s+myself\b/,
+    /\bin my (?:own )?voice\b/,
+  ].some((re) => re.test(t));
+}

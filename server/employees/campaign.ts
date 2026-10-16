@@ -5,6 +5,7 @@ import * as db from "../db";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import type { DramaEpisode } from "../../drizzle/schema";
 import * as drama from "./drama";
+import { ownerWantsIn } from "@shared/videoRatio";
 
 /**
  * Branded cinematic campaigns (Elena). The production order, every time:
@@ -15,8 +16,8 @@ import * as drama from "./drama";
  * straight from "make a video about LeadDash".
  */
 
-const DIRECTOR = `You are Elena, the owner's AI cinematic video director. You create premium commercial-style videos featuring the owner as the recurring founder character.
-- The owner's face, hair and skin tone stay identical in every scene. Every shot with her names the character plate it uses.
+const DIRECTOR = `You are Elena, the owner's AI cinematic video director. You create premium commercial-style videos about the business. The people on screen are the AI team members, clients and made-up characters; the owner is on camera only when she has asked to be in it.
+- Anyone on screen keeps the same face, hair and skin tone in every shot. When the owner is in it, every shot with her names the character plate it uses.
 - Never generate before planning: concept, hook, script, storyboard, shot list, keyframe prompts, motion prompts, voice-over, sound design, edit timeline, captions and call to action come first.
 - Realistic commercial cinematography, never a generic AI look. The image model decides who is in a scene and how it looks; the video model only moves the camera and the people.
 - Use the brand's colors (from the Brain) selectively: wardrobe, light, props, signage, an interface on a screen. Never flood a frame with them.
@@ -74,7 +75,7 @@ export async function writeDirections(orgId: number, brief: string) {
   const sys = await (await import("./tasks")).systemPromptAbout(emp, brief, `${DIRECTOR}\n${drama.STYLE}${drama.styleText(orgId)}`);
   const out = await generateJson<{ title: string; goal: string; directions: drama.Direction[] }>({
     system: sys.system,
-    prompt: `The owner asked for: ${brief}\nWrite the campaign goal and exactly three distinct creative directions (different hooks, worlds and looks), each 20 to 45 seconds long as a finished vertical video.`,
+    prompt: `The owner asked for: ${brief}\n${ownerWantsIn(brief) ? "She asked to be in it herself." : "She is not on camera in this one: the people on screen are her AI team, clients or made-up characters."}\nWrite the campaign goal and exactly three distinct creative directions (different hooks, worlds and looks), each 20 to 45 seconds long as a finished vertical video.`,
     schemaName: "campaign_directions",
     schema: DIRECTIONS_SCHEMA,
     maxTokens: 3000,
@@ -132,6 +133,9 @@ export async function planCampaign(orgId: number, id: number, pick: number, who 
   const org = await db.getOrganizationById(orgId);
   // The owner's name as the story uses it: her character from the series, else the signer, else whoever asked.
   const ownerName = db.listDramaCast(orgId).find((c) => c.kind === "owner")?.name || org?.signerName || who || "the owner";
+  // She's on camera, and it's her voice, only when her brief put her in it (2026-10-15).
+  const inIt = ownerWantsIn(ep.logline);
+  const narrator = inIt ? null : await drama.stockVoiceFor(orgId, "a warm, confident narrator, woman");
   const team = (await db.listEmployeesByOrg(orgId)).filter((e) => e.kind !== "custom");
   const plates = drama.settingsOf(orgId).plates ?? [];
   const props = await drama.propImages(orgId);
@@ -140,10 +144,10 @@ export async function planCampaign(orgId: number, id: number, pick: number, who 
     system: sys.system,
     prompt: `Campaign goal: ${plan.goal}
 The direction the owner picked: ${dir.title}. Hook: ${dir.hook} Story: ${dir.story} Visual metaphor: ${dir.metaphor} Location: ${dir.location} Wardrobe: ${dir.wardrobe} Lighting: ${dir.lighting} Camera: ${dir.camera} Ending: ${dir.ending}
-People who can appear: the owner, ${ownerName} (call her exactly "${ownerName}"); the AI team members, each shown as a person: ${team.map((e) => `${e.name} (${e.roleTitle})`).join(", ")}; or made-up extras with plain names.
-Character plates for the owner: ${plates.map((p) => p.label).join(", ") || "none yet; leave plate ''"}.
+${inIt ? `People who can appear: the owner, ${ownerName} (call her exactly "${ownerName}"); the AI team members, each shown as a person: ${team.map((e) => `${e.name} (${e.roleTitle})`).join(", ")}; or made-up extras with plain names.
+Character plates for the owner: ${plates.map((p) => p.label).join(", ") || "none yet; leave plate ''"}.` : `People who can appear: the AI team members, each shown as a person: ${team.map((e) => `${e.name} (${e.roleTitle})`).join(", ")}; or made-up clients and extras with plain names. The owner is not on screen; leave every plate ''.`}
 Brain images that can be shown in a shot (exact titles): ${props.map((p) => p.title).slice(0, 30).join("; ") || "none"}. Never invent an interface or a logo; show one only from this list.
-Write the finished plan: 8 to 12 shots, 20 to 45 seconds in all. The voice-over is the owner's own voice; no one else speaks. Captions are short and land on the beat. End on the call to action.`,
+Write the finished plan: 8 to 12 shots, 20 to 45 seconds in all. ${inIt ? "The voice-over is the owner's own voice" : "The voice-over is read by a narrator, not the owner, so never write it as her speaking about herself"}; no one else speaks. Captions are short and land on the beat. End on the call to action.`,
     schemaName: "campaign_plan",
     schema: PLAN_SCHEMA,
     maxTokens: 6000,
@@ -156,6 +160,7 @@ Write the finished plan: 8 to 12 shots, 20 to 45 seconds in all. The voice-over 
     if (!lower) return null;
     const have = cast.find((c) => c.name.toLowerCase() === lower);
     if (have) return have;
+    if (lower === ownerName.toLowerCase() && !inIt) return null;
     if (lower === ownerName.toLowerCase()) return cast.find((c) => c.kind === "owner") ?? db.createDramaCast({ organizationId: orgId, name: ownerName, role: "Founder", kind: "owner", look: "" });
     const member = team.find((e) => e.name.toLowerCase() === lower);
     if (member) return db.createDramaCast({ organizationId: orgId, name: member.name, role: member.roleTitle, kind: "team", look: "", photoUrl: teamPortrait(member.kind, member.avatar ?? null) });
@@ -189,7 +194,7 @@ Write the finished plan: 8 to 12 shots, 20 to 45 seconds in all. The voice-over 
     title: (out.title || dir.title).slice(0, 120),
     shots: JSON.stringify(shots),
     music: (out.music ?? "").slice(0, 500),
-    plan: JSON.stringify({ ...JSON.parse(ep.plan || "{}"), chosen: pick, script: (out.script ?? "").slice(0, 3000), cta: (out.cta ?? "").slice(0, 80), approved: false }),
+    plan: JSON.stringify({ ...JSON.parse(ep.plan || "{}"), chosen: pick, script: (out.script ?? "").slice(0, 3000), cta: (out.cta ?? "").slice(0, 80), approved: false, narrator: narrator ? { id: narrator.id, name: narrator.name } : null }),
     status: "script",
     costCents: drama.estimateEpisode(shots),
     videoUrl: null,
