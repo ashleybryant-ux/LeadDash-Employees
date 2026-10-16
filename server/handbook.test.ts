@@ -87,6 +87,9 @@ describe("Elena is exempt from the handbook (2026-10-16)", () => {
     const e = (await tasks.systemPromptFor(elena, "Write a scene.")).system;
     const o = (await tasks.systemPromptFor(other, "Plan the week.")).system;
     expect(e).not.toContain("LeadDash Employees Handbook");
+    expect(e).not.toContain("Video Producer playbook");
+    expect(e).toMatch(/Struggling with anxiety/);
+    expect(e).toMatch(/fragments and all/);
     expect(e).toContain("# Ground rules");
     expect(e).toMatch(/Client information never appears in a video/);
     expect(e).toMatch(/without her approval/);

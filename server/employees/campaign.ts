@@ -16,15 +16,11 @@ import { ownerWantsIn, ratioFromText, type Ratio } from "@shared/videoRatio";
  * straight from "make a video about LeadDash".
  */
 
-const DIRECTOR = `You are Elena, the owner's AI cinematic video director. You create premium commercial-style videos about the business. The people on screen are the AI team members, clients and made-up characters; the owner is on camera only when she has asked to be in it.
+const DIRECTOR = `You are Elena, the owner's video director, making a film about the business. What she asked for decides what kind of film it is (a trailer, a brand film, a short story, an ad, a teaser) and how it looks and moves; never fall back on one house style. The people on screen are the AI team members, clients and made-up characters; the owner is on camera only when she has asked to be in it.
+- Plan before anything is made: the idea, the script, the shots, the sound and the edit.
 - Anyone on screen keeps the same face, hair and skin tone in every shot. When the owner is in it, every shot with her names the character plate it uses.
-- Never generate before planning: concept, hook, script, storyboard, shot list, keyframe prompts, motion prompts, voice-over, sound design, edit timeline, captions and call to action come first.
-- Realistic commercial cinematography, never a generic AI look. The image model decides who is in a scene and how it looks; the video model only moves the camera and the people.
-- Use the brand's colors (from the Brain) selectively: wardrobe, light, props, signage, an interface on a screen. Never flood a frame with them.
-- Controlled camera movement: dolly-in, tracking, crane, orbit, push-in, rack focus, restrained handheld. Avoid excessive movement, surreal body motion, distorted hands, unnecessary slow motion and obvious AI transformations.
-- Wardrobe and room continuity across connected shots.
-- Every campaign is a transformation story: show the problem in pictures before the answer appears.
-- It should feel like a campaign from a professional creative agency.`;
+- The brand's colors (from the Brain) can show up in wardrobe, light or props when they fit; never flood a frame with them.
+- Each direction is a genuinely different idea: a different story shape, world and look, not three takes on one ad.`;
 
 /** An AI team member's portrait: the workspace's own pick, else the one that ships with the app. */
 export function teamPortrait(kind: string, avatarUrl: string | null) {
@@ -77,7 +73,7 @@ export async function writeDirections(orgId: number, brief: string, shape?: Rati
   const sys = await (await import("./tasks")).systemPromptAbout(emp, brief, `${DIRECTOR}\n${drama.STYLE}${drama.styleText(orgId)}`);
   const out = await generateJson<{ title: string; goal: string; directions: drama.Direction[] }>({
     system: sys.system,
-    prompt: `The owner asked for: ${brief}\n${ownerWantsIn(brief) ? "She asked to be in it herself." : "She is not on camera in this one: the people on screen are her AI team, clients or made-up characters."}\nWrite the campaign goal and exactly three distinct creative directions (different hooks, worlds and looks), each 20 to 45 seconds long as a finished ${drama.RATIO_SIZE[ratio].word} video.`,
+    prompt: `The owner asked for: ${brief}\n${ownerWantsIn(brief) ? "She asked to be in it herself." : "She is not on camera in this one: the people on screen are her AI team, clients or made-up characters."}\nWrite the campaign goal and exactly three distinct creative directions (different hooks, worlds and looks), each a finished ${drama.RATIO_SIZE[ratio].word} video at the length she asked for (20 to 45 seconds when she didn't say).`,
     schemaName: "campaign_directions",
     schema: DIRECTIONS_SCHEMA,
     maxTokens: 3000,
@@ -149,7 +145,7 @@ The direction the owner picked: ${dir.title}. Hook: ${dir.hook} Story: ${dir.sto
 ${inIt ? `People who can appear: the owner, ${ownerName} (call her exactly "${ownerName}"); the AI team members, each shown as a person: ${team.map((e) => `${e.name} (${e.roleTitle})`).join(", ")}; or made-up extras with plain names.
 Character plates for the owner: ${plates.map((p) => p.label).join(", ") || "none yet; leave plate ''"}.` : `People who can appear: the AI team members, each shown as a person: ${team.map((e) => `${e.name} (${e.roleTitle})`).join(", ")}; or made-up clients and extras with plain names. The owner is not on screen; leave every plate ''.`}
 Brain images that can be shown in a shot (exact titles): ${props.map((p) => p.title).slice(0, 30).join("; ") || "none"}. Never invent an interface or a logo; show one only from this list.
-Write the finished plan: 8 to 12 shots, 20 to 45 seconds in all. ${inIt ? "The voice-over is the owner's own voice" : "The voice-over is read by a narrator, not the owner, so never write it as her speaking about herself"}; no one else speaks. Captions are short and land on the beat. End on the call to action.`,
+Write the finished plan at the length she asked for (about 8 to 12 shots and 20 to 45 seconds when she didn't say). ${inIt ? "The voice-over is the owner's own voice" : "The voice-over is read by a narrator, not the owner, so never write it as her speaking about herself"}; no one else speaks. Captions are short and land on the beat. End on the call to action.`,
     schemaName: "campaign_plan",
     schema: PLAN_SCHEMA,
     maxTokens: 6000,

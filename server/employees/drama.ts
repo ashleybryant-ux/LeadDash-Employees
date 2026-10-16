@@ -117,9 +117,9 @@ export const STYLE = `You are a film director, writer and editor in one. What th
 Craft defaults:
 - Know what the piece is for and who it is for before you write a shot. Every scene earns its place and leads to the next.
 - Start where it gets interesting. Show more than you tell. Let faces, hands and the room carry meaning alongside the words.
-- Shoot it like a well-made 2026 film or commercial, whichever the piece is: purposeful camera moves, real light sources, natural skin, one consistent color look. Vary the shots (wides, two-shots, close-ups, inserts, reactions) so it never feels like one camera on a tripod.
-- The world looks current and real: modern, well-kept 2026 offices and homes, clothes and phones people use now. People look rested, capable and engaged unless the story is about the opposite. Nothing dated, nothing staged, nothing that looks like stock footage.
-- Dialogue sounds spoken, not written: plain words and contractions, every line answering the one before, each character with their own voice. No slogans or lines that explain the plot to the audience, unless it is an ad and the owner wants the line.
+- Decide the look from what she asked for (a drama, a trailer, a sketch, a commercial, a documentary feel) and describe it in the look: the light, the color, the lens, the energy. Keep it consistent through the piece, and vary the shots so it never feels like one camera on a tripod.
+- Unless she says otherwise: the present day, modern and well-kept places (nothing dated, nothing like a grandparent's living room), and people who look rested, capable and engaged unless the story is about the opposite.
+- Dialogue sounds spoken, not written: plain words, contractions and fragments the way people really talk, every line answering the one before, each character with their own voice. No slogans or lines that explain the plot to the audience, unless she wants the line.
 - Plan the sound with the picture: room tone, the sounds the action makes, and a music cue that fits the mood.
 What the video models can and can't do (work with these, don't fight them):
 - Each shot is its own 3 to 7 second clip, so a moment longer than that is two shots that pick up exactly where the last ended: same place, people, clothes, props and light.
@@ -186,7 +186,7 @@ const SEASON_SCHEMA: JsonSchema = {
   properties: {
     title: { type: "string" },
     premise: { type: "string", description: "Two sentences: the world and the season's question" },
-    look: { type: "string", description: "The series' visual look in one sentence, set in 2026: the real places, the light, a muted color grade, the lens; current clothes and objects, nothing staged" },
+    look: { type: "string", description: "The series' visual look in one sentence, from what she asked for: the places, the light, the color, the lens, the energy" },
     cast: {
       type: "array",
       items: {
@@ -323,9 +323,9 @@ export async function writeEpisodes(orgId: number, input: { brief: string; count
     system: sys.system,
     prompt: `${series ? `The series: ${series.title}. ${series.premise}\nLook: ${series.look}\nCast:\n${cast.map((c) => `- ${c.name} (${c.kind === "owner" ? "played by the owner" : "made up"}): ${c.role}. ${c.look}`).join("\n")}\nEpisodes so far:\n${eps.map((e) => `${e.number}. ${e.title}: ${e.logline}`).join("\n") || "none"}\nKeep the same title, premise, look and cast (add a character only if the story needs one).` : ownerWantsIn(input.brief) ? `This is a new series. The owner plays one supporting character herself (${input.ownerName}): mark that character owner. Make up the rest of the cast (2 to 4 characters), all fictional, with a made-up character as the lead.` : `This is a new series. The owner is not in it: every character is made up (owner false), 2 to 4 of them, with a made-up lead.`}
 What the owner asked for: ${input.brief || "the next episodes"}
-${input.replace ? `Rewrite episode ${input.replace.number}, "${input.replace.title}" (${input.replace.logline}), as one episode, 60 to 90 seconds, following what she asked for.` : `Write ${count} new episode${count === 1 ? "" : "s"}${eps.length ? `, starting at episode ${eps.length + 1}` : ""}, each 60 to 90 seconds.`} Each one works on its own and, unless she asked for something else, ends on a cliffhanger that leads into the next.
+${input.replace ? `Rewrite episode ${input.replace.number}, "${input.replace.title}" (${input.replace.logline}), as one episode at the length she asked for (60 to 90 seconds when she didn't say), following what she asked for.` : `Write ${count} new episode${count === 1 ? "" : "s"}${eps.length ? `, starting at episode ${eps.length + 1}` : ""}, each at the length she asked for (60 to 90 seconds when she didn't say).`} Each one works on its own and, unless she asked for something else, ends on a cliffhanger that leads into the next.
 Make it flow like one film, not separate clips:
-- First decide the scenes: 3 to 5 scenes, each one place and one continuous moment, 2 to 5 shots each. Every scene must be caused by the one before it, and the audience must always know where we are, who this is and what she wants.
+- First decide the scenes (about 3 to 5 unless the story wants otherwise), each one place and one continuous moment. Every scene must be caused by the one before it, and the audience must always know where we are, who this is and what she wants.
 - Inside a scene, each shot picks up exactly where the last one ended: same position, same eyeline, same wardrobe, same props, same light, the action continuing. Cut on motion (she stands, the next shot finishes the stand). Never jump to a different room or time inside a scene.
 - Describe a scene's setting in exactly the same words in every shot of that scene.
 - Mark flow "continue" when the camera carries straight on into the next shot (a slow push that lands on the next framing); otherwise "cut". The last shot of a scene is always "cut".
@@ -606,7 +606,7 @@ export const RATIO_SIZE: Record<Ratio, { w: number; h: number; word: string }> =
 /** The shape it's filmed in: a Scene's or a campaign's own (2026-10-15: campaigns were always vertical); drama episodes are vertical. */
 export const ratioOf = (ep: Pick<DramaEpisode, "kind" | "plan">): Ratio => (ep.kind === "scene" ? scenePlanOf(ep as DramaEpisode).ratio ?? "9:16" : ep.kind === "campaign" ? planOf(ep as DramaEpisode).ratio ?? "9:16" : "9:16");
 
-export type ScenePlan = { approved?: boolean; style?: string; what?: string; me?: boolean; sceneCast?: SceneCast[]; hidden?: boolean; ratio?: Ratio };
+export type ScenePlan = { approved?: boolean; style?: string; what?: string; me?: boolean; sceneCast?: SceneCast[]; hidden?: boolean; ratio?: Ratio; /** The look the writer gave this scene from her request; every picture is drawn to it. */ look?: string };
 export const scenePlanOf = (e: Pick<DramaEpisode, "plan">) => parse<ScenePlan>(e.plan, {});
 /** The scene's drawn style, or null for real people. */
 export async function sceneStyle(orgId: number, e: Pick<DramaEpisode, "kind" | "plan">) {
@@ -698,6 +698,17 @@ export async function portraitFor(orgId: number, c: DramaCastMember, look: strin
 type Refs = { name: string; look: string; urls: string[] };
 type Prop = { title: string; url: string };
 
+/** The look every picture in this video is drawn to. */
+export function lookOf(ep: DramaEpisode, seriesLook: string) {
+  if (ep.kind === "scene") return scenePlanOf(ep).look ?? "";
+  if (ep.kind === "campaign") {
+    const p = planOf(ep);
+    const d = p.chosen ? p.directions?.[p.chosen - 1] : null;
+    return d ? [d.lighting, d.camera, d.location && `Location: ${d.location}`, d.wardrobe && `Wardrobe: ${d.wardrobe}`].filter(Boolean).join(". ") : "";
+  }
+  return seriesLook;
+}
+
 export const sceneOf = (s: Pick<Shot, "scene" | "setting">) => (s.scene != null ? `scene-${s.scene}` : `set-${(s.setting || "").trim().toLowerCase()}`);
 
 function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], prev = false, ratio: Ratio = "9:16") {
@@ -710,7 +721,8 @@ function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], pr
   });
   const shown = props.map((p) => `reference image ${at++} is ${p.title}: show it exactly as it is`);
   const before = prev ? ` Reference image ${at} is the shot just before this one in the same scene: keep the same room, light, color grade, wardrobe, hair and props, and continue from that moment from this new camera angle.` : "";
-  return `A single frame from a 2026 streaming drama series, ${RATIO_SIZE[ratio].word}${ratio === "16:9" ? ", composed for a wide screen with the action spread across the frame" : ""}, photographed on a cinema camera with a 35mm or 50mm lens. ${s.framing} shot. ${s.action} Setting: ${s.setting}, a real lived-in place with everyday clutter and current-day objects (2026 phones, laptops, coffee cups), nothing staged or symmetrical. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features. Clothes people wear to work today, natural hair, no heavy makeup.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look} Natural depth of field with a soft, not smeared, background. Motivated light from a window, a lamp or a screen, cool daylight mixed with warm practicals. Real skin with pores and natural shine, no beauty-filter smoothing, no orange tan. Muted color grade, gentle contrast, a touch of grain, slightly off-center framing like a real operator. Not a commercial, not stock footage, not glossy, not over-saturated, not CGI. No added text, captions or watermarks.${before}`;
+  // The look comes from this video (2026-10-16), never a fixed recipe: a drama, a trailer and a sketch each look like themselves.
+  return `A single photographed frame, ${RATIO_SIZE[ratio].word}${ratio === "16:9" ? ", composed for a wide screen" : ""}. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look ? `The look of this video: ${look}` : "Shot like a well-made film: real light, natural depth of field."} Set in the present day unless the look says otherwise. Real skin with pores, no beauty-filter smoothing, no orange tan, nothing that looks CGI. No added text, captions or watermarks.${before}`;
 }
 
 /** A Scene drawn in a style: the same shot, drawn instead of photographed, with each person kept like their reference. */
@@ -734,7 +746,7 @@ function motionPrompt(s: Shot, refs: Refs[], drawn = false) {
   for (const r of tags) action = action.replace(new RegExp(`\\b${r.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), r.tag);
   const talk = s.line ? ` ${tags.find((r) => r.n.toLowerCase() === s.line!.who.toLowerCase())?.tag ?? s.line.who} speaks a short line, mouth moving naturally.` : "";
   if (drawn) return `${s.move}. ${action}${talk} Animate it in exactly the same art style as the first frame: every character, outfit and room stays exactly as drawn; only the camera and the characters move. Expressive, natural acting at normal speed: gestures, glances, blinks, small movements of the head and hands; no style change, no photorealism, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
-  return `${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in the first frame; only the camera and natural movement change. Restrained, realistic motion at normal speed: subtle breathing, natural blinks, small shifts of weight and hands, the kind of micro-movement a real person makes; no surreal body motion, no slow motion, no transformations, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
+  return `${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in the first frame. Believable motion at the pace the shot calls for, the way real people move; no morphing, no warped faces or hands, no surreal body motion, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
 
 /** Seedance takes the still and the faces as numbered images; the still is the first frame. */
@@ -749,7 +761,7 @@ function seedancePrompt(s: Shot, refs: Refs[], drawn = false) {
   const faces = who.map((r) => `${r.n} is the person in ${r.all.join(" and ")}`).join("; ");
   const talk = s.line ? ` ${s.line.who} speaks a short line, mouth moving naturally.` : "";
   if (drawn) return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. ` : ""}${s.move}. ${action}${talk} Animate it in exactly the same art style as @Image1: every character, outfit and room stays exactly as drawn; only the camera and the characters move. Expressive, natural acting at normal speed; no style change, no photorealism, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
-  return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. Keep every face exactly like its images. ` : ""}${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in @Image1; only the camera and natural movement change. Restrained, realistic motion at normal speed: subtle breathing, natural blinks, small shifts of weight and hands, the kind of micro-movement a real person makes; no surreal body motion, no slow motion, no transformations, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
+  return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. Keep every face exactly like its images. ` : ""}${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in @Image1. Believable motion at the pace the shot calls for, the way real people move; no morphing, no warped faces or hands, no surreal body motion, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
 
 /**
@@ -766,7 +778,7 @@ function omniPrompt(s: Shot, refs: Refs[], cast: { name: string; look: string }[
   const speaker = s.line ? cast.find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase()) : null;
   const sounds = speaker?.look ? ` in a natural voice that fits ${speaker.look.split(/[,.]/)[0].trim().toLowerCase()}` : " in a natural voice";
   const talk = s.line ? ` ${s.line.who} says${sounds}, clearly and at a normal pace: "${s.line.text}" Only ${s.line.who} speaks in this shot; everyone else listens and reacts without talking.` : " Nobody speaks in this shot.";
-  const look = drawn ? "Animate it in exactly the same art style as image 1: every character, outfit and room stays exactly as drawn." : "Keep every face, outfit and room exactly as in image 1. Restrained, realistic motion at normal speed, natural blinks and small movements; no slow motion, no morphing.";
+  const look = drawn ? "Animate it in exactly the same art style as image 1: every character, outfit and room stays exactly as drawn." : "Keep every face, outfit and room exactly as in image 1. Believable motion at the pace the shot calls for; no morphing, no warped faces or hands.";
   return `Image 1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}; keep each face exactly like its images. ` : ""}${s.move}. ${s.action}${talk} ${look} Sound: the room's natural tone${s.sound ? `, ${s.sound}` : ""}. No music, no narration, no on-screen text or captions.`;
 }
 
@@ -989,7 +1001,8 @@ async function lipSync(clip: string, audio: Buffer, s: Shot, total: number, wait
 
 export async function makeEpisode(orgId: number, id: number) {
   const series = db.getDramaSeries(orgId);
-  const look = series?.look ?? "";
+  // Each video's own look (2026-10-16): a Scene's from its writer, a campaign's from the direction she picked, a series' its own.
+  const look = lookOf(db.getDramaEpisode(id, orgId)!, series?.look ?? "");
   let ep = db.getDramaEpisode(id, orgId)!;
   const shots = shotsOf(ep);
   const plan = planOf(ep);

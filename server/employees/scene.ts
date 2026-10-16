@@ -24,6 +24,7 @@ import type { DramaEpisode } from "../../drizzle/schema";
 type Written = {
   title: string;
   logline: string;
+  look: string;
   music: string;
   cast: { name: string; role: string; look: string; owner: boolean; gender: string }[];
   shots: { scene: number; flow: "cut" | "continue"; framing: string; move: string; action: string; setting: string; cast: string[]; line_who: string; line_text: string; seconds: number; sound: string }[];
@@ -33,10 +34,11 @@ const str = { type: "string" } as const;
 const SCHEMA: JsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "logline", "music", "cast", "shots"],
+  required: ["title", "logline", "look", "music", "cast", "shots"],
   properties: {
     title: str,
     logline: str,
+    look: { type: "string", description: "The look of this piece in one or two sentences, from what she asked for and the kind of piece it is: the light, the color, the lens, the energy. Every picture is drawn to it." },
     music: { type: "string", description: "One music cue: mood, tempo and where it builds or drops out." },
     cast: {
       type: "array",
@@ -198,7 +200,7 @@ What she asked for decides the shape: the places, the pace, how it opens and how
   if (!shots.length) throw new Error("I couldn't write the shots. Tell me a little more about what happens.");
   // Read the conversation start to finish and smooth any line that doesn't follow the one before it.
   await drama.polishLines(sys.system, out.title || "Scene", shots, cast).catch((err) => console.warn("[scene] dialogue pass skipped:", err instanceof Error ? err.message : err));
-  return { title: (out.title || "Scene").trim().slice(0, 120), logline: (out.logline || "").trim().slice(0, 400), music: (out.music || "").slice(0, 500), cast, shots };
+  return { title: (out.title || "Scene").trim().slice(0, 120), logline: (out.logline || "").trim().slice(0, 400), look: (out.look || "").trim().slice(0, 500), music: (out.music || "").slice(0, 500), cast, shots };
 }
 
 /** Elena writes the scene and starts drawing its pictures. */
@@ -220,7 +222,7 @@ export async function writeScene(orgId: number, input: { what: string; style?: s
     logline: w.logline,
     music: w.music,
     shots: JSON.stringify(w.shots),
-    plan: JSON.stringify({ approved: false, style, what, me, sceneCast: w.cast, ratio } satisfies drama.ScenePlan),
+    plan: JSON.stringify({ approved: false, style, what, me, sceneCast: w.cast, ratio, look: w.look } satisfies drama.ScenePlan),
     costCents: drama.estimateEpisode(w.shots),
   });
   return startPictures(orgId, ep.id);
@@ -245,7 +247,7 @@ export async function rewriteScene(orgId: number, id: number, change: string) {
   // "Make it 16:9" in a change re-films it in that shape; every picture is drawn again anyway.
   const ratio: drama.Ratio = drama.ratioFromText(change) ?? p.ratio ?? "9:16";
   const w = await write(orgId, { what: p.what ?? ep.logline, style: p.style ?? "real", me: Boolean(p.me), seconds: drama.shotsOf(ep).reduce((t, s) => t + s.seconds, 0) || 30, ratio, current: ep, change });
-  db.updateDramaEpisode(id, orgId, { title: w.title, logline: w.logline, music: w.music, shots: JSON.stringify(w.shots), plan: JSON.stringify({ ...p, approved: false, sceneCast: w.cast, ratio }), costCents: drama.estimateEpisode(w.shots), status: "script", videoUrl: null, error: null, progress: null });
+  db.updateDramaEpisode(id, orgId, { title: w.title, logline: w.logline, music: w.music, shots: JSON.stringify(w.shots), plan: JSON.stringify({ ...p, approved: false, sceneCast: w.cast, ratio, look: w.look || p.look }), costCents: drama.estimateEpisode(w.shots), status: "script", videoUrl: null, error: null, progress: null });
   return startPictures(orgId, id);
 }
 

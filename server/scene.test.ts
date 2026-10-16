@@ -171,7 +171,7 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     const stills = posts(drama.MODELS.still);
     expect(stills).toHaveLength(3);
     expect(stills.every((b) => /^Claymation stop-motion look.*animated short film/.test(b.prompt))).toBe(true);
-    expect(stills[0].prompt).not.toMatch(/2026 streaming drama/);
+    expect(stills[0].prompt).not.toMatch(/A single photographed frame/);
     // Maya's portrait is drawn once in the same style and kept with the scene, not added to the series cast.
     const portraits = posts("fal-ai/nano-banana-pro").filter((b) => /character reference portrait of Maya/.test(b.prompt));
     expect(portraits).toHaveLength(1);
@@ -218,7 +218,7 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     const w = await c.scenes.setStyle({ organizationId: orgId, id: v.id, style: "real" });
     expect(w.scene!.styleLabel).toBe("Cinematic");
     await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
-    expect(posts(drama.MODELS.still).every((b) => /2026 streaming drama/.test(b.prompt))).toBe(true);
+    expect(posts(drama.MODELS.still).every((b) => /A single photographed frame/.test(b.prompt))).toBe(true);
     expect(posts(drama.MODELS.portrait).filter((b) => /Candid portrait photograph of Maya/.test(b.prompt))).toHaveLength(1);
   }, 240_000);
 
@@ -277,7 +277,7 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(r2.reply.content).toMatch(/\(16:9, \d+ shots\)/);
     expect(JSON.parse(db.getDramaEpisode(v.id, orgId)!.plan).ratio).toBe("16:9");
     await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
-    const stills = [...posts(drama.MODELS.still), ...posts(drama.MODELS.portrait)].filter((b) => /A single frame/.test(b.prompt));
+    const stills = [...posts(drama.MODELS.still), ...posts(drama.MODELS.portrait)].filter((b) => /A single (photographed )?frame/.test(b.prompt));
     expect(stills.slice(-SCENE.shots.length).every((b) => b.aspect_ratio === "16:9")).toBe(true);
   }, 240_000);
 
@@ -358,7 +358,7 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(prompts.scene).toMatch(/filmed horizontal widescreen 16:9: compose every shot for a wide screen/);
     // Every picture is drawn wide, and told so.
     await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
-    const stills = [...posts(drama.MODELS.still), ...posts(drama.MODELS.portrait)].filter((b) => /A single frame/.test(b.prompt));
+    const stills = [...posts(drama.MODELS.still), ...posts(drama.MODELS.portrait)].filter((b) => /A single (photographed )?frame/.test(b.prompt));
     expect(stills.length).toBe(2);
     expect(stills.every((b) => b.aspect_ratio === "16:9" && /horizontal widescreen 16:9/.test(b.prompt))).toBe(true);
     await c.scenes.make({ organizationId: orgId, id: v.id });
@@ -411,6 +411,21 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(posts(drama.MODELS.lipsync)).toHaveLength(1);
     // Only Gemini's price was added for the shot: no voice, no lip sync.
     expect(done.shots[1].costCents! - (picked.shots[1].costCents ?? 0)).toBe(Math.ceil(done.shots[1].seconds * drama.PRICE.omniPerSec));
+  }, 240_000);
+
+  it("every picture is drawn to the look written for this scene, with no house style (2026-10-16)", async () => {
+    const { orgId, owner } = await makeWorkspace("scene-look");
+    const c = caller(owner);
+    sceneOut = { ...SCENE, cast: SCENE.cast.map((x) => ({ ...x, owner: false })), look: "A sleek spy-thriller trailer: cool steel blues, hard rim light, fast push-ins, anamorphic lens flares." };
+    const v = await c.scenes.write({ organizationId: orgId, what: "A spy-thriller style trailer where two therapists talk", style: "real", me: false, seconds: 15 });
+    expect(prompts.scene).toMatch(/Decide the look from what she asked for/);
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    const stills = [...posts(drama.MODELS.still), ...posts(drama.MODELS.portrait)].filter((b) => /A single photographed frame/.test(b.prompt));
+    expect(stills.length).toBeGreaterThan(0);
+    for (const b of stills) {
+      expect(b.prompt).toContain("The look of this video: A sleek spy-thriller trailer");
+      expect(b.prompt).not.toMatch(/streaming drama|everyday clutter|Muted color grade|Not a commercial/);
+    }
   }, 240_000);
 
   it("a two-person shot Seedance refuses for real faces moves with Kling instead of stopping the scene", async () => {
