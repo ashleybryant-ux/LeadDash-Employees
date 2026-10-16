@@ -3197,11 +3197,13 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 .ld-sc-face { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; flex: none; }
 .ld-sc-face.ph { display: grid; place-items: center; background: var(--ld-accent-bg); color: var(--ld-accent-text); font-weight: 800; }
 .ld-sc-shots { display: flex; flex-direction: column; gap: 8px; }
-.ld-sc-shot { display: grid; grid-template-columns: 24px 64px minmax(0, 1fr) 120px; gap: 12px; align-items: center; border: 1px solid var(--ld-line); border-radius: 10px; padding: 10px; background: var(--ld-surface); }
+.ld-sc-shot { display: grid; grid-template-columns: 24px auto minmax(0, 1fr) 120px; gap: 12px; align-items: center; border: 1px solid var(--ld-line); border-radius: 10px; padding: 10px; background: var(--ld-surface); }
 .ld-sc-shot.editing { border-color: var(--ld-accent); }
 .ld-sc-n { font-weight: 800; text-align: center; color: var(--ld-ink); }
 .ld-sc-th { width: 64px; aspect-ratio: 9 / 16; border-radius: 8px; overflow: hidden; background: var(--ld-faint2); display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: var(--ld-text2); text-align: center; padding: 2px; box-sizing: border-box; }
 .ld-sc-th img { width: 100%; height: 100%; object-fit: cover; }
+.ld-sc-th.wide { width: 112px; aspect-ratio: 16 / 9; }
+.ld-sc-th.square { width: 80px; aspect-ratio: 1 / 1; }
 .ld-sc-say { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .ld-sc-tag { align-self: flex-start; font-size: 11.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; background: var(--ld-info-bg); color: var(--ld-info); }
 .ld-sc-who { font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--ld-accent-text); }
@@ -3213,8 +3215,10 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 .ld-sc-shotedit { border: 1px solid var(--ld-accent); border-radius: 10px; padding: 10px; margin-top: -4px; }
 .ld-sc-player { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); gap: 16px; align-items: start; }
 .ld-sc-player video { width: 100%; border-radius: 10px; background: #000000; }
+.ld-sc-player.wide { grid-template-columns: minmax(0, 1fr); }
+.ld-sc-player.wide video { max-width: 720px; }
 @media (max-width: 640px) {
-  .ld-sc-shot { grid-template-columns: 22px 52px minmax(0, 1fr); }
+  .ld-sc-shot { grid-template-columns: 22px auto minmax(0, 1fr); }
   .ld-sc-acts { grid-column: 1 / -1; flex-direction: row; }
   .ld-sc-form, .ld-sc-player { grid-template-columns: minmax(0, 1fr); }
 }

@@ -6,6 +6,14 @@ import type { Outputs } from "../types";
 import { useHoursAsk } from "../HoursAsk";
 import { ErrorLine } from "../ui";
 import { StylePicker, StyleRow } from "./Styles";
+import { ratioFromText, type Ratio } from "@shared/videoRatio";
+
+/** The shapes a Scene can be filmed in, named for where each is watched. */
+const SCENE_SHAPES: { r: Ratio; label: string }[] = [
+  { r: "9:16", label: "9:16 phone" },
+  { r: "16:9", label: "16:9 wide" },
+  { r: "1:1", label: "1:1 square" },
+];
 
 /**
  * Elena's video agent on screen:
@@ -125,6 +133,10 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   const [motion, setMotion] = React.useState<"pictures" | "clips">("clips");
   const fileRef = React.useRef<HTMLInputElement>(null);
   const [me, setMe] = React.useState(false);
+  // The shape a Scene is filmed in. A shape named in the brief wins, and the chips show it.
+  const [sceneRatio, setSceneRatio] = React.useState<Ratio>("9:16");
+  const saidRatio = ratioFromText(text);
+  const shape: Ratio = saidRatio ?? sceneRatio;
   const writeScene = trpc.scenes.write.useMutation({
     onSuccess: async (r) => {
       await Promise.all([utils.chat.list.invalidate(), utils.scenes.list.invalidate()]);
@@ -255,12 +267,21 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
                 ))}
               </div>
             </div>
+            <div className="ld-vm-field">
+              <span className="ld-lbl">Filmed in</span>
+              <div className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>
+                {SCENE_SHAPES.map((o) => (
+                  <Chip key={o.r} on={shape === o.r} disabled={!!saidRatio && saidRatio !== o.r} onClick={() => setSceneRatio(o.r)}>{o.label}</Chip>
+                ))}
+              </div>
+              {saidRatio && <span className="ld-small">Set by your brief.</span>}
+            </div>
           </div>
           <div className="ld-vm-foot">
             <span className="ld-vm-hours">Paid per use, like your dramas. The cost shows before anything moves.</span>
             <div className="ld-row" style={{ gap: 8 }}>
               {onCancel && <button type="button" className="ld-btn" style={{ width: 150 }} onClick={onCancel}>Cancel</button>}
-              <button type="button" className="ld-btn p" style={{ width: 150 }} disabled={!text.trim() || writeScene.isPending} onClick={() => writeScene.mutate({ organizationId: currentOrgId, what: text.trim(), style, me, seconds: Math.min(60, seconds) })}>
+              <button type="button" className="ld-btn p" style={{ width: 150 }} disabled={!text.trim() || writeScene.isPending} onClick={() => writeScene.mutate({ organizationId: currentOrgId, what: text.trim(), style, me, seconds: Math.min(60, seconds), ratio: shape })}>
                 {writeScene.isPending ? "Writing..." : "Write the scene"}
               </button>
             </div>

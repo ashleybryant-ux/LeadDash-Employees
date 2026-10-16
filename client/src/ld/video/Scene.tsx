@@ -143,7 +143,7 @@ function ShotRow({ v, s, i, busy }: { v: SceneV; s: Shot; i: number; busy: boole
     <>
       <div className={`ld-sc-shot ${edit ? "editing" : ""}`}>
         <span className="ld-sc-n">{s.n}</span>
-        <span className="ld-sc-th">
+        <span className={`ld-sc-th ${v.scene?.ratio === "16:9" ? "wide" : v.scene?.ratio === "1:1" ? "square" : ""}`}>
           {thumb ? <img src={thumb} alt="" /> : <span>{v.status === "making" && !v.plan.approved ? "Drawing..." : "Not made yet"}</span>}
         </span>
         <div className="ld-sc-say">
@@ -203,7 +203,7 @@ export function SceneCard({ id, bare = false }: { id: number; bare?: boolean }) 
   const making = v.status === "making";
   const ready = v.status === "ready" && !!v.videoUrl;
   const allPictures = v.shots.every((s) => s.stillUrl);
-  const meta = ["Scene", sc.styleLabel, v.length, "9:16"].join(" · ");
+  const meta = ["Scene", sc.styleLabel, v.length, sc.ratio].join(" · ");
   return (
     <div className={bare ? "ld-vm-card bare" : "ld-card ld-vm-card"}>
       <div className="ld-vm-head">
@@ -215,7 +215,7 @@ export function SceneCard({ id, bare = false }: { id: number; bare?: boolean }) 
       </div>
 
       {ready && (
-        <div className="ld-sc-player">
+        <div className={`ld-sc-player ${sc.ratio === "16:9" ? "wide" : ""}`}>
           <video key={v.videoUrl!} src={`${v.videoUrl}#t=0.1`} controls playsInline preload="metadata" />
           <div className="ld-vm-btncol">
             <a className="ld-btn p" href={v.videoUrl!} download={`${v.title}.mp4`}>Download</a>

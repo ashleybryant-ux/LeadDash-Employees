@@ -3571,7 +3571,7 @@ export const appRouter = router({
       return ep && ep.kind === "scene" ? (await import("./employees/scene")).view(ep) : null;
     }),
     write: protectedProcedure
-      .input(orgInput.extend({ what: z.string().trim().min(1).max(2000), style: z.string().max(40).nullable().optional(), me: z.boolean().optional(), seconds: z.number().int().min(10).max(60).optional() }))
+      .input(orgInput.extend({ what: z.string().trim().min(1).max(2000), style: z.string().max(40).nullable().optional(), me: z.boolean().optional(), seconds: z.number().int().min(10).max(60).optional(), ratio: z.enum(["9:16", "16:9", "1:1"]).nullable().optional() }))
       .mutation(async ({ ctx, input }) => {
         blockReviewer(ctx);
         await requireMember(ctx, input.organizationId, "member");

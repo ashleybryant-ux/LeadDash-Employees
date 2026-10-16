@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -88,6 +88,7 @@ beforeEach(() => {
     const u = String(url);
     calls.push({ url: u, init });
     if (u.includes("api.elevenlabs.io/v1/text-to-speech/")) return new Response(mp3, { status: 200 }); // a real MP3
+    if (u === "https://api.openai.com/v1/audio/speech") return new Response(mp3, { status: 200 }); // made-up people on the standard voices
     if (u.startsWith("https://api.elevenlabs.io/v1/music")) return new Response(mp3, { status: 200 });
     if (u.startsWith("https://api.elevenlabs.io/v1/sound-generation")) return new Response(mp3, { status: 200 });
     if (refuseSeedance && u.startsWith("https://queue.fal.run/bytedance/seedance") && init.method === "POST") {
@@ -293,6 +294,48 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(calls.some((x) => x.url.includes("text-to-speech/voice-nora"))).toBe(true);
     expect(calls.some((x) => x.url.includes("text-to-speech/voice-simone"))).toBe(true);
     expect(elena.id).toBeTruthy();
+  }, 240_000);
+
+  it("films in the shape the brief names, over the form's choice, and makes the other shapes from it (2026-10-15)", async () => {
+    const { orgId, owner } = await makeWorkspace("scene-wide");
+    const keyBefore = (ENV as any).openAiKey;
+    (ENV as any).openAiKey = "sk-test";
+    onTestFinished(() => void ((ENV as any).openAiKey = keyBefore));
+    const c = caller(owner);
+    sceneOut = {
+      ...SCENE,
+      cast: [SCENE.cast[1], { name: "Dana", role: "Client", look: "Man in his 30s, denim jacket", owner: false, gender: "male" }],
+      shots: [
+        { scene: 1, flow: "cut", framing: "Two-shot", move: "Slow dolly", action: "Maya and Dana talk across the desk", setting: "A modern office", cast: ["Maya", "Dana"], line_who: "Maya", line_text: "You made it on time today, that's a first.", seconds: 4, sound: "" },
+        { scene: 1, flow: "cut", framing: "Close-up", move: "Static", action: "Dana laughs", setting: "A modern office", cast: ["Dana"], line_who: "Dana", line_text: "Don't get used to it, I had help this week.", seconds: 4, sound: "" },
+      ],
+    };
+    // The form says 9:16; the brief says 16:9 for the website. The brief wins.
+    const v = await c.scenes.write({ organizationId: orgId, what: "A cinematic 16:9 trailer for the website: Maya and a client catch up", style: "real", me: false, seconds: 15, ratio: "9:16" });
+    expect(v.scene!.ratio).toBe("16:9");
+    expect(prompts.scene).toMatch(/filmed horizontal widescreen 16:9: compose every shot for a wide screen/);
+    // Every picture is drawn wide, and told so.
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    const stills = [...posts(drama.MODELS.still), ...posts(drama.MODELS.portrait)].filter((b) => /A single frame/.test(b.prompt));
+    expect(stills.length).toBe(2);
+    expect(stills.every((b) => b.aspect_ratio === "16:9" && /horizontal widescreen 16:9/.test(b.prompt))).toBe(true);
+    await c.scenes.make({ organizationId: orgId, id: v.id });
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    const done = (await c.scenes.get({ organizationId: orgId, id: v.id }))!;
+    expect(done.error).toBeNull();
+    // The two-person shot animates wide too.
+    expect(posts(drama.MODELS.seedance).every((b) => b.aspect_ratio === "16:9")).toBe(true);
+    // The main video is the wide one, really 1920x1080; the phone and square shapes are made from it.
+    expect(done.videoUrl).toBe(done.versions["16:9"]);
+    expect(Object.keys(done.versions).sort()).toEqual(["16:9", "1:1", "9:16"]);
+    const { probe, localFile } = await import("./employees/broll");
+    expect(await probe(localFile(done.versions["16:9"]))).toMatchObject({ width: 1920, height: 1080 });
+    expect(await probe(localFile(done.versions["9:16"]))).toMatchObject({ width: 1080, height: 1920 });
+    expect(await probe(localFile(done.versions["1:1"]))).toMatchObject({ width: 1080, height: 1080 });
+
+    // A brief that doesn't say keeps the form's choice.
+    const sq = await c.scenes.write({ organizationId: orgId, what: "Maya and a client catch up", style: "real", me: false, seconds: 15, ratio: "1:1" });
+    expect(sq.scene!.ratio).toBe("1:1");
   }, 240_000);
 
   it("a two-person shot Seedance refuses for real faces moves with Kling instead of stopping the scene", async () => {

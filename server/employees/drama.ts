@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import type { Ratio } from "@shared/videoRatio";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -591,7 +592,13 @@ const speak = (orgId: number, voiceId: string, text: string) => avatar.speech(or
 /** A Scene's own cast (2026-10-13): kept with the scene, not the series. The owner plays herself when she's in it. */
 /** team: an AI team member playing themselves (their employee kind): their portrait and voice, never a made-up face. */
 export type SceneCast = { name: string; role: string; look: string; owner?: boolean; team?: string | null; voiceId: string | null; voiceName: string | null; portrait?: string | null };
-export type ScenePlan = { approved?: boolean; style?: string; what?: string; me?: boolean; sceneCast?: SceneCast[]; hidden?: boolean };
+/** The shape a video is filmed in. Scenes can be any of these; dramas and campaigns are filmed vertical. */
+export type { Ratio } from "@shared/videoRatio";
+export { ratioFromText } from "@shared/videoRatio";
+export const RATIO_SIZE: Record<Ratio, { w: number; h: number; word: string }> = { "9:16": { w: 1080, h: 1920, word: "vertical 9:16" }, "16:9": { w: 1920, h: 1080, word: "horizontal widescreen 16:9" }, "1:1": { w: 1080, h: 1080, word: "square 1:1" } };
+export const ratioOf = (ep: Pick<DramaEpisode, "kind" | "plan">): Ratio => (ep.kind === "scene" ? scenePlanOf(ep as DramaEpisode).ratio ?? "9:16" : "9:16");
+
+export type ScenePlan = { approved?: boolean; style?: string; what?: string; me?: boolean; sceneCast?: SceneCast[]; hidden?: boolean; ratio?: Ratio };
 export const scenePlanOf = (e: Pick<DramaEpisode, "plan">) => parse<ScenePlan>(e.plan, {});
 /** The scene's drawn style, or null for real people. */
 export async function sceneStyle(orgId: number, e: Pick<DramaEpisode, "kind" | "plan">) {
@@ -685,7 +692,7 @@ type Prop = { title: string; url: string };
 
 export const sceneOf = (s: Pick<Shot, "scene" | "setting">) => (s.scene != null ? `scene-${s.scene}` : `set-${(s.setting || "").trim().toLowerCase()}`);
 
-function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], prev = false) {
+function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], prev = false, ratio: Ratio = "9:16") {
   let at = 1;
   const who = refs.map((r) => {
     const from = at;
@@ -695,11 +702,11 @@ function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], pr
   });
   const shown = props.map((p) => `reference image ${at++} is ${p.title}: show it exactly as it is`);
   const before = prev ? ` Reference image ${at} is the shot just before this one in the same scene: keep the same room, light, color grade, wardrobe, hair and props, and continue from that moment from this new camera angle.` : "";
-  return `A single frame from a 2026 streaming drama series, vertical 9:16, photographed on a cinema camera with a 35mm or 50mm lens. ${s.framing} shot. ${s.action} Setting: ${s.setting}, a real lived-in place with everyday clutter and current-day objects (2026 phones, laptops, coffee cups), nothing staged or symmetrical. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features. Clothes people wear to work today, natural hair, no heavy makeup.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look} Natural depth of field with a soft, not smeared, background. Motivated light from a window, a lamp or a screen, cool daylight mixed with warm practicals. Real skin with pores and natural shine, no beauty-filter smoothing, no orange tan. Muted color grade, gentle contrast, a touch of grain, slightly off-center framing like a real operator. Not a commercial, not stock footage, not glossy, not over-saturated, not CGI. No added text, captions or watermarks.${before}`;
+  return `A single frame from a 2026 streaming drama series, ${RATIO_SIZE[ratio].word}${ratio === "16:9" ? ", composed for a wide screen with the action spread across the frame" : ""}, photographed on a cinema camera with a 35mm or 50mm lens. ${s.framing} shot. ${s.action} Setting: ${s.setting}, a real lived-in place with everyday clutter and current-day objects (2026 phones, laptops, coffee cups), nothing staged or symmetrical. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features. Clothes people wear to work today, natural hair, no heavy makeup.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look} Natural depth of field with a soft, not smeared, background. Motivated light from a window, a lamp or a screen, cool daylight mixed with warm practicals. Real skin with pores and natural shine, no beauty-filter smoothing, no orange tan. Muted color grade, gentle contrast, a touch of grain, slightly off-center framing like a real operator. Not a commercial, not stock footage, not glossy, not over-saturated, not CGI. No added text, captions or watermarks.${before}`;
 }
 
 /** A Scene drawn in a style: the same shot, drawn instead of photographed, with each person kept like their reference. */
-function drawnStillPrompt(s: Shot, style: { prompt: string }, refs: Refs[], prev = false, styleRefs = 0) {
+function drawnStillPrompt(s: Shot, style: { prompt: string }, refs: Refs[], prev = false, styleRefs = 0, ratio: Ratio = "9:16") {
   let at = 1;
   const who = refs.map((r) => {
     const from = at;
@@ -709,7 +716,7 @@ function drawnStillPrompt(s: Shot, style: { prompt: string }, refs: Refs[], prev
   });
   const before = prev ? ` Reference image ${at++} is the shot just before this one in the same scene: keep the same room, light, colors, wardrobe and props, and continue from that moment from this new angle.` : "";
   const look = styleRefs ? ` The last ${styleRefs === 1 ? "reference image shows" : `${styleRefs} reference images show`} the art style to match.` : "";
-  return `${style.prompt}.${look} A single frame from an animated short film, vertical 9:16. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Draw each person as a character in this exact art style while keeping them recognizable as their reference: the same face shape, skin tone, hair and outfit in every shot.` : "No people in frame."} Cinematic composition with depth (foreground, subject, background), expressive faces and clear mouths, motivated light. One frame only, no split panels. No text, letters, captions, logos or watermarks.${before}`;
+  return `${style.prompt}.${look} A single frame from an animated short film, ${RATIO_SIZE[ratio].word}. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Draw each person as a character in this exact art style while keeping them recognizable as their reference: the same face shape, skin tone, hair and outfit in every shot.` : "No people in frame."} Cinematic composition with depth (foreground, subject, background), expressive faces and clear mouths, motivated light. One frame only, no split panels. No text, letters, captions, logos or watermarks.${before}`;
 }
 
 /** The video model moves the camera and the people; it never redesigns them. */
@@ -958,6 +965,8 @@ export async function makeEpisode(orgId: number, id: number) {
   let ep = db.getDramaEpisode(id, orgId)!;
   const shots = shotsOf(ep);
   const plan = planOf(ep);
+  // Kling follows the keyframe's shape; Seedance and the cut are told it.
+  const ratio = ratioOf(ep);
   const emp = await elena(orgId);
   const save = (progress: string) => {
     ep = db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots), progress, costCents: shots.reduce((t, x) => t + (x.costCents ?? 0), 0) + shots.filter((x) => !x.clipUrl).reduce((t, x) => t + estimateShot(x), 0) })!;
@@ -986,10 +995,10 @@ export async function makeEpisode(orgId: number, id: number) {
     const drawn = await sceneStyle(orgId, ep);
     // A drawn scene shows no props, and a custom style's own pictures come last, after the people and the shot before.
     if (drawn) all.splice(0, all.length, ...[...refs.flatMap((r) => r.urls)].slice(0, 12), ...(prevStill ? [prevStill] : []), ...drawn.refs.slice(0, 2));
-    const prompt = drawn ? drawnStillPrompt(s, drawn, refs, !!prevStill, Math.min(2, drawn.refs.length)) : stillPrompt(s, look, refs, shown, !!prevStill);
+    const prompt = drawn ? drawnStillPrompt(s, drawn, refs, !!prevStill, Math.min(2, drawn.refs.length), ratio) : stillPrompt(s, look, refs, shown, !!prevStill, ratio);
     const res = all.length
-      ? await falRun(MODELS.still, { prompt, image_urls: await Promise.all(all.map(asInput)), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`))
-      : await falRun(MODELS.portrait, { prompt: drawn ? drawnStillPrompt(s, drawn, refs) : stillPrompt(s, look, refs), aspect_ratio: "9:16", num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`));
+      ? await falRun(MODELS.still, { prompt, image_urls: await Promise.all(all.map(asInput)), aspect_ratio: ratio, num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`))
+      : await falRun(MODELS.portrait, { prompt: drawn ? drawnStillPrompt(s, drawn, refs, false, 0, ratio) : stillPrompt(s, look, refs, [], false, ratio), aspect_ratio: ratio, num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`));
     const still = res?.images?.[0]?.url as string | undefined;
     if (!still) throw new Error(`No picture came back for shot ${s.n}`);
     s.stillUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-shot${s.n}-${Date.now()}.png`, await download(still), "image/png")).url;
@@ -1085,7 +1094,7 @@ export async function makeEpisode(orgId: number, id: number) {
       if (engine === "seedance") {
         const faces = refs.flatMap((r) => r.urls).slice(0, 8);
         try {
-          clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs, !!drawnStyle), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(Math.max(4, seconds)), aspect_ratio: "9:16", resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
+          clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs, !!drawnStyle), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(Math.max(4, seconds)), aspect_ratio: ratio, resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
           seconds = Math.max(4, seconds);
         } catch (err) {
           // Seedance refuses real faces as references (ByteDance's likeness rule). The picture
@@ -1129,8 +1138,8 @@ export async function makeEpisode(orgId: number, id: number) {
     const bed = await ambience(await elevenKey(orgId), inScene[0].setting, inScene.map((x) => x.sound).filter(Boolean).join("; "), inScene.reduce((t, x) => t + x.seconds, 0)).catch((err) => (console.warn("[drama] room tone skipped:", err instanceof Error ? err.message : err), null));
     if (bed) beds[key] = bed;
   }
-  const versions = await stitch(orgId, `${ep.kind}-${ep.id}`, shots, { music, cta: ep.kind === "campaign" ? plan.cta ?? "" : "", versions: ep.kind === "campaign" || ep.kind === "scene", beds });
-  ep = db.updateDramaEpisode(id, orgId, { status: "ready", videoUrl: versions["9:16"], versions: JSON.stringify(versions), progress: null, error: null, costCents: shots.reduce((t, x) => t + (x.costCents ?? 0), 0) })!;
+  const versions = await stitch(orgId, `${ep.kind}-${ep.id}`, shots, { music, cta: ep.kind === "campaign" ? plan.cta ?? "" : "", versions: ep.kind === "campaign" || ep.kind === "scene", beds, ratio });
+  ep = db.updateDramaEpisode(id, orgId, { status: "ready", videoUrl: versions[ratio] ?? versions["9:16"], versions: JSON.stringify(versions), progress: null, error: null, costCents: shots.reduce((t, x) => t + (x.costCents ?? 0), 0) })!;
   const secs = total;
   const len = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
   await db.createChatMessage({
@@ -1202,7 +1211,10 @@ const assTime = (t: number) => {
 const assText = (t: string) => t.replace(/[{}\\]/g, "").replace(/\r?\n/g, " ").trim();
 
 /** Captions per shot and the call to action at the end, as subtitles burned into the picture. */
-function captionsFile(dir: string, shots: Pick<Shot, "caption">[], durations: number[], cta: string) {
+function captionsFile(dir: string, shots: Pick<Shot, "caption">[], durations: number[], cta: string, ratio: Ratio = "9:16") {
+  const { w, h } = RATIO_SIZE[ratio];
+  // Sizes were set for 1080x1920; a shorter frame gets them in proportion to its height, never smaller than a square's.
+  const k = Math.max(1080, h) / 1920;
   const lines: string[] = [];
   let t = 0;
   shots.forEach((s, i) => {
@@ -1214,14 +1226,14 @@ function captionsFile(dir: string, shots: Pick<Shot, "caption">[], durations: nu
   const file = path.join(dir, "captions.ass");
   fs.writeFileSync(file, `[Script Info]
 ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
+PlayResX: ${w}
+PlayResY: ${h}
 WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,DejaVu Sans,58,&H00FFFFFF,&H00FFFFFF,&H00000000,&H66000000,1,0,0,0,100,100,0,0,1,3,1,2,90,90,300,1
-Style: Cta,DejaVu Sans,76,&H00FFFFFF,&H00FFFFFF,&H004A6B1B,&H99000000,1,0,0,0,100,100,0,0,3,18,0,5,90,90,0,1
+Style: Cap,DejaVu Sans,${Math.round(58 * Math.max(k, 0.75))},&H00FFFFFF,&H00FFFFFF,&H00000000,&H66000000,1,0,0,0,100,100,0,0,1,3,1,2,90,90,${Math.round(300 * k)},1
+Style: Cta,DejaVu Sans,${Math.round(76 * Math.max(k, 0.75))},&H00FFFFFF,&H00FFFFFF,&H004A6B1B,&H99000000,1,0,0,0,100,100,0,0,3,${Math.round(18 * Math.max(k, 0.75))},0,5,90,90,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1245,7 +1257,9 @@ export function transitionFor(a: Pick<Shot, "scene" | "setting" | "flow">, b: Pi
   return { kind: "fade", seconds: 0.12 };
 }
 
-export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "clipUrl" | "voUrl" | "caption"> & Partial<Pick<Shot, "scene" | "setting" | "flow" | "line">>)[], opts: { music?: Buffer | null; cta?: string; versions?: boolean; beds?: Record<string, Buffer> } = {}) {
+export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "clipUrl" | "voUrl" | "caption"> & Partial<Pick<Shot, "scene" | "setting" | "flow" | "line">>)[], opts: { music?: Buffer | null; cta?: string; versions?: boolean; beds?: Record<string, Buffer>; ratio?: Ratio } = {}) {
+  const ratio: Ratio = opts.ratio ?? "9:16";
+  const { w: W, h: H } = RATIO_SIZE[ratio];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-drama-"));
   try {
     const files = shots.map((s, i) => {
@@ -1288,7 +1302,7 @@ export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "cl
       const h = head[i].toFixed(3);
       // Every shot's picture is made exactly as long as the shot: a clip whose picture ends before its sound
       // (common after lip sync) holds its last frame, or the transitions after it never happen and the cut ends early.
-      parts.push(`[${i}:v]trim=start=${h},setpts=PTS-STARTPTS,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p,setsar=1,tpad=stop_mode=clone:stop_duration=${d},trim=duration=${d},setpts=PTS-STARTPTS,fps=30,settb=AVTB[v${i}]`);
+      parts.push(`[${i}:v]trim=start=${h},setpts=PTS-STARTPTS,scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},fps=30,format=yuv420p,setsar=1,tpad=stop_mode=clone:stop_duration=${d},trim=duration=${d},setpts=PTS-STARTPTS,fps=30,settb=AVTB[v${i}]`);
       // Every shot gets sound exactly as long as its picture: its own, padded or trimmed, or silence.
       const own = shots[i].line ? 1 : 0.7;
       const base = probes[i].audio ? `[${i}:a]aresample=44100,aformat=channel_layouts=stereo,atrim=start=${h},asetpts=PTS-STARTPTS,volume=${own},apad,atrim=0:${d},asetpts=N/SR/TB` : `anullsrc=r=44100:cl=stereo,atrim=0:${d},asetpts=N/SR/TB`;
@@ -1333,7 +1347,7 @@ export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "cl
     if (beds.length) parts.push(`[${aLast}]${beds.join("")}amix=inputs=${beds.length + 1}:duration=first:dropout_transition=0:normalize=0[sfx]`);
     else parts.push(`[${aLast}]anull[sfx]`);
     const effective = dur.map((d, i) => (i < trans.length ? starts[i + 1] - starts[i] : d));
-    const caps = captionsFile(dir, shots, effective, opts.cta ?? "");
+    const caps = captionsFile(dir, shots, effective, opts.cta ?? "", ratio);
     const fd = fontsDir();
     parts.push(caps ? `[vc]ass=${caps.replace(/:/g, "\\:")}${fd ? `:fontsdir=${fd.replace(/:/g, "\\:")}` : ""}[v]` : `[vc]null[v]`);
     if (musicIn >= 0) {
@@ -1341,21 +1355,26 @@ export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "cl
       parts.push(`[${musicIn}:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.22,atrim=0:${total.toFixed(3)},afade=t=out:st=${Math.max(0, total - 2).toFixed(3)}:d=2[mus]`);
       parts.push(`[sfx][mus]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]`);
     } else parts.push(`[sfx]anull[a]`);
-    const out = path.join(dir, "vertical.mp4");
+    const out = path.join(dir, "main.mp4");
     args.push("-filter_complex", parts.join(";"), "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out);
     await run(ffmpegPath(), args, { maxBuffer: 20 * 1024 * 1024, timeout: 15 * 60_000 }).catch((e) => {
       throw new Error(`The cut didn't finish: ${String(e?.stderr ?? e?.message ?? e).trim().split("\n").slice(-3).join(" ").slice(0, 300)}`);
     });
     const stamp = Date.now();
-    const result: Record<string, string> = { "9:16": (await storagePut(`org-${orgId}/drama/${name}-9x16-${stamp}.mp4`, fs.readFileSync(out), "video/mp4")).url };
+    const result: Record<string, string> = { [ratio]: (await storagePut(`org-${orgId}/drama/${name}-${ratio.replace(":", "x")}-${stamp}.mp4`, fs.readFileSync(out), "video/mp4")).url };
     if (opts.versions) {
-      // Square: the middle of the frame. Wide: the vertical video centered on a soft blurred copy of itself.
-      const sq = path.join(dir, "square.mp4");
-      await run(ffmpegPath(), ["-y", "-i", out, "-vf", "crop=1080:1080:0:(ih-1080)/2", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "copy", "-movflags", "+faststart", sq], { maxBuffer: 20 * 1024 * 1024, timeout: 15 * 60_000 });
-      result["1:1"] = (await storagePut(`org-${orgId}/drama/${name}-1x1-${stamp}.mp4`, fs.readFileSync(sq), "video/mp4")).url;
-      const wide = path.join(dir, "wide.mp4");
-      await run(ffmpegPath(), ["-y", "-i", out, "-filter_complex", "[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=30:3,eq=brightness=-0.08[bg];[0:v]scale=-2:1080[fg];[bg][fg]overlay=(W-w)/2:0,format=yuv420p[v]", "-map", "[v]", "-map", "0:a", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "copy", "-movflags", "+faststart", wide], { maxBuffer: 20 * 1024 * 1024, timeout: 15 * 60_000 });
-      result["16:9"] = (await storagePut(`org-${orgId}/drama/${name}-16x9-${stamp}.mp4`, fs.readFileSync(wide), "video/mp4")).url;
+      // The other shapes are made from the one it was filmed in: a square is the middle of the frame;
+      // the rest is the film centered on a soft blurred copy of itself.
+      for (const other of (Object.keys(RATIO_SIZE) as Ratio[]).filter((r) => r !== ratio)) {
+        const { w, h } = RATIO_SIZE[other];
+        const file = path.join(dir, `${other.replace(":", "x")}.mp4`);
+        const filter =
+          other === "1:1"
+            ? `[0:v]crop='min(iw,ih)':'min(iw,ih)':'(iw-min(iw,ih))/2':'(ih-min(iw,ih))/2',scale=${w}:${h},format=yuv420p[v]`
+            : `[0:v]split=2[a][b];[a]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},boxblur=30:3,eq=brightness=-0.08[bg];[b]scale=${w}:${h}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]`;
+        await run(ffmpegPath(), ["-y", "-i", out, "-filter_complex", filter, "-map", "[v]", "-map", "0:a", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "copy", "-movflags", "+faststart", file], { maxBuffer: 20 * 1024 * 1024, timeout: 15 * 60_000 });
+        result[other] = (await storagePut(`org-${orgId}/drama/${name}-${other.replace(":", "x")}-${stamp}.mp4`, fs.readFileSync(file), "video/mp4")).url;
+      }
     }
     return result;
   } finally {
@@ -1563,6 +1582,7 @@ function sceneView(e: DramaEpisode) {
     styleLabel: key === "real" ? "Cinematic" : styles.resolve(e.organizationId, key).label,
     what: p.what ?? "",
     me: Boolean(p.me),
+    ratio: p.ratio ?? "9:16",
     cast: (p.sceneCast ?? []).map((c, i) => ({ index: i, name: c.name, role: c.role, look: c.look, owner: Boolean(c.owner), team: Boolean(c.team), voiceId: c.voiceId, voiceName: c.voiceName, portrait: c.portrait ?? null })),
     pct: Math.max(0, Math.min(100, pct)),
   };

@@ -117,7 +117,7 @@ async function castableTeam(orgId: number, internal: boolean) {
 }
 
 /** Writes (or rewrites) the scene: its cast with voices, and the shots with who says what. */
-async function write(orgId: number, input: { what: string; style: string; me: boolean; seconds: number; current?: DramaEpisode; change?: string }) {
+async function write(orgId: number, input: { what: string; style: string; me: boolean; seconds: number; ratio?: drama.Ratio; current?: DramaEpisode; change?: string }) {
   const emp = await elena(orgId);
   const org = await db.getOrganizationById(orgId);
   const ownerName = (org?.signerName || "").trim() || "the owner";
@@ -134,6 +134,7 @@ async function write(orgId: number, input: { what: string; style: string; me: bo
     prompt: `Write one scene of about ${input.seconds} seconds: ${input.what}
 ${drawn ? `It is drawn in ${drawn}, not filmed: describe each person so an artist draws them the same every time.` : "It is shot with real-looking people, in whatever genre and tone she asked for (a trailer, an ad, a drama, a comedy)."}
 What she asked for decides the shape: the places, the pace, how it opens and how it ends. Give it the shape that kind of piece really has.
+- It is filmed ${drama.RATIO_SIZE[input.ratio ?? "9:16"].word}${input.ratio === "16:9" ? ": compose every shot for a wide screen, with room for people side by side and the place around them" : input.ratio === "1:1" ? ": compose every shot for a square frame" : ": compose every shot for a phone held upright"}.
 - About ${shotsWanted} shots, 3 to 7 seconds each, in as many places as the piece needs.
 - When people talk, write their conversation first, the way people really talk: each line answers the line before it, plain words and contractions. Then cut it into shots: a shot carries at most one line, by someone in that shot, lip synced to their face. Shots with no line are fine wherever the picture says it better. There is no narrator or voice-over track.
 - ${input.me ? `The owner is not the lead: the lead is one of the AI team or someone outside the business. The owner plays herself in a supporting part: a character named ${ownerName} (mark owner true) who speaks a few of the lines. ` : "Nobody plays the owner (owner false). "}As many characters as the piece needs, up to six, never a real client.
@@ -201,14 +202,16 @@ What she asked for decides the shape: the places, the pace, how it opens and how
 }
 
 /** Elena writes the scene and starts drawing its pictures. */
-export async function writeScene(orgId: number, input: { what: string; style?: string | null; me?: boolean; seconds?: number }) {
+export async function writeScene(orgId: number, input: { what: string; style?: string | null; me?: boolean; seconds?: number; ratio?: drama.Ratio | null }) {
   const what = input.what.trim().slice(0, 2000);
   if (!what) throw new TRPCError({ code: "BAD_REQUEST", message: "Say what happens in the scene." });
   if (hours.meteredSync(orgId)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Scenes with talking characters aren't part of work-hour plans yet." });
   const style = cleanStyle(orgId, input.style);
   const me = Boolean(input.me);
   const seconds = Math.max(10, Math.min(60, Math.round(input.seconds || 30)));
-  const w = await write(orgId, { what, style, me, seconds });
+  // A shape named in the brief ("16:9", "widescreen", "vertical for Reels") wins over the form's choice.
+  const ratio: drama.Ratio = drama.ratioFromText(what) ?? input.ratio ?? "9:16";
+  const w = await write(orgId, { what, style, me, seconds, ratio });
   const ep = db.createDramaEpisode({
     organizationId: orgId,
     number: 0,
@@ -217,7 +220,7 @@ export async function writeScene(orgId: number, input: { what: string; style?: s
     logline: w.logline,
     music: w.music,
     shots: JSON.stringify(w.shots),
-    plan: JSON.stringify({ approved: false, style, what, me, sceneCast: w.cast } satisfies drama.ScenePlan),
+    plan: JSON.stringify({ approved: false, style, what, me, sceneCast: w.cast, ratio } satisfies drama.ScenePlan),
     costCents: drama.estimateEpisode(w.shots),
   });
   return startPictures(orgId, ep.id);
@@ -239,8 +242,10 @@ export async function rewriteScene(orgId: number, id: number, change: string) {
   const ep = mustScene(orgId, id);
   notBusy(ep);
   const p = drama.scenePlanOf(ep);
-  const w = await write(orgId, { what: p.what ?? ep.logline, style: p.style ?? "real", me: Boolean(p.me), seconds: drama.shotsOf(ep).reduce((t, s) => t + s.seconds, 0) || 30, current: ep, change });
-  db.updateDramaEpisode(id, orgId, { title: w.title, logline: w.logline, music: w.music, shots: JSON.stringify(w.shots), plan: JSON.stringify({ ...p, approved: false, sceneCast: w.cast }), costCents: drama.estimateEpisode(w.shots), status: "script", videoUrl: null, error: null, progress: null });
+  // "Make it 16:9" in a change re-films it in that shape; every picture is drawn again anyway.
+  const ratio: drama.Ratio = drama.ratioFromText(change) ?? p.ratio ?? "9:16";
+  const w = await write(orgId, { what: p.what ?? ep.logline, style: p.style ?? "real", me: Boolean(p.me), seconds: drama.shotsOf(ep).reduce((t, s) => t + s.seconds, 0) || 30, ratio, current: ep, change });
+  db.updateDramaEpisode(id, orgId, { title: w.title, logline: w.logline, music: w.music, shots: JSON.stringify(w.shots), plan: JSON.stringify({ ...p, approved: false, sceneCast: w.cast, ratio }), costCents: drama.estimateEpisode(w.shots), status: "script", videoUrl: null, error: null, progress: null });
   return startPictures(orgId, id);
 }
 
@@ -254,7 +259,7 @@ export async function saveShot(orgId: number, id: number, n: number, input: { wh
   if (!s) throw new TRPCError({ code: "NOT_FOUND", message: "That shot isn't in this scene." });
   const who = input.who ? cast.find((c) => c.name.toLowerCase() === input.who!.toLowerCase())?.name ?? null : null;
   if (input.who && !who) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick someone in the cast." });
-  const text = input.line.trim().slice(0, 140);
+  const text = input.line.trim().slice(0, 200);
   const line = who && text ? { who, text } : null;
   const see = input.see.trim().slice(0, 600) || s.action;
   const newPicture = see !== s.action || (line && !s.cast.includes(line.who));
