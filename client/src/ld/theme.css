@@ -3210,6 +3210,10 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 .ld-sc-line { font-weight: 700; color: var(--ld-ink); }
 .ld-sc-see { font-size: 13px; color: var(--ld-text2); }
 .ld-sc-acts { display: flex; flex-direction: column; gap: 6px; }
+.ld-sc-warn { display: flex; flex-direction: column; gap: 8px; border: 1px solid #f0b429; background: #fff8e6; color: #3d2c00; border-radius: 10px; padding: 12px 14px; font-size: 13.5px; line-height: 1.45; }
+.ld-sc-warn b { color: #7a4b00; font-size: 14px; }
+html[data-theme="dark"] .ld-sc-warn { background: #3a2a00; color: #ffffff; border-color: #f0b429; }
+html[data-theme="dark"] .ld-sc-warn b { color: #ffd166; }
 .ld-sc-acts .ld-btn { width: 120px; }
 .ld-sc-form { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 12px; align-items: center; }
 .ld-sc-shotedit { border: 1px solid var(--ld-accent); border-radius: 10px; padding: 10px; margin-top: -4px; }

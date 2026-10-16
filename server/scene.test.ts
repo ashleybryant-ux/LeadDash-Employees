@@ -380,7 +380,7 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(sq.scene!.ratio).toBe("1:1");
   }, 240_000);
 
-  it("a talking shot made with Gemini speaks its own line in one pass: no separate voice, no lip sync; never her line (2026-10-16)", async () => {
+  it("a talking shot made with Gemini speaks its own line in one pass: no separate voice, no lip sync; her pick, shot by shot (2026-10-16)", async () => {
     const { orgId, owner } = await makeWorkspace("scene-gemini");
     const c = caller(owner);
     const pic = await storagePut(`org-${orgId}/brain/front.jpg`, Buffer.from("jpeg-bytes"), "image/jpeg");
@@ -389,8 +389,9 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     sceneOut = SCENE; // Ashley (owner) speaks shot 1; Maya speaks shot 2
     const v = await c.scenes.write({ organizationId: orgId, what: "I play the therapist; Maya checks in", style: "real", me: true, seconds: 15, ratio: "16:9" });
     await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
-    // Her own line stays in her own voice.
-    await expect(c.scenes.engine({ organizationId: orgId, id: v.id, n: 1, engine: "omni" })).rejects.toThrow(/can't say your line in your voice/);
+    // She may pick Gemini for her own line too (the screen warns her first); here she switches it back to keep her voice.
+    expect((await c.scenes.engine({ organizationId: orgId, id: v.id, n: 1, engine: "omni" })).shots[0].engine).toBe("omni");
+    expect((await c.scenes.engine({ organizationId: orgId, id: v.id, n: 1, engine: "kling" })).shots[0].engine).toBe("kling");
     const picked = await c.scenes.engine({ organizationId: orgId, id: v.id, n: 2, engine: "omni" });
     expect(picked.shots[1].engine).toBe("omni");
     calls = [];

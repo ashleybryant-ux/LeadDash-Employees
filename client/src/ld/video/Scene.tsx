@@ -137,11 +137,12 @@ function ShotRow({ v, s, i, busy }: { v: SceneV; s: Shot; i: number; busy: boole
   const [see, setSee] = React.useState(s.action);
   const save = trpc.scenes.saveShot.useMutation({ onSuccess: async () => (await refresh(), setEdit(false)) });
   const redo = trpc.scenes.redo.useMutation({ onSuccess: refresh });
-  // Gemini speaks a talking shot itself, in a voice it picks; never for a line the owner says in her own voice.
-  const engine = trpc.scenes.engine.useMutation({ onSuccess: refresh });
+  // Gemini speaks a talking shot itself, in a voice it picks. She chooses it per shot, after a warning.
+  const [warn, setWarn] = React.useState(false);
+  const engine = trpc.scenes.engine.useMutation({ onSuccess: async () => (await refresh(), setWarn(false)) });
   const gemini = s.engine === "omni";
   const speaker = s.line ? cast.find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase()) : null;
-  const canGemini = !!s.line && !speaker?.owner && !!s.stillUrl;
+  const canGemini = !!s.line && !!s.stillUrl;
   const open = () => (setWho(s.line?.who ?? ""), setLine(s.line?.text ?? ""), setSee(s.action), setEdit(true));
   const thumb = s.stillUrl;
   return (
@@ -161,7 +162,7 @@ function ShotRow({ v, s, i, busy }: { v: SceneV; s: Shot; i: number; busy: boole
           <button type="button" className="ld-btn sm" disabled={busy} aria-expanded={edit} onClick={() => (edit ? setEdit(false) : open())}>{edit ? "Cancel" : "Edit"}</button>
           <button type="button" className="ld-btn sm" disabled={busy || redo.isPending || !s.stillUrl} onClick={() => redo.mutate({ organizationId: orgId, id: v.id, n: s.n })}>{redo.isPending ? "Starting..." : "Redo picture"}</button>
           {canGemini && (
-            <button type="button" className="ld-btn sm" disabled={busy || engine.isPending} onClick={() => engine.mutate({ organizationId: orgId, id: v.id, n: s.n, engine: gemini ? "kling" : "omni" })}>{engine.isPending ? "Switching..." : gemini ? "Use Kling" : "Use Gemini"}</button>
+            <button type="button" className="ld-btn sm" disabled={busy || engine.isPending} onClick={() => (gemini ? engine.mutate({ organizationId: orgId, id: v.id, n: s.n, engine: "kling" }) : setWarn(!warn))}>{engine.isPending ? "Switching..." : gemini ? "Use Kling" : "Use Gemini"}</button>
           )}
         </div>
       </div>
@@ -190,6 +191,18 @@ function ShotRow({ v, s, i, busy }: { v: SceneV; s: Shot; i: number; busy: boole
         </div>
       )}
       {!edit && redo.error && <ErrorLine error={redo.error} />}
+      {!edit && warn && !gemini && (
+        <div className="ld-sc-warn" role="alert">
+          <b>{speaker?.owner ? "This won't be your voice." : `This won't be ${s.line?.who ?? "their"}'s voice from the cast.`}</b>
+          <span>{speaker?.owner
+            ? "Gemini makes the picture and the voice together and picks the voice itself, so your cloned voice can't be used. Keep Kling for your own lines if you want to sound like you."
+            : "Gemini makes the picture and the voice together and picks the voice itself from how they look. It may sound like someone else in the scene."}</span>
+          <div className="ld-row" style={{ gap: 8, justifyContent: "flex-end" }}>
+            <button type="button" className="ld-btn sm" onClick={() => setWarn(false)}>Cancel</button>
+            <button type="button" className="ld-btn sm p" disabled={engine.isPending} onClick={() => engine.mutate({ organizationId: orgId, id: v.id, n: s.n, engine: "omni" })}>{engine.isPending ? "Switching..." : "Use Gemini"}</button>
+          </div>
+        </div>
+      )}
       {!edit && engine.error && <ErrorLine error={engine.error} />}
     </>
   );

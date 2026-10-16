@@ -52,7 +52,7 @@ export const MODELS = {
   /**
    * Google's Gemini Omni Flash 1.1 (2026-10-16), Veo 3.1's successor on fal: picture, voices and sound
    * in one pass, the line spoken on camera with no separate lip sync. It picks each voice itself, so it's
-   * a choice for a shot, never for a line the owner speaks in her own voice. 16:9 or 9:16 only.
+   * a choice the owner makes per shot after a warning (even on her own line, where it won't be her voice). 16:9 or 9:16 only.
    */
   omni: "google/gemini-omni-flash/v1.1/reference-to-video",
 };
@@ -1463,11 +1463,6 @@ export async function animateWith(orgId: number, id: number, n: number, engine: 
   if (!ep) throw new TRPCError({ code: "NOT_FOUND", message: "That video isn't in this workspace." });
   if (ep.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
   if (!shotsOf(ep).some((s) => s.n === n)) throw new TRPCError({ code: "NOT_FOUND", message: "That shot isn't in this video." });
-  if (engine === "omni") {
-    const s = shotsOf(ep).find((x) => x.n === n)!;
-    const speaker = s.line ? castFor(orgId, ep).find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase()) : null;
-    if (speaker?.kind === "owner") throw new TRPCError({ code: "BAD_REQUEST", message: "Gemini picks its own voices, so it can't say your line in your voice. Keep Kling for this shot." });
-  }
   const approved = Boolean(planOf(ep).approved);
   const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, engine, ...(approved ? { clipUrl: null, rawClipUrl: null, status: "todo" as const } : {}) } : s));
   const next = db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots) })!;
