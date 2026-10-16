@@ -5,7 +5,7 @@ import * as db from "../db";
 import { generateJson, type JsonSchema } from "../_core/llm";
 import type { DramaEpisode } from "../../drizzle/schema";
 import * as drama from "./drama";
-import { ownerWantsIn } from "@shared/videoRatio";
+import { ownerWantsIn, ratioFromText, type Ratio } from "@shared/videoRatio";
 
 /**
  * Branded cinematic campaigns (Elena). The production order, every time:
@@ -70,12 +70,14 @@ const DIRECTIONS_SCHEMA: JsonSchema = {
 };
 
 /** Step 1 and 2: the goal and three creative directions. Nothing visual yet. */
-export async function writeDirections(orgId: number, brief: string) {
+export async function writeDirections(orgId: number, brief: string, shape?: Ratio | null) {
   const emp = await elena(orgId);
+  // The shape it's filmed in: named in the brief, else the one asked for, else vertical.
+  const ratio: Ratio = ratioFromText(brief) ?? shape ?? "9:16";
   const sys = await (await import("./tasks")).systemPromptAbout(emp, brief, `${DIRECTOR}\n${drama.STYLE}${drama.styleText(orgId)}`);
   const out = await generateJson<{ title: string; goal: string; directions: drama.Direction[] }>({
     system: sys.system,
-    prompt: `The owner asked for: ${brief}\n${ownerWantsIn(brief) ? "She asked to be in it herself." : "She is not on camera in this one: the people on screen are her AI team, clients or made-up characters."}\nWrite the campaign goal and exactly three distinct creative directions (different hooks, worlds and looks), each 20 to 45 seconds long as a finished vertical video.`,
+    prompt: `The owner asked for: ${brief}\n${ownerWantsIn(brief) ? "She asked to be in it herself." : "She is not on camera in this one: the people on screen are her AI team, clients or made-up characters."}\nWrite the campaign goal and exactly three distinct creative directions (different hooks, worlds and looks), each 20 to 45 seconds long as a finished ${drama.RATIO_SIZE[ratio].word} video.`,
     schemaName: "campaign_directions",
     schema: DIRECTIONS_SCHEMA,
     maxTokens: 3000,
@@ -84,7 +86,7 @@ export async function writeDirections(orgId: number, brief: string) {
   const directions = (out.directions ?? []).slice(0, 3);
   if (!directions.length) throw new Error("No directions came back. Tell me a little more and I'll try again.");
   const n = db.listDramaEpisodes(orgId).filter((e) => e.kind === "campaign").length + 1;
-  return db.createDramaEpisode({ organizationId: orgId, number: n, kind: "campaign", title: (out.title || brief).slice(0, 120), logline: brief.slice(0, 400), plan: JSON.stringify({ goal: out.goal ?? "", directions }), shots: "[]" });
+  return db.createDramaEpisode({ organizationId: orgId, number: n, kind: "campaign", title: (out.title || brief).slice(0, 120), logline: brief.slice(0, 400), plan: JSON.stringify({ goal: out.goal ?? "", directions, ratio }), shots: "[]" });
 }
 
 const PLAN_SCHEMA: JsonSchema = {

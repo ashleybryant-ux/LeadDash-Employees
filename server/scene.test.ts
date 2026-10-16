@@ -258,6 +258,29 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     await waitFor(() => db.getDramaEpisode(card.id, orgId)!.status !== "making");
   }, 240_000);
 
+  it("\"make it 16:9\" in chat films the scene again wide, from her own words (2026-10-15)", async () => {
+    const { orgId, owner } = await makeWorkspace("scene-reshape");
+    const c = caller(owner);
+    const elena = (await db.getEmployeeByKind(orgId, "video"))!;
+    sceneOut = { ...SCENE, cast: SCENE.cast.map((x) => ({ ...x, owner: false })) };
+    // Her chat brain's summary leaves out the shape; her own words have it.
+    decision = { ...blank, action: "make_scene", notes: "Two therapists talking about notes", focus: "real", from: "", count: 30 };
+    const r1 = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make a 16:9 wide scene of two therapists talking about notes" });
+    const first = JSON.parse(r1.reply.cards!)[0];
+    expect(JSON.parse(db.getDramaEpisode(first.id, orgId)!.plan).ratio).toBe("16:9");
+    await waitFor(() => db.getDramaEpisode(first.id, orgId)!.status !== "making");
+    // A vertical one, then "make it 16:9": it's rewritten and drawn again wide.
+    const v = await c.scenes.write({ organizationId: orgId, what: "Two therapists talking about notes", style: "real", me: false, seconds: 15, ratio: "9:16" });
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    decision = { ...blank, action: "change_scene", target: "", notes: "Film it wide" };
+    const r2 = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make it 16:9" });
+    expect(r2.reply.content).toMatch(/\(16:9, \d+ shots\)/);
+    expect(JSON.parse(db.getDramaEpisode(v.id, orgId)!.plan).ratio).toBe("16:9");
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    const stills = [...posts(drama.MODELS.still), ...posts(drama.MODELS.portrait)].filter((b) => /A single frame/.test(b.prompt));
+    expect(stills.slice(-SCENE.shots.length).every((b) => b.aspect_ratio === "16:9")).toBe(true);
+  }, 240_000);
+
   it("the AI team plays themselves: their own portraits and voices, never a made-up face, and the scene comes in every size", async () => {
     const { orgId, owner } = await makeWorkspace("scene-team");
     const c = caller(owner);

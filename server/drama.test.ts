@@ -351,6 +351,23 @@ describe("Elena's mini drama studio", () => {
     expect(narrator.id).not.toBe("voice-ashley");
   }, 120_000);
 
+  it("films a campaign in the shape the brief asks for, not vertical with blurred sides (2026-10-15)", async () => {
+    const { orgId } = await makeWorkspace("campaign-wide");
+    const dir = (t: string) => ({ title: t, hook: "h", story: "s", metaphor: "m", location: "Office", wardrobe: "Knit", lighting: "Daylight", camera: "Push-ins", ending: "Book a demo" });
+    directions = { title: "Trailer", goal: "g", directions: [dir("One"), dir("Two"), dir("Three")] };
+    const ep = await (await import("./employees/campaign")).writeDirections(orgId, "A 16:9 launch trailer for the website");
+    expect(prompts.campaign_directions).toMatch(/finished horizontal widescreen 16:9 video/);
+    expect(drama.ratioOf(ep)).toBe("16:9");
+    campaignPlan = { title: "One", script: "s", music: "m", cta: "Book a demo", cast: [], shots: [{ framing: "Wide", move: "Push-in", action: "An office.", setting: "Office", cast: [], plate: "", props: [], vo: "", caption: "", seconds: 3, sound: "" }] };
+    const planned = await (await import("./employees/campaign")).planCampaign(orgId, ep.id, 1);
+    // Choosing a direction keeps the shape.
+    expect(drama.ratioOf(planned)).toBe("16:9");
+    expect(drama.episodeView(planned).ratio).toBe("16:9");
+    // The form's choice is used when the brief doesn't say.
+    const sq = await (await import("./employees/campaign")).writeDirections(orgId, "A launch ad", "1:1");
+    expect(drama.ratioOf(sq)).toBe("1:1");
+  }, 120_000);
+
   it("uses Seedance for two people, the owner's own take for her line, and Redo with the other model", async () => {
     const { orgId, owner } = await makeWorkspace("takes");
     const c = caller(owner);

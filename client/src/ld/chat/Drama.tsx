@@ -144,8 +144,14 @@ function Frame({ shot, w = 96 }: { shot: Shot; w?: number }) {
 
 const VERSION_LABEL: Record<string, string> = { "9:16": "Vertical", "1:1": "Square", "16:9": "Wide" };
 
+/**
+ * The finished video in each shape. The one it was filmed in comes first; the rest are copies made
+ * from it (a wide copy of a vertical film has blurred sides), and say so (2026-10-15).
+ */
 function Versions({ e }: { e: Ep }) {
-  const keys = Object.keys(e.versions).length ? Object.keys(e.versions) : e.videoUrl ? ["9:16"] : [];
+  const filmed = (e as Ep & { ratio?: string }).ratio ?? "9:16";
+  const all = Object.keys(e.versions).length ? Object.keys(e.versions) : e.videoUrl ? [filmed] : [];
+  const keys = [...all.filter((k) => k === filmed), ...all.filter((k) => k !== filmed)];
   if (!keys.length) return null;
   return (
     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -155,7 +161,8 @@ function Versions({ e }: { e: Ep }) {
         return (
           <div key={k} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <video src={url} controls playsInline preload="metadata" style={{ width: w, aspectRatio: k.replace(":", " / "), borderRadius: 10, background: "#000" }} />
-            <a className="ld-btn sm ld-av-link-plain" href={url} download={`${e.title.replace(/[^\w ]+/g, "")}-${VERSION_LABEL[k] ?? k}.mp4`} style={{ width: w }}>Download {VERSION_LABEL[k] ?? k}</a>
+            <a className="ld-btn sm ld-av-link-plain" href={url} download={`${e.title.replace(/[^\w ]+/g, "")}-${VERSION_LABEL[k] ?? k}.mp4`} style={{ width: w }}>{k === filmed ? `Download ${VERSION_LABEL[k] ?? k}` : `${VERSION_LABEL[k] ?? k} copy`}</a>
+            {k !== filmed && <span className="ld-small" style={{ width: w }}>{`Made from the ${(VERSION_LABEL[filmed] ?? filmed).toLowerCase()} film${k === "1:1" ? ", cropped" : ", sides blurred"}`}</span>}
           </div>
         );
       })}

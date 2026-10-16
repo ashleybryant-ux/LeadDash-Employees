@@ -67,7 +67,7 @@ export const LAYOUTS = [
 const ACTIONS: Record<string, string[]> = {
   grants: ["none", "report", "check_bidprime", "find_grants", "add_link", "add_file", "capability_statement", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   speaking: ["none", "report", "show_talk", "write_talk", "write_slides", "slide_notes", "slide_picture", "slide_graphic", "press_campaign", "press_scout", "press_list", "press_beats", "press_brief", "find_events", "add_link", "add_file", "revise_answer", "restore_answer", "apply", "find_and_apply", "show_receipt", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "make_video_script", "make_video", "change_video_script", "make_scene", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  video: ["none", "report", "find_videos", "write_campaign", "pick_direction", "approve_keyframes", "make_plates", "write_episodes", "rewrite_episode", "make_episode", "avatar_script", "make_avatar", "make_video_script", "make_video", "change_video_script", "make_scene", "change_scene", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   social: ["none", "report", "write_post", "post_graphic", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   website: ["none", "report", "site_audit", "mockup_site", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -150,6 +150,7 @@ const ACTION_HELP: Record<string, string> = {
   avatar_script: "avatar_script: write a talking-to-camera video (a tip, an announcement, a UGC-style testimonial). Put a short title in `title` and the exact words spoken in `message`, written the way people talk out loud (about 2.5 words a second, so 110 words is about 45 seconds; aim for the length she asked for, 30 to 60 seconds if she didn't say). No stage directions, no labels, only the words. Who is on camera goes in `from`: 'me' for the owner (her photo and her own voice), or, when she wants someone else (another character, a creator, a made-up therapist), a name and a description like 'Maya: a therapist in her 40s, braids, cardigan, warm and a little tired'. You cast that person yourself: a portrait is made from the description and a fitting stock voice is picked, so never say you can't. Several scripts at once: write the first and offer the rest.",
   make_avatar: "make_avatar: make the video from a script you wrote (\"Make it\", \"make the video\", \"make the one about the waitlist\"). Put words from its title in `target` ('' for the newest script).",
   make_video_script: "make_video_script: write any video she describes that isn't a drama or a campaign film: an ad, a b-roll story under a voice-over, an explainer of motion text, a personal story with her photos, audio to video, a slideshow, or her on camera. Put everything she said about it in `notes` (her words, with the call to action), the format in `focus` (ad, broll, explainer, story, audio, slideshow; talking when she wants someone on camera; '' when she didn't say, which shows her the Make a video card), the size in `to` (vertical, square or wide; vertical when she didn't say), and the length in seconds in `count` (30 when she didn't say). You write the storyboard: the hook first, then each scene with what we see, what's said and where the footage comes from (her b-roll library, stock, a new AI clip, motion text, the logo end card); nothing is made yet.",
+  change_scene: "change_scene: change a Scene she already has (\"make it 16:9\", \"film it wide\", \"make Harper sound calmer\", \"rewrite the ending\"). Put words from its title in `target` ('' for the newest scene) and the change, in her words, in `notes`. It's written again with the change and its pictures are drawn again; a new shape (16:9, 9:16 or 1:1) means it's filmed again in that shape, not the old video with blurred sides.",
   make_scene: "make_scene: a Scene, a short film where the characters talk to each other with every line lip synced (not narrated). Use it whenever she wants characters talking, a conversation, dialogue, a skit or a cinematic scene, in real people or a drawn style. Put what happens, in her words, in `notes`; the style in `focus` ('real' for cinematic real people, or a drawn style: animation for 3D animation, claymation, watercolor, anime and the rest; 'real' when she didn't say); 'me' in `from` only when she puts herself in it ('I play the therapist', 'I am in it', 'put me in it'), else ''. Saying 'I' or 'me' in a request ('I want a scene', 'make me a trailer') does not put her in it; the length in seconds in `count` (30 when she didn't say). You write the cast with their voices and the shots with who says what, and start the pictures; she presses Make the scene on the card.",
   make_video: "make_video: make a video you wrote with make_video_script, or one of your Video plans (\"Make it\", \"make the evening hours one\"). Put words from its title in `target` ('' for the newest one not made yet).",
   change_video_script: "change_video_script: she wants the shot list of a video you wrote changed (\"change the script\", \"make the ending warmer\", \"drop shot 3\"). Put words from its title in `target` ('' for the newest) and exactly what to change in `notes`.",
@@ -1437,7 +1438,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
     case "write_campaign": {
       const cp = await import("./campaign");
       try {
-        const ep = await cp.writeDirections(org, d.notes || d.message || d.topic || "");
+        const ep = await cp.writeDirections(org, d.notes || d.message || d.topic || "", (await import("@shared/videoRatio")).ratioFromText(ctx.said ?? ""));
         return { text: "Here are three directions. Pick one and I'll write the script, the shot list, the sound plan and the edit, then show you the keyframes before anything is animated.", cards: [{ type: "campaign_directions", id: ep.id, title: ep.title }], queries: [] };
       } catch (err) {
         return { text: `I couldn't write the directions: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
@@ -1568,6 +1569,25 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         return { text: `I couldn't write it: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
       }
     }
+    case "change_scene": {
+      const change = (d.notes || ctx.said || "").trim();
+      if (!change) return { text: "What should I change in the scene?", cards: [], queries: [] };
+      try {
+        const sc = await import("./scene");
+        const scenes = sc.list(org);
+        const want = (d.target || "").trim().toLowerCase();
+        const pick = (want && scenes.find((e) => e.title.toLowerCase().includes(want))) || scenes[0];
+        if (!pick) return { text: "I don't have a scene to change yet. Tell me what happens and I'll write one.", cards: [], queries: [] };
+        // Her own words carry the shape, in case the summary dropped it.
+        const said = (ctx.said ?? "").trim();
+        const ep = await sc.rewriteScene(org, pick.id, said && said !== change ? `${change}\n${said}` : change);
+        const v = sc.view(ep);
+        if (ep.status === "failed") return { text: `I rewrote "${ep.title}" but couldn't start the pictures: ${ep.error}`, cards: [{ type: "scene", id: ep.id, title: ep.title }], queries: [] };
+        return { text: `I rewrote "${ep.title}" (${v.scene?.ratio ?? "9:16"}, ${v.shots.length} shots) and I'm drawing the pictures again. Look them over, then press Make the scene.`, cards: [{ type: "scene", id: ep.id, title: ep.title }], queries: [] };
+      } catch (err) {
+        return { text: `I couldn't change it: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
+    }
     case "make_scene": {
       const what = (d.notes || d.message || ctx.said || "").trim();
       if (!what) return { text: "What happens in the scene, and who is in it?", cards: [], queries: [] };
@@ -1578,7 +1598,9 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         const style = want && want !== "real" ? (styles.isPreset(want) ? want : styles.PRESET_KEYS.find((k) => styles.PRESETS[k].label.toLowerCase().includes(want)) ?? "animation") : "real";
         // She is in it only when her own words put her in it, whatever the model guessed.
         const me = (d.from || "").trim().toLowerCase() === "me" && (await import("@shared/videoRatio")).ownerWantsIn(`${ctx.said ?? ""} ${what}`);
-        const ep = await sc.writeScene(org, { what, style, me, seconds: d.count || 30 });
+        // The shape from her own words first: the notes are the model's summary and can drop "16:9".
+        const ratio = (await import("@shared/videoRatio")).ratioFromText(ctx.said ?? "");
+        const ep = await sc.writeScene(org, { what, style, me, seconds: d.count || 30, ratio });
         const v = sc.view(ep);
         if (ep.status === "failed") return { text: `I wrote "${ep.title}" but couldn't start the pictures: ${ep.error}`, cards: [{ type: "scene", id: ep.id, title: ep.title }], queries: [] };
         return { text: `Here's "${ep.title}": ${v.shots.length} shots, ${v.scene?.styleLabel ?? "Cinematic"}, where the characters talk to each other and every line is lip synced. I'm making the pictures now. Change any shot or anyone in the cast, then press Make the scene.`, cards: [{ type: "scene", id: ep.id, title: ep.title }], queries: [] };

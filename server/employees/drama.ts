@@ -596,7 +596,8 @@ export type SceneCast = { name: string; role: string; look: string; owner?: bool
 export type { Ratio } from "@shared/videoRatio";
 export { ratioFromText } from "@shared/videoRatio";
 export const RATIO_SIZE: Record<Ratio, { w: number; h: number; word: string }> = { "9:16": { w: 1080, h: 1920, word: "vertical 9:16" }, "16:9": { w: 1920, h: 1080, word: "horizontal widescreen 16:9" }, "1:1": { w: 1080, h: 1080, word: "square 1:1" } };
-export const ratioOf = (ep: Pick<DramaEpisode, "kind" | "plan">): Ratio => (ep.kind === "scene" ? scenePlanOf(ep as DramaEpisode).ratio ?? "9:16" : "9:16");
+/** The shape it's filmed in: a Scene's or a campaign's own (2026-10-15: campaigns were always vertical); drama episodes are vertical. */
+export const ratioOf = (ep: Pick<DramaEpisode, "kind" | "plan">): Ratio => (ep.kind === "scene" ? scenePlanOf(ep as DramaEpisode).ratio ?? "9:16" : ep.kind === "campaign" ? planOf(ep as DramaEpisode).ratio ?? "9:16" : "9:16");
 
 export type ScenePlan = { approved?: boolean; style?: string; what?: string; me?: boolean; sceneCast?: SceneCast[]; hidden?: boolean; ratio?: Ratio };
 export const scenePlanOf = (e: Pick<DramaEpisode, "plan">) => parse<ScenePlan>(e.plan, {});
@@ -752,7 +753,7 @@ function takePrompt(s: Shot) {
 const active = new Set<number>();
 const label = (e: Pick<DramaEpisode, "kind" | "number" | "title">) => (e.kind === "campaign" || e.kind === "scene" ? `"${e.title}"` : `Episode ${e.number}`);
 /** narrator: a campaign the owner isn't in is read by this voice instead of hers (2026-10-15). */
-const planOf = (e: Pick<DramaEpisode, "plan">) => parse<{ approved?: boolean; goal?: string; directions?: Direction[]; chosen?: number; script?: string; cta?: string; narrator?: { id: string; name: string } | null }>(e.plan, {});
+const planOf = (e: Pick<DramaEpisode, "plan">) => parse<{ approved?: boolean; goal?: string; directions?: Direction[]; chosen?: number; script?: string; cta?: string; narrator?: { id: string; name: string } | null; ratio?: Ratio }>(e.plan, {});
 export type Direction = { title: string; hook: string; story: string; metaphor: string; location: string; wardrobe: string; lighting: string; camera: string; ending: string };
 
 /** Changes one person in a Scene's own cast and keeps it with the scene. */
@@ -1559,6 +1560,8 @@ export function episodeView(e: DramaEpisode) {
     progress: e.progress,
     videoUrl: e.videoUrl,
     versions: parse<Record<string, string>>(e.versions, {}),
+    /** The shape it was filmed in; the other versions are copies made from it. */
+    ratio: ratioOf(e),
     error: e.error,
     length: `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`,
     cost: hours.meteredSync(e.organizationId) ? "" : `${e.status === "ready" ? "" : "about "}$${(e.costCents / 100).toFixed(2)}`,
