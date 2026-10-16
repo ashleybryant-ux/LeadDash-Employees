@@ -29,6 +29,11 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
   const fromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
   const [tab, setTab] = React.useState<VTab>(fromUrl === "trends" ? "plans" : fromUrl && ["videos", "formats", "avatar", "plans", "episodes", "campaigns", "cast", "style"].includes(fromUrl) ? (fromUrl as VTab) : "videos");
   const made = trpc.videos.list.useQuery({ organizationId: currentOrgId });
+  /* The tab's count is every row on it (2026-10-16): Scenes and edited videos sit on the same
+   * list, and a tab reading "Videos (0)" above two Scenes sent her looking elsewhere. */
+  const scenesMade = trpc.scenes.list.useQuery({ organizationId: currentOrgId });
+  const editsMade = trpc.edits.list.useQuery({ organizationId: currentOrgId });
+  const madeCount = (made.data?.length ?? 0) + (scenesMade.data?.length ?? 0) + (editsMade.data?.length ?? 0);
   const [selected, setSelected] = React.useState<number | null>(null);
 
   const videos = trpc.video.list.useQuery({ organizationId: currentOrgId });
@@ -62,7 +67,7 @@ export default function Videos({ emp }: { emp: EmployeeRow }) {
         value={tab}
         onChange={setTab}
         tabs={[
-          { key: "videos", label: `Videos (${made.data?.length ?? 0})` },
+          { key: "videos", label: `Videos (${madeCount})` },
           { key: "formats", label: "Formats" },
           { key: "avatar", label: "Your avatar" },
           { key: "plans", label: `Video plans (${list.length})` },

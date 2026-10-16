@@ -764,6 +764,7 @@ function ResultCard({ card, emp }: { card: Card; emp: EmployeeRow }) {
     );
   else if (card.type === "page" && card.subtitle?.includes("version")) actions = <PageCardActions id={card.id} href={`${base}/work?page=${card.id}`} />;
   else if (card.type === "page" || card.type === "video") actions = <Link href={`${base}/work`} className="ld-btn">Open plan</Link>;
+  else if (card.type === "scene") actions = <Link href={`${base}/work?scene=${card.id}`} className="ld-btn">Open</Link>;
   else actions = <Link href={`${base}/work`} className="ld-btn">Open</Link>;
 
   return (

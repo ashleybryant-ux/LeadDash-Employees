@@ -25,8 +25,10 @@ export function MadeVideosTab({ empName }: { empName: string }) {
   const editRows = (edits.data ?? []) as EV[];
   const scenes = trpc.scenes.list.useQuery({ organizationId: currentOrgId }, { refetchInterval: (r) => ((r.state.data ?? []).some((e) => e.status === "making") ? 5_000 : false) });
   const sceneRows = (scenes.data ?? []) as SceneV[];
-  const [openScene, setOpenScene] = React.useState<number | null>(null);
-  const fromUrl = typeof window !== "undefined" ? Number(new URLSearchParams(window.location.search).get("edit")) || null : null;
+  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  /* A link to one Scene (?scene=ID) opens that row, so a card or a message can point straight at it. */
+  const [openScene, setOpenScene] = React.useState<number | null>(params ? Number(params.get("scene")) || null : null);
+  const fromUrl = params ? Number(params.get("edit")) || null : null;
   const [open, setOpen] = React.useState<number | null>(null);
   const [openEdit, setOpenEdit] = React.useState<number | null>(fromUrl);
   const [making, setMaking] = React.useState(false);
