@@ -380,6 +380,38 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(sq.scene!.ratio).toBe("1:1");
   }, 240_000);
 
+  it("a talking shot made with Gemini speaks its own line in one pass: no separate voice, no lip sync; never her line (2026-10-16)", async () => {
+    const { orgId, owner } = await makeWorkspace("scene-gemini");
+    const c = caller(owner);
+    const pic = await storagePut(`org-${orgId}/brain/front.jpg`, Buffer.from("jpeg-bytes"), "image/jpeg");
+    const img = await db.createKnowledgeItem({ organizationId: orgId, kind: "image", category: "mission_profile", title: "Ashley headshot", content: "Front", fileUrl: pic.url });
+    await c.avatar.saveSettings({ organizationId: orgId, imageId: img.id, voiceId: "voice-ashley", voiceName: "Ashley", quality: "standard", limitCents: 5000 });
+    sceneOut = SCENE; // Ashley (owner) speaks shot 1; Maya speaks shot 2
+    const v = await c.scenes.write({ organizationId: orgId, what: "I play the therapist; Maya checks in", style: "real", me: true, seconds: 15, ratio: "16:9" });
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    // Her own line stays in her own voice.
+    await expect(c.scenes.engine({ organizationId: orgId, id: v.id, n: 1, engine: "omni" })).rejects.toThrow(/can't say your line in your voice/);
+    const picked = await c.scenes.engine({ organizationId: orgId, id: v.id, n: 2, engine: "omni" });
+    expect(picked.shots[1].engine).toBe("omni");
+    calls = [];
+    await c.scenes.make({ organizationId: orgId, id: v.id });
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    const done = (await c.scenes.get({ organizationId: orgId, id: v.id }))!;
+    expect(done.error).toBeNull();
+    const omni = posts(drama.MODELS.omni);
+    expect(omni).toHaveLength(1);
+    expect(omni[0].prompt).toContain('Maya says');
+    expect(omni[0].prompt).toContain('"You\'re still typing them?"');
+    expect(omni[0].aspect_ratio).toBe("16:9");
+    // Maya's line isn't read by ElevenLabs or lip synced; Ashley's still is, in her voice.
+    const tts = calls.filter((x) => x.url.includes("api.elevenlabs.io/v1/text-to-speech/"));
+    expect(tts.some((x) => x.url.includes("voice-ashley"))).toBe(true);
+    expect(tts.filter((x) => !x.url.includes("voice-ashley"))).toHaveLength(0);
+    expect(posts(drama.MODELS.lipsync)).toHaveLength(1);
+    // Only Gemini's price was added for the shot: no voice, no lip sync.
+    expect(done.shots[1].costCents! - (picked.shots[1].costCents ?? 0)).toBe(Math.ceil(done.shots[1].seconds * drama.PRICE.omniPerSec));
+  }, 240_000);
+
   it("a two-person shot Seedance refuses for real faces moves with Kling instead of stopping the scene", async () => {
     const { orgId, owner } = await makeWorkspace("scene-faces");
     const c = caller(owner);

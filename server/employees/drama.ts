@@ -49,15 +49,21 @@ export const MODELS = {
   perform: "fal-ai/kling-video/v3/pro/motion-control",
   /** The second animator, for shots with two or more people. */
   seedance: "bytedance/seedance-2.0/reference-to-video",
+  /**
+   * Google's Gemini Omni Flash 1.1 (2026-10-16), Veo 3.1's successor on fal: picture, voices and sound
+   * in one pass, the line spoken on camera with no separate lip sync. It picks each voice itself, so it's
+   * a choice for a shot, never for a line the owner speaks in her own voice. 16:9 or 9:16 only.
+   */
+  omni: "google/gemini-omni-flash/v1.1/reference-to-video",
 };
 
-export type Engine = "kling" | "seedance";
-export const ENGINE_LABEL: Record<Engine, string> = { kling: "Kling", seedance: "Seedance" };
+export type Engine = "kling" | "seedance" | "omni";
+export const ENGINE_LABEL: Record<Engine, string> = { kling: "Kling", seedance: "Seedance", omni: "Gemini" };
 /** Kling holds one face best; Seedance holds several people in one frame best. */
 export const engineFor = (s: Pick<Shot, "engine" | "cast">): Engine => s.engine ?? (s.cast.length >= 2 ? "seedance" : "kling");
 
 /** Cents, from fal.ai's price pages (October 2026). */
-export const PRICE = { still: 15, portrait: 15, videoSilentPerSec: 11.2, videoSoundPerSec: 16.8, lipsyncPerSec: 5, performPerSec: 16.8, seedancePerSec: 30.34 };
+export const PRICE = { still: 15, portrait: 15, videoSilentPerSec: 11.2, videoSoundPerSec: 16.8, lipsyncPerSec: 5, performPerSec: 16.8, seedancePerSec: 30.34, /** Gemini Omni Flash 1.1 at 720p, sound included (fal, October 2026). */ omniPerSec: 10 };
 
 export type Shot = {
   n: number;
@@ -149,6 +155,7 @@ export function estimateShot(s: Pick<Shot, "seconds" | "line" | "stillUrl" | "ca
   if (s.takeUrl) return Math.ceil(still + Math.max(3, Math.min(10, Math.ceil(s.takeSeconds || s.seconds || 5))) * PRICE.performPerSec);
   const secs = Math.max(3, Math.min(10, Math.round(s.seconds || 5)));
   const sync = s.line ? PRICE.lipsyncPerSec : 0;
+  if (engineFor(s) === "omni") return Math.ceil(still + secs * PRICE.omniPerSec); // voice and lips in one pass
   if (engineFor(s) === "seedance") return Math.ceil(still + Math.max(4, secs) * (PRICE.seedancePerSec + sync));
   return Math.ceil(still + secs * (s.line ? PRICE.videoSilentPerSec + sync : PRICE.videoSoundPerSec));
 }
@@ -745,6 +752,24 @@ function seedancePrompt(s: Shot, refs: Refs[], drawn = false) {
   return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. Keep every face exactly like its images. ` : ""}${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in @Image1; only the camera and natural movement change. Restrained, realistic motion at normal speed: subtle breathing, natural blinks, small shifts of weight and hands, the kind of micro-movement a real person makes; no surreal body motion, no slow motion, no transformations, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
 
+/**
+ * Gemini Omni Flash takes the still and the faces as numbered images and writes the sound itself, so
+ * the line goes in the prompt, word for word, with who says it and how they sound.
+ */
+function omniPrompt(s: Shot, refs: Refs[], cast: { name: string; look: string }[], drawn = false) {
+  let at = 2;
+  const who = refs.map((r) => {
+    const tags = r.urls.slice(0, 3).map(() => `image ${at++}`);
+    return { n: r.name, tags };
+  });
+  const faces = who.map((r) => `${r.n} is the person in ${r.tags.join(" and ")}`).join("; ");
+  const speaker = s.line ? cast.find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase()) : null;
+  const sounds = speaker?.look ? ` in a natural voice that fits ${speaker.look.split(/[,.]/)[0].trim().toLowerCase()}` : " in a natural voice";
+  const talk = s.line ? ` ${s.line.who} says${sounds}, clearly and at a normal pace: "${s.line.text}" Only ${s.line.who} speaks in this shot; everyone else listens and reacts without talking.` : " Nobody speaks in this shot.";
+  const look = drawn ? "Animate it in exactly the same art style as image 1: every character, outfit and room stays exactly as drawn." : "Keep every face, outfit and room exactly as in image 1. Restrained, realistic motion at normal speed, natural blinks and small movements; no slow motion, no morphing.";
+  return `Image 1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}; keep each face exactly like its images. ` : ""}${s.move}. ${s.action}${talk} ${look} Sound: the room's natural tone${s.sound ? `, ${s.sound}` : ""}. No music, no narration, no on-screen text or captions.`;
+}
+
 /** The owner's take carries the performance and the voice; the still carries how everything looks. */
 function takePrompt(s: Shot) {
   return `${s.move}. ${s.action} Keep the face, outfit, light and room exactly as in the image; follow the person's movement, expressions and timing from the video. Realistic, restrained motion, no on-screen text.`;
@@ -1056,7 +1081,10 @@ export async function makeEpisode(orgId: number, id: number) {
     }
     let audio: Buffer | null = null;
     let seconds = s.seconds;
-    if (s.line) {
+    // Gemini speaks the line itself, so there's no separate voice or lip sync for that shot.
+    const omni = engineFor(s) === "omni" && !s.rawClipUrl;
+    if (omni && s.line) seconds = Math.max(seconds, Math.ceil(s.line.text.split(/\s+/).length / 2.5) + 2);
+    if (s.line && !omni) {
       if (s.lineUrl) audio = await readStored(s.lineUrl).catch(() => null);
       if (!audio) {
         const voice = cast.find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId;
@@ -1095,7 +1123,11 @@ export async function makeEpisode(orgId: number, id: number) {
           ...(refs.length ? { elements: await Promise.all(refs.map(async (r) => ({ frontal_image_url: await asInput(r.urls[0]), reference_image_urls: await Promise.all((r.urls.length > 1 ? r.urls.slice(1, 4) : r.urls).map(asInput)) }))) } : {}),
         }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
       };
-      if (engine === "seedance") {
+      if (engine === "omni") {
+        const faces = refs.flatMap((r) => r.urls.slice(0, 3)).slice(0, 9);
+        // Gemini films 16:9 or 9:16; a square scene is cut from the 9:16 in the edit.
+        clipRes = await falRun(MODELS.omni, { prompt: omniPrompt(s, refs, cast, !!drawnStyle), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), aspect_ratio: ratio === "16:9" ? "16:9" : "9:16", resolution: "720p", duration: seconds }, 25, waiting(`Animating shot ${s.n} of ${shots.length} with Gemini`));
+      } else if (engine === "seedance") {
         const faces = refs.flatMap((r) => r.urls).slice(0, 8);
         try {
           clipRes = await falRun(MODELS.seedance, { prompt: seedancePrompt(s, refs, !!drawnStyle), image_urls: await Promise.all([s.stillUrl!, ...faces].map(asInput)), duration: String(Math.max(4, seconds)), aspect_ratio: ratio, resolution: "720p", generate_audio: !s.line }, 25, waiting(`Animating shot ${s.n} of ${shots.length}`));
@@ -1114,7 +1146,7 @@ export async function makeEpisode(orgId: number, id: number) {
       }
       clip = clipRes?.video?.url as string | undefined;
       if (!clip) throw new Error(`No video came back for shot ${s.n}`);
-      s.costCents = (s.costCents ?? 0) + Math.ceil(seconds * (engine === "seedance" ? PRICE.seedancePerSec : s.line ? PRICE.videoSilentPerSec : PRICE.videoSoundPerSec));
+      s.costCents = (s.costCents ?? 0) + Math.ceil(seconds * (engine === "omni" ? PRICE.omniPerSec : engine === "seedance" ? PRICE.seedancePerSec : s.line ? PRICE.videoSilentPerSec : PRICE.videoSoundPerSec));
       if (audio) {
         // Kept before the lip sync, so if the lip-sync service is down the animation isn't paid for twice.
         s.rawClipUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-shot${s.n}-raw.mp4`, await download(clip), "video/mp4")).url;
@@ -1431,6 +1463,11 @@ export async function animateWith(orgId: number, id: number, n: number, engine: 
   if (!ep) throw new TRPCError({ code: "NOT_FOUND", message: "That video isn't in this workspace." });
   if (ep.status === "making") throw new TRPCError({ code: "BAD_REQUEST", message: "Wait until this one finishes." });
   if (!shotsOf(ep).some((s) => s.n === n)) throw new TRPCError({ code: "NOT_FOUND", message: "That shot isn't in this video." });
+  if (engine === "omni") {
+    const s = shotsOf(ep).find((x) => x.n === n)!;
+    const speaker = s.line ? castFor(orgId, ep).find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase()) : null;
+    if (speaker?.kind === "owner") throw new TRPCError({ code: "BAD_REQUEST", message: "Gemini picks its own voices, so it can't say your line in your voice. Keep Kling for this shot." });
+  }
   const approved = Boolean(planOf(ep).approved);
   const shots = shotsOf(ep).map((s) => (s.n === n ? { ...s, engine, ...(approved ? { clipUrl: null, rawClipUrl: null, status: "todo" as const } : {}) } : s));
   const next = db.updateDramaEpisode(id, orgId, { shots: JSON.stringify(shots) })!;

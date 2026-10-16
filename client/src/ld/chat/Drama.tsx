@@ -70,7 +70,7 @@ function useActions() {
   };
 }
 
-const ENGINE: Record<string, string> = { kling: "Kling", seedance: "Seedance" };
+const ENGINE: Record<string, string> = { kling: "Kling", seedance: "Seedance", omni: "Gemini" };
 const otherEngine = (s: Shot) => (s.engine === "seedance" ? "kling" : "seedance");
 
 /**

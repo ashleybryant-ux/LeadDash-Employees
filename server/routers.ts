@@ -1260,7 +1260,7 @@ export const appRouter = router({
       const dr = await import("./employees/drama");
       return dr.episodeView(await dr.remakeShot(input.organizationId, input.id, input.n));
     }),
-    animateWith: protectedProcedure.input(orgInput.extend({ id: z.number(), n: z.number().int().min(1).max(30), engine: z.enum(["kling", "seedance"]) })).mutation(async ({ ctx, input }) => {
+    animateWith: protectedProcedure.input(orgInput.extend({ id: z.number(), n: z.number().int().min(1).max(30), engine: z.enum(["kling", "seedance", "omni"]) })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
       const dr = await import("./employees/drama");
       return dr.episodeView(await dr.animateWith(input.organizationId, input.id, input.n, input.engine));
@@ -3620,6 +3620,15 @@ export const appRouter = router({
       await requireMember(ctx, input.organizationId, "member");
       const sc = await import("./employees/scene");
       return sc.view(await sc.redoPicture(input.organizationId, input.id, input.n));
+    }),
+    /** One shot made with another model (2026-10-16): Gemini speaks the line itself; Kling or Seedance with the cast's own voices. */
+    engine: protectedProcedure.input(orgInput.extend({ id: z.number().int(), n: z.number().int(), engine: z.enum(["kling", "seedance", "omni"]) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const ep = db.getDramaEpisode(input.id, input.organizationId);
+      if (!ep || ep.kind !== "scene") throw new TRPCError({ code: "NOT_FOUND", message: "That scene isn't in this workspace." });
+      const dr = await import("./employees/drama");
+      return dr.episodeView(await dr.animateWith(input.organizationId, input.id, input.n, input.engine));
     }),
     stop: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId, "member");
