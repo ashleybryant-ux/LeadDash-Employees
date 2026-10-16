@@ -518,3 +518,14 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect((await drama.bigEnough(big, "image/png")).buf).toBe(big);
   }, 240_000);
 });
+
+describe("talking shots are framed for lip sync", () => {
+  it("moves a line off a wide or from-behind shot and keeps a close one as written", async () => {
+    const sc = await import("./employees/scene");
+    expect(sc.talkingFrame({ who: "Maya" }, "Wide establishing")).toBe("Medium close-up");
+    expect(sc.talkingFrame({ who: "Maya" }, "Medium wide")).toBe("Medium close-up");
+    expect(sc.talkingFrame({ who: "Maya" }, "Over the shoulder from behind")).toBe("Medium close-up");
+    expect(sc.talkingFrame({ who: "Maya" }, "Close-up")).toBe("Close-up");
+    expect(sc.talkingFrame(null, "Wide establishing")).toBe("Wide establishing");
+  });
+});

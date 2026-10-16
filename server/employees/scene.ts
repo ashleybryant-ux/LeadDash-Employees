@@ -240,6 +240,8 @@ What she asked for decides the shape: the places, the pace, how it opens and how
 - It is filmed ${drama.RATIO_SIZE[input.ratio ?? "9:16"].word}${input.ratio === "16:9" ? ": compose every shot for a wide screen, with room for people side by side and the place around them" : input.ratio === "1:1" ? ": compose every shot for a square frame" : ": compose every shot for a phone held upright"}.
 - ${shotsWanted[0].toUpperCase()}${shotsWanted.slice(1)}, 3 to 7 seconds each, in as many places as the piece needs.
 - ${script ? "The words are hers. Your work is the picture: who is where, what they do while they talk, the framing, the camera, the places and the cuts." : "When people talk, write their conversation first, the way people really talk: each line answers the line before it, plain words and contractions."} Then cut it into shots: a shot carries at most one line, by someone in that shot, lip synced to their face. Shots with no line are fine wherever the picture says it better. There is no narrator or voice-over track.
+- The people talk to each other: everyone with a speaking part says at least one line, and each line answers the one before it. Someone talking looks at the person they're talking to, not into the camera, unless she asked for talking to camera.
+- Lip sync can only follow a face it can see, so a shot with a line shows the speaker from the chest up or closer, facing the camera (front or three-quarter, never profile or from behind). Wide shots, backs of heads and people walking away carry no line.
 - ${input.me ? `The owner is not the lead: the lead is one of the AI team or someone outside the business. The owner plays herself in a supporting part: a character named ${ownerName} (mark owner true) who speaks a few of the lines. ` : "Nobody plays the owner (owner false). "}As many characters as the piece needs, up to six, never a real client.
 - The AI team members can play themselves, shown as people with their own faces and voices: ${team.map((e) => `${e.name} (${e.roleTitle})`).join(", ") || "none"}. Anyone who works for the business on screen is one of them, by these exact names, in the role they really have; never make up a coworker, assistant or staff member. Have them hand work to each other in their lines. Only people outside the business (a client, a caller) are made up, with plain names.
 - Every shot lists the people in it by name in cast, spelled exactly as in the cast list.${scriptBlock}${refBlock}${current}`,
@@ -291,7 +293,8 @@ What she asked for decides the shape: the places, the pace, how it opens and how
     const pictures = Array.from(new Set((x.pictures ?? []).filter((n) => Number.isInteger(n) && n >= 1 && n <= refs.length))).slice(0, MAX_REFS);
     const shot: drama.Shot = {
       n: i + 1,
-      framing: x.framing.slice(0, 80),
+      // A talking shot is framed where lip sync can find the face (2026-10-16).
+      framing: talkingFrame(line, x.framing),
       move: x.move.slice(0, 120),
       action: x.action.slice(0, 600),
       setting: x.setting.slice(0, 300),
@@ -393,6 +396,13 @@ export async function saveRefs(orgId: number, id: number, refs: { url: string; n
   if (same) return ep;
   db.updateDramaEpisode(id, orgId, { plan: JSON.stringify({ ...p, refs: next }) });
   return rewriteScene(orgId, id, next.length ? "Use her reference pictures the way her notes ask" : "She took the reference pictures out: draw the people and places from the writing alone");
+}
+
+/** A talking shot's framing: close enough, and facing, for lip sync to find the mouth; any other shot keeps the writer's. */
+export function talkingFrame(line: { who: string } | null, framing: string) {
+  const f = (framing || "").slice(0, 80);
+  if (!line) return f;
+  return /\b(close|medium)\b/i.test(f) && !/wide|full|long|establish|aerial|overhead|behind|back/i.test(f) ? f : "Medium close-up";
 }
 
 /** One shot: who speaks, the line, and what we see. A new "what we see" means a new picture. */

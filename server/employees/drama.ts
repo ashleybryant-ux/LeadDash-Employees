@@ -102,6 +102,8 @@ export type Shot = {
   rawClipUrl?: string | null;
   /** The spoken line, made once in the character's voice and kept with the raw clip. */
   lineUrl?: string | null;
+  /** A talking shot's length in the cut: the line plus a breath, so no dead air sits after it. */
+  cutAt?: number | null;
   status?: "todo" | "making" | "done" | "failed";
   error?: string | null;
   costCents?: number;
@@ -730,6 +732,19 @@ export function lookOf(ep: DramaEpisode, seriesLook: string) {
 
 export const sceneOf = (s: Pick<Shot, "scene" | "setting">) => (s.scene != null ? `scene-${s.scene}` : `set-${(s.setting || "").trim().toLowerCase()}`);
 
+/**
+ * WHERE THE SPEAKER'S FACE IS (2026-10-16). Lip sync can only move a mouth it can see. In The Bench,
+ * lines landed on a wide shot with the speaker small and in profile, and on a shot where she turned
+ * away mid-line, so the voice played over a face that couldn't match it. A talking shot frames the
+ * speaker close enough, face toward the camera, talking to the other person rather than the lens.
+ * This is a requirement of lip sync, not a look; everything else about the shot stays the writer's.
+ */
+export function speakerFrame(s: Pick<Shot, "line">) {
+  if (!s.line) return "";
+  return ` ${s.line.who} is speaking in this shot: frame ${s.line.who} from the chest up or closer, face turned toward the camera (front or three-quarter, never profile or from behind), the whole face in frame, unblocked and well lit, mouth clearly visible. ${s.line.who} looks at the person they're talking to just beside the camera, not into the lens.`;
+}
+const KEEP_FACE = (who: string) => ` Through the whole shot ${who} keeps their face toward the camera and in frame: no turning away, looking down or walking out while talking; mouth movement follows natural speech.`;
+
 function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], prev = false, ratio: Ratio = "9:16", pics: SceneRef[] = []) {
   let at = 1;
   const who = refs.map((r) => {
@@ -743,7 +758,7 @@ function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], pr
   const given = pics.map((p) => `reference image ${at++} is a picture the owner gave for this video${p.note ? ` (her note: "${p.note}")` : p.seen ? ` (it shows ${p.seen.replace(/\.$/, "")})` : ""}: use it the way ${p.note ? "her note says" : "it fits this shot"}, taking from it only that, and keep the look of this video for everything else`);
   const before = prev ? ` Reference image ${at} is the shot just before this one in the same scene: keep the same room, light, color grade, wardrobe, hair and props, and continue from that moment from this new camera angle.` : "";
   // The look comes from this video (2026-10-16), never a fixed recipe: a drama, a trailer and a sketch each look like themselves.
-  return `A single photographed frame, ${RATIO_SIZE[ratio].word}${ratio === "16:9" ? ", composed for a wide screen" : ""}. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""}${given.length ? ` ${given.join("; ")}.` : ""} ${look ? `The look of this video: ${look}` : "Shot like a well-made film: real light, natural depth of field."} Set in the present day unless the look says otherwise. Real skin with pores, no beauty-filter smoothing, no orange tan, nothing that looks CGI. No added text, captions or watermarks.${before}`;
+  return `A single photographed frame, ${RATIO_SIZE[ratio].word}${ratio === "16:9" ? ", composed for a wide screen" : ""}. ${s.framing} shot. ${s.action}${speakerFrame(s)} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""}${given.length ? ` ${given.join("; ")}.` : ""} ${look ? `The look of this video: ${look}` : "Shot like a well-made film: real light, natural depth of field."} Set in the present day unless the look says otherwise. Real skin with pores, no beauty-filter smoothing, no orange tan, nothing that looks CGI. No added text, captions or watermarks.${before}`;
 }
 
 /** A Scene drawn in a style: the same shot, drawn instead of photographed, with each person kept like their reference. */
@@ -757,7 +772,7 @@ function drawnStillPrompt(s: Shot, style: { prompt: string }, refs: Refs[], prev
   });
   const before = prev ? ` Reference image ${at++} is the shot just before this one in the same scene: keep the same room, light, colors, wardrobe and props, and continue from that moment from this new angle.` : "";
   const look = styleRefs ? ` The last ${styleRefs === 1 ? "reference image shows" : `${styleRefs} reference images show`} the art style to match.` : "";
-  return `${style.prompt}.${look} A single frame from an animated short film, ${RATIO_SIZE[ratio].word}. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Draw each person as a character in this exact art style while keeping them recognizable as their reference: the same face shape, skin tone, hair and outfit in every shot.` : "No people in frame."} Cinematic composition with depth (foreground, subject, background), expressive faces and clear mouths, motivated light. One frame only, no split panels. No text, letters, captions, logos or watermarks.${before}`;
+  return `${style.prompt}.${look} A single frame from an animated short film, ${RATIO_SIZE[ratio].word}. ${s.framing} shot. ${s.action}${speakerFrame(s)} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Draw each person as a character in this exact art style while keeping them recognizable as their reference: the same face shape, skin tone, hair and outfit in every shot.` : "No people in frame."} Cinematic composition with depth (foreground, subject, background), expressive faces and clear mouths, motivated light. One frame only, no split panels. No text, letters, captions, logos or watermarks.${before}`;
 }
 
 /** The video model moves the camera and the people; it never redesigns them. */
@@ -765,7 +780,8 @@ function motionPrompt(s: Shot, refs: Refs[], drawn = false) {
   const tags = refs.map((r, i) => ({ n: r.name, tag: `@Element${i + 1}` }));
   let action = s.action;
   for (const r of tags) action = action.replace(new RegExp(`\\b${r.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), r.tag);
-  const talk = s.line ? ` ${tags.find((r) => r.n.toLowerCase() === s.line!.who.toLowerCase())?.tag ?? s.line.who} speaks a short line, mouth moving naturally.` : "";
+  const speaker = s.line ? tags.find((r) => r.n.toLowerCase() === s.line!.who.toLowerCase())?.tag ?? s.line.who : "";
+  const talk = s.line ? ` ${speaker} speaks a short line to the person beside the camera, mouth moving naturally.${KEEP_FACE(speaker)}` : "";
   if (drawn) return `${s.move}. ${action}${talk} Animate it in exactly the same art style as the first frame: every character, outfit and room stays exactly as drawn; only the camera and the characters move. Expressive, natural acting at normal speed: gestures, glances, blinks, small movements of the head and hands; no style change, no photorealism, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
   return `${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in the first frame. Believable motion at the pace the shot calls for, the way real people move; no morphing, no warped faces or hands, no surreal body motion, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
@@ -780,7 +796,7 @@ function seedancePrompt(s: Shot, refs: Refs[], drawn = false) {
   let action = s.action;
   for (const r of who) action = action.replace(new RegExp(`\\b${r.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), `the person in ${r.tag}`);
   const faces = who.map((r) => `${r.n} is the person in ${r.all.join(" and ")}`).join("; ");
-  const talk = s.line ? ` ${s.line.who} speaks a short line, mouth moving naturally.` : "";
+  const talk = s.line ? ` ${s.line.who} speaks a short line to the person beside the camera, mouth moving naturally.${KEEP_FACE(s.line.who)}` : "";
   if (drawn) return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. ` : ""}${s.move}. ${action}${talk} Animate it in exactly the same art style as @Image1: every character, outfit and room stays exactly as drawn; only the camera and the characters move. Expressive, natural acting at normal speed; no style change, no photorealism, no morphing, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
   return `@Image1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}. Keep every face exactly like its images. ` : ""}${s.move}. ${action}${talk} Keep every face, outfit and room exactly as in @Image1. Believable motion at the pace the shot calls for, the way real people move; no morphing, no warped faces or hands, no surreal body motion, no on-screen text.${!s.line && s.sound ? ` Sound: ${s.sound}.` : ""}`;
 }
@@ -1132,7 +1148,9 @@ export async function makeEpisode(orgId: number, id: number) {
         audio = await speak(orgId, voice, s.line.text);
         s.lineUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-line${s.n}.mp3`, audio, "audio/mpeg")).url;
       }
-      seconds = Math.max(seconds, Math.ceil(avatar.mp3Tenths(audio) / 10) + 1);
+      // The line decides how long the shot runs (2026-10-16): a 2.5 second line in a 6 second shot left
+      // three seconds of silence after every line, which is why the conversation felt stop and start.
+      seconds = Math.ceil(avatar.mp3Tenths(audio) / 10 + 0.5);
     }
     if (s.vo && !s.voUrl) {
       if (!ownerVoice) throw new Error("Pick your voice under Your avatar first");
@@ -1202,6 +1220,14 @@ export async function makeEpisode(orgId: number, id: number) {
     s.seconds = seconds;
     s.status = "done";
     save(`Shot ${s.n} of ${shots.length} done`);
+  }
+
+  // Every talking shot ends a breath after its line, clips made before this rule included.
+  for (const s of shots) {
+    s.cutAt = null;
+    if (!s.line || !s.lineUrl || s.takeUrl || engineFor(s) === "omni") continue;
+    const said = await readStored(s.lineUrl).catch(() => null);
+    if (said) s.cutAt = Math.max(2, avatar.mp3Tenths(said) / 10 + 0.6);
   }
 
   // 4. Music, sound, the cut, captions, the call to action, and the export versions.
@@ -1333,7 +1359,7 @@ export function transitionFor(a: Pick<Shot, "scene" | "setting" | "flow">, b: Pi
   return { kind: "fade", seconds: 0.12 };
 }
 
-export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "clipUrl" | "voUrl" | "caption"> & Partial<Pick<Shot, "scene" | "setting" | "flow" | "line">>)[], opts: { music?: Buffer | null; cta?: string; versions?: boolean; beds?: Record<string, Buffer>; ratio?: Ratio } = {}) {
+export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "clipUrl" | "voUrl" | "caption"> & Partial<Pick<Shot, "scene" | "setting" | "flow" | "line" | "cutAt">>)[], opts: { music?: Buffer | null; cta?: string; versions?: boolean; beds?: Record<string, Buffer>; ratio?: Ratio } = {}) {
   const ratio: Ratio = opts.ratio ?? "9:16";
   const { w: W, h: H } = RATIO_SIZE[ratio];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-drama-"));
@@ -1363,8 +1389,14 @@ export async function stitch(orgId: number, name: string, shots: (Pick<Shot, "cl
     }
     const probes = await Promise.all(files.map((f) => probe(f)));
     // Generated clips often open on a held frame: a tenth of a second comes off the front of every shot after the first.
-    const head = probes.map((p, i) => (i > 0 && p.duration > 1.5 ? 0.1 : 0));
-    const dur = probes.map((p, i) => p.duration - head[i]);
+    // Never a talking shot: its line starts on the first frame, and trimming it put the voice ahead of the mouth.
+    const head = probes.map((p, i) => (i > 0 && p.duration > 1.5 && !shots[i].line ? 0.1 : 0));
+    // A talking shot ends a breath after its line, so no dead air sits between lines.
+    const dur = probes.map((p, i) => {
+      const d = p.duration - head[i];
+      const cut = shots[i].cutAt;
+      return cut && cut > 1 ? Math.min(d, cut) : d;
+    });
     const trans = shots.slice(0, -1).map((s, i) => {
       const t = transitionFor(s as Shot, shots[i + 1] as Shot);
       return { ...t, seconds: Math.min(t.seconds, dur[i] / 3, dur[i + 1] / 3) };

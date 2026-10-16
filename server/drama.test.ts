@@ -510,6 +510,23 @@ describe("Elena's mini drama studio", () => {
     // 2 + 1.9 + 1.9 seconds, less a 0.12 and a 0.5 second overlap.
     expect(picture).toBeGreaterThan(4.8);
   }, 120_000);
+  it("ends a talking shot a breath after its line and never trims the front of one", async () => {
+    const { orgId } = await makeWorkspace("drama-talk");
+    const saved = await Promise.all([0, 1].map((i) => storagePut(`org-${orgId}/drama/t${i}.mp4`, clip, "video/mp4")));
+    const shots = [
+      { clipUrl: saved[0].url, voUrl: null, caption: "", scene: 1, setting: "Office", flow: "cut" as const, line: { who: "Maya", text: "Hi." }, cutAt: 1.2 },
+      { clipUrl: saved[1].url, voUrl: null, caption: "", scene: 1, setting: "Office", flow: "cut" as const, line: { who: "Sam", text: "Hey." }, cutAt: 1.4 },
+    ];
+    const out = await drama.stitch(orgId, "talk", shots);
+    const rel = out["9:16"].replace(/^\/files\//, "");
+    const file = [path.join(process.env.UPLOADS_DIR || "uploads", rel), path.resolve("uploads", rel)].find((f) => fs.existsSync(f))!;
+    const p = await drama.probe(file);
+    // 1.2 + 1.4 seconds (not two full 2-second clips), less the short overlap between them.
+    expect(p.duration).toBeGreaterThan(2.2);
+    expect(p.duration).toBeLessThan(2.7);
+    expect(drama.speakerFrame({ line: { who: "Maya", text: "Hi." } })).toMatch(/Maya.*face turned toward the camera.*never profile or from behind/);
+    expect(drama.speakerFrame({ line: null })).toBe("");
+  }, 120_000);
   it("says what fal.ai is doing while it waits, stops when asked, and picks up an episode nothing is working on", async () => {
     const real = globalThis.fetch;
     let polls = 0;
