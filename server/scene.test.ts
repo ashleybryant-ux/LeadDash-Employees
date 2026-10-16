@@ -234,6 +234,14 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect(card.type).toBe("scene");
     expect(db.getDramaEpisode(card.id, orgId)!.kind).toBe("scene");
     await waitFor(() => db.getDramaEpisode(card.id, orgId)!.status !== "making");
+    // Asking again is a new one (2026-10-16): she is told to make it again, never only "I already made it".
+    expect(prompts.chat_decision).toMatch(/asks again for something you already made in this chat, even in the same words, they want it made again/);
+    expect(prompts.chat_decision).toMatch(/The same request again \(the same brief, pasted again\) is a new one/);
+    const again = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: "Make a 3D animated video of two therapists talking about notes" });
+    const second = JSON.parse(again.reply.cards!)[0];
+    expect(second.type).toBe("scene");
+    expect(second.id).not.toBe(card.id);
+    await waitFor(() => db.getDramaEpisode(second.id, orgId)!.status !== "making");
 
     await caller(staff).hours.setPlan({ organizationId: orgId, plan: "starter" });
     expect((await c.videos.options({ organizationId: orgId })).scenes).toBe(false);
