@@ -198,6 +198,10 @@ describe("Elena's mini drama studio", () => {
     const sync = posts(drama.MODELS.lipsync);
     expect(sync).toHaveLength(1);
     expect(sync[0].audio_url).toMatch(/^data:audio\/mpeg;base64,/);
+    // Lip sync runs on sync.so's pro model, and the line is read slower than the voice's own pace.
+    expect(sync[0].model).toBe("lipsync-2-pro");
+    const read = calls.find((x) => x.url.includes("text-to-speech/voice-ashley"))!;
+    expect(JSON.parse(read.init.body).voice_settings).toMatchObject({ speed: (await import("./employees/avatar")).DIALOGUE_SPEED });
     const msgs = await db.listChatMessages(orgId, elena.id, 10);
     expect(msgs[msgs.length - 1].content).toMatch(/^Episode 1, "The New Clinician," is cut\. 4 shots/);
 
@@ -636,5 +640,18 @@ describe("Every made-up person gets their own voice (2026-10-15)", () => {
     expect(pickVoice(stock, "woman, 24, hoodie")!.id).toBe("f2");
     // Only when every fitting voice is taken does one repeat, and it is still a woman's voice.
     expect(pickVoice(stock, "woman", ["f1", "f2", "f3"])!.gender).toBe("female");
+  });
+});
+
+describe("Dialogue at a talking pace (2026-10-16)", () => {
+  it("slows a line that runs faster than people talk, never below 0.85, and leaves a talking-pace line alone", async () => {
+    const drama = await import("./employees/drama");
+    // 12 words in 3.5 seconds is 3.4 a second: slowed toward 2.6.
+    expect(drama.tempoFor(12, 3.5)).toBe(0.85);
+    expect(drama.tempoFor(10, 3.6)).toBe(0.94);
+    // 10 words in 4.5 seconds is already a talking pace.
+    expect(drama.tempoFor(10, 4.5)).toBe(1);
+    expect(drama.tempoFor(30, 2)).toBe(0.85);
+    expect(drama.LEAD_IN).toBeGreaterThan(0);
   });
 });

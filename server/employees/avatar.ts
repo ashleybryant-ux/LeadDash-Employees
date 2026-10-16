@@ -97,16 +97,26 @@ export async function hasElevenLabs(orgId: number) {
  * The script read aloud, as MP3: a standard voice, or an ElevenLabs voice on this workspace's
  * own account. A workspace never uses LeadDash's ElevenLabs account unless it is LeadDash's own.
  */
-export async function speech(orgId: number, voiceId: string, text: string): Promise<Buffer> {
+/**
+ * A line of dialogue in a Scene (2026-10-16): "the voices are talking too fast". Lines were read at the
+ * voices' own quick read-aloud pace, back to back; a person talking to someone across a desk is slower,
+ * with small pauses, so dialogue is asked for that way (and drama.ts holds every line to a talking pace).
+ */
+export const DIALOGUE_SPEED = 0.9;
+
+export async function speech(orgId: number, voiceId: string, text: string, opts: { dialogue?: boolean } = {}): Promise<Buffer> {
   if (isStandard(voiceId)) {
     const huddle = await import("./huddle");
-    const buf = await huddle.openAiAudio({ voice: voiceId.slice(STANDARD.length) }, text, "Speak straight to the camera like a real person talking to a friend: natural pace, warm, conversational, never robotic.");
+    const how = opts.dialogue
+      ? "You are a person in a scene talking to someone right in front of you: an unhurried, relaxed conversational pace, a small natural pause at each comma and between sentences, warm, never rushed, never like reading an ad."
+      : "Speak straight to the camera like a real person talking to a friend: natural pace, warm, conversational, never robotic.";
+    const buf = await huddle.openAiAudio({ voice: voiceId.slice(STANDARD.length) }, text, how);
     if (!buf) throw new Error(huddle.lastSpeechError() ?? "The voice didn't come back.");
     return buf;
   }
   const key = await elevenKey(orgId);
   if (!key) throw new Error("That voice is from ElevenLabs, which isn't connected in this workspace. Connect it under Integrations, or pick a standard voice.");
-  return tts(key, voiceId, text);
+  return tts(key, voiceId, text, opts.dialogue ? DIALOGUE_SPEED : undefined);
 }
 
 /** How long an MP3 plays, in tenths of a second, from its frames (128 kbps if it can't be read). */
@@ -261,12 +271,25 @@ async function readStored(fileUrl: string) {
   return fs.promises.readFile(path.join(uploadsRoot(), fileUrl.replace(/^\/files\//, "")));
 }
 
-async function tts(key: string, voiceId: string, text: string) {
+/** The voice's own saved settings, so a slower read keeps everything else about how it sounds. */
+async function savedSettings(key: string, voiceId: string): Promise<Record<string, unknown>> {
+  try {
+    const res = await fetch(`https://api.elevenlabs.io/v1/voices/${encodeURIComponent(voiceId)}/settings`, { headers: { "xi-api-key": key }, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return {};
+    const j = await res.json();
+    return j && typeof j === "object" ? (j as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function tts(key: string, voiceId: string, text: string, speed?: number) {
+  const voice_settings = speed ? { ...(await savedSettings(key, voiceId)), speed } : undefined;
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
     method: "POST",
     headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
     // The multilingual model sounds most like a cloned voice.
-    body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_AVATAR_MODEL || "eleven_multilingual_v2" }),
+    body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_AVATAR_MODEL || "eleven_multilingual_v2", ...(voice_settings ? { voice_settings } : {}) }),
     signal: AbortSignal.timeout(90_000),
   });
   if (!res.ok) {

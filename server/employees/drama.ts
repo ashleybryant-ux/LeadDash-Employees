@@ -63,7 +63,7 @@ export const ENGINE_LABEL: Record<Engine, string> = { kling: "Kling", seedance: 
 export const engineFor = (s: Pick<Shot, "engine" | "cast">): Engine => s.engine ?? (s.cast.length >= 2 ? "seedance" : "kling");
 
 /** Cents, from fal.ai's price pages (October 2026). */
-export const PRICE = { still: 15, portrait: 15, videoSilentPerSec: 11.2, videoSoundPerSec: 16.8, lipsyncPerSec: 5, performPerSec: 16.8, seedancePerSec: 30.34, /** Gemini Omni Flash 1.1 at 720p, sound included (fal, October 2026). */ omniPerSec: 10 };
+export const PRICE = { still: 15, portrait: 15, videoSilentPerSec: 11.2, videoSoundPerSec: 16.8, lipsyncPerSec: 8.4, performPerSec: 16.8, seedancePerSec: 30.34, /** Gemini Omni Flash 1.1 at 720p, sound included (fal, October 2026). */ omniPerSec: 10 };
 
 export type Shot = {
   n: number;
@@ -600,6 +600,43 @@ async function download(url: string) {
 /** A line read aloud in this workspace's voice for the character (never another workspace's account). */
 const speak = (orgId: number, voiceId: string, text: string) => avatar.speech(orgId, voiceId, text);
 
+/**
+ * TALKING PACE (2026-10-16). "What If Your Software Came With a Team" came back with the voices talking
+ * too fast and the lips off. People talking across a desk run about 2.5 words a second; the voices read
+ * faster than that, and every line started on the shot's very first frame, where a cut or a fade covers
+ * the first word and lip sync has no frames before it to settle the mouth. So every spoken line:
+ * - is asked for at a slower, conversational read (avatar.speech with dialogue on),
+ * - is slowed further, without changing the pitch, when it still runs over TALK_WPS,
+ * - starts LEAD_IN seconds into its shot, after a breath.
+ */
+export const TALK_WPS = 2.6;
+export const LEAD_IN = 0.3;
+/** How much to slow a line read in `seconds` (1 is unchanged); never below 0.85, past which voices smear. */
+export function tempoFor(words: number, seconds: number) {
+  const wps = words / Math.max(0.5, seconds);
+  return wps > TALK_WPS ? Math.max(0.85, Math.round((TALK_WPS / wps) * 100) / 100) : 1;
+}
+async function paced(audio: Buffer, text: string) {
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const tempo = tempoFor(words, avatar.mp3Tenths(audio) / 10);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ld-line-"));
+  try {
+    const src = path.join(dir, "in.mp3");
+    const out = path.join(dir, "out.mp3");
+    fs.writeFileSync(src, audio);
+    const ms = Math.round(LEAD_IN * 1000);
+    await run(ffmpegPath(), ["-y", "-i", src, "-af", `${tempo < 1 ? `atempo=${tempo},` : ""}adelay=${ms}:all=1,asetpts=N/SR/TB`, "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", out], { timeout: 60_000 });
+    return fs.readFileSync(out);
+  } catch (err) {
+    console.warn("[drama] couldn't pace a line, using it as read:", err instanceof Error ? err.message : err);
+    return audio;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+/** A spoken line in a shot: a conversational read, held to a talking pace, a breath into the shot. */
+const speakLine = async (orgId: number, voiceId: string, text: string) => paced(await avatar.speech(orgId, voiceId, text, { dialogue: true }), text);
+
 /** A Scene's own cast (2026-10-13): kept with the scene, not the series. The owner plays herself when she's in it. */
 /** team: an AI team member playing themselves (their employee kind): their portrait and voice, never a made-up face. */
 export type SceneCast = { name: string; role: string; look: string; owner?: boolean; team?: string | null; voiceId: string | null; voiceName: string | null; portrait?: string | null; /** Her picture of this person: their face comes from it. */ picture?: string | null };
@@ -814,7 +851,7 @@ function omniPrompt(s: Shot, refs: Refs[], cast: { name: string; look: string }[
   const faces = who.map((r) => `${r.n} is the person in ${r.tags.join(" and ")}`).join("; ");
   const speaker = s.line ? cast.find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase()) : null;
   const sounds = speaker?.look ? ` in a natural voice that fits ${speaker.look.split(/[,.]/)[0].trim().toLowerCase()}` : " in a natural voice";
-  const talk = s.line ? ` ${s.line.who} says${sounds}, clearly and at a normal pace: "${s.line.text}" Only ${s.line.who} speaks in this shot; everyone else listens and reacts without talking.` : " Nobody speaks in this shot.";
+  const talk = s.line ? ` ${s.line.who} says${sounds}, clearly, at an unhurried conversational pace with small natural pauses, starting a breath into the shot: "${s.line.text}" Only ${s.line.who} speaks in this shot; everyone else listens and reacts without talking.` : " Nobody speaks in this shot.";
   const look = drawn ? "Animate it in exactly the same art style as image 1: every character, outfit and room stays exactly as drawn." : "Keep every face, outfit and room exactly as in image 1. Believable motion at the pace the shot calls for; no morphing, no warped faces or hands.";
   return `Image 1 is the first frame of this shot: start exactly on it. ${faces ? `${faces}; keep each face exactly like its images. ` : ""}${s.move}. ${s.action}${talk} ${look} Sound: the room's natural tone${s.sound ? `, ${s.sound}` : ""}. No music, no narration, no on-screen text or captions.`;
 }
@@ -1017,7 +1054,8 @@ async function lipSync(clip: string, audio: Buffer, s: Shot, total: number, wait
   const audioIn = dataUri(audio, "audio/mpeg");
   const secs = avatar.mp3Tenths(audio) / 10;
   const tries: { model: string; input: Record<string, unknown> }[] = [
-    { model: MODELS.lipsync, input: { video_url: clip, audio_url: audioIn, sync_mode: "cut_off" } },
+    // lipsync-2-pro (2026-10-16): sync.so's sharper model, mouths and teeth that hold up on a close face; lipsync-2 looked off.
+    { model: MODELS.lipsync, input: { model: "lipsync-2-pro", video_url: clip, audio_url: audioIn, sync_mode: "cut_off" } },
     // Kling's lip sync needs at least 2 seconds of speech.
     ...(secs >= 2 ? [{ model: MODELS.lipsyncKling, input: { video_url: clip, audio_url: audioIn } }] : []),
     { model: MODELS.lipsyncLatent, input: { video_url: clip, audio_url: audioIn } },
@@ -1139,13 +1177,14 @@ export async function makeEpisode(orgId: number, id: number) {
     let seconds = s.seconds;
     // Gemini speaks the line itself, so there's no separate voice or lip sync for that shot.
     const omni = engineFor(s) === "omni" && !s.rawClipUrl;
-    if (omni && s.line) seconds = Math.max(seconds, Math.ceil(s.line.text.split(/\s+/).length / 2.5) + 2);
+    // Room for the line at a talking pace, so Gemini never hurries it to fit the clip.
+    if (omni && s.line) seconds = Math.max(seconds, Math.ceil(s.line.text.split(/\s+/).length / 2.2 + LEAD_IN) + 2);
     if (s.line && !omni) {
       if (s.lineUrl) audio = await readStored(s.lineUrl).catch(() => null);
       if (!audio) {
         const voice = cast.find((c) => c.name.toLowerCase() === s.line!.who.toLowerCase())?.voiceId;
         if (!voice) throw new Error(`${s.line.who} doesn't have a voice yet`);
-        audio = await speak(orgId, voice, s.line.text);
+        audio = await speakLine(orgId, voice, s.line.text);
         s.lineUrl = (await storagePut(`org-${orgId}/drama/${ep.kind}${ep.id}-line${s.n}.mp3`, audio, "audio/mpeg")).url;
       }
       // The line decides how long the shot runs (2026-10-16): a 2.5 second line in a 6 second shot left
