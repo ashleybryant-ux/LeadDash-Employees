@@ -482,6 +482,7 @@ describe("Edit my video: the real cut", () => {
     // On by default; the editor's Sound switch turns it off.
     expect(lk.editLookOf(null).transition.sound).toBe(true);
     expect(lk.editLookOf(JSON.stringify({ transition: { speed: "quick", sound: false } })).transition).toEqual({ speed: "quick", sound: false });
-  }, 600_000 // a real ffmpeg render: on the server it runs at low priority beside every other test);
+    // A real ffmpeg render: on the server it runs at low priority beside every other test, so it gets 10 minutes.
+  }, 600_000);
 });
 
