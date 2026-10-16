@@ -47,3 +47,17 @@ export function ownerWantsIn(text: string): boolean {
     /\bin my (?:own )?voice\b/,
   ].some((re) => re.test(t));
 }
+
+/**
+ * Whether a brief has people on screen speaking lines (2026-10-15): a quoted line, or someone who
+ * asks, says, answers or replies. Those are Scenes, where every line is lip synced, whatever the
+ * brief calls itself (a trailer, an ad, a promo); narrated videos have nobody speaking on screen.
+ * A brief that asks for a narrator or voice-over stays narrated.
+ */
+export function hasDialogue(text: string): boolean {
+  const t = text.replace(/[“”]/g, '"');
+  if (/\b(?:voice-?over|narrat(?:or|ed|ion)|v\.?o\.)\b/i.test(t)) return false;
+  const quoted = (t.match(/"[^"\n]{6,}"/g) ?? []).length;
+  const speaks = /\b(?:asks?|asked|says?|said|answers?|answered|repl(?:y|ies|ied)|tells?|told|responds?|whispers?|shouts?)\b/i.test(t);
+  return quoted >= 1 && speaks ? true : quoted >= 2;
+}

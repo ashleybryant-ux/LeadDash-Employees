@@ -152,7 +152,8 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   const o = opts.data;
   const myVoice = o?.myVoice ?? null;
   const coral = o?.voices.find((v) => v.name === "Coral") ?? null;
-  const voiceId = voice ?? myVoice?.id ?? coral?.id ?? null;
+  // A narrator reads it unless she picks My voice (2026-10-15); a personal story is in her own voice.
+  const voiceId = voice ?? (format === "story" ? myVoice?.id : null) ?? coral?.id ?? myVoice?.id ?? null;
   const logoPick = logo ?? (o?.hasLogo ? "br" : "off");
   const talking = format === "talking";
   const scene = format === "scene";

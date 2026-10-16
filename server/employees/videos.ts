@@ -16,6 +16,7 @@ import * as avatar from "./avatar";
 import * as broll from "./broll";
 import * as styles from "./styles";
 import { systemPromptFor } from "./tasks";
+import { ownerWantsIn } from "@shared/videoRatio";
 
 /**
  * Elena's video agent: any video from an idea, a script kept word for word, a link or a recording.
@@ -196,12 +197,16 @@ async function elena(orgId: number) {
   return emp;
 }
 
-/** The voice for a new video: the one picked, else the workspace's own avatar voice, else a standard voice. */
-async function voiceFor(orgId: number, picked?: string | null) {
+/**
+ * The voice for a new video: the one picked, else a narrator (2026-10-15). Her own avatar voice only
+ * when the video is hers to tell (a personal story, or a brief where she puts herself in it).
+ */
+async function voiceFor(orgId: number, picked?: string | null, hers = false) {
   if (picked) {
     const found = (await avatar.voices(orgId)).find((x) => x.id === picked);
     if (found) return { id: found.id, name: found.name };
   }
+  if (!hers) return DEFAULT_VOICE;
   const s = avatar.settingsOf(await elena(orgId));
   if (s.voiceId && (avatar.isStandard(s.voiceId) || (await avatar.hasElevenLabs(orgId)))) return { id: s.voiceId, name: s.voiceName ?? "Your voice" };
   return DEFAULT_VOICE;
@@ -607,7 +612,7 @@ export async function writeVideo(orgId: number, input: WriteInput) {
     s = await writeIdea(orgId, { instructions, kind, seconds, size, drawn: drawn?.label });
   }
   const shots = await assignSources(orgId, kind, size, s.shots, false, !!drawn);
-  const voice = source === "audio" ? { id: null as string | null, name: "Your recording" } : await voiceFor(orgId, input.voiceId);
+  const voice = source === "audio" ? { id: null as string | null, name: "Your recording" } : await voiceFor(orgId, input.voiceId, kind === "story" || ownerWantsIn(instructions));
   const b = await brand(orgId);
   const look: Look = {
     captions: { ...DEFAULT_LOOK.captions, ...(input.look?.captions ?? {}) },

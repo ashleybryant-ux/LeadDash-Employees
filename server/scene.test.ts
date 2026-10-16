@@ -239,6 +239,25 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     expect((await c.videos.options({ organizationId: orgId })).scenes).toBe(false);
     await expect(c.scenes.write({ organizationId: orgId, what: "Two people talk", style: "real" })).rejects.toThrow(/work-hour plans/);
   }, 240_000);
+  it("a trailer with people saying lines is a Scene without her, even when chat picks a narrated campaign (2026-10-15)", async () => {
+    const { orgId, owner } = await makeWorkspace("scene-trailer");
+    const c = caller(owner);
+    const elena = (await db.getEmployeeByKind(orgId, "video"))!;
+    sceneOut = { ...SCENE, cast: SCENE.cast.map((x) => ({ ...x, owner: false })) };
+    const brief = `I want a cinematic movie trailer. Dr. Cohen asks her team, "Are we on pace for this month?" Harper answers that six invoices are past due. At the door she asks, "Who do I thank for all this?" Harper says, "Us. We're your AI team."`;
+    // Her chat brain sent it to the narrated campaign maker and guessed she's in it.
+    decision = { ...blank, action: "write_campaign", notes: brief, from: "me" };
+    const r = await c.chat.send({ organizationId: orgId, employeeId: elena.id, text: brief });
+    const card = JSON.parse(r.reply.cards!)[0];
+    expect(card.type).toBe("scene");
+    const ep = db.getDramaEpisode(card.id, orgId)!;
+    expect(ep.kind).toBe("scene");
+    // "I want" doesn't put her in it.
+    expect(JSON.parse(ep.plan).me).toBe(false);
+    expect(prompts.scene).toMatch(/Nobody plays the owner/);
+    await waitFor(() => db.getDramaEpisode(card.id, orgId)!.status !== "making");
+  }, 240_000);
+
   it("the AI team plays themselves: their own portraits and voices, never a made-up face, and the scene comes in every size", async () => {
     const { orgId, owner } = await makeWorkspace("scene-team");
     const c = caller(owner);
