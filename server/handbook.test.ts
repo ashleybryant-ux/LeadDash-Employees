@@ -75,3 +75,23 @@ describe("handbook: the LeadDash base plus each workspace's additions", () => {
     expect(taylor.description).toContain("press");
   });
 });
+
+describe("Elena is exempt from the handbook (2026-10-16)", () => {
+  it("gets the short ground rules instead of the handbook; everyone else still gets the handbook", async () => {
+    const { makeWorkspace } = await import("./test/helpers");
+    const dbm = await import("./db");
+    const tasks = await import("./employees/tasks");
+    const w = await makeWorkspace("elena-exempt");
+    const elena = (await dbm.getEmployeeByKind(w.orgId, "video"))!;
+    const other = (await dbm.getEmployeeByKind(w.orgId, "coo"))!;
+    const e = (await tasks.systemPromptFor(elena, "Write a scene.")).system;
+    const o = (await tasks.systemPromptFor(other, "Plan the week.")).system;
+    expect(e).not.toContain("LeadDash Employees Handbook");
+    expect(e).toContain("# Ground rules");
+    expect(e).toMatch(/Client information never appears in a video/);
+    expect(e).toMatch(/without her approval/);
+    expect(o).toContain("LeadDash Employees Handbook");
+    // Far less in front of her brief.
+    expect(e.length).toBeLessThan(o.length / 2);
+  }, 60_000);
+});
