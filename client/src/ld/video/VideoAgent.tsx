@@ -7,6 +7,8 @@ import { useHoursAsk } from "../HoursAsk";
 import { ErrorLine } from "../ui";
 import { StylePicker, StyleRow } from "./Styles";
 import { ratioFromText, type Ratio } from "@shared/videoRatio";
+import { readScript, scriptSeconds } from "@shared/script";
+import { RefPicker, type RefPick } from "./RefPictures";
 
 /** The shapes a Scene can be filmed in, named for where each is watched. */
 const SCENE_SHAPES: { r: Ratio; label: string }[] = [
@@ -137,6 +139,29 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
   const [sceneRatio, setSceneRatio] = React.useState<Ratio>("9:16");
   const saidRatio = ratioFromText(text);
   const shape: Ratio = saidRatio ?? sceneRatio;
+  // A Scene's length: none picked means as long as it needs, and a script sets its own.
+  const [sceneSeconds, setSceneSeconds] = React.useState<number | null>(null);
+  const script = format === "scene" ? readScript(text) : null;
+  const scriptLength = script ? scriptSeconds(script) : null;
+  const [refs, setRefs] = React.useState<RefPick[]>([]);
+  const scriptFile = React.useRef<HTMLInputElement>(null);
+  const [scriptErr, setScriptErr] = React.useState<string | null>(null);
+  const [readingScript, setReadingScript] = React.useState(false);
+  const addScript = async (file: File | null) => {
+    if (!file) return;
+    setScriptErr(null);
+    setReadingScript(true);
+    try {
+      const r = await uploadTo<{ text: string; cut: boolean }>("scene_script", currentOrgId, file);
+      setText((t) => (t.trim() ? `${t.trim()}\n\n${r.text}` : r.text));
+      if (r.cut) setScriptErr("That file is long, so only the first 20,000 characters were added.");
+    } catch (err) {
+      setScriptErr(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setReadingScript(false);
+      if (scriptFile.current) scriptFile.current.value = "";
+    }
+  };
   const writeScene = trpc.scenes.write.useMutation({
     onSuccess: async (r) => {
       await Promise.all([utils.chat.list.invalidate(), utils.scenes.list.invalidate()]);
@@ -248,8 +273,18 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
       {scene ? (
         <>
           <div className="ld-vm-field">
-            <span className="ld-lbl">What happens</span>
-            <textarea className="ld-vm-text" value={text} onChange={(e) => setText(e.target.value)} placeholder="Who is in it and what happens between them. One or two lines is enough." aria-label="What happens" />
+            <div className="ld-refs-head">
+              <span className="ld-lbl">What happens</span>
+              <button type="button" className="ld-btn sm" style={{ width: 150 }} disabled={readingScript} onClick={() => scriptFile.current?.click()}>{readingScript ? "Reading..." : "Upload a script"}</button>
+            </div>
+            <textarea className="ld-vm-text" value={text} onChange={(e) => setText(e.target.value)} placeholder="Who is in it and what happens between them, or paste your script. One or two lines is enough." aria-label="What happens" />
+            <input ref={scriptFile} type="file" accept=".pdf,.docx,.txt,.md,text/plain,application/pdf" hidden onChange={(e) => void addScript(e.target.files?.[0] ?? null)} />
+            {script && <span className="ld-small">{`Your script: ${script.length} lines, used word for word.`}</span>}
+            {scriptErr && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{scriptErr}</span>}
+          </div>
+          <div className="ld-vm-field">
+            <span className="ld-lbl">Reference pictures</span>
+            <RefPicker orgId={currentOrgId} value={refs} onChange={setRefs} />
           </div>
           <StyleRow value={style} onChange={setStyle} realLabel="Cinematic" />
           <div className="ld-vm-grid">
@@ -263,10 +298,12 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
             <div className="ld-vm-field">
               <span className="ld-lbl">Length</span>
               <div className="ld-row" style={{ flexWrap: "wrap", gap: 6 }}>
-                {[15, 30, 60].map((l) => (
-                  <Chip key={l} on={Math.min(60, seconds) === l} onClick={() => setSeconds(l)}>{lengthText(l)}</Chip>
+                <Chip on={!script && sceneSeconds === null} disabled={!!script} onClick={() => setSceneSeconds(null)}>As it needs</Chip>
+                {[15, 30, 60, 120].map((l) => (
+                  <Chip key={l} on={!script && sceneSeconds === l} disabled={!!script} onClick={() => setSceneSeconds(l)}>{lengthText(l)}</Chip>
                 ))}
               </div>
+              {scriptLength !== null && <span className="ld-small">{`Set by your script, about ${Math.floor(scriptLength / 60)}:${String(scriptLength % 60).padStart(2, "0")}.`}</span>}
             </div>
             <div className="ld-vm-field">
               <span className="ld-lbl">Filmed in</span>
@@ -282,7 +319,7 @@ export function VideoMaker({ initial = "", onPlanned, onCancel }: { initial?: st
             <span className="ld-vm-hours">Paid per use, like your dramas. The cost shows before anything moves.</span>
             <div className="ld-row" style={{ gap: 8 }}>
               {onCancel && <button type="button" className="ld-btn" style={{ width: 150 }} onClick={onCancel}>Cancel</button>}
-              <button type="button" className="ld-btn p" style={{ width: 150 }} disabled={!text.trim() || writeScene.isPending} onClick={() => writeScene.mutate({ organizationId: currentOrgId, what: text.trim(), style, me, seconds: Math.min(60, seconds), ratio: shape })}>
+              <button type="button" className="ld-btn p" style={{ width: 150 }} disabled={!text.trim() || writeScene.isPending} onClick={() => writeScene.mutate({ organizationId: currentOrgId, what: text.trim(), style, me, seconds: script ? null : sceneSeconds, ratio: shape, refs: refs.map((r) => ({ url: r.url, note: r.note.trim(), ...(r.seen ? { seen: r.seen } : {}) })) })}>
                 {writeScene.isPending ? "Writing..." : "Write the scene"}
               </button>
             </div>

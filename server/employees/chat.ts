@@ -151,7 +151,7 @@ const ACTION_HELP: Record<string, string> = {
   make_avatar: "make_avatar: make the video from a script you wrote (\"Make it\", \"make the video\", \"make the one about the waitlist\"). Put words from its title in `target` ('' for the newest script).",
   make_video_script: "make_video_script: write any video she describes that isn't a drama or a campaign film: an ad, a b-roll story under a voice-over, an explainer of motion text, a personal story with her photos, audio to video, a slideshow, or her on camera. Put everything she said about it in `notes` (her words, with the call to action), the format in `focus` (ad, broll, explainer, story, audio, slideshow; talking when she wants someone on camera; '' when she didn't say, which shows her the Make a video card), the size in `to` (vertical, square or wide; vertical when she didn't say), and the length in seconds in `count` (30 when she didn't say). You write the storyboard: the hook first, then each scene with what we see, what's said and where the footage comes from (her b-roll library, stock, a new AI clip, motion text, the logo end card); nothing is made yet.",
   change_scene: "change_scene: change a Scene she already has (\"make it 16:9\", \"film it wide\", \"make Harper sound calmer\", \"rewrite the ending\"). Put words from its title in `target` ('' for the newest scene) and the change, in her words, in `notes`. It's written again with the change and its pictures are drawn again; a new shape (16:9, 9:16 or 1:1) means it's filmed again in that shape, not the old video with blurred sides.",
-  make_scene: "make_scene: a Scene, a short film where the characters talk to each other with every line lip synced (not narrated). Use it whenever she wants characters talking, a conversation, dialogue, a skit or a cinematic scene, in real people or a drawn style. Put what happens, in her words, in `notes`; the style in `focus` ('real' for cinematic real people, or a drawn style: animation for 3D animation, claymation, watercolor, anime and the rest; 'real' when she didn't say); 'me' in `from` only when she puts herself in it ('I play the therapist', 'I am in it', 'put me in it'), else ''. Saying 'I' or 'me' in a request ('I want a scene', 'make me a trailer') does not put her in it; the length in seconds in `count` (30 when she didn't say). You write the cast with their voices and the shots with who says what, and start the pictures; she presses Make the scene on the card.",
+  make_scene: "make_scene: a Scene, a short film where the characters talk to each other with every line lip synced (not narrated). Use it whenever she wants characters talking, a conversation, dialogue, a skit or a cinematic scene, in real people or a drawn style. Put what happens, in her words, in `notes`; the style in `focus` ('real' for cinematic real people, or a drawn style: animation for 3D animation, claymation, watercolor, anime and the rest; 'real' when she didn't say); 'me' in `from` only when she puts herself in it ('I play the therapist', 'I am in it', 'put me in it'), else ''. Saying 'I' or 'me' in a request ('I want a scene', 'make me a trailer') does not put her in it; the length in seconds in `count` (0 when she didn't say: a script she sends sets its own length, and anything else runs as long as it needs). A script she pastes or attaches is used word for word, so put her words in `notes` as she wrote them, never a summary; pictures she attaches are her reference pictures. You write the cast with their voices and the shots with who says what, and start the pictures; she presses Make the scene on the card.",
   make_video: "make_video: make a video you wrote with make_video_script, or one of your Video plans (\"Make it\", \"make the evening hours one\"). Put words from its title in `target` ('' for the newest one not made yet).",
   change_video_script: "change_video_script: she wants the shot list of a video you wrote changed (\"change the script\", \"make the ending warmer\", \"drop shot 3\"). Put words from its title in `target` ('' for the newest) and exactly what to change in `notes`.",
   set_deadlines: "set_deadlines: give every action item from a meeting or huddle a due date and make sure each one is a tracked task with its owner (\"assign deadlines from the last meeting\"). Put the meeting's name in `target` ('' for the most recent, huddles included) and any timing the person gave (\"by Friday\", \"next week\") in `notes`.",
@@ -1589,8 +1589,16 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       }
     }
     case "make_scene": {
-      const what = (d.notes || d.message || ctx.said || "").trim();
+      // Her script, word for word: an attached script file, or the script in her own message, never a summary of it.
+      const { readScript } = await import("@shared/script");
+      const docs = files.filter((f) => f.kind === "document" && f.text.trim());
+      const scriptDoc = docs.find((f) => readScript(f.text));
+      const saidScript = !scriptDoc && readScript(ctx.said ?? "") ? (ctx.said ?? "").trim() : "";
+      const brief = (d.notes || d.message || ctx.said || "").trim();
+      const what = (scriptDoc ? `${saidScript || brief}\n\n${scriptDoc.text.trim()}` : saidScript || [brief, ...docs.map((f) => `${f.name}:\n${f.text.trim().slice(0, 6000)}`)].filter(Boolean).join("\n\n")).trim().slice(0, 20_000);
       if (!what) return { text: "What happens in the scene, and who is in it?", cards: [], queries: [] };
+      // Pictures she attached are reference pictures; what she wrote says what they're for.
+      const refs = files.filter((f) => f.kind === "image" && f.fileUrl).slice(0, 6).map((f) => ({ url: f.fileUrl!, note: "", seen: f.text ?? "" }));
       try {
         const sc = await import("./scene");
         const styles = await import("./styles");
@@ -1600,7 +1608,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
         const me = (d.from || "").trim().toLowerCase() === "me" && (await import("@shared/videoRatio")).ownerWantsIn(`${ctx.said ?? ""} ${what}`);
         // The shape from her own words first: the notes are the model's summary and can drop "16:9".
         const ratio = (await import("@shared/videoRatio")).ratioFromText(ctx.said ?? "");
-        const ep = await sc.writeScene(org, { what, style, me, seconds: d.count || 30, ratio });
+        const ep = await sc.writeScene(org, { what, style, me, seconds: d.count || null, ratio, refs });
         const v = sc.view(ep);
         if (ep.status === "failed") return { text: `I wrote "${ep.title}" but couldn't start the pictures: ${ep.error}`, cards: [{ type: "scene", id: ep.id, title: ep.title }], queries: [] };
         return { text: `Here's "${ep.title}": ${v.shots.length} shots, ${v.scene?.styleLabel ?? "Cinematic"}, where the characters talk to each other and every line is lip synced. I'm making the pictures now. Change any shot or anyone in the cast, then press Make the scene.`, cards: [{ type: "scene", id: ep.id, title: ep.title }], queries: [] };

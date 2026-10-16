@@ -84,6 +84,8 @@ export type Shot = {
   plate?: string;
   /** Brain images shown in the shot (a logo, a screenshot of the product), by title. */
   props?: string[];
+  /** A Scene's reference pictures this shot uses (her uploads, numbered from 1). */
+  pictures?: number[];
   /** Voice-over in the owner's voice over this shot (campaigns). */
   vo?: string;
   voUrl?: string | null;
@@ -598,7 +600,13 @@ const speak = (orgId: number, voiceId: string, text: string) => avatar.speech(or
 
 /** A Scene's own cast (2026-10-13): kept with the scene, not the series. The owner plays herself when she's in it. */
 /** team: an AI team member playing themselves (their employee kind): their portrait and voice, never a made-up face. */
-export type SceneCast = { name: string; role: string; look: string; owner?: boolean; team?: string | null; voiceId: string | null; voiceName: string | null; portrait?: string | null };
+export type SceneCast = { name: string; role: string; look: string; owner?: boolean; team?: string | null; voiceId: string | null; voiceName: string | null; portrait?: string | null; /** Her picture of this person: their face comes from it. */ picture?: string | null };
+/**
+ * A picture she gave a Scene (2026-10-16), with what it's for in her words if she said.
+ * No fixed kinds: the writer works out from the note and the brief whether it's a person,
+ * a place, a product or a feel, and uses it that way. seen is what the picture shows.
+ */
+export type SceneRef = { url: string; note: string; seen?: string };
 /** The shape a video is filmed in. Scenes can be any of these; dramas and campaigns are filmed vertical. */
 export type { Ratio } from "@shared/videoRatio";
 export { ratioFromText } from "@shared/videoRatio";
@@ -606,8 +614,16 @@ export const RATIO_SIZE: Record<Ratio, { w: number; h: number; word: string }> =
 /** The shape it's filmed in: a Scene's or a campaign's own (2026-10-15: campaigns were always vertical); drama episodes are vertical. */
 export const ratioOf = (ep: Pick<DramaEpisode, "kind" | "plan">): Ratio => (ep.kind === "scene" ? scenePlanOf(ep as DramaEpisode).ratio ?? "9:16" : ep.kind === "campaign" ? planOf(ep as DramaEpisode).ratio ?? "9:16" : "9:16");
 
-export type ScenePlan = { approved?: boolean; style?: string; what?: string; me?: boolean; sceneCast?: SceneCast[]; hidden?: boolean; ratio?: Ratio; /** The look the writer gave this scene from her request; every picture is drawn to it. */ look?: string };
+export type ScenePlan = { approved?: boolean; style?: string; what?: string; me?: boolean; sceneCast?: SceneCast[]; hidden?: boolean; ratio?: Ratio; /** The look the writer gave this scene from her request; every picture is drawn to it. */ look?: string; refs?: SceneRef[] };
 export const scenePlanOf = (e: Pick<DramaEpisode, "plan">) => parse<ScenePlan>(e.plan, {});
+/** The reference pictures a Scene's shot uses: the ones the writer put on it, and never a person's picture (their portrait carries the face). */
+export function picturesFor(e: Pick<DramaEpisode, "plan">, s: Pick<Shot, "pictures">): SceneRef[] {
+  const p = scenePlanOf(e);
+  const people = new Set((p.sceneCast ?? []).map((c) => c.picture).filter(Boolean));
+  return Array.from(new Set(s.pictures ?? []))
+    .map((n) => p.refs?.[n - 1])
+    .filter((r): r is SceneRef => !!r && !people.has(r.url));
+}
 /** The scene's drawn style, or null for real people. */
 export async function sceneStyle(orgId: number, e: Pick<DramaEpisode, "kind" | "plan">) {
   if (e.kind !== "scene") return null;
@@ -677,8 +693,11 @@ export function pickVoice<V extends { id: string; gender: string; description?: 
 }
 
 /** A real-looking portrait for a Scene's own character, kept with the scene. */
-async function scenePortrait(orgId: number, sceneId: number, c: DramaCastMember, look: string) {
-  const r = await falRun(MODELS.portrait, { prompt: `Candid portrait photograph of ${c.name}, ${c.look}, as they look in 2026: current clothes and hair, no heavy makeup. Head and shoulders, facing the camera, neutral expression, soft window light, plain background, real skin with pores and natural shine, no beauty-filter smoothing, no orange tan, muted colors, 50mm lens. ${look}`, aspect_ratio: "3:4", num_images: 1, output_format: "png" }, 5);
+async function scenePortrait(orgId: number, sceneId: number, c: DramaCastMember, look: string, picture: string | null = null) {
+  // Her picture of this person: the face, hair and skin tone come from it, never its light, background or quality.
+  const r = picture
+    ? await falRun(MODELS.still, { prompt: `A portrait photograph of the person in the reference picture, ${c.name}: the same face, features, skin tone and hair. Take only the person from the picture, not its light, background, filter or picture quality. ${c.look}. Head and shoulders, facing the camera, neutral expression, plain background, real skin with pores and natural shine, no beauty-filter smoothing. ${look}`, image_urls: [await asInput(picture)], aspect_ratio: "3:4", num_images: 1, output_format: "png" }, 5)
+    : await falRun(MODELS.portrait, { prompt: `Candid portrait photograph of ${c.name}, ${c.look}, as they look in 2026: current clothes and hair, no heavy makeup. Head and shoulders, facing the camera, neutral expression, soft window light, plain background, real skin with pores and natural shine, no beauty-filter smoothing, no orange tan, muted colors, 50mm lens. ${look}`, aspect_ratio: "3:4", num_images: 1, output_format: "png" }, 5);
   const url = r?.images?.[0]?.url;
   if (!url) throw new Error(`No portrait came back for ${c.name}`);
   return (await storagePut(`org-${orgId}/drama/scene${sceneId}-cast${-c.id}-${Date.now()}.png`, await download(url), "image/png")).url;
@@ -711,7 +730,7 @@ export function lookOf(ep: DramaEpisode, seriesLook: string) {
 
 export const sceneOf = (s: Pick<Shot, "scene" | "setting">) => (s.scene != null ? `scene-${s.scene}` : `set-${(s.setting || "").trim().toLowerCase()}`);
 
-function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], prev = false, ratio: Ratio = "9:16") {
+function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], prev = false, ratio: Ratio = "9:16", pics: SceneRef[] = []) {
   let at = 1;
   const who = refs.map((r) => {
     const from = at;
@@ -720,9 +739,11 @@ function stillPrompt(s: Shot, look: string, refs: Refs[], props: Prop[] = [], pr
     return `${r.name} (the person in ${which}${r.look ? `, ${r.look}` : ""})`;
   });
   const shown = props.map((p) => `reference image ${at++} is ${p.title}: show it exactly as it is`);
+  // Her own pictures: used the way her note says, and only for that; the look of this video still decides the rest.
+  const given = pics.map((p) => `reference image ${at++} is a picture the owner gave for this video${p.note ? ` (her note: "${p.note}")` : p.seen ? ` (it shows ${p.seen.replace(/\.$/, "")})` : ""}: use it the way ${p.note ? "her note says" : "it fits this shot"}, taking from it only that, and keep the look of this video for everything else`);
   const before = prev ? ` Reference image ${at} is the shot just before this one in the same scene: keep the same room, light, color grade, wardrobe, hair and props, and continue from that moment from this new camera angle.` : "";
   // The look comes from this video (2026-10-16), never a fixed recipe: a drama, a trailer and a sketch each look like themselves.
-  return `A single photographed frame, ${RATIO_SIZE[ratio].word}${ratio === "16:9" ? ", composed for a wide screen" : ""}. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""} ${look ? `The look of this video: ${look}` : "Shot like a well-made film: real light, natural depth of field."} Set in the present day unless the look says otherwise. Real skin with pores, no beauty-filter smoothing, no orange tan, nothing that looks CGI. No added text, captions or watermarks.${before}`;
+  return `A single photographed frame, ${RATIO_SIZE[ratio].word}${ratio === "16:9" ? ", composed for a wide screen" : ""}. ${s.framing} shot. ${s.action} Setting: ${s.setting}. ${who.length ? `On screen: ${who.join("; ")}. Keep each face exactly like its reference, including skin tone, hair and features.` : "No people in frame."}${shown.length ? ` ${shown.join("; ")}.` : ""}${given.length ? ` ${given.join("; ")}.` : ""} ${look ? `The look of this video: ${look}` : "Shot like a well-made film: real light, natural depth of field."} Set in the present day unless the look says otherwise. Real skin with pores, no beauty-filter smoothing, no orange tan, nothing that looks CGI. No added text, captions or watermarks.${before}`;
 }
 
 /** A Scene drawn in a style: the same shot, drawn instead of photographed, with each person kept like their reference. */
@@ -956,7 +977,10 @@ async function refsFor(orgId: number, s: Shot, look: string, ep: Pick<DramaEpiso
       let url = c.photoUrl;
       if (!url) {
         extra += PRICE.portrait;
-        url = drawn ? await styles.draw(orgId, { prompt: styles.portraitPrompt(drawn, { name: c.name, look: c.look }), ratio: "3:4", refs: drawn.refs, name: `scene-${ep.id}-cast${-c.id}` }) : await scenePortrait(orgId, ep.id, c, look);
+        const picture = ep.kind === "scene" ? scenePlanOf(ep).sceneCast?.[-c.id - 1]?.picture ?? null : null;
+        url = drawn
+          ? await styles.draw(orgId, { prompt: `${styles.portraitPrompt(drawn, { name: c.name, look: c.look })}${picture ? " Draw the person in the first reference picture as this character: the same face shape, hair and skin tone." : ""}`, ratio: "3:4", refs: picture ? [picture, ...drawn.refs] : drawn.refs, name: `scene-${ep.id}-cast${-c.id}` })
+          : await scenePortrait(orgId, ep.id, c, look, picture);
         saveSceneCastMember(orgId, ep.id, -c.id - 1, { portrait: url });
       }
       refs.push({ name: c.name, look: c.look, urls: [url] });
@@ -1032,11 +1056,14 @@ export async function makeEpisode(orgId: number, id: number) {
     // The shot before it in the same scene is a reference too, so the room, light and wardrobe carry over.
     const i = shots.indexOf(s);
     const prevStill = i > 0 && sceneOf(shots[i - 1]) === sceneOf(s) ? shots[i - 1].stillUrl ?? null : null;
-    const all = [...[...refs.flatMap((r) => r.urls), ...shown.map((p) => p.url)].slice(0, 13), ...(prevStill ? [prevStill] : [])];
+    const people = [...refs.flatMap((r) => r.urls), ...shown.map((p) => p.url)].slice(0, 13);
+    // Her reference pictures this shot uses, in the room the people and props leave.
+    const given = ep.kind === "scene" ? picturesFor(ep, s).slice(0, Math.max(0, 13 - people.length)) : [];
+    const all = [...people, ...given.map((p) => p.url), ...(prevStill ? [prevStill] : [])];
     const drawn = await sceneStyle(orgId, ep);
     // A drawn scene shows no props, and a custom style's own pictures come last, after the people and the shot before.
     if (drawn) all.splice(0, all.length, ...[...refs.flatMap((r) => r.urls)].slice(0, 12), ...(prevStill ? [prevStill] : []), ...drawn.refs.slice(0, 2));
-    const prompt = drawn ? drawnStillPrompt(s, drawn, refs, !!prevStill, Math.min(2, drawn.refs.length), ratio) : stillPrompt(s, look, refs, shown, !!prevStill, ratio);
+    const prompt = drawn ? drawnStillPrompt(s, drawn, refs, !!prevStill, Math.min(2, drawn.refs.length), ratio) : stillPrompt(s, look, refs, shown, !!prevStill, ratio, given);
     const res = all.length
       ? await falRun(MODELS.still, { prompt, image_urls: await Promise.all(all.map(asInput)), aspect_ratio: ratio, num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`))
       : await falRun(MODELS.portrait, { prompt: drawn ? drawnStillPrompt(s, drawn, refs, false, 0, ratio) : stillPrompt(s, look, refs, [], false, ratio), aspect_ratio: ratio, num_images: 1, output_format: "png" }, 5, waiting(`Keyframe ${s.n} of ${shots.length}`));
@@ -1635,6 +1662,7 @@ function sceneView(e: DramaEpisode) {
     me: Boolean(p.me),
     ratio: p.ratio ?? "9:16",
     cast: (p.sceneCast ?? []).map((c, i) => ({ index: i, name: c.name, role: c.role, look: c.look, owner: Boolean(c.owner), team: Boolean(c.team), voiceId: c.voiceId, voiceName: c.voiceName, portrait: c.portrait ?? null })),
+    refs: (p.refs ?? []).map((r) => ({ url: r.url, note: r.note })),
     pct: Math.max(0, Math.min(100, pct)),
   };
 }

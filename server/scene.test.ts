@@ -428,6 +428,62 @@ describe("Scenes: characters talking to each other, lip synced", () => {
     }
   }, 240_000);
 
+  it("her reference pictures: a person's picture is that character's face, a place picture goes on its shots, and her notes decide (2026-10-16)", async () => {
+    const { orgId, owner } = await makeWorkspace("scene-refs");
+    const c = caller(owner);
+    const face = await storagePut(`org-${orgId}/scenes/face.png`, Buffer.from("png-face"), "image/png");
+    const room = await storagePut(`org-${orgId}/scenes/room.png`, Buffer.from("png-room"), "image/png");
+    sceneOut = {
+      ...SCENE,
+      cast: [{ ...SCENE.cast[0], owner: false, picture: 0 }, { ...SCENE.cast[1], picture: 1 }],
+      shots: SCENE.shots.map((x, i) => ({ ...x, pictures: i === 1 ? [2] : [] })),
+    };
+    const v = await c.scenes.write({
+      organizationId: orgId,
+      what: "A cinematic scene where Maya shows Ashley LeadDash",
+      style: "real",
+      refs: [{ url: face.url, note: "This is Maya" }, { url: room.url, note: "" , seen: "A bright office with plants" }, { url: "https://elsewhere.example/x.png", note: "Not ours" }],
+    });
+    expect(prompts.scene).toContain('Picture 1: her note: "This is Maya"');
+    expect(prompts.scene).toContain("Picture 2: no note. It shows: A bright office with plants");
+    expect(prompts.scene).not.toContain("Not ours");
+    expect(prompts.scene).toMatch(/As long as the piece needs/);
+    expect(v.scene!.refs).toEqual([{ url: face.url, note: "This is Maya" }, { url: room.url, note: "" }]);
+    await waitFor(() => db.getDramaEpisode(v.id, orgId)!.status !== "making");
+    // Maya's portrait is made from her picture, taking only the person.
+    const portrait = posts(drama.MODELS.still).find((b) => /portrait photograph of the person in the reference picture, Maya/.test(b.prompt));
+    expect(portrait?.prompt).toMatch(/not its light, background, filter or picture quality/);
+    expect(portrait?.image_urls).toHaveLength(1);
+    // The office picture is on shot 2 only, used the way it fits.
+    const stills = posts(drama.MODELS.still).filter((b) => /A single photographed frame/.test(b.prompt));
+    const withRoom = stills.filter((b) => /a picture the owner gave for this video \(it shows A bright office with plants\)/.test(b.prompt));
+    expect(withRoom).toHaveLength(1);
+    expect(withRoom[0].prompt).toMatch(/Maya door|Maya leans in the doorway/);
+  }, 240_000);
+
+  it("her script is used word for word, a long line runs over shots, and the length comes from the script (2026-10-16)", async () => {
+    const { orgId, owner } = await makeWorkspace("scene-script");
+    const c = caller(owner);
+    const long = "I looked at every chart from last week, and the numbers say we are behind on the notes. We need a plan before Friday, or the auditors will find it first.";
+    sceneOut = {
+      ...SCENE,
+      cast: SCENE.cast.map((x) => ({ ...x, owner: false })),
+      shots: [
+        { ...SCENE.shots[0], line_text: "Rewritten by the model", script_line: 1 },
+        { ...SCENE.shots[1], line_text: "Shortened", script_line: 2 },
+        { ...SCENE.shots[2], script_line: 0 },
+      ],
+    };
+    const v = await c.scenes.write({ organizationId: orgId, what: `ASHLEY: Four notes left, and it's already six.\nMAYA: ${long}\nASHLEY: Show me.`, style: "real", seconds: 15 });
+    expect(prompts.scene).toMatch(/word for word/);
+    expect(prompts.scene).toMatch(/Her script runs about \d+ seconds/);
+    const said = v.shots.filter((s) => s.line).map((s) => [s.line!.who, s.line!.text]);
+    expect(said[0]).toEqual(["Ashley", "Four notes left, and it's already six."]);
+    expect(said.filter((x) => x[0] === "Maya").map((x) => x[1]).join(" ")).toBe(long);
+    expect(said[said.length - 1]).toEqual(["Ashley", "Show me."]);
+    expect(v.shots.length).toBeGreaterThan(3);
+  }, 240_000);
+
   it("a two-person shot Seedance refuses for real faces moves with Kling instead of stopping the scene", async () => {
     const { orgId, owner } = await makeWorkspace("scene-faces");
     const c = caller(owner);

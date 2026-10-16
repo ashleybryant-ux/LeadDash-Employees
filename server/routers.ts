@@ -223,6 +223,8 @@ function personName(user: User) {
 }
 
 const orgInput = z.object({ organizationId: z.number().int().positive() });
+/** A reference picture for a Scene: her upload and, if she said, what it's for. */
+const sceneRefInput = z.object({ url: z.string().max(500), note: z.string().max(200).optional(), seen: z.string().max(400).optional() });
 
 const ymdZ = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const assigneeZ = z.object({ type: z.enum(["user", "employee", "name"]), id: z.number().int(), name: z.string().max(120) });
@@ -3571,7 +3573,7 @@ export const appRouter = router({
       return ep && ep.kind === "scene" ? (await import("./employees/scene")).view(ep) : null;
     }),
     write: protectedProcedure
-      .input(orgInput.extend({ what: z.string().trim().min(1).max(2000), style: z.string().max(40).nullable().optional(), me: z.boolean().optional(), seconds: z.number().int().min(10).max(60).optional(), ratio: z.enum(["9:16", "16:9", "1:1"]).nullable().optional() }))
+      .input(orgInput.extend({ what: z.string().trim().min(1).max(20_000), style: z.string().max(40).nullable().optional(), me: z.boolean().optional(), seconds: z.number().int().min(10).max(180).nullable().optional(), ratio: z.enum(["9:16", "16:9", "1:1"]).nullable().optional(), refs: z.array(sceneRefInput).max(6).optional() }))
       .mutation(async ({ ctx, input }) => {
         blockReviewer(ctx);
         await requireMember(ctx, input.organizationId, "member");
@@ -3581,6 +3583,13 @@ export const appRouter = router({
         if (emp) await db.createChatMessage({ organizationId: input.organizationId, employeeId: emp.id, role: "employee", authorName: emp.name, content: `Here's "${ep.title}": ${sc.view(ep).shots.length} shots where the characters talk to each other. I'm making the pictures now. Change any shot or anyone in the cast, then press Make the scene.`, cards: JSON.stringify([{ type: "scene", id: ep.id, title: ep.title }]) });
         return sc.view(ep);
       }),
+    /** Her reference pictures on a written scene; a change writes the scene again with them. */
+    saveRefs: protectedProcedure.input(orgInput.extend({ id: z.number().int(), refs: z.array(sceneRefInput).max(6) })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const sc = await import("./employees/scene");
+      return sc.view(await sc.saveRefs(input.organizationId, input.id, input.refs));
+    }),
     saveShot: protectedProcedure
       .input(orgInput.extend({ id: z.number().int(), n: z.number().int(), who: z.string().max(60).nullable(), line: z.string().max(200), see: z.string().max(600) }))
       .mutation(async ({ ctx, input }) => {

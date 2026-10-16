@@ -4,6 +4,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine } from "../ui";
 import { StylePicker } from "./Styles";
 import type { Outputs } from "../types";
+import { RefsSection } from "./RefPictures";
 
 /**
  * A Scene (2026-10-13): characters talking to each other, every line lip synced, in a
@@ -247,6 +248,8 @@ export function SceneCard({ id, bare = false }: { id: number; bare?: boolean }) 
       )}
       {making && <SceneProgress v={v} />}
       {v.status === "failed" && v.error && <span className="ld-small" style={{ color: "var(--ld-bad)" }}>{v.error}</span>}
+
+      <RefsSection orgId={orgId} id={v.id} refs={sc.refs} busy={making} onSaved={refresh} />
 
       <span className="ld-lbl">Cast</span>
       <div className="ld-sc-cast">

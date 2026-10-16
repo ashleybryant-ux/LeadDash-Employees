@@ -3215,6 +3215,18 @@ button.gp-crow:disabled { cursor: default; color: var(--ld-soft); }
 html[data-theme="dark"] .ld-sc-warn { background: #3a2a00; color: #ffffff; border-color: #f0b429; }
 html[data-theme="dark"] .ld-sc-warn b { color: #ffd166; }
 .ld-sc-acts .ld-btn { width: 120px; }
+/* A Scene's reference pictures: a picture and an optional note under it; Add pictures last. */
+.ld-refs { display: flex; flex-wrap: wrap; gap: 12px; }
+.ld-ref { width: 170px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ld-ref-pic { width: 170px; height: 112px; border-radius: 10px; border: 1px solid var(--ld-line4); position: relative; overflow: hidden; background: var(--ld-surface); }
+.ld-ref-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ld-ref-x { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 999px; border: 0; background: rgba(0, 0, 0, 0.65); color: #ffffff; font-size: 14px; font-weight: 800; line-height: 1; display: grid; place-items: center; cursor: pointer; }
+.ld-ref-add { width: 170px; height: 112px; border-radius: 10px; border: 1.5px dashed var(--ld-line4); display: grid; place-items: center; font-size: 13px; font-weight: 800; color: var(--ld-ink); background: var(--ld-surface); cursor: pointer; }
+.ld-ref-add:disabled { opacity: 0.6; cursor: default; }
+.ld-ref-note { font-size: 12.5px; color: var(--ld-ink); overflow-wrap: anywhere; }
+.ld-ref-note.none { color: var(--ld-text2); }
+.ld-refs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+@media (max-width: 520px) { .ld-ref, .ld-ref-pic, .ld-ref-add { width: calc(50% - 6px); } .ld-ref .ld-ref-pic { width: 100%; } }
 .ld-sc-form { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 12px; align-items: center; }
 .ld-sc-shotedit { border: 1px solid var(--ld-accent); border-radius: 10px; padding: 10px; margin-top: -4px; }
 .ld-sc-player { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); gap: 16px; align-items: start; }

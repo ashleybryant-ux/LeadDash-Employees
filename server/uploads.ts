@@ -38,6 +38,8 @@ const LIMITS: Record<string, number> = {
   post_media: 250_000_000,
   broll: 250_000_000,
   style_ref: 15_000_000,
+  scene_ref: 15_000_000,
+  scene_script: 20_000_000,
   video_audio: 200_000_000,
   music: 40_000_000,
   edit_media: 250_000_000,
@@ -309,7 +311,7 @@ export function registerUploads(app: Express) {
       }
 
       const old = unsupportedNote(name);
-      if (old && slot !== "video" && slot !== "post_media" && slot !== "take" && slot !== "broll" && slot !== "video_audio" && slot !== "music" && slot !== "style_ref" && slot !== "edit_media" && slot !== "twin_consent") return res.status(400).json({ error: old });
+      if (old && slot !== "video" && slot !== "post_media" && slot !== "take" && slot !== "broll" && slot !== "video_audio" && slot !== "music" && slot !== "style_ref" && slot !== "scene_ref" && slot !== "edit_media" && slot !== "twin_consent") return res.status(400).json({ error: old });
 
       // Edit my video: a second video for split screen, or a picture to put behind someone (green screen).
       if (slot === "edit_media") {
@@ -335,6 +337,26 @@ export function registerUploads(app: Express) {
       }
 
       // A picture in a look someone wants Elena's videos drawn in (Add style).
+      // A Scene's reference picture: kept, and read so Elena knows what it shows when there's no note.
+      if (slot === "scene_ref") {
+        if (!/^image\/(jpeg|png|webp)$/.test(mime) && !/\.(jpe?g|png|webp)$/i.test(name)) return res.status(400).json({ error: "Upload a JPG, PNG or WebP picture." });
+        const buf = await readBody(req, max);
+        const type = sniffImageType(buf);
+        if (!type) return res.status(400).json({ error: "Upload a JPG, PNG or WebP picture." });
+        const saved = await storagePut(`org-${orgId}/scenes/${Date.now().toString(36)}-${name}`, buf, type);
+        const seen = (await photosAllowed(orgId, "video")) ? await describeImage(buf, type).catch(() => "") : "";
+        return res.json({ url: saved.url, seen: seen.slice(0, 400) });
+      }
+
+      // A Scene's script as a file: its words go into What happens, read word for word.
+      if (slot === "scene_script") {
+        const buf = await readBody(req, max);
+        const read = await readFile(buf, name, mime);
+        const text = read.text.replace(/\r/g, "").trim();
+        if (!text) return res.status(400).json({ error: "I couldn't read any words in that file. Try a PDF, Word file or text file." });
+        return res.json({ name, text: text.slice(0, 20_000), cut: text.length > 20_000 });
+      }
+
       if (slot === "style_ref") {
         if (!/^image\/(jpeg|png|webp)$/.test(mime) && !/\.(jpe?g|png|webp)$/i.test(name)) return res.status(400).json({ error: "Upload a JPG, PNG or WebP picture." });
         const declared = Number(req.headers["content-length"] || 0);
