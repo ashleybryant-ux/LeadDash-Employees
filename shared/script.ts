@@ -22,8 +22,31 @@ export const MAX_SHOT_WORDS = 16;
 // Headings and directions that look like "NAME:" but are not a person speaking.
 const NOT_A_SPEAKER = /^(int|ext|int\/ext|scene|shot|cut to|fade in|fade out|fade to|dissolve to|title|titles|note|notes|music|sfx|sound|camera|angle|setting|location|time|act|part|logline|summary|cast|characters?|v\.?o\.?|o\.?s\.?|transition|super|caption|on screen|onscreen|text|b-roll|broll|visual|visuals|audio|direction|directions|action|tone|style|look|length|format|goal|audience|hook|cta|call to action|mood|genre|ratio|voice|intro|outro|opening|ending|end|props|wardrobe|platform|duration|theme|message|brand|logo|plot|premise|setup|beat|purpose|objective|idea|concept|vibe|pace|lighting|shape)$/i;
 
-/** "Maya: a therapist in her 40s, braids" describes someone; it isn't her talking. */
-const describes = (text: string) => /^(a|an)\s/i.test(text) && !/\b(I|I'm|I've|I'll|you|you're|we|we're|my|our|me|us)\b|[?!]/.test(text);
+/**
+ * "Maya: a therapist in her 40s, braids" or "Harper: composed, in a navy suit" describes someone;
+ * it isn't them talking. Spoken words start with a capital and usually say I, you or we; a
+ * description starts lower case, or reads like a casting note (an age, what they wear).
+ */
+const SPOKEN = /\b(I|I'm|I've|I'll|I'd|you|you're|you've|we|we're|we'll|my|our|me|us|your)\b|[?!]/;
+const describes = (text: string) =>
+  !SPOKEN.test(text) &&
+  (/^(a|an)\s/i.test(text) || /^[a-z]/.test(text) || /\b(early|mid|late)[- ]\d0s\b|\b\d0s\b|\bdressed\b|\bwearing\b|\bin a\b.*\b(suit|blazer|sweater|shirt|dress|jacket|top|turtleneck)\b/i.test(text));
+
+/**
+ * A section heading in a brief ("THE LOOK", "THE PEOPLE", "THE SHOTS", "Wardrobe:") is not a
+ * character (2026-10-16). Read as names, a brief's headings turned every paragraph under them
+ * into dialogue: a 30-second brief came back as 85 shots.
+ */
+const HEADING_WORDS = /\b(look|looks|practice|office|offices|people|cast|characters?|shots?|lines|dialogue|dialog|script|sound|sounds|music|setting|settings|story|scenes?|locations?|wardrobe|lighting|light|camera|notes?|style|mood|tone|props|sets?|world|the end|ending|opening|beats?|timeline|storyboard|production|instructions|overview|treatment|reference|references)\b/i;
+const headingText = (line: string) => line.replace(/[*_#>]/g, "").replace(/\s*\([^)]*\)\s*$/, "").replace(/:\s*$/, "").trim();
+function isHeading(line: string) {
+  const h = headingText(line);
+  if (!h || h.length > 60 || /[.?!]$/.test(h)) return false;
+  if (!/^[A-Z0-9][A-Z0-9 &/'-]*$/.test(h) && !/:\s*$/.test(line.replace(/[*_]/g, "").replace(/\s*\([^)]*\)\s*$/, ""))) return false;
+  return /^the\s/i.test(h) || HEADING_WORDS.test(h);
+}
+/** The heading that starts the spoken lines in a brief ("THE LINES", "Dialogue:", "Script"). */
+const LINES_HEADING = /^(the\s+)?(lines|dialogue|dialog|script|spoken lines|what they say)\b/i;
 
 const cleanName = (s: string) =>
   s
@@ -62,7 +85,15 @@ function splitDirections(s: string) {
  * It counts as a script when at least two lines are spoken by a named person.
  */
 export function readScript(raw: string): ScriptLine[] | null {
-  const rows = raw.replace(/\r/g, "").split("\n");
+  let rows = raw.replace(/\r/g, "").split("\n");
+  // A brief with a section for the lines (THE LINES, Dialogue:) is read from that section only,
+  // so the description above it is never taken for something someone says.
+  const start = rows.findIndex((r) => isHeading(r.trim()) && LINES_HEADING.test(headingText(r.trim())));
+  if (start >= 0) {
+    const after = rows.slice(start + 1);
+    const end = after.findIndex((r) => isHeading(r.trim()));
+    rows = end >= 0 ? after.slice(0, end) : after;
+  }
   const out: ScriptLine[] = [];
   let pending: { who: string; parts: string[]; notes: string[] } | null = null;
   const flush = () => {
@@ -75,6 +106,11 @@ export function readScript(raw: string): ScriptLine[] | null {
   for (const row of rows) {
     const line = row.trim();
     if (!line) {
+      flush();
+      continue;
+    }
+    // A section heading ends the line before it and is never a speaker.
+    if (isHeading(line) && !/^\**[^:*]{1,48}?\**\s*:\s*\S/.test(line)) {
       flush();
       continue;
     }

@@ -28,6 +28,36 @@ describe("readScript: her script is read line by line", () => {
     expect(readScript("Tone: funny\nLength: 30 seconds\nMaya: a therapist in her 40s, braids\nJordan: a front desk lead")).toBeNull();
   });
 
+  it("a brief's section headings and casting notes are never lines (2026-10-16)", () => {
+    const brief = [
+      "Make a new scene called The Bench. 30 seconds, 16:9. I am not in it.",
+      "",
+      "THE LOOK",
+      "Shot on anamorphic 35mm lenses, shallow depth of field.",
+      "",
+      "THE PEOPLE",
+      "Dr. Maya Ellis, owner of the practice: Black woman, early 40s, hair in a low bun.",
+      "Harper: composed and quietly confident, dressed in a fitted navy suit.",
+      "Camille: precise and steady, in a deep burgundy blazer over a black top.",
+      "",
+      "THE SHOTS",
+      "1. (4 seconds, no dialogue) Wide shot of the office at night.",
+      "",
+      "THE LINES (use these word for word)",
+      "Maya: I can't keep doing this by myself. [shot 2]",
+      "Harper: Since you opened the practice. [shot 5]",
+      "Camille: We'll take it from here. Go home, Maya.",
+    ].join("\n");
+    expect(readScript(brief)).toEqual([
+      { who: "Maya", text: "I can't keep doing this by myself.", note: "shot 2" },
+      { who: "Harper", text: "Since you opened the practice.", note: "shot 5" },
+      { who: "Camille", text: "We'll take it from here. Go home, Maya.", note: "" },
+    ]);
+    // Without a lines heading, the headings and casting notes are still skipped.
+    const noHeading = brief.replace("THE LINES (use these word for word)", "");
+    expect(readScript(noHeading)!.map((l) => l.who)).toEqual(["Maya", "Harper", "Camille"]);
+  });
+
   it("its length comes from the words, not a default", () => {
     const s = readScript(Array.from({ length: 12 }, (_, i) => `${i % 2 ? "Harper" : "Maya"}: ${LONG}`).join("\n"))!;
     expect(s).toHaveLength(12);
