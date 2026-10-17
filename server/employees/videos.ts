@@ -593,7 +593,7 @@ export async function writeVideo(orgId: number, input: WriteInput) {
   if (source === "audio") {
     if (!input.sourceUrl?.startsWith(`/files/org-${orgId}/`)) throw new TRPCError({ code: "BAD_REQUEST", message: "Upload the recording first." });
     const { transcribeFile } = await import("../_core/transcribe");
-    const t = await transcribeFile(fs.readFileSync(broll.localFile(input.sourceUrl)));
+    const t = await transcribeFile(fs.readFileSync(broll.localFile(input.sourceUrl)), { orgId });
     if (!t.words.length) throw new TRPCError({ code: "BAD_REQUEST", message: "I couldn't hear any words in that recording." });
     const pick = await pickSegment(orgId, t.words, seconds);
     words = pick.words;
@@ -1399,7 +1399,7 @@ async function voiceOver(v: Video, dir: string) {
   let words: Word[] = [];
   if (ENV.assemblyAiKey && process.env.NODE_ENV !== "test") {
     const { transcribeFile } = await import("../_core/transcribe");
-    words = await transcribeFile(audio, { timeoutMs: 5 * 60_000 }).then((t) => t.words).catch(() => []);
+    words = await transcribeFile(audio, { orgId: v.organizationId, timeoutMs: 5 * 60_000 }).then((t) => t.words).catch(() => []);
   }
   if (!words.length) words = estimateWords(text, tenths / 10);
   const saved = await storagePut(`org-${v.organizationId}/videos/vo-${v.id}.mp3`, audio, "audio/mpeg");

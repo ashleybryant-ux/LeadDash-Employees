@@ -31,6 +31,8 @@ export const ENV = {
   // AI
   /** AssemblyAI LLM Gateway key (same key DashNotes uses). Used for all writing. */
   assemblyAiKey: process.env.ASSEMBLYAI_API_KEY || "",
+  /** Groq (2026-10-17): the cheapest captions, Whisper at $0.04 an hour. Never for a healthcare practice (no BAA). */
+  groqKey: process.env.GROQ_API_KEY || "",
   llmGatewayUrl: process.env.LLM_GATEWAY_URL || "https://llm-gateway.assemblyai.com/v1/chat/completions",
   llmModel: process.env.LLM_MODEL || "claude-sonnet-4-6",
   /**

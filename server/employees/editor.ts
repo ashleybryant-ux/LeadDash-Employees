@@ -223,7 +223,7 @@ async function prepare(orgId: number, id: number, raw: string) {
 
     const audio = path.join(dir, "voice.mp3");
     await run(ff, ["-y", "-loglevel", "error", "-i", mp4, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", audio], { timeout: long });
-    const t = await transcribeFile(fs.readFileSync(audio), { timeoutMs: Math.max(20, Math.ceil(out.seconds / 60) * 2) * 60_000 });
+    const t = await transcribeFile(fs.readFileSync(audio), { orgId, timeoutMs: Math.max(20, Math.ceil(out.seconds / 60) * 2) * 60_000 });
     if (!t.words.length) throw new Error("I couldn't hear any words in that video. Edit my video is for videos of you talking.");
     const lines = linesFrom(t.words.map((w) => ({ text: w.text, start: +w.start.toFixed(3), end: +w.end.toFixed(3) })));
     saveLines(orgId, id, lines);

@@ -192,7 +192,7 @@ export async function checkConsent(orgId: number, id: number) {
     const file = broll.localFile(t.consentUrl);
     const audio = path.join(dir, "c.mp3");
     await run(await ff(), ["-y", "-loglevel", "error", "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", audio], { timeout: 120_000 });
-    const heard = (await transcribeFile(fs.readFileSync(audio), { timeoutMs: 5 * 60_000 })).text;
+    const heard = (await transcribeFile(fs.readFileSync(audio), { orgId, timeoutMs: 5 * 60_000 })).text;
     const score = consentScore(heard, consentLine(t.name));
     if (score < 0.7) {
       return update(orgId, id, { consent: "failed", consentNote: `I heard: "${heard.slice(0, 200)}". Say the whole line as written, then upload it again.` });

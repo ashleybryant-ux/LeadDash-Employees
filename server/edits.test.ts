@@ -219,7 +219,7 @@ describe("Edit my video", { timeout: 60_000 }, () => {
     const lib = await libraryClip(orgId, "Paper calendar", "open paper calendar desk planner");
     const id = await uploaded(orgId);
     // AssemblyAI's current models (speech_model was retired).
-    expect(JSON.parse(calls.find((c) => c.url === "https://api.assemblyai.com/v2/transcript")!.init.body)).toMatchObject({ speech_models: ["universal-3-5-pro", "universal-2"] });
+    expect(JSON.parse(calls.find((c) => c.url === "https://api.assemblyai.com/v2/transcript")!.init.body)).toMatchObject({ speech_models: ["universal-2"] });
     const v = (await caller(owner).edits.get({ organizationId: orgId, id }))!;
     expect(v).toMatchObject({ status: "draft", statusLabel: "Editing", title: "Practice tips", shape: "vertical", length: "0:08", ratios: ["9:16"], caption: "Most therapists never market. Start today.", step: null, error: null });
     expect(v.previewUrl).toMatch(/^\/files\/org-\d+\/edits\/preview_/);
