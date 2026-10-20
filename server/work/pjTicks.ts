@@ -12,6 +12,8 @@ import { doAction, parse, runAutomations, spawnNext, type Action, type Repeat, t
  */
 export async function projectsTicks(now = new Date()) {
   for (const orgId of db.orgsWithProjects()) {
+    // A quiet workspace runs no automations or repeating tasks on its own; tasks still get their times below.
+    if (db.isQuiet(orgId)) continue;
     try {
       await tickOrg(orgId, now);
     } catch (err) {

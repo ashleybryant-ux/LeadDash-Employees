@@ -416,7 +416,8 @@ export async function refresh(orgId: number) {
   after.names = Array.from(new Set([...(before?.names ?? []), ...rowNames(before), ...rowNames(after)])).slice(-5000);
   db.ehr.save(orgId, JSON.stringify(after));
   const org = await db.getOrganizationById(orgId);
-  const posted = await announce(orgId, changes, org?.timezone || "America/Chicago");
+  // A quiet workspace keeps its snapshot fresh for when someone asks, but nobody posts about the changes.
+  const posted = org?.quiet ? 0 : await announce(orgId, changes, org?.timezone || "America/Chicago");
   return { changes, posted, fetchedAt: new Date() };
 }
 

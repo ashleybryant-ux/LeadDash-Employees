@@ -501,6 +501,8 @@ export const appRouter = router({
           signerName: z.string().max(120).optional(),
           signerTitle: z.string().max(120).optional(),
           orgType: z.enum(ORG_TYPES).optional(),
+          /** Quiet: the employees do nothing on their own and answer only when messaged. */
+          quiet: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -518,7 +520,7 @@ export const appRouter = router({
           actorType: "human_user",
           actorName: personName(ctx.user),
           action: "Workspace profile updated",
-          details: `Updated: ${Object.keys(data).join(", ") || "nothing"}.`,
+          details: data.quiet === undefined ? `Updated: ${Object.keys(data).join(", ") || "nothing"}.` : data.quiet ? "Work on their own turned off: the employees answer only when messaged." : "Work on their own turned on.",
         });
         return updated;
       }),

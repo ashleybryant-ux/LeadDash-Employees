@@ -88,7 +88,7 @@ export async function prospectingTicks(now = new Date()) {
   if (now.getTime() - lastTick < 10 * 60_000) return;
   lastTick = now.getTime();
   const sales = await import("./sales");
-  for (const orgId of await db.listAllOrganizationIds()) {
+  for (const orgId of await db.listAwakeOrganizationIds()) {
     try {
       const org = await db.getOrganizationById(orgId);
       if (!org?.sales) continue;

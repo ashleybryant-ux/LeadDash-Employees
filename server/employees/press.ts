@@ -315,7 +315,7 @@ let lastTick = 0;
 export async function pressTicks(now = Date.now()) {
   if (now - lastTick < 15 * 60_000) return;
   lastTick = now;
-  for (const orgId of await db.listAllOrganizationIds()) {
+  for (const orgId of await db.listAwakeOrganizationIds()) {
     if (!pressLink(orgId)) continue;
     enqueue(`press-${orgId}`, () => checkPress(orgId));
   }

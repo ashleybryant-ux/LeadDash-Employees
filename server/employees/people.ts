@@ -527,7 +527,7 @@ export async function peopleTicks(now = new Date()) {
   const hour = now.toISOString().slice(0, 13);
   if (hour === lastRun) return;
   lastRun = hour;
-  for (const orgId of await db.listAllOrganizationIds()) await withUsage({ orgId, kind: "onboarding" }, () => peopleTicksFor(orgId, now)).catch((err) => console.warn(`[people] workspace ${orgId}:`, err instanceof Error ? err.message : err));
+  for (const orgId of await db.listAwakeOrganizationIds()) await withUsage({ orgId, kind: "onboarding" }, () => peopleTicksFor(orgId, now)).catch((err) => console.warn(`[people] workspace ${orgId}:`, err instanceof Error ? err.message : err));
 }
 
 export async function peopleTicksFor(orgId: number, now = new Date()) {

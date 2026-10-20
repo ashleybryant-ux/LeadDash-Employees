@@ -1402,6 +1402,16 @@ export async function listAllOrganizationIds() {
   return getDb().select({ id: organizations.id }).from(organizations).all().map((r) => r.id);
 }
 
+/** Workspaces whose employees may work on their own: every workspace that is not quiet. */
+export async function listAwakeOrganizationIds() {
+  return getDb().select({ id: organizations.id }).from(organizations).where(eq(organizations.quiet, false)).all().map((r) => r.id);
+}
+
+/** True when the workspace is quiet: its employees answer messages but do nothing on their own. */
+export function isQuiet(orgId: number) {
+  return Boolean(getDb().select({ quiet: organizations.quiet }).from(organizations).where(eq(organizations.id, orgId)).get()?.quiet);
+}
+
 // ==========================================
 // App review access (one row, id 1)
 // ==========================================

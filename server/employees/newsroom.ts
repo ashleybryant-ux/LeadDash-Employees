@@ -727,7 +727,7 @@ let lastTick = 0;
 export async function newsroomTicks(now = new Date()) {
   if (now.getTime() - lastTick < 30 * 60_000) return;
   lastTick = now.getTime();
-  for (const orgId of await db.listAllOrganizationIds()) {
+  for (const orgId of await db.listAwakeOrganizationIds()) {
     const st = db.press.getSettings(orgId);
     if (!st) continue; // a desk starts once its press settings exist (Taylor's Press tab or chat)
     const org = await db.getOrganizationById(orgId);

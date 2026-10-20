@@ -284,7 +284,7 @@ export function checkDays(setting = ENV.bidprimeDays): Set<number> | null {
 /** At 7:00 in the workspace's time zone, once a day on the days BIDPRIME_DAYS names (every day when it is empty). */
 export async function bidsTick(now = new Date()) {
   const days = checkDays();
-  for (const orgId of await db.listAllOrganizationIds()) {
+  for (const orgId of await db.listAwakeOrganizationIds()) {
     const c = await connection(orgId).catch(() => null);
     if (!c || c.conn.status === "disconnected" || !c.secrets?.password || isChecking(orgId)) continue;
     const org = await db.getOrganizationById(orgId);

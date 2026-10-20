@@ -82,6 +82,44 @@ function ClientInformation() {
   );
 }
 
+/** The switch for work the employees do without being asked: daily checks, briefs, scheduled tasks, follow-ups. */
+function OnTheirOwn() {
+  const { currentOrg, refetchOrgs } = useTenant();
+  const set = trpc.organizations.update.useMutation({ onSuccess: () => refetchOrgs() });
+  if (!currentOrg) return null;
+  const on = !currentOrg.quiet;
+  const canChange = !currentOrg.role || currentOrg.role === "owner" || currentOrg.role === "admin";
+  return (
+    <section className="ld-card">
+      <div className="ld-sh">
+        <span className="ld-st">Work on their own</span>
+        <span className="ld-row" style={{ gap: 10 }}>
+          <span className="ld-strong" style={{ width: 28, textAlign: "right" }}>{on ? "On" : "Off"}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            aria-label="Work on their own"
+            className={`gp-switch ${on ? "on" : ""}`}
+            disabled={!canChange || set.isPending}
+            onClick={() => set.mutate({ id: currentOrg.id, quiet: on })}
+          >
+            <span />
+          </button>
+        </span>
+      </div>
+      <p style={{ margin: 0, padding: "12px 18px 14px" }}>
+        {on ? "Daily checks, briefs, scheduled tasks and follow-ups run on their own." : "Paused. The employees answer only when someone messages them."}
+      </p>
+      {set.error && (
+        <div style={{ padding: "0 18px 14px" }}>
+          <ErrorLine error={set.error} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 function NotSet() {
   return <span className="ld-muted">Not set</span>;
 }
@@ -225,6 +263,8 @@ export default function Workspace() {
       </div>
 
       <UsageCard />
+
+      <OnTheirOwn />
 
       <section className={`ld-card ${editing === "about" ? "editing" : ""}`}>
         {header("about", "About the business")}

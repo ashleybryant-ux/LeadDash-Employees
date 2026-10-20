@@ -1358,6 +1358,8 @@ export async function coldTicks(now = new Date()) {
   if (replies) lastReplies = now.getTime();
   if (hourly) lastHourly = now.getTime();
   for (const orgId of db.cold.orgsWithKey()) {
+    // A quiet workspace sends no batches and answers no replies on its own.
+    if (db.isQuiet(orgId)) continue;
     const s = settingsOf(orgId);
     const tz = await tzOf(orgId);
     const p = partsIn(now, tz);

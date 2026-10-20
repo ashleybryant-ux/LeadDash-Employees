@@ -21,6 +21,8 @@ export interface Organization {
   brandColors?: string | null;
   fonts?: string | null;
   setupAt?: Date | string | null;
+  /** Quiet: the employees do nothing on their own and answer only when messaged. */
+  quiet?: boolean;
   createdAt: Date;
   updatedAt: Date;
   /** Only a guest on shared Projects lists here. */

@@ -604,7 +604,7 @@ export async function cooTick(orgId: number, now = new Date()) {
 }
 
 export async function cooTicks() {
-  for (const orgId of await db.listAllOrganizationIds()) {
+  for (const orgId of await db.listAwakeOrganizationIds()) {
     await withUsage({ orgId, kind: "coo" }, () => cooTick(orgId)).catch((err) => console.warn("[coo] tick failed:", err instanceof Error ? err.message : err));
   }
 }

@@ -623,7 +623,7 @@ export async function hiringDaily(now = new Date()) {
   if (day === lastHiringDay) return;
   lastHiringDay = day;
   await db.purgeHrProspects(now);
-  for (const orgId of await db.listAllOrganizationIds()) await withUsage({ orgId, kind: "hiring" }, () => hiringDailyFor(orgId, now));
+  for (const orgId of await db.listAwakeOrganizationIds()) await withUsage({ orgId, kind: "hiring" }, () => hiringDailyFor(orgId, now));
 }
 
 async function hiringDailyFor(orgId: number, now: Date) {

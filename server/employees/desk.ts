@@ -912,7 +912,7 @@ export async function briefText(orgId: number, now = new Date()) {
 
 /** 7:30 AM (or the time in the rules) on brief days: Avery posts the brief in his chat and sends a push notice. */
 export async function briefTick(now = new Date()) {
-  for (const orgId of await db.listAllOrganizationIds()) {
+  for (const orgId of await db.listAwakeOrganizationIds()) {
     try {
       const avery = await db.getEmployeeByKind(orgId, "inbox");
       if (!avery || avery.status === "paused") continue;

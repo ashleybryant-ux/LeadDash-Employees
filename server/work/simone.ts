@@ -166,7 +166,7 @@ export async function fridayAsk(orgId: number, tz: string) {
 
 /** Friday: the ask for typed-in numbers. Monday after 7:00: the read, once a week. In November and December: next year's draft, once. */
 export async function goalsTicks() {
-  for (const orgId of await db.listAllOrganizationIds()) {
+  for (const orgId of await db.listAwakeOrganizationIds()) {
     try {
       const tz = await zoneOf(orgId);
       const p = partsIn(new Date(), tz);

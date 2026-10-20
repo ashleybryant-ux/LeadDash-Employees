@@ -1691,6 +1691,8 @@ export async function remindRegistrations(now = new Date()) {
   lastReminderDay = day;
   let sent = 0;
   for (const r of await db.listAllRegistrations()) {
+    // A quiet workspace hears about its registrations when it asks, not on its own.
+    if (db.isQuiet(r.organizationId)) continue;
     const m = (r.expires || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (!m) continue;
     const expires = new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2]));

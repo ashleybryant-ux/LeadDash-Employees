@@ -859,7 +859,7 @@ export async function morningCheck(orgId: number, opts: { force?: boolean } = {}
 }
 
 export async function morningChecks() {
-  for (const orgId of await db.listAllOrganizationIds()) {
+  for (const orgId of await db.listAwakeOrganizationIds()) {
     await withUsage({ orgId, kind: "projects" }, () => morningCheck(orgId)).catch((err) => console.warn("[projects] morning check failed:", err instanceof Error ? err.message : err));
   }
 }

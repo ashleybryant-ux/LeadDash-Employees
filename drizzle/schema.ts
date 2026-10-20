@@ -128,6 +128,11 @@ export const organizations = sqliteTable("organizations", {
   /** JSON: the one-page capability statement Morgan writes and the owner edits. */
   capability: text("capability"),
   internal: integer("internal", { mode: "boolean" }).notNull().default(false),
+  /**
+   * Quiet: the employees do no work on their own (scheduled tasks, morning briefs, daily checks,
+   * follow-ups, first hellos, EHR announcements). They still answer whenever someone messages them.
+   */
+  quiet: integer("quiet", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

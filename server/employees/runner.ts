@@ -104,7 +104,8 @@ export async function tick(now = new Date()) {
   for (const task of due) {
     // Someone on the bench, on vacation or terminated does no scheduled work: the task moves to its next time without running.
     const emp = await db.getEmployeeForOrg(task.employeeId, task.organizationId);
-    if (emp?.status === "paused") {
+    // A quiet workspace's scheduled tasks wait too, so nothing piles up for when it wakes.
+    if (emp?.status === "paused" || db.isQuiet(task.organizationId)) {
       const tz = await timezoneFor(task.organizationId);
       await db.updateScheduledTask(task.id, task.organizationId, { nextRunAt: nextRun(task, tz, new Date(now.getTime() + 60_000)), enabled: task.repeat === "once" ? false : task.enabled });
       continue;
