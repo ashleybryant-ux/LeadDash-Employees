@@ -12,6 +12,7 @@ import { addOpportunityFromText, enqueue, markSubmitted, oppCardFor, parse, type
 import { employeeFor } from "./tasks";
 import { partsIn } from "./schedule";
 import { withUsage } from "../usage";
+import { ENV } from "../_core/env";
 
 /**
  * BidPrime and bid submission.
@@ -269,8 +270,20 @@ Return JSON exactly like {"bids":[{"title":"","agency":"","refnum":"","location"
   return { added: created.length, status: "done" as const };
 }
 
-/** Every morning at 7:00 in the workspace's time zone, once a day. */
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/** Weekdays (0 = Sunday) the automatic check runs, from BIDPRIME_DAYS ("Mon", "Mon,Thu", "monday"); null means every day. */
+export function checkDays(setting = ENV.bidprimeDays): Set<number> | null {
+  const days = setting
+    .split(/[\s,]+/)
+    .map((w) => WEEKDAYS.indexOf(w.trim().toLowerCase().slice(0, 3)))
+    .filter((d) => d >= 0);
+  return days.length ? new Set(days) : null;
+}
+
+/** At 7:00 in the workspace's time zone, once a day on the days BIDPRIME_DAYS names (every day when it is empty). */
 export async function bidsTick(now = new Date()) {
+  const days = checkDays();
   for (const orgId of await db.listAllOrganizationIds()) {
     const c = await connection(orgId).catch(() => null);
     if (!c || c.conn.status === "disconnected" || !c.secrets?.password || isChecking(orgId)) continue;
@@ -278,6 +291,7 @@ export async function bidsTick(now = new Date()) {
     const tz = org?.timezone || "America/Chicago";
     const p = partsIn(now, tz);
     if (p.h < 7) continue;
+    if (days && !days.has(p.wd)) continue;
     const stamp = c.settings.lastAttemptAt ?? c.settings.lastCheckedAt;
     const last = stamp ? partsIn(new Date(stamp), tz) : null;
     if (last && last.y === p.y && last.m === p.m && last.d === p.d) continue;

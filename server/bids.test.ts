@@ -127,6 +127,40 @@ describe("BidPrime", () => {
     await apply.idle();
     expect(mine()).toBe(after);
   });
+
+  it("checks only on the days BIDPRIME_DAYS names, and chat still checks any day", async () => {
+    expect(bids.checkDays("")).toBeNull();
+    expect([...bids.checkDays("Mon")!]).toEqual([1]);
+    expect([...bids.checkDays("monday, thu")!].sort()).toEqual([1, 4]);
+    expect(bids.checkDays("someday")).toBeNull();
+
+    const { ENV } = await import("./_core/env");
+    const was = ENV.bidprimeDays;
+    ENV.bidprimeDays = "Mon";
+    try {
+      const { orgId, owner } = await makeWorkspace("bp-weekly");
+      await bids.saveBidPrime(orgId, "a@b.co", "pw-123456");
+      const mine = () => browserCalls.filter((c) => c.orgId === orgId).length;
+      // Tuesday Oct 6, 2026 at 7:30 AM Chicago: not a check day.
+      await bids.bidsTick(new Date("2026-10-06T12:30:00Z"));
+      await apply.idle();
+      expect(mine()).toBe(0);
+      // Monday Oct 12, 2026 at 7:30 AM Chicago: the weekly check runs.
+      browserReplies.push(() => ({ status: "done", result: '{"bids":[]}' }));
+      await bids.bidsTick(new Date("2026-10-12T12:30:00Z"));
+      await apply.idle();
+      expect(mine()).toBe(1);
+      // Asking Morgan still checks on an off day.
+      const morgan = (await db.getEmployeeByKind(orgId, "grants"))!;
+      browserReplies.push(() => ({ status: "done", result: '{"bids":[]}' }));
+      const r = await caller(owner).chat.send({ organizationId: orgId, employeeId: morgan.id, text: "check bidprime" });
+      expect(r.reply.content).toMatch(/Signing in to BidPrime/);
+      await apply.idle();
+      expect(mine()).toBe(2);
+    } finally {
+      ENV.bidprimeDays = was;
+    }
+  });
 });
 
 describe("Asking Morgan about BidPrime in chat", () => {

@@ -95,13 +95,13 @@ describe("Projects, more like ClickUp", () => {
     expect(running.map((e) => e.taskId)).toEqual([b.id]);
     expect((await me.pj.me({ organizationId: orgId })).running?.taskName).toBe("Offer copy");
     await me.pj.stopTimer({ organizationId: orgId });
-    await me.pj.addTime({ organizationId: orgId, taskId: a.id, day: "2026-10-19", minutes: 90, note: "Mock up version 1", billable: true });
-    await me.pj.addTime({ organizationId: orgId, taskId: a.id, day: "2026-10-20", minutes: 45, note: "Copy review", billable: false });
-    const ts = await me.pj.timesheet({ organizationId: orgId, weekStart: "2026-10-18" });
+    await me.pj.addTime({ organizationId: orgId, taskId: a.id, day: "2025-10-13", minutes: 90, note: "Mock up version 1", billable: true });
+    await me.pj.addTime({ organizationId: orgId, taskId: a.id, day: "2025-10-14", minutes: 45, note: "Copy review", billable: false });
+    const ts = await me.pj.timesheet({ organizationId: orgId, weekStart: "2025-10-12" });
     const row = ts.rows.find((r) => r.taskId === a.id)!;
     expect(row.byDay).toEqual([0, 90, 45, 0, 0, 0, 0]);
     expect(ts.billable).toBeGreaterThanOrEqual(90);
-    const billableOnly = await me.pj.timesheet({ organizationId: orgId, weekStart: "2026-10-18", billable: "yes" });
+    const billableOnly = await me.pj.timesheet({ organizationId: orgId, weekStart: "2025-10-12", billable: "yes" });
     expect(billableOnly.rows.find((r) => r.taskId === a.id)!.total).toBe(90);
     // 10 hours over 5 working days, all in the week of Oct 4, 2026.
     const wl = await me.pj.workload({ organizationId: orgId, start: "2026-10-04", weeks: 2 });

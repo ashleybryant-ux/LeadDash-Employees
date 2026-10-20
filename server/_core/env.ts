@@ -103,6 +103,13 @@ export const ENV = {
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || "",
   vapidSubject: process.env.VAPID_SUBJECT || "mailto:info@leaddash.io",
 
+  // BidPrime
+  /**
+   * Days Morgan's automatic BidPrime check runs, as weekday names ("Mon", or "Mon,Thu").
+   * Empty runs it every day. "Check BidPrime" in her chat works on any day either way.
+   */
+  bidprimeDays: process.env.BIDPRIME_DAYS || "",
+
   // Hiring checks
   /** SAM.gov public API key (free, from a SAM.gov account). Used for the exclusion check. */
   samApiKey: process.env.SAM_API_KEY || "",
