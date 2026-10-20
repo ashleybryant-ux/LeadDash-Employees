@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { attachmentOf } from "./chatVideos";
 import * as db from "./db";
 import * as links from "./teamLinks";
 import { notify } from "./notify";
@@ -578,7 +579,7 @@ export async function send(orgId: number, me: Me, key: string, content: string, 
   const list = await people(orgId);
   const emps = where.channel?.aiAllowed && !(await chatOnly(orgId, me.id)) ? await employeesFor(orgId) : [];
   const mentions = findMentions(text, { users: list.map((p) => ({ id: p.userId, name: p.name || p.email })), employees: emps.filter((e) => e.status !== "paused") });
-  const attachments = files.length ? JSON.stringify(files.map((f) => ({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl }))) : null;
+  const attachments = files.length ? JSON.stringify(files.map(attachmentOf)) : null;
   const row = { organizationId: orgId, channel: key, userId: me.id, authorName: me.name, content: text, attachments, mentions: mentions.users.length || mentions.employees.length ? JSON.stringify(mentions) : null };
   const msg = db.team.send({ ...row, threadOf: parent?.id ?? null });
   if (parent && opts.alsoToChannel) db.team.send(row);

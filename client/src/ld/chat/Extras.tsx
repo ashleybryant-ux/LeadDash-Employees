@@ -15,12 +15,25 @@ import { parseJson, uploadFile } from "../meta";
 // Attachments
 // ==========================================
 
-export type Attached = { id: number; name: string; size: number; kind: "image" | "document"; url: string };
-type Staged = { key: string; name: string; size: number; file?: Attached; error?: string };
+export type Attached = { id: number; name: string; size: number; kind: "image" | "document" | "video"; url: string; poster?: string | null; seconds?: number | null };
+type Staged = { key: string; name: string; size: number; video?: boolean; pct?: number; file?: Attached; error?: string };
 
 export const MAX_FILES = 10;
 export const MAX_BYTES = 20_000_000;
-const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.svg,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.html,.htm";
+/** Videos (MP4, MOV, WebM; what phones record) go up to 250 MB, the same as the server. */
+export const MAX_VIDEO_BYTES = 250_000_000;
+/** video/* lets an iPhone pick from the photo library; the server keeps only MP4, MOV and WebM. */
+export const VIDEO_ACCEPT = "video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm";
+const ACCEPT = `image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.svg,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.html,.htm,${VIDEO_ACCEPT}`;
+
+export const isVideoFile = (f: { name: string; type?: string }) => /^video\//.test(f.type ?? "") || /\.(mp4|mov|m4v|webm)$/i.test(f.name);
+/** The size check before upload: 250 MB for a video, 20 MB for anything else. */
+export function tooBig(f: File) {
+  if (isVideoFile(f)) return f.size > MAX_VIDEO_BYTES ? `Videos must be under ${MAX_VIDEO_BYTES / 1_000_000} MB.` : null;
+  return f.size > MAX_BYTES ? `Files must be under ${MAX_BYTES / 1_000_000} MB.` : null;
+}
+
+export const fmtLength = (sec: number) => `${Math.floor(Math.round(sec) / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")}`;
 
 export function fileSize(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} MB`;
@@ -43,12 +56,13 @@ const X = (
   </svg>
 );
 
-export function AttachmentChip({ f, onRemove, busy, error }: { f: { name: string; size: number; kind?: string; url?: string }; onRemove?: () => void; busy?: boolean; error?: string }) {
+export function AttachmentChip({ f, onRemove, busy, error, pct }: { f: { name: string; size: number; kind?: string; url?: string; poster?: string | null; video?: boolean }; onRemove?: () => void; busy?: boolean; error?: string; pct?: number }) {
+  const video = f.kind === "video" || f.video;
   const inner = (
     <>
-      {f.kind === "image" && f.url ? <img src={f.url} alt="" /> : <span className="ic">{extLabel(f.name)}</span>}
+      {f.kind === "image" && f.url ? <img src={f.url} alt="" /> : video && f.poster ? <img src={f.poster} alt="" /> : <span className="ic">{video ? "VIDEO" : extLabel(f.name)}</span>}
       <span className="nm">{f.name}</span>
-      <span className="sz" style={error ? { color: "var(--ld-bad)" } : undefined}>{error ? "Didn't upload" : busy ? "Uploading..." : fileSize(f.size)}</span>
+      <span className="sz" style={error ? { color: "var(--ld-bad)" } : undefined}>{error ? "Didn't upload" : busy ? (pct ? `Uploading ${pct}%` : "Uploading...") : fileSize(f.size)}</span>
       {onRemove && (
         <button type="button" className="x" aria-label={`Remove ${f.name}`} onClick={onRemove}>
           {X}
@@ -79,12 +93,14 @@ export function useAttachments(orgId: number, employeeId: number, slot: "chat" |
     if (list.length > room) setNote(`Up to ${MAX_FILES} files per message.`);
     for (const file of files) {
       const key = `${file.name}-${file.size}-${Math.random()}`;
-      if (file.size > MAX_BYTES) {
-        setStaged((s) => [...s, { key, name: file.name, size: file.size, error: "Files must be under 20 MB." }]);
+      const video = isVideoFile(file);
+      const big = tooBig(file);
+      if (big) {
+        setStaged((s) => [...s, { key, name: file.name, size: file.size, video, error: big }]);
         continue;
       }
-      setStaged((s) => [...s, { key, name: file.name, size: file.size }]);
-      uploadFile(slot, file, { organizationId: orgId, employeeId })
+      setStaged((s) => [...s, { key, name: file.name, size: file.size, video }]);
+      uploadFile(slot, file, { organizationId: orgId, employeeId }, video ? (pct) => setStaged((s) => s.map((x) => (x.key === key ? { ...x, pct } : x))) : undefined)
         .then((r: Attached) => setStaged((s) => s.map((x) => (x.key === key ? { ...x, file: r } : x))))
         .catch((err: Error) => setStaged((s) => s.map((x) => (x.key === key ? { ...x, error: err.message } : x))));
     }
@@ -105,7 +121,7 @@ export function useAttachments(orgId: number, employeeId: number, slot: "chat" |
   const chips = staged.length ? (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       {staged.map((s) => (
-        <AttachmentChip key={s.key} f={{ name: s.name, size: s.size, kind: s.file?.kind, url: s.file?.url }} busy={!s.file && !s.error} error={s.error} onRemove={() => setStaged((list) => list.filter((x) => x.key !== s.key))} />
+        <AttachmentChip key={s.key} f={{ name: s.name, size: s.size, kind: s.file?.kind, url: s.file?.url, poster: s.file?.poster, video: s.video }} busy={!s.file && !s.error} error={s.error} pct={s.pct} onRemove={() => setStaged((list) => list.filter((x) => x.key !== s.key))} />
       ))}
     </div>
   ) : null;
@@ -169,7 +185,7 @@ export function DropFiles({ onDrop, children, className, style }: { onDrop: (fil
           <div>
             {UPLOAD}
             <b>Drop to attach</b>
-            <span>{`Up to ${MAX_FILES} files, ${MAX_BYTES / 1_000_000} MB each. They go with your next message.`}</span>
+            <span>{`Up to ${MAX_FILES} files. Videos up to ${MAX_VIDEO_BYTES / 1_000_000} MB, other files ${MAX_BYTES / 1_000_000} MB. They go with your next message.`}</span>
           </div>
         </div>
       )}
@@ -177,15 +193,42 @@ export function DropFiles({ onDrop, children, className, style }: { onDrop: (fil
   );
 }
 
+/**
+ * A video in a message, task or doc: it plays right there (inline on a phone too), with its
+ * first frame showing until it plays. Only people on the workspace can load it.
+ */
+export function VideoPlayer({ f }: { f: { name: string; url: string; size?: number; poster?: string | null; seconds?: number | null } }) {
+  const meta = [f.seconds ? fmtLength(f.seconds) : null, f.size ? fileSize(f.size) : null].filter(Boolean).join(" · ");
+  return (
+    <figure className="ld-vid">
+      <video src={f.poster ? f.url : `${f.url}#t=0.1`} poster={f.poster ?? undefined} controls playsInline preload="metadata" aria-label={f.name} />
+      <figcaption>
+        <span className="nm">{f.name}</span>
+        {meta && <span className="sz">{meta}</span>}
+        <a className="dl" href={f.url} download={f.name}>Download</a>
+      </figcaption>
+    </figure>
+  );
+}
+
 export function MessageAttachments({ raw }: { raw: string | null | undefined }) {
   const list = parseJson<Attached[]>(raw ?? null, []);
   if (!list.length) return null;
+  const videos = list.filter((f) => f.kind === "video");
+  const rest = list.filter((f) => f.kind !== "video");
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-      {list.map((f) => (
-        <AttachmentChip key={f.id} f={f} />
+    <>
+      {videos.map((f) => (
+        <VideoPlayer key={f.id} f={f} />
       ))}
-    </div>
+      {rest.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+          {rest.map((f) => (
+            <AttachmentChip key={f.id} f={f} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

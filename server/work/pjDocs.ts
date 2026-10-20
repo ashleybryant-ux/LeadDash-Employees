@@ -18,17 +18,19 @@ import { createTask, parse, type Actor } from "./projects";
  * arrows between items and task cards; sticky notes can become tasks.
  */
 
-export const BLOCK_TYPES = ["h1", "h2", "p", "bullet", "number", "check", "quote", "table", "image", "task", "divider"] as const;
+export const BLOCK_TYPES = ["h1", "h2", "p", "bullet", "number", "check", "quote", "table", "image", "video", "task", "divider"] as const;
 export type Block = { id: string; type: (typeof BLOCK_TYPES)[number]; text: string; done?: boolean; rows?: string[][]; url?: string; taskId?: number };
 
 const safeUrl = (u: string | undefined) => (u && (/^\/files\//.test(u) || /^https:\/\//.test(u)) ? u.slice(0, 600) : undefined);
+/** A video in a doc plays only from this workspace's own files (uploaded the same way as chat videos). */
+const fileUrl = (u: string | undefined) => (u && /^\/files\/[^"'<>\s]+$/.test(u) ? u.slice(0, 600) : undefined);
 const linkUrl = (u: string | undefined) => (u && (/^\/files\//.test(u) || /^https?:\/\//i.test(u) || /^mailto:/i.test(u)) ? u.slice(0, 600) : undefined);
 
 // ==========================================
 // The page: HTML in, safe HTML out
 // ==========================================
 
-const TAGS = new Set(["p", "h1", "h2", "h3", "strong", "b", "em", "i", "u", "s", "a", "ul", "ol", "li", "blockquote", "hr", "br", "table", "thead", "tbody", "tr", "th", "td", "img", "mark", "span", "code", "pre", "label", "input", "div"]);
+const TAGS = new Set(["p", "h1", "h2", "h3", "strong", "b", "em", "i", "u", "s", "a", "ul", "ol", "li", "blockquote", "hr", "br", "table", "thead", "tbody", "tr", "th", "td", "img", "video", "mark", "span", "code", "pre", "label", "input", "div"]);
 const VOID = new Set(["hr", "br", "img", "input"]);
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -57,6 +59,14 @@ function safeAttrs(tag: string, a: Record<string, string>) {
     if (!src) return null;
     put("src", src);
     put("alt", (a.alt ?? "").slice(0, 300));
+  }
+  if (tag === "video") {
+    const src = fileUrl(a.src);
+    if (!src) return null;
+    put("src", src);
+    put("poster", fileUrl(a.poster));
+    put("title", (a.title ?? "").slice(0, 300));
+    out.push('controls=""', 'playsinline=""', 'preload="metadata"');
   }
   if (tag === "th" || tag === "td") {
     if (/^\d{1,2}$/.test(a.colspan ?? "")) put("colspan", a.colspan);
@@ -159,6 +169,7 @@ export function blocksFromHtml(html: string): Block[] {
     if (tag === "blockquote") return push({ type: "quote", text: text() }), tasks(n);
     if (tag === "hr") return push({ type: "divider", text: "" });
     if (tag === "img") return push({ type: "image", text: (n.attribs?.alt ?? "").slice(0, 300), url: safeUrl(n.attribs?.src) });
+    if (tag === "video") return push({ type: "video", text: (n.attribs?.title ?? "").slice(0, 300), url: fileUrl(n.attribs?.src) });
     if (tag === "pre") return push({ type: "p", text: textOf(n).slice(0, 8000) });
     if (tag === "table") {
       const rows: string[][] = [];
@@ -232,6 +243,7 @@ export function htmlFromBlocks(blocks: Block[], tasks: { id: number; name: strin
     else if (b.type === "quote") out.push(`<blockquote><p>${markHtml(b.text)}</p></blockquote>`);
     else if (b.type === "divider") out.push("<hr>");
     else if (b.type === "image") b.url && out.push(`<img src="${esc(b.url)}" alt="${esc(b.text || "")}">`);
+    else if (b.type === "video") b.url && out.push(`<video src="${esc(b.url)}" title="${esc(b.text || "")}" controls="" playsinline="" preload="metadata"></video>`);
     else if (b.type === "table") out.push(`<table><tbody>${(b.rows ?? []).map((r, ri) => `<tr>${r.map((c) => (ri === 0 ? `<th><p>${esc(c)}</p></th>` : `<td><p>${esc(c)}</p></td>`)).join("")}</tr>`).join("")}</tbody></table>`);
     else if (b.type === "task") {
       const t = tasks.find((x) => x.id === b.taskId);
@@ -245,7 +257,7 @@ export function htmlFromBlocks(blocks: Block[], tasks: { id: number; name: strin
 /** The words on a page, for search and for the AI employees. */
 export function textFromHtml(html: string) {
   return blocksFromHtml(html)
-    .map((b) => (b.type === "table" ? (b.rows ?? []).map((r) => r.join(" | ")).join("\n") : b.type === "check" ? `[${b.done ? "x" : " "}] ${b.text}` : b.text))
+    .map((b) => (b.type === "table" ? (b.rows ?? []).map((r) => r.join(" | ")).join("\n") : b.type === "check" ? `[${b.done ? "x" : " "}] ${b.text}` : b.type === "video" ? `Video: ${b.text || "untitled"}` : b.text))
     .filter(Boolean)
     .join("\n");
 }
@@ -268,6 +280,7 @@ export function cleanBlocks(raw: Block[]): Block[] {
       ...(type === "check" ? { done: !!b.done } : {}),
       ...(type === "table" ? { rows: (b.rows ?? [["", ""], ["", ""]]).slice(0, 30).map((r) => r.slice(0, 10).map((c) => String(c ?? "").slice(0, 500))) } : {}),
       ...(type === "image" ? { url: safeUrl(b.url) } : {}),
+      ...(type === "video" ? { url: fileUrl(b.url) } : {}),
       ...(type === "task" && b.taskId ? { taskId: Number(b.taskId) } : {}),
     };
   });

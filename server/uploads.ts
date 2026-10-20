@@ -9,6 +9,7 @@ import { indexKnowledge } from "./employees/kb";
 import { addOpportunity, parse, type Attachment, type Extras, type Award } from "./employees/apply";
 import { addApplicant } from "./employees/hiring";
 import { KNOWLEDGE_CATEGORIES } from "../drizzle/schema";
+import { attachmentOf, saveVideo, videoKind, VIDEO_TYPES } from "./chatVideos";
 
 /** Whether a photo attached in this chat may be sent to the provider that reads photos. */
 async function photosAllowed(orgId: number, kind: string) {
@@ -424,6 +425,22 @@ export function registerUploads(app: Express) {
         const extras = parse<Extras>(application.extras, {});
         await db.updateApplication(application.id, orgId, { extras: JSON.stringify({ ...extras, videoUrl: saved.url, videoName: name }) });
         return res.json({ url: saved.url });
+      }
+
+      // A video in team chat, an employee's chat, a task or a doc: streamed to disk, up to 250 MB, and played in place.
+      if (slot === "team" || slot === "work" || slot === "chat") {
+        const vk = videoKind(name, mime);
+        if (vk === "other") return res.status(400).json({ error: `Videos must be ${VIDEO_TYPES}.` });
+        if (vk === "ok") {
+          let employeeId = 0;
+          if (slot === "chat") {
+            const emp = await db.getEmployeeForOrg(Number(req.query.employeeId), orgId);
+            if (!emp) return res.status(404).json({ error: "That employee is not in this workspace." });
+            employeeId = emp.id;
+          }
+          const f = await saveVideo(orgId, slot, name, mime, req, { employeeId, userId: user.id, declared: Number(req.headers["content-length"] || 0) });
+          return res.json(attachmentOf(f));
+        }
       }
 
       const buf = await readBody(req, max);

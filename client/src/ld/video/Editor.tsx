@@ -1,4 +1,5 @@
 import React from "react";
+import { useVideoShare } from "./ShareVideo";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import type { Outputs } from "../types";
@@ -1299,6 +1300,7 @@ function ExportPanel({ v, set }: { v: EV; set: (v: EV) => void }) {
   const [cap, setCap] = React.useState<string | null>(null);
   const [view, setView] = React.useState<Size>((v.sizes[0] as Size) ?? "vertical");
   const go = trpc.edits.export.useMutation({ onSuccess: set });
+  const share = useVideoShare({ source: "edit", id: v.id, title: v.title, fileUrl: v.status === "ready" ? v.videoUrls[view] ?? Object.values(v.videoUrls)[0] ?? null : null, small: true });
   const rename = trpc.edits.rename.useMutation({ onSuccess: (r) => (set(r), setCap(null)) });
   const clips = trpc.edits.shortClips.useMutation({ onSuccess: set });
   const busy = v.status === "making" || !!v.step;
@@ -1332,7 +1334,9 @@ function ExportPanel({ v, set }: { v: EV; set: (v: EV) => void }) {
           <div className="ld-row" style={{ gap: 6, flexWrap: "wrap" }}>
             {(Object.keys(v.videoUrls) as Size[]).map((s) => <Chip key={s} on={view === s} onClick={() => setView(s)}>{RATIO[s]}</Chip>)}
             <a className="ld-btn sm" href={url} download>Download</a>
+            {share.button}
           </div>
+          {share.panel}
         </div>
       )}
       <Sec title="Export">

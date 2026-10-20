@@ -301,9 +301,31 @@ export const CHANNEL_LABEL: Record<string, string> = {
 };
 
 /** Upload a file as the raw request body. Returns the JSON reply or throws its error. */
-export async function uploadFile(slot: string, file: File, params: Record<string, string | number>) {
+export async function uploadFile(slot: string, file: File, params: Record<string, string | number>, onProgress?: (pct: number) => void) {
   const q = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
   q.set("name", file.name);
+  // A big file (a video from a phone) reports how far along it is.
+  if (onProgress && typeof XMLHttpRequest !== "undefined") {
+    return new Promise<any>((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open("POST", `/api/upload/${slot}?${q.toString()}`);
+      x.withCredentials = true;
+      x.setRequestHeader("content-type", file.type || "application/octet-stream");
+      x.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.min(99, Math.round((e.loaded / e.total) * 100)));
+      x.onerror = () => reject(new Error("The connection dropped while uploading. Check your internet and try again."));
+      x.onload = () => {
+        let data: any = null;
+        try {
+          data = JSON.parse(x.responseText);
+        } catch {
+          data = { error: x.status === 413 ? "That file is too large for the server." : "Upload failed." };
+        }
+        if (x.status >= 200 && x.status < 300) resolve(data);
+        else reject(new Error(data?.error || "Upload failed."));
+      };
+      x.send(file);
+    });
+  }
   const res = await fetch(`/api/upload/${slot}?${q.toString()}`, {
     method: "POST",
     body: file,

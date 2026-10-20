@@ -5,7 +5,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, ErrorLine, PersonAvatar, useEmployees } from "../ui";
 import { Menu } from "../goals/shared";
 import { fmtTime, parseJson } from "../meta";
-import { AttachmentChip } from "../chat/Extras";
+import { AttachmentChip, VideoPlayer } from "../chat/Extras";
 import { TeamText, type Names } from "./text";
 import { Composer, EmojiPicker, EMOJIS, type Mentionable } from "./Composer";
 import type { Outputs } from "../types";
@@ -21,25 +21,35 @@ export type Msg = Outputs["teamChat"]["messages"]["messages"][number];
 export type Person = { userId: number; name: string; avatarUrl: string | null };
 export type Emp = { id: number; name: string; roleTitle: string; kind: string; avatar: string | null };
 
-type Att = { id?: number; name: string; size?: number; kind?: string; url?: string | null; note?: string };
+type Att = { id?: number; name: string; size?: number; kind?: string; url?: string | null; note?: string; poster?: string | null; seconds?: number | null };
 
 export function Files({ raw }: { raw: string | null }) {
-  const list = parseJson<Att[]>(raw, []);
-  if (!list.length) return null;
+  const all = parseJson<Att[]>(raw, []);
+  if (!all.length) return null;
+  // Videos play in the thread; other files show as chips.
+  const videos = all.filter((f) => f.kind === "video" && f.url);
+  const list = all.filter((f) => !(f.kind === "video" && f.url));
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-      {list.map((f, i) =>
-        f.url ? (
-          <AttachmentChip key={f.id ?? i} f={{ name: f.name, size: f.size ?? 0, kind: f.kind, url: f.url }} />
-        ) : (
-          <span key={f.id ?? i} className="ld-att" title="This file is stored in Slack; re-attach it here if you still need it.">
-            <span className="ic">FILE</span>
-            <span className="nm">{f.name}</span>
-            <span className="sz">{f.note ?? "In Slack"}</span>
-          </span>
-        )
+    <>
+      {videos.map((f, i) => (
+        <VideoPlayer key={f.id ?? `v${i}`} f={{ name: f.name, url: f.url!, size: f.size, poster: f.poster, seconds: f.seconds }} />
+      ))}
+      {list.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+          {list.map((f, i) =>
+            f.url ? (
+              <AttachmentChip key={f.id ?? i} f={{ name: f.name, size: f.size ?? 0, kind: f.kind, url: f.url }} />
+            ) : (
+              <span key={f.id ?? i} className="ld-att" title="This file is stored in Slack; re-attach it here if you still need it.">
+                <span className="ic">FILE</span>
+                <span className="nm">{f.name}</span>
+                <span className="sz">{f.note ?? "In Slack"}</span>
+              </span>
+            )
+          )}
+        </div>
       )}
-    </div>
+    </>
   );
 }
 

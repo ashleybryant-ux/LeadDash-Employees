@@ -17,6 +17,7 @@ import * as projects from "./projects";
 import * as coo from "./coo";
 import * as notetaker from "./notetaker";
 import * as interview from "./interview";
+import { attachmentOf } from "../chatVideos";
 
 /**
  * Chat with an employee. Each message is answered in two steps:
@@ -360,9 +361,9 @@ function filesText(files: ChatFile[]) {
   if (!files.length) return "";
   let budget = 40_000;
   const parts = files.map((f) => {
-    const take = Math.max(0, Math.min(budget, f.kind === "image" ? 600 : 16_000));
+    const take = Math.max(0, Math.min(budget, f.kind === "image" || f.kind === "video" ? 600 : 16_000));
     budget -= take;
-    const body = f.kind === "image" ? `Photo. ${f.text || "No description yet."}` : `${f.pages ? `${f.pages} pages. ` : ""}${f.text.slice(0, take) || "(No readable text.)"}`;
+    const body = f.kind === "image" ? `Photo. ${f.text || "No description yet."}` : f.kind === "video" ? f.text || "Video. You can't watch or hear it; you only know its name." : `${f.pages ? `${f.pages} pages. ` : ""}${f.text.slice(0, take) || "(No readable text.)"}`;
     return `--- ${f.name} ---\n${body}`;
   });
   return `\nFiles the person attached in this chat (read them; never repeat a client's name from them):\n${parts.join("\n\n")}`;
@@ -962,8 +963,9 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       };
     }
     case "save_files": {
-      const list = files.length ? files : db.recentChatFiles(org, emp.id, 10).slice(0, 10);
-      if (!list.length) return { text: "There's nothing attached in this chat yet.", cards: [], queries: [] };
+      // Videos stay in the chat: the Brain keeps documents and photos.
+      const list = (files.length ? files : db.recentChatFiles(org, emp.id, 10).slice(0, 10)).filter((f) => f.kind !== "video");
+      if (!list.length) return { text: files.length ? "The Brain keeps documents and photos, not videos. The video stays here in the chat." : "There's nothing attached in this chat yet.", cards: [], queries: [] };
       const { indexKnowledge } = await import("./kb");
       for (const f of list) {
         const item = await db.createKnowledgeItem({ organizationId: org, kind: f.kind === "image" ? "image" : "document", title: f.name.slice(0, 255), category: "mission_profile", content: f.text || (f.kind === "image" ? "" : "(No readable text was found in this file.)"), fileUrl: f.fileUrl, chars: f.text.length });
@@ -2336,7 +2338,7 @@ export async function sendChatMessage(opts: {
     content: opts.text,
     spoken: !!opts.spoken,
     replyToId: quote?.id ?? null,
-    attachments: sent.length ? JSON.stringify(sent.map((f) => ({ id: f.id, name: f.name, size: f.size, kind: f.kind, url: f.fileUrl }))) : null,
+    attachments: sent.length ? JSON.stringify(sent.map(attachmentOf)) : null,
   });
   db.attachChatFiles(opts.organizationId, [...sent.map((f) => f.id), ...(pastedFile ? [pastedFile.id] : [])], userMsg.id);
   if (pastedFile) sent.push(pastedFile);

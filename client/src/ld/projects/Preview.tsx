@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { ErrorLine } from "../ui";
 
 /**
- * A file preview over the page: images and PDFs as they are; Word,
+ * A file preview over the page: images and PDFs as they are, videos playing; Word,
  * PowerPoint and text as text; spreadsheets and CSVs as a table. Download
  * stays one click away.
  */
@@ -38,6 +38,7 @@ export function FilePreview({ orgId, file, onClose }: { orgId: number; file: Pre
           <ErrorLine error={q.error} />
           {!d && !q.error && <p className="ld-muted" style={{ padding: 20 }}>Loading the preview</p>}
           {d?.kind === "image" && <img className="gp-pvimg" src={d.url} alt={file.name} />}
+          {d?.kind === "video" && <video className="gp-pvvid" src={d.poster ? d.url : `${d.url}#t=0.1`} poster={d.poster ?? undefined} controls playsInline autoPlay preload="metadata" aria-label={file.name} />}
           {d?.kind === "pdf" && <iframe className="gp-pvpdf" src={d.url} title={file.name} />}
           {d?.kind === "text" && (
             <>

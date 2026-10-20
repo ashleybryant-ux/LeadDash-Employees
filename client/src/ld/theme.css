@@ -3238,3 +3238,22 @@ html[data-theme="dark"] .ld-sc-warn b { color: #ffd166; }
   .ld-sc-acts { grid-column: 1 / -1; flex-direction: row; }
   .ld-sc-form, .ld-sc-player { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Videos shared in chats, tasks and docs (2026-10-20): they play in place, inline on a phone too. */
+.ld-vid { margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; width: 360px; max-width: 100%; }
+.ld-vid video { width: 100%; max-height: 420px; border-radius: 10px; background: #000000; display: block; }
+.ld-vid figcaption { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.ld-vid .nm { font-weight: 600; color: var(--ld-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ld-vid .sz { color: var(--ld-muted); white-space: nowrap; }
+.ld-vid .dl { margin-left: auto; font-weight: 700; color: var(--ld-accent-dark); white-space: nowrap; }
+.gp-af .p.vid { position: relative; overflow: hidden; }
+.gp-af .p.vid .play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.gp-pvvid { max-width: 100%; max-height: calc(100vh - 140px); margin: 16px auto; display: block; background: #000000; border-radius: 10px; }
+.gp-page video { max-width: 100%; max-height: 480px; border-radius: 10px; margin: 8px 0; display: block; background: #000000; }
+.gp-page video.ProseMirror-selectednode { outline: 3px solid var(--ld-accent-line); }
+/* Share on a finished video: the watch link, Copy link, Send, Stop sharing. */
+.ld-vshare { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--ld-line); border-radius: 10px; background: var(--ld-surface); max-width: 560px; grid-column: 1 / -1; }
+.ld-vshare-link .ld-in { width: 100%; font-size: 13px; }
+.ld-vshare-btns { display: grid; grid-template-columns: repeat(auto-fill, 130px); gap: 8px; }
+.ld-vshare-btns .ld-btn { width: 130px; }
+@media (max-width: 760px) { .ld-vid { width: 100%; } .ld-vshare { max-width: 100%; } .ld-vshare-btns { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ld-vshare-btns .ld-btn { width: 100%; } }

@@ -1,4 +1,5 @@
 import React from "react";
+import { useVideoShare } from "./ShareVideo";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine } from "../ui";
@@ -220,6 +221,7 @@ export function SceneCard({ id, bare = false }: { id: number; bare?: boolean }) 
   const [picking, setPicking] = React.useState(false);
   const [rewriting, setRewriting] = React.useState(false);
   const [change, setChange] = React.useState("");
+  const share = useVideoShare({ source: "scene", id, title: v?.title ?? "", fileUrl: v?.status === "ready" ? v.videoUrl ?? null : null });
   if (!v) return loading ? null : <div className="ld-card ld-empty">This scene was removed.</div>;
   const sc = v.scene!;
   const pill = PILL[v.status];
@@ -242,7 +244,9 @@ export function SceneCard({ id, bare = false }: { id: number; bare?: boolean }) 
           <video key={v.videoUrl!} src={`${v.videoUrl}#t=0.1`} controls playsInline preload="metadata" />
           <div className="ld-vm-btncol">
             <a className="ld-btn p" href={v.videoUrl!} download={`${v.title}.mp4`}>Download</a>
+            {share.button}
             <span className="ld-small">{`Made for ${v.cost}.`}</span>
+            {share.panel}
           </div>
         </div>
       )}

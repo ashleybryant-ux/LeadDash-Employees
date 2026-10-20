@@ -43,7 +43,7 @@ import { VideoMaker } from "./video/VideoAgent";
 import { EditCard } from "./video/Editor";
 import DemoVideosTab, { DemoSignInCard, DemoVideoCard } from "./video/DemoVideos";
 import Broll from "./video/Broll";
-import { AnswerCard, ApplicationDraftCard, DropFiles, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments } from "./chat/Extras";
+import { AnswerCard, ApplicationDraftCard, DropFiles, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments, type Attached } from "./chat/Extras";
 import { Composer, type Mentionable } from "./team/Composer";
 import { DeckCard, DocCard } from "./chat/Talk";
 import AdsWork from "./work/Ads";
@@ -172,7 +172,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
   const [pending, setPending] = React.useState<string | null>(null);
   // The last message id when a send started: once the list shows the person's own newer message, the grey copy goes.
   const [sentAfter, setSentAfter] = React.useState(0);
-  const [pendingFiles, setPendingFiles] = React.useState<{ id: number; name: string; size: number; kind: "image" | "document"; url: string }[]>([]);
+  const [pendingFiles, setPendingFiles] = React.useState<Attached[]>([]);
   // Replying to one message: the quote shows in the box, goes out with the message, and tagged people see what it was about.
   const [replyTo, setReplyTo] = React.useState<{ id: number; authorName: string; excerpt: string } | null>(null);
   const [pendingReply, setPendingReply] = React.useState<{ authorName: string; excerpt: string } | null>(null);

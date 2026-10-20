@@ -1,6 +1,7 @@
 import React from "react";
 import { Avatar, PersonAvatar } from "../ui";
 import { uploadFile } from "../meta";
+import { isVideoFile, tooBig } from "../chat/Extras";
 
 /**
  * Pieces Goals and Projects share: owners (people and employees), status
@@ -174,12 +175,32 @@ export function ViewTabs<T extends string>({ views, value, onChange }: { views: 
 // Attachments
 // ==========================================
 
-export type FileRow = { linkId?: number; id: number; name: string; url: string; kind: string; size?: number };
+export type FileRow = { linkId?: number; id: number; name: string; url: string; kind: string; size?: number; poster?: string | null };
 
 const EXT_COLOR: Record<string, string> = { PDF: "#c2253c", DOC: "#2563eb", DOCX: "#2563eb", XLS: "#0f766e", XLSX: "#0f766e", CSV: "#0f766e", PPT: "#d97706", PPTX: "#d97706", HTML: "#0f766e", TXT: "#475569" };
 export const extOf = (name: string) => (name.split(".").pop() || "FILE").toUpperCase().slice(0, 4);
 
-/** File tiles. With `onOpen`, clicking a tile previews the file in the app; otherwise it opens in a new tab. */
+const PLAY = (
+  <svg className="play" width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+    <circle cx="17" cy="17" r="17" fill="rgba(0,0,0,.55)" />
+    <path d="M13.5 10.5v13l10.5-6.5z" fill="#fff" />
+  </svg>
+);
+const tileStyle = (f: FileRow) => (f.kind === "image" || (f.kind === "video" && f.poster) ? undefined : { background: f.kind === "video" ? "#111827" : EXT_COLOR[extOf(f.name)] ?? "#475569" });
+/** A picture shows itself; a video shows its first frame with a play mark; anything else shows its type. */
+const tileFace = (f: FileRow) =>
+  f.kind === "image" ? (
+    <img src={f.url} alt="" />
+  ) : f.kind === "video" ? (
+    <>
+      {f.poster ? <img src={f.poster} alt="" /> : null}
+      {PLAY}
+    </>
+  ) : (
+    extOf(f.name)
+  );
+
+/** File tiles. With `onOpen`, clicking a tile previews the file in the app (a video plays there); otherwise it opens in a new tab. */
 export function FileTiles({ files, onRemove, cols = 4, onOpen }: { files: FileRow[]; onRemove?: (f: FileRow) => void; cols?: number; onOpen?: (f: FileRow) => void }) {
   if (!files.length) return null;
   return (
@@ -187,12 +208,12 @@ export function FileTiles({ files, onRemove, cols = 4, onOpen }: { files: FileRo
       {files.map((f) => (
         <div key={`${f.linkId ?? f.id}`} className="gp-af">
           {onOpen ? (
-            <button type="button" className="p" style={f.kind === "image" ? undefined : { background: EXT_COLOR[extOf(f.name)] ?? "#475569" }} onClick={() => onOpen(f)} aria-label={`Preview ${f.name}`}>
-              {f.kind === "image" ? <img src={f.url} alt="" /> : extOf(f.name)}
+            <button type="button" className={`p${f.kind === "video" ? " vid" : ""}`} style={tileStyle(f)} onClick={() => onOpen(f)} aria-label={f.kind === "video" ? `Play ${f.name}` : `Preview ${f.name}`}>
+              {tileFace(f)}
             </button>
           ) : (
-            <a href={f.url} target="_blank" rel="noreferrer" className="p" style={f.kind === "image" ? undefined : { background: EXT_COLOR[extOf(f.name)] ?? "#475569" }}>
-              {f.kind === "image" ? <img src={f.url} alt="" /> : extOf(f.name)}
+            <a href={f.url} target="_blank" rel="noreferrer" className={`p${f.kind === "video" ? " vid" : ""}`} style={tileStyle(f)}>
+              {tileFace(f)}
             </a>
           )}
           <span className="nm" title={f.name}>{f.name}</span>
@@ -211,19 +232,22 @@ export function FileTiles({ files, onRemove, cols = 4, onOpen }: { files: FileRo
 export function AddFiles({ orgId, onAdded, label = "+ Add", disabled }: { orgId: number; onAdded: (ids: number[]) => void; label?: string; disabled?: boolean }) {
   const input = React.useRef<HTMLInputElement>(null);
   const [busy, setBusy] = React.useState(false);
+  const [pct, setPct] = React.useState(0);
   const [err, setErr] = React.useState<string | null>(null);
   const add = async (list: FileList | null) => {
     if (!list?.length) return;
     setBusy(true);
+    setPct(0);
     setErr(null);
     const ids: number[] = [];
     for (const f of Array.from(list).slice(0, 10)) {
-      if (f.size > 20_000_000) {
-        setErr("Files must be under 20 MB.");
+      const big = tooBig(f);
+      if (big) {
+        setErr(big);
         continue;
       }
       try {
-        const r = await uploadFile("work", f, { organizationId: orgId, employeeId: 0 });
+        const r = await uploadFile("work", f, { organizationId: orgId, employeeId: 0 }, isVideoFile(f) ? (pct) => setPct(pct) : undefined);
         ids.push(r.id);
       } catch (e) {
         setErr((e as Error).message);
@@ -236,7 +260,7 @@ export function AddFiles({ orgId, onAdded, label = "+ Add", disabled }: { orgId:
     <span className="gp-addf">
       <input ref={input} type="file" multiple style={{ display: "none" }} onChange={(e) => { void add(e.target.files); e.target.value = ""; }} />
       <button type="button" className="gp-link" disabled={busy || disabled} onClick={() => input.current?.click()}>
-        {busy ? "Uploading" : label}
+        {busy ? (pct ? `Uploading ${pct}%` : "Uploading") : label}
       </button>
       {err && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)" }}>{err}</span>}
     </span>

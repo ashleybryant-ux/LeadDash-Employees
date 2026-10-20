@@ -568,11 +568,16 @@ export const chatFiles = sqliteTable(
     name: text("name").notNull(),
     mime: text("mime").notNull(),
     size: integer("size").notNull(),
-    kind: text("kind", { enum: ["image", "document"] }).notNull(),
+    /** video: an MP4, MOV or WebM someone shared; it plays in the chat (2026-10-20). */
+    kind: text("kind", { enum: ["image", "document", "video"] }).notNull(),
     fileUrl: text("fileUrl").notNull(),
     /** The document's text, or a description of the photo. */
     text: text("text").notNull().default(""),
     pages: integer("pages"),
+    /** A video's first frame (a JPG), shown before it plays. */
+    posterUrl: text("posterUrl"),
+    /** A video's length in seconds. */
+    seconds: integer("seconds"),
     createdAt: createdAt(),
   },
   (t) => [index("chat_files_org_idx").on(t.organizationId, t.employeeId)]
@@ -1521,6 +1526,26 @@ export const publicFiles = sqliteTable(
   (t) => [uniqueIndex("public_files_key_idx").on(t.fileKey)]
 );
 export type PublicFile = typeof publicFiles.$inferSelect;
+
+/**
+ * A watch link for one of Elena's finished videos (2026-10-20): /watch/<token> plays it for anyone
+ * with the link, no sign-in. Made only when someone presses Share; Stop sharing deletes the row,
+ * so the old link stops working. The token is random, never the video's id.
+ */
+export const videoShares = sqliteTable(
+  "video_shares",
+  {
+    token: text("token").primaryKey(),
+    organizationId: integer("organizationId").notNull(),
+    /** video: made from instructions. edit: Edit my video. scene: a Scene. */
+    source: text("source", { enum: ["video", "edit", "scene"] }).notNull(),
+    sourceId: integer("sourceId").notNull(),
+    createdBy: text("createdBy").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("video_shares_source_idx").on(t.organizationId, t.source, t.sourceId)]
+);
+export type VideoShare = typeof videoShares.$inferSelect;
 
 // ==========================================
 // Team huddles: talking out loud with the employees

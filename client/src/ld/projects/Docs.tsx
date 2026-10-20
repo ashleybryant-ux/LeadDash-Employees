@@ -1,6 +1,7 @@
 import React from "react";
 import DOMPurify from "dompurify";
-import { EditorContent, Extension, useEditor, type Editor } from "@tiptap/react";
+import { tooBig, VIDEO_ACCEPT } from "../chat/Extras";
+import { EditorContent, Extension, mergeAttributes, Node as TipNode, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
@@ -37,7 +38,24 @@ import { SaveTemplate } from "./Templates";
 type D = Outputs["pj"]["doc"];
 
 /** The page's HTML, cleaned again here before it goes in the DOM. */
-const clean = (html: string) => DOMPurify.sanitize(html, { ADD_ATTR: ["target", "colwidth"], FORBID_TAGS: ["style", "script", "iframe"] });
+const clean = (html: string) => DOMPurify.sanitize(html, { ADD_TAGS: ["video"], ADD_ATTR: ["target", "colwidth", "playsinline", "controls", "preload", "poster"], FORBID_TAGS: ["style", "script", "iframe"] });
+
+/** A video in a doc: uploaded like a chat video (workspace only), played in the page. */
+const Video = TipNode.create({
+  name: "video",
+  group: "block",
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return { src: { default: null }, poster: { default: null }, title: { default: null } };
+  },
+  parseHTML() {
+    return [{ tag: "video[src]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["video", mergeAttributes(HTMLAttributes, { controls: "", playsinline: "", preload: "metadata" })];
+  },
+});
 
 /** Headings on a page, in order, for the outline. */
 function headingsOf(html: string) {
@@ -362,6 +380,7 @@ function DocEdit({ orgId, d, handle, pageRef, onChange, onDone, refresh }: { org
   const [href, setHref] = React.useState("");
   const [want, setWant] = React.useState("");
   const [uploading, setUploading] = React.useState(false);
+  const [pct, setPct] = React.useState(0);
   const [err, setErr] = React.useState<string | null>(null);
   const editor = useEditor({
     extensions: [
@@ -374,6 +393,7 @@ function DocEdit({ orgId, d, handle, pageRef, onChange, onDone, refresh }: { org
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { target: "_blank", rel: "noopener noreferrer" } }),
       Image.configure({ inline: false }),
+      Video,
       TaskList,
       TaskItem.configure({ nested: true }),
       Table.configure({ resizable: true }),
@@ -451,6 +471,22 @@ function DocEdit({ orgId, d, handle, pageRef, onChange, onDone, refresh }: { org
     }
     setUploading(false);
   };
+  const uploadVideo = async (f: File) => {
+    setErr(null);
+    const big = tooBig(f);
+    if (big) return setErr(big);
+    setUploading(true);
+    setPct(0);
+    try {
+      const { uploadFile } = await import("../meta");
+      const r = await uploadFile("work", f, { organizationId: orgId, employeeId: 0 }, setPct);
+      if (r.kind !== "video") throw new Error("Pick a video: MP4, MOV or WebM.");
+      editor.chain().focus().insertContent({ type: "video", attrs: { src: r.url, poster: r.poster ?? null, title: r.name } }).run();
+    } catch (x) {
+      setErr((x as Error).message);
+    }
+    setUploading(false);
+  };
   const inTable = editor.isActive("table");
   return (
     <div className="gp-docmain editing">
@@ -512,6 +548,10 @@ function DocEdit({ orgId, d, handle, pageRef, onChange, onDone, refresh }: { org
         <label className="gp-tb" title="Picture" aria-label="Picture" onMouseDown={(e) => e.preventDefault()}>
           {uploading ? "…" : "🖼"}
           <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void upload(f); }} />
+        </label>
+        <label className="gp-tb" title="Video" aria-label="Video" onMouseDown={(e) => e.preventDefault()}>
+          {uploading && pct ? `${pct}%` : "🎬"}
+          <input type="file" accept={VIDEO_ACCEPT} style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadVideo(f); }} />
         </label>
         <B label="Mention a task" onClick={() => editor.chain().focus().insertContent("@").run()}>@</B>
         <span className="sep" />

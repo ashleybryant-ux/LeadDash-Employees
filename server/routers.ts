@@ -3656,6 +3656,24 @@ export const appRouter = router({
     }),
   }),
 
+  /** Watch links for Elena's finished videos: made only when someone presses Share; Stop sharing turns the link off. */
+  videoShares: router({
+    get: protectedProcedure.input(orgInput.extend({ source: z.enum(["video", "edit", "scene"]), id: z.number().int() })).query(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId);
+      const vs = await import("./videoShares");
+      const s = vs.shareOf(input.organizationId, input.source, input.id);
+      return { link: s ? vs.watchPath(s.token) : null };
+    }),
+    set: protectedProcedure.input(orgInput.extend({ source: z.enum(["video", "edit", "scene"]), id: z.number().int(), on: z.boolean() })).mutation(async ({ ctx, input }) => {
+      blockReviewer(ctx);
+      await requireMember(ctx, input.organizationId, "member");
+      const vs = await import("./videoShares");
+      const link = vs.setShared(input.organizationId, input.source, input.id, input.on, personName(ctx.user));
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), action: input.on ? "Shared a video link" : "Stopped sharing a video link", details: `${input.source} ${input.id}` });
+      return { link };
+    }),
+  }),
+
   videos: router({
     list: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);

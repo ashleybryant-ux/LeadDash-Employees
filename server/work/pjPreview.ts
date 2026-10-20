@@ -14,6 +14,7 @@ import type { Viewer } from "./pjAccess";
  */
 export type Preview =
   | { kind: "image" | "pdf"; url: string }
+  | { kind: "video"; url: string; poster: string | null }
   | { kind: "text"; text: string; note: string | null }
   | { kind: "sheet"; sheets: { name: string; rows: string[][] }[] }
   | { kind: "none"; note: string };
@@ -45,6 +46,8 @@ export async function preview(orgId: number, v: Viewer, fileId: number): Promise
   const name = f.name;
   const mime = f.mime || "";
   if (f.kind === "image" || /^image\//.test(mime)) return { kind: "image", url: f.fileUrl };
+  // A video plays right in the preview, on a phone too.
+  if (f.kind === "video") return { kind: "video", url: f.fileUrl, poster: f.posterUrl ?? null };
   const kind = fileKind(name, mime);
   if (kind === "pdf" || mime === "application/pdf") return { kind: "pdf", url: f.fileUrl };
   const note = unsupportedNote(name);

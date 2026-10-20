@@ -1,4 +1,5 @@
 import React from "react";
+import { useVideoShare } from "./ShareVideo";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
@@ -889,6 +890,8 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
   const motionTo = trpc.videos.setMotion.useMutation({ onSuccess: refresh });
   const opts = trpc.videos.options.useQuery({ organizationId: orgId }, { enabled: orgId > 0 });
   const [picking, setPicking] = React.useState(false);
+  const shownUrl = v ? (ratio && v.videoUrls[ratio]) || v.ratios.map((r) => v.videoUrls[r]).find(Boolean) || v.videoUrl : null;
+  const share = useVideoShare({ source: "video", id, title: v?.title ?? "", fileUrl: v?.status === "ready" ? shownUrl ?? null : null });
   if (!v) return loading ? null : <div className="ld-card ld-empty">This video was removed.</div>;
   const ready = v.status === "ready" && !!v.videoUrl;
   const drawn = v.style !== "real";
@@ -925,6 +928,7 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
             <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
               <div className="ld-vm-btncol">
                 <a className="ld-btn p" href={v.videoUrls[shown] ?? v.videoUrl!} download={`${v.title} ${shown.replace(":", "x")}.mp4`}>Download</a>
+                {share.button}
                 <button type="button" className="ld-btn" aria-pressed={panel === "edit"} onClick={() => setPanel(panel === "edit" ? null : "edit")}>Edit</button>
                 <button type="button" className="ld-btn" disabled={sienna.isPending || sent} onClick={() => sienna.mutate({ organizationId: orgId, id: v.id })}>{sent ? "Sent to Sienna" : sienna.isPending ? "Sending..." : "Send to Sienna"}</button>
                 <button type="button" className="ld-btn" aria-pressed={panel === "redo"} onClick={() => setPanel(panel === "redo" ? null : "redo")}>Redo a scene</button>
@@ -935,6 +939,7 @@ export function VideoCard({ id, bare = false }: { id: number; bare?: boolean }) 
                   <button type="button" className="ld-btn" disabled={versions.isPending} onClick={() => versions.mutate({ organizationId: orgId, id: v.id })}>{versions.isPending ? "Writing..." : "Make 3 ad versions"}</button>
                 )}
               </div>
+              {share.panel}
               {sent && (
                 <span className="ld-small">
                   It's in Sienna's drafts as a Reel. <Link href="/chats/social/work">Open her posts</Link>

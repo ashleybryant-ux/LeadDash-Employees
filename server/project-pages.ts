@@ -104,6 +104,10 @@ ${f.questions.map(field).join("\n")}
     }
   });
 
+  // A doc's videos are workspace files: the public page names them but doesn't play them.
+  const videoNote = (name: string) => `<p class="muted">Video${name ? `: ${esc(name)}` : ""}. Only people on the workspace can watch it.</p>`;
+  const withoutVideos = (html: string) => html.replace(/<video\b[^>]*>[\s\S]*?<\/video>/g, (tag) => videoNote((tag.match(/\stitle="([^"]*)"/)?.[1] ?? "").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")));
+
   app.get("/d/:token", async (req, res) => {
     const d = db.docByShareToken(String(req.params.token));
     if (!d || d.archivedAt) return res.status(404).send(notFound());
@@ -121,6 +125,7 @@ ${f.questions.map(field).join("\n")}
         if (b.type === "quote") return `<blockquote>${mark(b.text)}</blockquote>`;
         if (b.type === "divider") return "<hr>";
         if (b.type === "image") return b.url ? `<img src="${esc(b.url)}" alt="${esc(b.text || "")}">` : "";
+        if (b.type === "video") return videoNote(b.text);
         if (b.type === "table") return `<table>${(b.rows ?? []).map((r, ri) => `<tr>${r.map((c) => (ri === 0 ? `<th>${esc(c)}</th>` : `<td>${esc(c)}</td>`)).join("")}</tr>`).join("")}</table>`;
         if (b.type === "task") return "";
         return `<p>${mark(b.text) || "&nbsp;"}</p>`;
@@ -128,7 +133,7 @@ ${f.questions.map(field).join("\n")}
       .join("");
     const pages = db.work.docs.where(d.organizationId, "parentId", d.id).sort((a, b) => a.sort - b.sort || a.id - b.id);
     // Docs written on the page editor show their page; older ones show their blocks.
-    const page = d.html ? `<div class="page">${pageOf(d.organizationId, d)}</div>` : `<div>${body}</div>`;
+    const page = d.html ? `<div class="page">${withoutVideos(pageOf(d.organizationId, d))}</div>` : `<div>${body}</div>`;
     res.send(shell(d.title, `<div class="card doc"><div><h1>${esc(d.title)}</h1><p class="muted">${esc(org?.name ?? "")} · View only</p></div>${page}${pages.length ? `<p class="muted">Pages in this doc: ${pages.map((p) => esc(p.title)).join(", ")}</p>` : ""}</div>`, true));
   });
 

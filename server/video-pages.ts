@@ -4,12 +4,18 @@
  * - /v/:key/:size.mp4  the video file itself, so the page's player (and a download) works signed out
  * The key is random and lives only while the owner keeps "Share with anyone" on; turning it off
  * clears the key, so an old link stops working.
+ *
+ * And Elena's finished videos, shared with Share (2026-10-20):
+ * - /watch/:token            plays it for anyone with the link, showing only the workspace's name
+ * - /watch/:token/:ratio.mp4 the file itself (9x16, 1x1 or 16x9), for the player and Download
+ * Stop sharing deletes the token, so both stop working.
  */
 import fs from "node:fs";
 import type { Express } from "express";
 import * as db from "./db";
 import { byPublicKey, SIZES, sizesOf, urlsOf, type Size } from "./employees/demoVideos";
 import { localFile } from "./employees/broll";
+import { byToken } from "./videoShares";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -42,6 +48,37 @@ export function registerVideoPages(app: Express) {
         `<div class="card"><div><h1>${esc(d.title)}</h1><p class="muted">${esc(org?.name ?? "")}</p></div><video controls playsinline preload="metadata" src="/v/${esc(d.publicKey!)}/${size}.mp4"></video>${pick}<div class="row"><a class="btn" href="/v/${esc(d.publicKey!)}/${size}.mp4" download="${esc(d.title)} ${SIZES[size].ratio.replace(":", "x")}.mp4">Download</a></div></div>`
       )
     );
+  });
+
+  app.get("/watch/:token", async (req, res) => {
+    const found = byToken(String(req.params.token));
+    if (!found) return res.status(404).setHeader("Cache-Control", "no-store").send(notFound());
+    const { share, files } = found;
+    const want = String(req.query.size ?? "");
+    const f = files.find((x) => x.slug === want) ?? files[0];
+    const org = await db.getOrganizationById(share.organizationId);
+    const name = org?.name ?? "";
+    const base = `/watch/${esc(share.token)}`;
+    const pick = files.length > 1 ? `<div class="row">${files.map((x) => `<a class="btn${x.slug === f.slug ? " on" : ""}" href="${base}?size=${x.slug}">${x.ratio}</a>`).join("")}</div>` : "";
+    const title = name ? `A video from ${name}` : "A video";
+    res.setHeader("Cache-Control", "no-store");
+    res.send(
+      shell(
+        title,
+        `<div class="card"><div><h1>${esc(name || "Video")}</h1></div><video controls playsinline preload="metadata" src="${base}/${f.slug}.mp4#t=0.1"></video>${pick}<div class="row"><a class="btn" href="${base}/${f.slug}.mp4" download="${esc(name || "video")} ${f.slug}.mp4">Download</a></div></div>`
+      ).replace("<title>", `<meta property="og:title" content="${esc(title)}"><meta property="og:type" content="video.other"><title>`)
+    );
+  });
+
+  app.get("/watch/:token/:slug.mp4", (req, res) => {
+    const found = byToken(String(req.params.token));
+    const f = found?.files.find((x) => x.slug === String(req.params.slug));
+    const file = f ? localFile(f.url) : null;
+    if (!file || !fs.existsSync(file)) return res.status(404).send("Not found");
+    // Never kept in a shared cache: once sharing stops, the next request is refused.
+    res.setHeader("Cache-Control", "private, no-cache");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.sendFile(file, { headers: { "Content-Type": "video/mp4" } });
   });
 
   app.get("/v/:key/:size.mp4", (req, res) => {

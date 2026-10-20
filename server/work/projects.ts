@@ -399,8 +399,8 @@ export async function detail(orgId: number, v: Viewer, id: number) {
     list: { id: list.id, name: list.name, folderName: folder?.name ?? null, statuses: statusesOf(list), fields: fieldsOf(orgId, list) },
     level,
     subtasks: all.filter((x) => x.parentId === id).sort((a, b) => a.sort - b.sort || a.id - b.id).map((s) => taskRow(s, all, c, goals, list.name)),
-    comments: comments.map((x) => ({ id: x.id, kind: x.kind, authorType: x.authorType, authorId: x.authorId, authorName: x.authorName, body: x.body, at: x.createdAt, files: commentFiles.filter((f) => f.link.itemId === x.id).map((f) => ({ id: f.file!.id, name: f.file!.name, url: f.file!.fileUrl, kind: f.file!.kind })) })),
-    files: files.map((f) => ({ linkId: f.link.id, id: f.file!.id, name: f.file!.name, url: f.file!.fileUrl, kind: f.file!.kind, size: f.file!.size, mime: f.file!.mime })),
+    comments: comments.map((x) => ({ id: x.id, kind: x.kind, authorType: x.authorType, authorId: x.authorId, authorName: x.authorName, body: x.body, at: x.createdAt, files: commentFiles.filter((f) => f.link.itemId === x.id).map((f) => ({ id: f.file!.id, name: f.file!.name, url: f.file!.fileUrl, kind: f.file!.kind, poster: f.file!.posterUrl ?? null })) })),
+    files: files.map((f) => ({ linkId: f.link.id, id: f.file!.id, name: f.file!.name, url: f.file!.fileUrl, kind: f.file!.kind, size: f.file!.size, mime: f.file!.mime, poster: f.file!.posterUrl ?? null })),
     links: {
       waitingOn: links.filter((l) => l.kind === "waits" && l.taskId === id && other(l.otherId)).map((l) => ({ linkId: l.id, ...brief(other(l.otherId)!) })),
       blocking: links.filter((l) => l.kind === "waits" && l.otherId === id && other(l.taskId)).map((l) => ({ linkId: l.id, ...brief(other(l.taskId)!) })),
