@@ -1,11 +1,17 @@
 import React from "react";
 import { Avatar, PersonAvatar } from "../ui";
+import { ScheduleButton } from "./Schedule";
 
 /**
  * The message box: formatting (bold, italic, strike, code, link, lists,
  * quote), attachments, an emoji picker, and @mention autocomplete for people
- * and AI employees. Enter sends; Shift+Enter makes a new line.
+ * and AI employees. Enter sends; Shift+Enter makes a new line. The box grows with what is typed,
+ * up to most of the screen, so a long message can be read whole before it goes; past that it scrolls.
+ * With onSchedule, a clock beside Send picks a time for the message to go out later.
  */
+
+/** The box grows to fit its text, up to this share of the window's height, then scrolls. */
+const GROW_TO = 0.6;
 
 export type Mentionable = { people: { userId: number; name: string; avatarUrl: string | null }[]; employees: { id: number; name: string; roleTitle: string; kind: string; avatar: string | null }[] };
 
@@ -61,10 +67,28 @@ type Props = {
   longPaste?: { over: number; onPaste: (text: string) => void };
   /** Files pasted into the box (a screenshot, a copied file) go with the next message. */
   onFiles?: (files: FileList) => void;
+  /** Schedule for later: the clock beside Send. Left out, there is no clock. */
+  onSchedule?: (at: Date) => void;
 };
 
-export function Composer({ value, onChange, onSend, placeholder, who, disabled, busy, sendLabel = "Send", attach, chips, note, extra, compact, autoFocus, onCancel, employeeNote = "AI employee, answers in a thread", longPaste, onFiles }: Props) {
+export function Composer({ value, onChange, onSend, placeholder, who, disabled, busy, sendLabel = "Send", attach, chips, note, extra, compact, autoFocus, onCancel, employeeNote = "AI employee, answers in a thread", longPaste, onFiles, onSchedule }: Props) {
   const ta = React.useRef<HTMLTextAreaElement>(null);
+
+  // Grow with the text: measure the content and size the box to it, up to most of the window.
+  const fit = React.useCallback(() => {
+    const el = ta.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const max = Math.max(160, Math.round(window.innerHeight * GROW_TO));
+    const want = el.scrollHeight + (el.offsetHeight - el.clientHeight);
+    el.style.height = `${Math.min(want, max)}px`;
+    el.style.overflowY = want > max ? "auto" : "hidden";
+  }, []);
+  React.useLayoutEffect(fit, [value, fit]);
+  React.useEffect(() => {
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [fit]);
   const [emoji, setEmoji] = React.useState(false);
   const [mention, setMention] = React.useState<{ at: number; q: string } | null>(null);
   const [pick, setPick] = React.useState(0);
@@ -262,7 +286,14 @@ export function Composer({ value, onChange, onSend, placeholder, who, disabled, 
         {!compact && <span className="ld-small ld-muted tc-hint">Enter sends · Shift+Enter for a new line{onFiles ? " · Attach, paste or drop files" : ""}</span>}
         <span className="ld-row">
           {onCancel && <button type="button" className="ld-btn sm" onClick={onCancel}>Cancel</button>}
-          <button type="button" className="ld-btn p sm" disabled={disabled || busy} onClick={onSend}>{sendLabel}</button>
+          {onSchedule ? (
+            <span className="tc-sendgrp">
+              <button type="button" className="ld-btn p sm" disabled={disabled || busy} onClick={onSend}>{sendLabel}</button>
+              <ScheduleButton disabled={disabled || busy} onPick={onSchedule} />
+            </span>
+          ) : (
+            <button type="button" className="ld-btn p sm" disabled={disabled || busy} onClick={onSend}>{sendLabel}</button>
+          )}
         </span>
       </div>
       {note && <span className="ld-small" role="alert" style={{ color: "var(--ld-bad)", padding: "0 10px 8px" }}>{note}</span>}

@@ -44,6 +44,7 @@ import { EditCard } from "./video/Editor";
 import DemoVideosTab, { DemoSignInCard, DemoVideoCard } from "./video/DemoVideos";
 import Broll from "./video/Broll";
 import { AnswerCard, ApplicationDraftCard, DropFiles, LayoutChoiceCard, MessageAttachments, PagePreviewCard, QuickReplies, useAttachments, type Attached } from "./chat/Extras";
+import { ScheduledBar, useScheduled } from "./team/Schedule";
 import { Composer, type Mentionable } from "./team/Composer";
 import { DeckCard, DocCard } from "./chat/Talk";
 import AdsWork from "./work/Ads";
@@ -214,6 +215,17 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
       void utils.coo.invalidate();
     },
   });
+  // Messages this person scheduled for this employee; the clock beside Send adds one.
+  const sched = useScheduled({ employeeId: emp.id });
+  const scheduleIt = (when: Date) => {
+    const v = text.trim();
+    if ((!v && !files.ready.length) || files.uploading) return;
+    sched.schedule(v, files.ready.map((f) => f.id), when, () => {
+      setText("");
+      files.clear();
+      setReplyTo(null);
+    });
+  };
   const bottom = React.useRef<HTMLDivElement>(null);
   const composer = React.useRef<HTMLDivElement>(null);
 
@@ -451,13 +463,15 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
           ))}
         </div>}
         <div>
+          <ScheduledBar rows={sched.list} onSent={() => Promise.all([utils.chat.list.invalidate(), utils.chat.summaries.invalidate()])} />
+          <ErrorLine error={sched.create.error} />
           <Composer
             value={text}
             onChange={setText}
             onSend={() => submit(text)}
             placeholder={`Message ${emp.name}`}
             who={who}
-            busy={send.isPending || files.uploading || (!text.trim() && !files.ready.length)}
+            busy={send.isPending || files.uploading || sched.create.isPending || (!text.trim() && !files.ready.length)}
             attach={files.button}
             chips={
               replyTo || files.chips ? (
@@ -479,6 +493,7 @@ function ChatPane({ emp }: { emp: EmployeeRow }) {
             extra={<TalkButton o={talk} name={emp.name} />}
             employeeNote="AI employee, gets this in their own chat"
             onFiles={files.onDrop}
+            onSchedule={talk.active ? undefined : scheduleIt}
             compact
           />
         </div>

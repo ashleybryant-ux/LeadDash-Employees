@@ -35,6 +35,8 @@ export const users = sqliteTable("users", {
   notifyPrefs: text("notifyPrefs"),
   /** Appearance: light, dark, or system (match the device). */
   theme: text("theme", { enum: ["light", "dark", "system"] }).notNull().default("system"),
+  /** The time zone the person's device last reported (IANA, e.g. America/Los_Angeles); changes when they travel. */
+  timezone: text("timezone"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
   lastSignedIn: integer("lastSignedIn", { mode: "timestamp" }),
@@ -105,6 +107,11 @@ export const organizations = sqliteTable("organizations", {
   fonts: text("fonts"),
   /** IANA time zone for scheduled tasks, e.g. America/Chicago. */
   timezone: text("timezone").notNull().default("America/Chicago"),
+  /**
+   * Follow a person's device: when this person's device reports a new time zone (they traveled),
+   * the workspace's time zone changes with it. Null is a fixed time zone.
+   */
+  timezoneFollowUserId: integer("timezoneFollowUserId"),
   /** Who signs applications, e.g. "Ashley R. Bryant" and "CEO". */
   signerName: text("signerName"),
   signerTitle: text("signerTitle"),
@@ -3924,3 +3931,35 @@ export const voiceUsage = sqliteTable(
   (t) => [uniqueIndex("voice_usage_org_month_provider").on(t.organizationId, t.month, t.provider)]
 );
 export type VoiceUsage = typeof voiceUsage.$inferSelect;
+
+/**
+ * Messages someone wrote now to go out later (2026-10-24): to a team chat channel or direct
+ * message, or to an AI employee's chat. Sent by the minute loop at sendAt, as the person who
+ * wrote it, through the same path as pressing Send.
+ */
+export const scheduledMessages = sqliteTable(
+  "scheduled_messages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    userId: integer("userId").notNull(),
+    authorName: text("authorName").notNull(),
+    /** team: a channel or direct message (channel is its key). employee: an AI employee's chat. */
+    target: text("target", { enum: ["team", "employee"] }).notNull(),
+    channel: text("channel"),
+    employeeId: integer("employeeId"),
+    content: text("content").notNull().default(""),
+    /** JSON list of chat file ids attached when it was written. */
+    attachmentIds: text("attachmentIds"),
+    sendAt: integer("sendAt", { mode: "timestamp" }).notNull(),
+    /** The writer's time zone when it was scheduled, for showing the time back to them. */
+    timezone: text("timezone"),
+    status: text("status", { enum: ["waiting", "sending", "sent", "failed"] }).notNull().default("waiting"),
+    error: text("error"),
+    sentAt: integer("sentAt", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("scheduled_messages_due_idx").on(t.status, t.sendAt), index("scheduled_messages_user_idx").on(t.organizationId, t.userId, t.status)]
+);
+export type ScheduledMessage = typeof scheduledMessages.$inferSelect;

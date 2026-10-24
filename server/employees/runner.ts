@@ -131,11 +131,15 @@ export function startScheduler() {
     const pj = await import("./projects");
     for (const o of await db.listOrganizations()) await pj.sortTeamItems(o.id).catch((err) => console.warn(`[projects] sorting old items in workspace ${o.id} failed:`, err instanceof Error ? err.message : err));
   })();
+  // A scheduled message that was going out when the server restarted is sent once, on the next minute.
+  void import("../scheduledMessages").then((m) => m.resumeInterrupted()).catch(() => null);
   let busy = false;
   const timer = setInterval(async () => {
     if (busy) return;
     busy = true;
     try {
+      // Scheduled messages first: a message set for 9:00 should go out at 9:00, not after a long task.
+      await (await import("../scheduledMessages")).sendDue();
       // Posts first: a scheduled post should not wait behind a long task.
       await postDue();
       await tick();

@@ -373,3 +373,29 @@ export function openDownload(r: { url: string; name: string }) {
 }
 
 export const wordCount = (s: string) => (s.trim() ? s.trim().split(/\s+/).length : 0);
+
+const ZONE_NAMES: Record<string, string> = {
+  "America/New_York": "Eastern",
+  "America/Detroit": "Eastern",
+  "America/Chicago": "Central",
+  "America/Denver": "Mountain",
+  "America/Phoenix": "Arizona",
+  "America/Los_Angeles": "Pacific",
+  "America/Anchorage": "Alaska",
+  "Pacific/Honolulu": "Hawaii",
+};
+
+/** A time zone as people say it: "Central" for America/Chicago, the city for the rest ("London", "Mexico City"). */
+export function zoneName(tz: string | null | undefined) {
+  if (!tz) return "";
+  return ZONE_NAMES[tz] ?? (tz.split("/").pop() ?? tz).replace(/_/g, " ");
+}
+
+/** The time zone this device is in right now (it changes when the person travels). */
+export function deviceZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago";
+  } catch {
+    return "America/Chicago";
+  }
+}

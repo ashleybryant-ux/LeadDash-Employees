@@ -3,7 +3,8 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useTenant } from "@/contexts/TenantContext";
 import { ErrorLine, OrgLogo, Page } from "../ui";
-import { initials, parseJson } from "../meta";
+import { initials, parseJson, zoneName } from "../meta";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { UsageCard } from "../work/Usage";
 import { WebsiteRead } from "../onboarding/WebsiteRead";
 import { EmployeesLook } from "../EmployeeLook";
@@ -33,6 +34,8 @@ type Form = {
   annualBudget: string;
   focusAreas: string;
   timezone: string;
+  /** The time zone follows this person's device and changes when they travel. */
+  followDevice: boolean;
   brandColors: string;
   fonts: string;
 };
@@ -137,6 +140,7 @@ function colorsOf(raw: string | null | undefined) {
 
 export default function Workspace() {
   const { currentOrg, refetchOrgs } = useTenant();
+  const { user } = useAuth();
   const [reading, setReading] = React.useState(false);
   const [editing, setEditing] = React.useState<SectionKey | null>(null);
   const [f, setF] = React.useState<Form | null>(null);
@@ -175,6 +179,7 @@ export default function Workspace() {
       annualBudget: o.annualBudget ?? "",
       focusAreas: o.focusAreas ?? "",
       timezone: o.timezone || "America/Chicago",
+      followDevice: o.timezoneFollowUserId === user?.id,
       brandColors: o.brandColors ?? "",
       fonts: o.fonts ?? "",
     });
@@ -195,7 +200,7 @@ export default function Workspace() {
         ein: f.ein.trim(),
         annualBudget: f.annualBudget.trim(),
         focusAreas: f.focusAreas.trim(),
-        timezone: f.timezone,
+        ...(f.followDevice ? { followMyDevice: true } : { timezone: f.timezone, followMyDevice: false }),
       });
     if (key === "brand") update.mutate({ id: o.id, brandColors: colorsOf(f.brandColors).join(", "), fonts: f.fonts.trim() });
   };
@@ -233,7 +238,8 @@ export default function Workspace() {
     </div>
   );
 
-  const tzLabel = TIMEZONES.find((t) => t.value === o.timezone)?.label ?? o.timezone;
+  const following = o.timezoneFollowUserId ? (o.timezoneFollowUserId === user?.id ? "follows your device" : "follows the owner's device") : "";
+  const tzLabel = `${zoneName(o.timezone)}${following ? `, ${following}` : ""}`;
   const swatches = colorsOf(o.brandColors);
   const kStart: React.CSSProperties = { alignSelf: "start", paddingTop: 6 };
 
@@ -331,8 +337,12 @@ export default function Workspace() {
             <label htmlFor="w-focus" className="ld-k" style={kStart}>Focus areas</label>
             <textarea id="w-focus" className="ld-ta" rows={2} value={f.focusAreas} onChange={set("focusAreas")} />
             <label htmlFor="w-tz" className="ld-k">Time zone</label>
-            <select id="w-tz" className="ld-in" value={f.timezone} onChange={set("timezone")}>
-              {!TIMEZONES.some((t) => t.value === f.timezone) && <option value={f.timezone}>{f.timezone}</option>}
+            <select id="w-tz" className="ld-in" value={f.followDevice ? "device" : f.timezone} onChange={(e) => {
+              const v = e.target.value;
+              setF((p) => (p ? (v === "device" ? { ...p, followDevice: true } : { ...p, followDevice: false, timezone: v }) : p));
+            }}>
+              <option value="device">Follow my device</option>
+              {!TIMEZONES.some((t) => t.value === f.timezone) && <option value={f.timezone}>{zoneName(f.timezone)}</option>}
               {TIMEZONES.map((t) => (
                 <option key={t.value} value={t.value}>
                   {t.label}

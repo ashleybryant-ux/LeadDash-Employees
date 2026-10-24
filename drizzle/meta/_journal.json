@@ -505,6 +505,13 @@
       "when": 1792518929295,
       "tag": "0071_workspace_quiet",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1792845405380,
+      "tag": "0072_scheduled_messages_travel_zone",
+      "breakpoints": true
     }
   ]
 }

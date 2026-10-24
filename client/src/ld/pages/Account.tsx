@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ErrorLine, Page, PersonAvatar } from "../ui";
-import { fmtDate, fmtTime } from "../meta";
+import { deviceZone, fmtDate, fmtTime, zoneName } from "../meta";
 import { useTenant } from "@/contexts/TenantContext";
 import { currentSubscription, needsHomeScreen, pushSupported, subscribe, unsubscribeHere } from "../push";
 import { playSound, type SoundKind } from "../sounds";
@@ -226,6 +226,8 @@ function YouCard({ name, email, photo }: { name: string; email: string; photo: s
         )}
         <span className="ld-k">Email</span>
         <span style={{ overflowWrap: "anywhere" }}>{email}</span>
+        <span className="ld-k">Time zone</span>
+        <span>{zoneName(deviceZone())}, follows this device</span>
       </div>
       <div style={{ padding: "0 18px 12px" }}>
         <ErrorLine error={save.error ?? upload.error ?? remove.error} />

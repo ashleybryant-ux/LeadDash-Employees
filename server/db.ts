@@ -2772,3 +2772,8 @@ export function addVoiceUsage(orgId: number, provider: "local" | "elevenlabs" | 
 export function listVoiceUsage(orgId: number, month: string) {
   return getDb().select().from(voiceUsage).where(and(eq(voiceUsage.organizationId, orgId), eq(voiceUsage.month, month))).all();
 }
+
+/** Workspaces whose time zone follows this person's device (it changes when they travel). */
+export async function organizationsFollowingZone(userId: number) {
+  return getDb().select().from(organizations).where(eq(organizations.timezoneFollowUserId, userId)).all();
+}

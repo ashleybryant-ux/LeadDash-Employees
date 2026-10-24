@@ -218,6 +218,19 @@ async function describeSaved(orgId: number, itemId: number, dataUrl: string) {
 }
 
 /** The person's real name for the audit trail and approvals. */
+/** Where a scheduled message goes: a team chat channel (team chat role and up) or an AI employee's chat (member and up). */
+async function scheduledTarget(ctx: TrpcContext & { user: User }, input: { organizationId: number; channel?: string; employeeId?: number }): Promise<import("./scheduledMessages").Target> {
+  if (input.employeeId) {
+    await requireMember(ctx, input.organizationId, "member");
+    const emp = await db.getEmployeeForOrg(input.employeeId, input.organizationId);
+    if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
+    return { target: "employee", employeeId: emp.id };
+  }
+  if (!input.channel) throw new TRPCError({ code: "BAD_REQUEST", message: "Pick a conversation." });
+  await requireMember(ctx, input.organizationId, "chat");
+  return { target: "team", channel: input.channel };
+}
+
 function personName(user: User) {
   return user.name?.trim() || user.email;
 }
@@ -354,9 +367,25 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(({ ctx }) =>
       ctx.user
-        ? { id: ctx.user.id, email: ctx.user.email, name: ctx.user.name, avatarUrl: ctx.user.avatarUrl ?? null, role: ctx.user.role, reviewer: review.isReviewUser(ctx.user), theme: ctx.user.theme ?? "system" }
+        ? { id: ctx.user.id, email: ctx.user.email, name: ctx.user.name, avatarUrl: ctx.user.avatarUrl ?? null, role: ctx.user.role, reviewer: review.isReviewUser(ctx.user), theme: ctx.user.theme ?? "system", timezone: ctx.user.timezone ?? null }
         : null
     ),
+
+    /**
+     * The time zone the person's device is in, reported when the app opens and whenever it comes back
+     * into view. When they travel it changes, and every workspace set to follow their device changes with it.
+     */
+    deviceZone: protectedProcedure.input(z.object({ timezone: z.string().max(64) })).mutation(async ({ ctx, input }) => {
+      if (!isValidTimeZone(input.timezone)) return { timezone: ctx.user.timezone ?? null, changed: [] as number[] };
+      if (ctx.user.timezone !== input.timezone) await db.updateUser(ctx.user.id, { timezone: input.timezone });
+      const changed: number[] = [];
+      for (const o of await db.organizationsFollowingZone(ctx.user.id)) {
+        if (o.timezone === input.timezone) continue;
+        await db.updateOrganization(o.id, { timezone: input.timezone });
+        changed.push(o.id);
+      }
+      return { timezone: input.timezone, changed };
+    }),
 
     /** Appearance: light, dark, or match the device. Saved on the account so every device follows it. */
     setTheme: protectedProcedure.input(z.object({ theme: z.enum(["light", "dark", "system"]) })).mutation(async ({ ctx, input }) => {
@@ -372,7 +401,7 @@ export const appRouter = router({
       .input(z.object({ email: z.string().trim().email().max(320), code: z.string().min(6).max(12) }))
       .mutation(async ({ ctx, input }) => {
         const user = await verifyCode(input.email, input.code, ctx.req, ctx.res);
-        return { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl ?? null, role: user.role, reviewer: review.isReviewUser(user), theme: user.theme ?? "system" };
+        return { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl ?? null, role: user.role, reviewer: review.isReviewUser(user), theme: user.theme ?? "system", timezone: user.timezone ?? null };
       }),
 
     logout: publicProcedure.mutation(async ({ ctx }) => {
@@ -498,6 +527,8 @@ export const appRouter = router({
           brandColors: z.string().max(500).optional(),
           fonts: z.string().max(255).optional(),
           timezone: z.string().max(64).optional(),
+          /** true: the time zone follows the device of the person saving (it changes when they travel). false: fixed. */
+          followMyDevice: z.boolean().optional(),
           signerName: z.string().max(120).optional(),
           signerTitle: z.string().max(120).optional(),
           orgType: z.enum(ORG_TYPES).optional(),
@@ -507,12 +538,19 @@ export const appRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         await requireMember(ctx, input.id, "admin");
-        const { id, ...data } = input;
+        const { id, followMyDevice, ...data } = input;
         if (data.timezone && !isValidTimeZone(data.timezone)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "That time zone is not recognized. Use a name like America/Chicago." });
         }
         const before = await db.getOrganizationById(id);
-        const updated = await db.updateOrganization(id, data);
+        const zoneData: Partial<{ timezoneFollowUserId: number | null }> = {};
+        if (followMyDevice === true) {
+          zoneData.timezoneFollowUserId = ctx.user.id;
+          // Follow from now: the device's zone, when it has reported one, replaces the one picked.
+          const fresh = await db.getUserById(ctx.user.id);
+          if (fresh?.timezone && isValidTimeZone(fresh.timezone)) data.timezone = fresh.timezone;
+        } else if (followMyDevice === false) zoneData.timezoneFollowUserId = null;
+        const updated = await db.updateOrganization(id, { ...data, ...zoneData });
         // A new organization type changes who is on the team, the titles and the departments.
         if (data.orgType && before && before.orgType !== data.orgType) await deployRoster(id);
         await db.logAction({
@@ -1861,6 +1899,39 @@ export const appRouter = router({
     download: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
       await requireMember(ctx, input.organizationId);
       return (await import("./employees/ads")).zipCampaign(input.organizationId, input.id);
+    }),
+  }),
+
+  /** Messages written now to go out later, in team chat or an AI employee's chat. Each person sees and changes only their own. */
+  scheduled: router({
+    list: protectedProcedure
+      .input(orgInput.extend({ channel: z.string().max(40).optional(), employeeId: z.number().int().optional() }))
+      .query(async ({ ctx, input }) => {
+        const t = await scheduledTarget(ctx, input);
+        return (await import("./scheduledMessages")).listFor(input.organizationId, ctx.user.id, t);
+      }),
+    create: protectedProcedure
+      .input(orgInput.extend({ channel: z.string().max(40).optional(), employeeId: z.number().int().optional(), content: z.string().max(1_500_000), attachmentIds: z.array(z.number().int()).max(10).default([]), sendAt: z.number().int(), timezone: z.string().max(64).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const t = await scheduledTarget(ctx, input);
+        if (t.target === "team" && input.content.length > 8000) throw new TRPCError({ code: "BAD_REQUEST", message: "Team chat messages can be up to 8,000 characters." });
+        return (await import("./scheduledMessages")).schedule(input.organizationId, { id: ctx.user.id, name: personName(ctx.user) }, t, { content: input.content, attachmentIds: input.attachmentIds, sendAt: new Date(input.sendAt), timezone: input.timezone ?? null });
+      }),
+    update: protectedProcedure
+      .input(orgInput.extend({ id: z.number().int(), content: z.string().max(1_500_000).optional(), sendAt: z.number().int().optional(), timezone: z.string().max(64).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireMember(ctx, input.organizationId, "chat");
+        return (await import("./scheduledMessages")).change(input.organizationId, ctx.user.id, input.id, { content: input.content, sendAt: input.sendAt ? new Date(input.sendAt) : undefined, timezone: input.timezone });
+      }),
+    remove: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      return (await import("./scheduledMessages")).remove(input.organizationId, ctx.user.id, input.id);
+    }),
+    sendNow: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await requireMember(ctx, input.organizationId, "chat");
+      const r = await (await import("./scheduledMessages")).sendNow(input.organizationId, ctx.user.id, input.id);
+      if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error ?? "That message could not be sent." });
+      return r;
     }),
   }),
 

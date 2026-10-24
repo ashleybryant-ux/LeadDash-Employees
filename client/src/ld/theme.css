@@ -1544,6 +1544,38 @@ html[data-theme="dark"] .gp-page mark { color: #14221c !important; }
 .tc-ib:hover { background: var(--ld-faint2); }
 .tc-hint { white-space: nowrap; }
 .tc-comp .ld-btn.sm { width: auto; padding: 0 14px; }
+/* Send and the schedule clock, joined as one button. */
+.tc-sendgrp { display: inline-flex; }
+.tc-sendgrp > .ld-btn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tc-comp .ld-btn.sm.tc-schedbtn, .tc-schedbtn { width: 34px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 1px solid rgba(255, 255, 255, 0.45); display: inline-flex; align-items: center; justify-content: center; }
+.tc-sched { position: absolute; right: 0; bottom: calc(100% + 8px); width: 280px; max-width: calc(100vw - 24px); background: var(--ld-surface); border: 1px solid var(--ld-line4); border-radius: 12px; box-shadow: 0 12px 30px rgba(18, 33, 29, 0.18); padding: 8px; display: flex; flex-direction: column; gap: 2px; z-index: 60; color: var(--ld-ink); }
+.tc-sched-h { font-size: 14px; padding: 4px 6px 6px; }
+.tc-sched-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px; border: 0; border-radius: 8px; background: none; font: inherit; text-align: left; cursor: pointer; color: var(--ld-ink); }
+.tc-sched-opt b { font-size: 13px; }
+.tc-sched-opt span { font-size: 12px; color: var(--ld-text2); }
+.tc-sched-opt:hover { background: var(--ld-accent-bg); }
+.tc-sched-tz { font-size: 12px; color: var(--ld-text2); padding: 6px 8px 2px; border-top: 1px solid var(--ld-line2); margin-top: 4px; }
+.tc-when { display: flex; gap: 8px; }
+.tc-when .ld-in { flex: 1; min-width: 0; height: 34px; box-sizing: border-box; padding: 0 8px; }
+.tc-schedbar { border: 1px solid var(--ld-accent-line); background: var(--ld-accent-bg); border-radius: 10px; margin-bottom: 8px; color: var(--ld-ink); }
+.tc-schedbar.bad { border-color: var(--ld-bad); }
+.tc-schedbar-top { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; font-size: 13px; }
+.tc-schedbar-top .tx { flex: 1; min-width: 0; font-weight: 600; }
+.tc-schedlist { display: flex; flex-direction: column; border-top: 1px solid var(--ld-accent-line); max-height: 45vh; overflow-y: auto; background: var(--ld-surface); border-radius: 0 0 10px 10px; }
+.tc-schedrow { padding: 10px 12px; border-bottom: 1px solid var(--ld-line2); }
+.tc-schedrow:last-child { border-bottom: 0; }
+.tc-schedrow-main { display: flex; gap: 12px; align-items: flex-start; }
+.tc-schedrow-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.tc-schedrow-text p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tc-schedrow-there { font-size: 12px; color: var(--ld-text2); }
+.tc-schedrow-btns { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.tc-schedrow-btns .ld-btn.sm { width: 96px; }
+.tc-schededit { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.tc-schededit .ld-ta { width: 100%; box-sizing: border-box; }
+@media (max-width: 640px) {
+  .tc-schedrow-main { flex-direction: column; }
+  .tc-schedrow-btns { flex-direction: row; }
+}
 
 .tc-side { width: 400px; flex-shrink: 0; background: var(--ld-surface); border-left: 1px solid var(--ld-line); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; font-size: 13px; }
 .tc-sidehead { position: sticky; top: 0; background: var(--ld-surface); z-index: 2; min-height: 64px; box-sizing: border-box; padding: 0 16px; border-bottom: 1px solid var(--ld-line); display: flex; align-items: center; gap: 10px; }

@@ -15,6 +15,8 @@ export interface Organization {
   state: string | null;
   logoUrl: string | null;
   timezone?: string;
+  /** The person whose device the time zone follows (it changes when they travel); null is a fixed time zone. */
+  timezoneFollowUserId?: number | null;
   description?: string | null;
   audience?: string | null;
   entity?: string | null;
@@ -67,6 +69,34 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     }
   }, [orgs, currentOrgId]);
+
+  // The device's time zone goes to the account when the app opens and whenever it comes back into
+  // view, so after a flight the times and every workspace that follows this device catch up.
+  const deviceZone = trpc.auth.deviceZone.useMutation({
+    onSuccess: (r) => {
+      if (r.changed.length) void refetch();
+    },
+  });
+  const sentZone = React.useRef<string | null>(null);
+  useEffect(() => {
+    const report = () => {
+      if (document.visibilityState === "hidden") return;
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (!tz || tz === sentZone.current) return;
+      sentZone.current = tz;
+      deviceZone.mutate({ timezone: tz });
+    };
+    report();
+    document.addEventListener("visibilitychange", report);
+    window.addEventListener("focus", report);
+    const t = window.setInterval(report, 10 * 60_000);
+    return () => {
+      document.removeEventListener("visibilitychange", report);
+      window.removeEventListener("focus", report);
+      window.clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const switchOrganization = (orgId: number) => {
     setCurrentOrgId(orgId);

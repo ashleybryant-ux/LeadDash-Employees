@@ -11,6 +11,7 @@ import { Composer, type Mentionable } from "./team/Composer";
 import { Message, type Emp, type Person } from "./team/Message";
 import { Thread } from "./team/Thread";
 import { Details } from "./team/Details";
+import { ScheduledBar, useScheduled } from "./team/Schedule";
 import type { Names } from "./team/text";
 
 /**
@@ -154,6 +155,21 @@ function TeamPane({ channel }: { channel: string }) {
       await Promise.all([utils.teamChat.messages.invalidate(), utils.teamChat.channels.invalidate()]);
     },
   });
+  // Messages this person scheduled here; the clock beside Send adds one.
+  const sched = useScheduled({ channel });
+  const scheduleIt = (when: Date) => {
+    const v = text.trim();
+    if ((!v && !files.ready.length) || files.uploading) return;
+    sched.schedule(v, files.ready.map((f) => f.id), when, () => {
+      setText("");
+      files.clear();
+      if (wasTyping.current) {
+        wasTyping.current = false;
+        typedAt.current = 0;
+        typingMut.mutate({ organizationId: currentOrgId, channel, on: false });
+      }
+    });
+  };
   const bottom = React.useRef<HTMLDivElement>(null);
   const d = q.data;
   const list = d?.messages ?? [];
@@ -308,7 +324,9 @@ function TeamPane({ channel }: { channel: string }) {
             <div ref={bottom} />
           </div>
           <div className="ld-composer tc-compwrap">
-            <Composer value={text} onChange={onChange} onSend={submit} placeholder={`Message ${d ? (isDm ? d.title : `#${d.title}`) : "your team"}`} who={who} busy={send.isPending || files.uploading} attach={files.button} chips={files.chips} note={files.note} onFiles={files.onDrop} />
+            <ScheduledBar rows={sched.list} onSent={() => Promise.all([utils.teamChat.messages.invalidate(), utils.teamChat.channels.invalidate()])} />
+            <ErrorLine error={sched.create.error} />
+            <Composer value={text} onChange={onChange} onSend={submit} placeholder={`Message ${d ? (isDm ? d.title : `#${d.title}`) : "your team"}`} who={who} busy={send.isPending || files.uploading || sched.create.isPending} attach={files.button} chips={files.chips} note={files.note} onFiles={files.onDrop} onSchedule={scheduleIt} />
           </div>
         </DropFiles>
       </div>
