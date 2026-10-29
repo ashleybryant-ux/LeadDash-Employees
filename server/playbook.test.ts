@@ -21,9 +21,9 @@ const fields = {
   playbook_fee: "$150",
   playbook_sessions: "8",
   playbook_response_time: "Next day",
-  playbook_score_found: "3",
-  playbook_score_booked: "4",
-  playbook_score_keep: "2",
+  playbook_rate_found: "3",
+  playbook_rate_booked: "4",
+  playbook_rate_keep: "2",
   playbook_manual_steps: "4",
   playbook_channels: ["Phone calls", "Psychology Today"],
 };
@@ -67,7 +67,7 @@ describe("Full Caseload Playbook", () => {
   it("starts on the lowest score, unless the answers say booking is the leak", () => {
     expect(pb.weakestStep(pb.answersFrom({ ...fields, playbook_response_time: "Within the hour", playbook_manual_steps: "1" }))).toEqual({ step: "keep", overridden: false });
     expect(pb.weakestStep(pb.answersFrom(fields))).toEqual({ step: "booked", overridden: true });
-    expect(pb.weakestStep(pb.answersFrom({ playbook_score_found: "2", playbook_score_booked: "2", playbook_score_keep: "2" })).step).toBe("booked");
+    expect(pb.weakestStep(pb.answersFrom({ playbook_rate_found: "2", playbook_rate_booked: "2", playbook_rate_keep: "2" })).step).toBe("booked");
     expect(pb.weakestStep(pb.answersFrom({})).step).toBe("booked");
   });
 

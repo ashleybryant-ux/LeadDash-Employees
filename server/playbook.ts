@@ -44,9 +44,10 @@ export const INPUT_KEYS = {
   channels: "playbook_channels",
   response: "playbook_response_time",
   source: "playbook_top_source",
-  scoreFound: "playbook_score_found",
-  scoreBooked: "playbook_score_booked",
-  scoreKeep: "playbook_score_keep",
+  // "rate", not "score": the form builder treats any field whose key has "score" in it as a quiz score.
+  scoreFound: "playbook_rate_found",
+  scoreBooked: "playbook_rate_booked",
+  scoreKeep: "playbook_rate_keep",
   manualSteps: "playbook_manual_steps",
   lost: "playbook_lost_clients",
   website: "playbook_website",
