@@ -250,9 +250,9 @@ describe("every employee knows what's connected and works in Projects", () => {
     expect(due.reply.content.indexOf("Late invoice")).toBeLessThan(due.reply.content.indexOf("Send W-9"));
     expect(due.reply.content).not.toContain("Next month's thing");
 
-    decision = { ...blank, action: "task_add", title: "Book the venue", notes: "For the March workshop", date: "2026-11-02", to: "BJ", page: "Admin" };
-    const add = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Add a task for BJ to book the venue by Nov 2" });
-    expect(add.reply.content).toMatch(/Added "Book the venue" to Admin in Projects for BJ Bryant, due Nov 2, 2026/);
+    decision = { ...blank, action: "task_add", title: "Book the venue", notes: "For the March workshop", date: "2027-11-02", to: "BJ", page: "Admin" };
+    const add = await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Add a task for BJ to book the venue by Nov 2, 2027" });
+    expect(add.reply.content).toMatch(/Added "Book the venue" to Admin in Projects for BJ Bryant, due Nov 2, 2027/);
     expect(db.work.tasks.all(orgId).some((t) => t.name === "Book the venue" && JSON.parse(t.assignees)[0].id === bj.id)).toBe(true);
 
     // Every employee has the same Projects actions.

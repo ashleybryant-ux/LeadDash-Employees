@@ -121,4 +121,18 @@ export const ENV = {
   // Secrets at rest
   /** 32-byte key, base64 or hex. Encrypts connection secrets in the database. */
   secretsKey: process.env.SECRETS_KEY || "",
+
+  // Full Caseload Playbook (The Business of Healing webinar gift). Business data only, never client information.
+  /** The LeadDash platform webhook posts to /api/playbook/hook/<this secret>. Empty turns the playbook off. */
+  playbookSecret: process.env.PLAYBOOK_WEBHOOK_SECRET || "",
+  /** Private integration token for the LeadDash sub-account (contacts read and write, custom fields read). */
+  playbookPlatformToken: process.env.PLAYBOOK_PLATFORM_TOKEN || "",
+  playbookLocationId: process.env.PLAYBOOK_LOCATION_ID || "lPJufECTAGI93EJaq84R",
+  /** The cheapest model that writes it well; checked 2026-10-29 at $0.10 in / $0.50 out per million tokens. */
+  playbookModel: process.env.PLAYBOOK_MODEL || "claude-haiku-5-5",
+  /** The webinar checkout (shown until midnight Central on the webinar night) and the registration page (after). */
+  playbookCheckoutUrl: process.env.PLAYBOOK_CHECKOUT_URL || "",
+  playbookRegisterUrl: process.env.PLAYBOOK_REGISTER_URL || "https://leaddash.io/webinar",
+  /** Most playbooks made in one hour, so a flood of form posts can't run up the AI bill. */
+  playbookMaxPerHour: parseInt(process.env.PLAYBOOK_MAX_PER_HOUR || "150", 10),
 };

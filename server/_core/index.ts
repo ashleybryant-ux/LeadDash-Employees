@@ -24,6 +24,7 @@ import { readyApps, registerOAuth } from "../integrations";
 import { registerPublicPages } from "../public-pages";
 import { registerSalesPages } from "../sales-pages";
 import { registerCareers } from "../careers";
+import { registerPlaybook } from "../playbook";
 import { registerProjectPages } from "../project-pages";
 import { registerVideoPages } from "../video-pages";
 import { SVG_HEADERS } from "../svg";
@@ -205,6 +206,7 @@ async function startServer() {
   registerPublicPages(app);
   registerSalesPages(app);
   registerCareers(app);
+  registerPlaybook(app);
   registerProjectPages(app);
   registerVideoPages(app);
 

@@ -39,6 +39,7 @@ const TOKEN_PRICES: [RegExp, number, number][] = [
   [/opus/, 5, 25],
   [/sonnet-5/, 2, 10],
   [/sonnet/, 3, 15],
+  [/haiku-5/, 0.1, 0.5],
   [/haiku-3/, 0.8, 4],
   [/haiku/, 1, 5],
 ];
