@@ -45,17 +45,35 @@ export function cachedSystem(system: string): string | { type: "text"; text: str
   return tail.trim() ? [{ type: "text", text: head, cache_control: { type: "ephemeral" } }, { type: "text", text: tail }] : [{ type: "text", text: head, cache_control: { type: "ephemeral" } }];
 }
 
+/* Newer models refuse a temperature setting (2026-11-03: "the AI model does
+ * not support temperature", and every employee answer failed). The first
+ * refusal is remembered for this model and the call is sent again without
+ * it, so a model change on the server never breaks the employees. */
+const noTemperature = new Set<string>();
+
 async function callGateway(body: Record<string, unknown>, timeoutMs = 120_000) {
   if (!ENV.assemblyAiKey) {
     throw new AiNotConfiguredError("Writing is not set up yet: ASSEMBLYAI_API_KEY is missing on the server.");
   }
-  const res = await fetch(ENV.llmGatewayUrl, {
-    method: "POST",
-    headers: { authorization: ENV.assemblyAiKey, "content-type": "application/json" },
-    body: JSON.stringify({ model: ENV.llmModel, ...body }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const text = await res.text();
+  const send = (b: Record<string, unknown>) =>
+    fetch(ENV.llmGatewayUrl, {
+      method: "POST",
+      headers: { authorization: ENV.assemblyAiKey, "content-type": "application/json" },
+      body: JSON.stringify({ model: ENV.llmModel, ...b }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  const withoutTemp = (b: Record<string, unknown>) => {
+    const { temperature: _t, ...rest } = b;
+    return rest;
+  };
+  let res = await send(noTemperature.has(ENV.llmModel) ? withoutTemp(body) : body);
+  let text = await res.text();
+  if (!res.ok && res.status === 400 && /temperature/i.test(text) && "temperature" in body && !noTemperature.has(ENV.llmModel)) {
+    noTemperature.add(ENV.llmModel);
+    console.warn(`[ai] ${ENV.llmModel} does not take a temperature; sending without it from now on`);
+    res = await send(withoutTemp(body));
+    text = await res.text();
+  }
   if (!res.ok) {
     throw new Error(`AI gateway error ${res.status}: ${text.slice(0, 300)}`);
   }

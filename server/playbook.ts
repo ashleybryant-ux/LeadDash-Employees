@@ -330,13 +330,20 @@ async function readUrl(raw: string, chars = 3500) {
 
 async function callModel(system: string, prompt: string) {
   if (!ENV.anthropicKey) throw new Error("ANTHROPIC_API_KEY is missing");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: anthropicHeaders(),
-    body: JSON.stringify({ model: ENV.playbookModel, max_tokens: 3000, temperature: 0.5, system, messages: [{ role: "user", content: prompt }] }),
-    signal: AbortSignal.timeout(90_000),
-  });
-  const body = await res.text();
+  const send = (withTemp: boolean) =>
+    fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: anthropicHeaders(),
+      body: JSON.stringify({ model: ENV.playbookModel, max_tokens: 3000, ...(withTemp ? { temperature: 0.5 } : {}), system, messages: [{ role: "user", content: prompt }] }),
+      signal: AbortSignal.timeout(90_000),
+    });
+  let res = await send(true);
+  let body = await res.text();
+  /* A model that refuses a temperature setting is asked again without it (2026-11-03). */
+  if (!res.ok && res.status === 400 && /temperature/i.test(body)) {
+    res = await send(false);
+    body = await res.text();
+  }
   if (!res.ok) throw new Error(`model error ${res.status}: ${body.slice(0, 300)}`);
   const data = JSON.parse(body);
   const u = data?.usage ?? {};
