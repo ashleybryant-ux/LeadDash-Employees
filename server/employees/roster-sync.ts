@@ -1,6 +1,6 @@
 import * as db from "../db";
 import type { OrgType } from "../../drizzle/schema";
-import { ROSTER, defaultTitles, departmentFor, jobFor, onTeam, titleFor } from "./roster";
+import { ROSTER, defaultTitles, departmentFor, onTeam, titleFor } from "./roster";
 
 /**
  * Every workspace has every employee on the roster its organization type
@@ -26,11 +26,10 @@ export async function ensureRoster(organizationId: number) {
     const team = onTeam(r.kind, orgType, !!org?.internal);
     if (current) {
       // Keep the job text current. Names stay as the workspace set them; a typed title stays too.
-      const job = jobFor(r, orgType);
-      const caps = JSON.stringify(job.capabilities);
+      const caps = JSON.stringify(r.capabilities);
       const retitle = current.roleTitle !== title && defaultTitles(r).includes(current.roleTitle);
       const patch: Parameters<typeof db.updateEmployee>[2] = {};
-      if (current.description !== job.description) patch.description = job.description;
+      if (current.description !== r.description) patch.description = r.description;
       if (current.capabilities !== caps) patch.capabilities = caps;
       if (retitle) patch.roleTitle = title;
       if (current.department !== department) patch.department = department;
@@ -48,8 +47,8 @@ export async function ensureRoster(organizationId: number) {
       status: "active",
       onTeam: team,
       efficiency: 98,
-      description: jobFor(r, orgType).description,
-      capabilities: JSON.stringify(jobFor(r, orgType).capabilities),
+      description: r.description,
+      capabilities: JSON.stringify(r.capabilities),
       systemPrompt: null,
     });
     if (team) added++;

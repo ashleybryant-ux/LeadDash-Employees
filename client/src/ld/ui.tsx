@@ -5,7 +5,7 @@ import { NextUpBar } from "./NextUp";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { BEACH, LeaveBox, dayText as leaveDay, useCanManage, type LeaveMode } from "./bench/Leave";
-import { AVATAR_FILES, KIND_META, KIND_ORDER, fmtWhen, initials, type Kind, DEPARTMENT_ORDER, mergedKinds, worksWithClientInfo } from "./meta";
+import { AVATAR_FILES, KIND_META, KIND_ORDER, fmtWhen, initials, type Kind, DEPARTMENT_ORDER, worksWithClientInfo } from "./meta";
 import { Menu } from "./goals/shared";
 import { applyTheme, useTheme, type Theme } from "./theme";
 import { NewChannel } from "./team/NewChannel";
@@ -749,13 +749,11 @@ export function ClientNamesSwitch({ style }: { style?: React.CSSProperties }) {
   );
 }
 
-export function EmpHeader({ emp, active, base, workOf }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines" | "broll" | "videos"; base: string; workOf?: string }) {
+export function EmpHeader({ emp, active, base }: { emp: Emp; active: "chat" | "work" | "knowledge" | "onboarding" | "guidelines" | "broll" | "videos"; base: string }) {
   const { currentOrg } = useTenant();
   const [leave, setLeave] = React.useState<LeaveMode | null>(null);
   const manage = useCanManage();
   const work = KIND_META[(emp.kind as Kind) ?? "custom"].work;
-  // The work tabs of the jobs folded into this employee (a practice's Theo shows Posts, Pages and Videos beside Articles).
-  const merged = mergedKinds(emp.kind, currentOrg?.orgType).filter((k) => KIND_META[k].work);
   const clientInfo = worksWithClientInfo(emp.kind, currentOrg?.orgType);
   const paused = emp.status === "paused";
   const tab = (on: boolean): React.CSSProperties => ({
@@ -788,8 +786,7 @@ export function EmpHeader({ emp, active, base, workOf }: { emp: Emp; active: "ch
       </div>
       <nav aria-label="Employee views" className="ld-emptabs" style={{ display: "flex", gap: 6, background: "var(--ld-faint2)", padding: 4, borderRadius: 12 }}>
         <Link href={base} style={tab(active === "chat")} className="ld-tablink">Chat</Link>
-        {work && <Link href={`${base}/work`} style={tab(active === "work" && !workOf)}>{work}</Link>}
-        {merged.map((k) => <Link key={k} href={`${base}/work/${k}`} style={tab(active === "work" && workOf === k)}>{KIND_META[k].work}</Link>)}
+        {work && <Link href={`${base}/work`} style={tab(active === "work")}>{work}</Link>}
         {emp.kind === "video" && <Link href={`${base}/broll`} style={tab(active === "broll")}>B-roll</Link>}
         {emp.kind === "coo" && <Link href={`${base}/videos`} style={tab(active === "videos")}>Videos</Link>}
         <Link href={`${base}/knowledge`} style={tab(active === "knowledge")}>Knowledge</Link>

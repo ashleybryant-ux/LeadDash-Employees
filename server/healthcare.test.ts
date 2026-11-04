@@ -46,28 +46,23 @@ describe("A healthcare practice workspace", () => {
     expect(kinds).not.toContain("outreach");
     expect(kinds).not.toContain("developer");
     expect(kinds).not.toContain("platform");
-    // The practice roster (2026-11-04): the eight a therapy practice pays for. Grants and the publicist are off; projects, social, website, video and onboarding are folded into Simone, Theo and Quinn.
-    expect(kinds).toEqual(["ads", "billing", "blog", "compliance", "coo", "hiring", "inbox", "leads"]);
+    expect(list).toHaveLength(15);
     const by = (k: string) => list.find((e) => e.kind === k)!;
     expect(by("leads")).toMatchObject({ name: "Malik", roleTitle: "Intake Coordinator", department: "Client care" });
-    expect(by("inbox")).toMatchObject({ name: "Avery", roleTitle: "Front Office", department: "Client care" });
-    expect(by("billing")).toMatchObject({ name: "Harper", roleTitle: "Billing and Collections", department: "Billing and compliance" });
+    expect(by("inbox").department).toBe("Client care");
+    expect(by("billing")).toMatchObject({ name: "Harper", roleTitle: "Billing Specialist", department: "Billing and compliance" });
     expect(by("compliance")).toMatchObject({ name: "Camille", roleTitle: "Compliance Coordinator" });
-    expect(by("coo")).toMatchObject({ name: "Simone", roleTitle: "Operations" });
-    expect(by("blog")).toMatchObject({ name: "Theo", roleTitle: "Marketing", department: "Growth" });
-    expect(by("hiring")).toMatchObject({ name: "Quinn", roleTitle: "People", department: "Operations" });
-    expect(by("blog").description).toContain("Google Business");
-    expect(JSON.parse(by("hiring").capabilities as string)).toContain("Offboarding");
-
-    // The merged jobs' playbooks ride along in the prompt of the employee that took them over.
-    const theo = (await systemPromptFor(by("blog"), "Write a post")).system;
-    expect(theo).toContain("You work without client information");
-    expect(theo).toContain("goes to Avery, Malik, Harper, Camille");
+    expect(by("onboarding").roleTitle).toBe("Clinician Onboarding Specialist");
+    expect(by("social").department).toBe("Growth");
+    expect(by("hiring").department).toBe("Operations");
 
     // The rules land in every prompt: those four work with client information, everyone else without it.
     const avery = (await systemPromptFor(by("inbox"), "Draft a reply")).system;
     expect(avery).toContain("You work with client information");
     expect(avery).toContain("initials only");
+    const sienna = (await systemPromptFor(by("social"), "Write a post")).system;
+    expect(sienna).toContain("You work without client information");
+    expect(sienna).toContain("goes to Avery, Malik, Harper, Camille");
 
     // Back to business: Sales returns, Harper and Camille step off, the titles go back.
     await me.organizations.update({ id: orgId, orgType: "business" });
@@ -75,8 +70,6 @@ describe("A healthcare practice workspace", () => {
     expect(back.map((e) => e.kind)).toContain("prospecting");
     expect(back.map((e) => e.kind)).not.toContain("billing");
     expect(back.find((e) => e.kind === "leads")!.roleTitle).toBe("New Leads Assistant");
-    expect(back.find((e) => e.kind === "blog")!.roleTitle).toBe("Blog Writer");
-    expect(back.map((e) => e.kind)).toContain("social");
     expect((await systemPromptFor(back.find((e) => e.kind === "social")!, "Write a post")).system).not.toContain("client information (this workspace");
   });
 

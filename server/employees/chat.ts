@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
-import type { AIEmployee, ChatFile, ChatMessage, EmployeeKind, OrgType, OutboundItem } from "../../drizzle/schema";
+import type { AIEmployee, ChatFile, ChatMessage, OutboundItem } from "../../drizzle/schema";
 import { generateJson, generateText, type JsonSchema } from "../_core/llm";
 import * as tasks from "./tasks";
 import * as apply from "./apply";
@@ -10,7 +10,6 @@ import * as jobs from "./jobs";
 import { writeReport } from "./onboarding";
 import { KNOWLEDGE_CATEGORIES, type Opportunity, type OppKind } from "../../drizzle/schema";
 import { learnFact } from "./learn";
-import { kindsOf } from "./roster";
 import { channelName, planSchedule, postNow, type Plan } from "../social";
 import * as sales from "./sales";
 import { askTeammate, findTeammate, gate, handoff } from "./team";
@@ -90,20 +89,6 @@ const ACTIONS: Record<string, string[]> = {
 };
 // Every employee has a browser, can run the Pre-call report skill, and works in Projects and Goals.
 for (const list of Object.values(ACTIONS)) list.push("approve", "hand_off", "write_doc", "make_chart", "browse", "precall_report", "sop_site", "sop_write", "task_due", "task_find", "task_lists", "task_add", "task_change", "task_bulk", "task_undo", "goal_update");
-
-/**
- * The actions an employee may take: its own job's, plus the jobs its
- * organization type folds into it (a practice's Theo posts and builds pages;
- * its Simone runs projects; its Quinn onboards). The order keeps the
- * employee's own actions first.
- */
-async function actionsOf(emp: AIEmployee): Promise<string[]> {
-  const org = await db.getOrganizationById(emp.organizationId);
-  const orgType = (org?.orgType as OrgType | undefined) ?? "business";
-  const out: string[] = [];
-  for (const k of kindsOf(emp.kind as EmployeeKind, orgType)) for (const a of ACTIONS[k] ?? []) if (!out.includes(a)) out.push(a);
-  return out.length ? out : ["none"];
-}
 
 const ACTION_HELP: Record<string, string> = {
   ads_campaign: "ads_campaign: start an ad campaign once you know all four: the goal, who it is for, the page or offer the ads go to, and the budget. Put a short campaign name in `title`, the goal in `goal`, who it is for in `target`, the page or offer in `url`, the platforms they named in `notes` (their words; \"all\" for every platform), the total budget in whole dollars in `count`, the start date as YYYY-MM-DD in `date` and the end date as YYYY-MM-DD in `time` ('' when they gave no dates). You then work out the budget split and post it as a card; nothing is written until they take a split.",
@@ -435,16 +420,8 @@ async function connectedFacts(emp: AIEmployee) {
 }
 
 /** Simone and Nora see recent meetings (Avery's notes), huddles and their action items (and Nora her projects), so they never say they have no notes. */
-/** Kai's code list and changes, Imani's customers. In a practice, an employee that took over other jobs gets their facts too. */
-async function teamFacts(emp: AIEmployee): Promise<string> {
-  const org = await db.getOrganizationById(emp.organizationId);
-  const merged = kindsOf(emp.kind as EmployeeKind, (org?.orgType as OrgType | undefined) ?? "business").slice(1);
-  const own = await ownFacts(emp);
-  if (!merged.length) return own;
-  const more = await Promise.all(merged.map((k) => ownFacts({ ...emp, kind: k } as AIEmployee).catch(() => "")));
-  return `${own}${more.join("")}`;
-}
-async function ownFacts(emp: AIEmployee) {
+/** Kai's code list and changes, Imani's customers. */
+async function teamFacts(emp: AIEmployee) {
   if (emp.kind === "developer") {
     const dev = await import("./dev");
     const repos = dev.settingsOf(emp).repos;
@@ -2164,7 +2141,7 @@ const NOT_WORK = new Set(["task_find", "task_due", "task_lists", "task_undo", "n
  * can do it, and `text` says what a person needs to do instead.
  */
 export async function doTask(emp: AIEmployee, task: { title: string; details: string; doneWhen: string; project: string; due: string; feedback: string; from: string }) {
-  const actions = (await actionsOf(emp)).filter((a) => !NOT_WORK.has(a));
+  const actions = (ACTIONS[emp.kind] ?? []).filter((a) => !NOT_WORK.has(a));
   if (!actions.includes("ehr_read") && (await worksWithEhr(emp))) actions.push("ehr_read");
   if (!actions.length) return { action: "none", text: "", cards: [] as ChatCard[], refs: [] as Ref[] };
   const request = `Task: ${task.title}${task.details ? `\nDetails: ${task.details}` : ""}${task.doneWhen ? `\nDone when: ${task.doneWhen}` : ""}\nProject: ${task.project}\nDue: ${task.due}${task.feedback ? `\nSent back because: ${task.feedback}. Fix exactly that.` : ""}`;
@@ -2179,7 +2156,7 @@ Fill every field; use "" or [] for fields the action does not use.
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n")}`
   );
-  const decision = await generateJson<Decision>({ system, prompt: request, schemaName: "chat_decision", schema: decisionSchema(emp.kind, actions), maxTokens: 3000, reason: true, clientInfo: (await db.getOrganizationById(emp.organizationId))?.orgType === "healthcare" });
+  const decision = await generateJson<Decision>({ system, prompt: request, schemaName: "chat_decision", schema: decisionSchema(emp.kind), maxTokens: 3000, reason: true, clientInfo: (await db.getOrganizationById(emp.organizationId))?.orgType === "healthcare" });
   if (!decision?.action || !actions.includes(decision.action)) return { action: "none", text: decision?.reply ?? "", cards: [] as ChatCard[], refs: [] as Ref[] };
   const hrs = await import("../workHours");
   await hrs.gate(emp.organizationId);
@@ -2401,7 +2378,7 @@ export async function sendChatMessage(opts: {
   try {
     const history = await db.listChatMessages(opts.organizationId, emp.id, 30, visible);
     // Work handed over by a teammate is done here, never handed on again (no loops between employees).
-    const actions = (await actionsOf(emp)).filter((a) => a !== "none" && !(opts.forwarded && a === "hand_off"));
+    const actions = (ACTIONS[emp.kind] ?? ["none"]).filter((a) => a !== "none" && !(opts.forwarded && a === "hand_off"));
     // In a practice, every employee that works with client information can read LeadDash EHR.
     if (!actions.includes("ehr_read") && (await worksWithEhr(emp))) actions.push("ehr_read");
     // The files this message can use: the ones sent with it, else the latest ones sent in this chat.

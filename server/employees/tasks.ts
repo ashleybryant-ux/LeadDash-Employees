@@ -5,7 +5,7 @@ import type { AIEmployee, EmployeeKind, OutboundItem } from "../../drizzle/schem
 import { CACHE_MARK, generateJson, searchJson, type JsonSchema } from "../_core/llm";
 import { generateImage, type ImageSize } from "../_core/imageGeneration";
 import { loadBrain } from "./brain";
-import { BASE_RULES, rosterEntry, CLIENT_INFO_KINDS, ROSTER, kindsOf, worksWithClientInfo } from "./roster";
+import { BASE_RULES, rosterEntry, CLIENT_INFO_KINDS, ROSTER, worksWithClientInfo } from "./roster";
 import { guidelinesText } from "./interview";
 import { handbookText, playbookText } from "./handbook";
 import { findPassages, formatPassages } from "./kb";
@@ -65,16 +65,10 @@ export async function systemPromptFor(emp: AIEmployee, job: string, about?: stri
     (guides ? `\n\n# Guidelines from the owner for ${emp.name} (follow these; they come from onboarding, chat and the Guidelines tab)\n${guides}` : "") +
     (emp.systemPrompt?.trim() ? `\n\nMore instructions from the workspace:\n${emp.systemPrompt.trim()}` : "") +
     clientInfoRules(emp, brain.org?.orgType);
-  // The playbooks for the job, and in a practice for the jobs folded into it (Theo's social and website playbooks, Simone's projects, Quinn's onboarding).
-  const playbooks = kindsOf(emp.kind as EmployeeKind, (brain.org?.orgType as "business" | "nonprofit" | "healthcare" | undefined) ?? "business")
-    .filter((k) => k !== "video")
-    .map((k) => playbookText(k, !!brain.org?.internal))
-    .filter(Boolean)
-    .join("\n\n");
   return {
     brain,
     // What stays the same from one message to the next comes first, so it can be cached; the task and passages come after the mark.
-    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${emp.kind === "video" ? VIDEO_ESSENTIALS : handbookText(emp.organizationId)}${emp.kind !== "video" && playbooks ? `\n\n${playbooks}` : ""}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${CACHE_MARK}# The task in front of you\n${job}${await passagesFor(emp, about, job)}`,
+    system: `You are ${emp.name}, the ${emp.roleTitle} employee for ${orgName}.\n\n${emp.kind === "video" ? VIDEO_ESSENTIALS : handbookText(emp.organizationId)}${emp.kind !== "video" && playbookText(emp.kind, !!brain.org?.internal) ? `\n\n${playbookText(emp.kind, !!brain.org?.internal)}` : ""}\n\n${BASE_RULES}${extra}\n\n# Brain (everything you know about ${orgName})\n${brain.text}${CACHE_MARK}# The task in front of you\n${job}${await passagesFor(emp, about, job)}`,
   };
 }
 
