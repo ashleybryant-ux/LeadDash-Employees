@@ -221,14 +221,68 @@ export const ROSTER: RosterEntry[] = [
 export const OFF_TEAM: Record<OrgType, EmployeeKind[]> = {
   business: ["billing", "compliance"],
   nonprofit: ["billing", "compliance"],
-  healthcare: ["prospecting", "outreach", "developer"],
+  /* A practice (2026-11-04): the roster is the seven a six or seven figure
+   * therapy practice pays for. Grants and the publicist come off; the
+   * project manager, social, website, video and onboarding jobs are not
+   * gone, they are folded into Simone, Theo and Quinn (MERGED_INTO). */
+  healthcare: ["prospecting", "outreach", "developer", "grants", "speaking", "projects", "social", "website", "video", "onboarding"],
 };
+
+/**
+ * Jobs one employee takes over in an organization type. The merged kind's
+ * employee stays off the team; the employee it merges into gets its actions,
+ * its facts and its work tab. A practice has one marketing employee, one
+ * operations employee and one people employee.
+ */
+export const MERGED_INTO: Record<OrgType, Partial<Record<EmployeeKind, EmployeeKind>>> = {
+  business: {},
+  nonprofit: {},
+  healthcare: { projects: "coo", social: "blog", website: "blog", video: "blog", onboarding: "hiring" },
+};
+
+/** The kinds an employee answers for: its own, then the ones merged into it. */
+export function kindsOf(kind: EmployeeKind, orgType: OrgType): EmployeeKind[] {
+  const merged = Object.entries(MERGED_INTO[orgType]).filter(([, into]) => into === kind).map(([k]) => k as EmployeeKind);
+  return [kind, ...merged];
+}
 
 /** Titles that change with the organization type. */
 export const TITLES_BY_TYPE: Record<OrgType, Partial<Record<EmployeeKind, string>>> = {
   business: {},
   nonprofit: {},
-  healthcare: { leads: "Intake Coordinator", onboarding: "Clinician Onboarding Specialist" },
+  healthcare: {
+    leads: "Intake Coordinator",
+    onboarding: "Clinician Onboarding Specialist",
+    coo: "Operations",
+    blog: "Marketing",
+    hiring: "People",
+    inbox: "Front Office",
+    billing: "Billing and Collections",
+  },
+};
+
+/** Job descriptions and capabilities that change with the organization type: the merged jobs in a practice. */
+export const JOBS_BY_TYPE: Record<OrgType, Partial<Record<EmployeeKind, { description: string; capabilities: string[] }>>> = {
+  business: {},
+  nonprofit: {},
+  healthcare: {
+    coo: {
+      description: "Runs the practice as a business: your goals and the monthly scorecard (revenue per clinician, utilization, collections), the meeting schedule with agendas and recaps, every project from plan to finish with one owner per task, and the SOPs. Says what to fix first.",
+      capabilities: ["Goals and the scorecard on the Goals page", "Revenue per clinician and utilization", "Agendas, invites and recaps", "Projects with milestones and a weekly status", "SOPs written from a recording or a walkthrough"],
+    },
+    blog: {
+      description: "Brings in the right clients: articles around the searches people in your area make, your Google Business profile, posts for Facebook, Instagram, LinkedIn and Threads with the image for each, landing pages and website pages as HTML, and short videos when you ask. Posts on the schedule you set, or waits for your OK.",
+      capabilities: ["Articles with a main keyword and banner image", "Posts with images, scheduled or approved", "Landing and website pages as HTML", "Short videos from your instructions", "Auto-post or approve first, your choice"],
+    },
+    hiring: {
+      description: "The whole clinician lifecycle: writes the posting and puts it on your careers page and job boards, screens applicants against your must-haves with license, NPI and exclusion checks, onboards each new hire with the paperwork gathered for credentialing, and offboards the right way. Reports on each clinician's hours, capacity and what they bring in.",
+      capabilities: ["Job postings on your careers page and job boards", "Applicant scoring, license, NPI and exclusion checks", "New clinician onboarding with credentialing paperwork gathered", "Offboarding", "Team report: hours, capacity, collected, no-shows"],
+    },
+    inbox: {
+      description: "Keeps caseloads full: your day and your week by clinician from LeadDash EHR, unconfirmed sessions chased, open slots offered to the waitlist, clients who have gone quiet, and portal replies drafted for you to send. Reads your messages and sits in on your meetings for the notes.",
+      capabilities: ["Your day and week, by clinician", "Unconfirmed sessions and open slots", "Clients not seen in 30 days", "Portal replies drafted, sent when you say", "Meeting notes and reply drafts"],
+    },
+  },
 };
 
 /** Departments by organization type: a practice groups its team the way it runs. */
@@ -258,6 +312,10 @@ export function onTeam(kind: EmployeeKind, orgType: OrgType, internal = false) {
 
 export function titleFor(entry: Pick<RosterEntry, "kind" | "roleTitle">, orgType: OrgType) {
   return TITLES_BY_TYPE[orgType][entry.kind] ?? entry.roleTitle;
+}
+
+export function jobFor(entry: Pick<RosterEntry, "kind" | "description" | "capabilities">, orgType: OrgType) {
+  return JOBS_BY_TYPE[orgType][entry.kind] ?? { description: entry.description, capabilities: entry.capabilities };
 }
 
 export function departmentFor(entry: Pick<RosterEntry, "kind" | "department">, orgType: OrgType): Department {

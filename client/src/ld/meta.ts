@@ -33,6 +33,23 @@ export const DEPARTMENT_ORDER: Record<string, string[]> = {
   nonprofit: ["Leadership", "Revenue", "Sales", "Marketing", "Operations", "Other"],
   healthcare: ["Leadership", "Client care", "Billing and compliance", "Growth", "Operations", "Other"],
 };
+/**
+ * Jobs one employee takes over in an organization type (2026-11-04). In a
+ * practice Theo does social, website and video work, Simone runs projects
+ * and Quinn onboards, so their work tabs show on that employee's chat.
+ * Mirrors MERGED_INTO on the server.
+ */
+export const MERGED_INTO: Record<string, Partial<Record<Kind, Kind>>> = {
+  business: {},
+  nonprofit: {},
+  healthcare: { projects: "coo", social: "blog", website: "blog", video: "blog", onboarding: "hiring" },
+};
+/** The jobs folded into this employee for the organization type, in roster order. */
+export function mergedKinds(kind: string | null | undefined, orgType: string | null | undefined): Kind[] {
+  const map = MERGED_INTO[orgType ?? "business"] ?? {};
+  return KIND_ORDER.filter((k) => map[k] === kind);
+}
+
 /** In a healthcare practice, the three who read from LeadDash EHR: their own section on the bench and a group in huddles. */
 export const EHR_KINDS: Kind[] = ["leads", "billing", "compliance"];
 export const EHR_GROUP = "Works with LeadDash EHR";

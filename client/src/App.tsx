@@ -94,6 +94,8 @@ function Router() {
       <Route path="/chats/import-slack" component={SlackImportPage} />
       <Route path="/chats/e/:id/:tab?" component={ChatPage} />
       <Route path="/chats/:kind/app/:appId/:view?" component={ChatPage} />
+      {/* The work tab of a job folded into this employee (a practice's Theo opening Posts). */}
+      <Route path="/chats/:kind/work/:appId" component={ChatPage} />
       <Route path="/chats/:kind/:tab?" component={ChatPage} />
       <Route path="/calendar" component={Calendar} />
       <Route path="/goals" component={Goals} />

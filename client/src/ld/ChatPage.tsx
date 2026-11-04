@@ -5,7 +5,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import { BIG_JOB, useHoursAsk } from "./HoursAsk";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, BottomNav, ChatList, EmpHeader, ErrorLine, PersonAvatar, Rail, useEmployees, useGo, useIsMobile } from "./ui";
-import { SUGGESTIONS, fmtDate, fmtTime, isSameDay, parseJson, type Kind } from "./meta";
+import { SUGGESTIONS, fmtDate, fmtTime, isSameDay, mergedKinds, parseJson, type Kind } from "./meta";
 import Guidelines from "./work/Guidelines";
 import ApplyWork from "./apply/ApplyWork";
 import PressWork from "./press/PressWork";
@@ -103,7 +103,9 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
   }
 
   const base = emp ? (emp.kind === "custom" ? `/chats/e/${emp.id}` : `/chats/${emp.kind}`) : "/chats";
-  const Work = emp ? WORK[emp.kind as Kind] : undefined;
+  // /chats/:kind/work/:mergedKind opens the work tab of a job folded into this employee (a practice's Theo opening Posts).
+  const workOf = emp && params.appId && mergedKinds(emp.kind, currentOrg?.orgType).includes(params.appId as Kind) ? (params.appId as Kind) : undefined;
+  const Work = emp ? WORK[(workOf ?? emp.kind) as Kind] : undefined;
   const activeKey = emp ? (emp.kind === "custom" ? `e${emp.id}` : emp.kind) : null;
 
   return (
@@ -115,10 +117,10 @@ export default function ChatPage({ params }: { params: { kind?: string; id?: str
           <div className="ld-empty" style={{ marginTop: 120 }}>{isLoading ? "Loading..." : "Pick an employee on the left."}</div>
         ) : (
           <>
-            <EmpHeader emp={emp} active={tab} base={base} />
+            <EmpHeader emp={emp} active={tab} base={base} workOf={workOf} />
             {tab === "chat" && <ChatPane emp={emp} />}
-            {tab === "work" && params.appId && <ApplicationPage emp={emp} appId={Number(params.appId)} view={params.view === "review" ? "review" : "main"} />}
-            {tab === "work" && !params.appId && Work && <Work emp={emp} />}
+            {tab === "work" && params.appId && !workOf && <ApplicationPage emp={emp} appId={Number(params.appId)} view={params.view === "review" ? "review" : "main"} />}
+            {tab === "work" && (!params.appId || workOf) && Work && <Work emp={emp} />}
             {tab === "knowledge" && <Knowledge emp={emp} />}
             {tab === "broll" && emp.kind === "video" && <Broll emp={emp} />}
             {tab === "videos" && emp.kind === "coo" && <DemoVideosTab emp={emp} />}
