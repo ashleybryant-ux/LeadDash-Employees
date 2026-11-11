@@ -180,4 +180,52 @@ describe("Team chat called from LeadDash EHR", () => {
     expect((await db.listAllEmployeesByOrg(org.id)).length).toBeGreaterThan(0);
     expect(JSON.stringify((await ask(A, staff, "messages", { channel: "everyone" })).json.result)).toContain("Room 3 projector is fixed.");
   });
+  it("a send answers with who should hear about it, never the message, and leaves out a muted or on-screen conversation", async () => {
+    const D = { loc: "locDDDDchat000000004", practice: "Aspen Field Counseling", tz: "America/Chicago" };
+    const boss = { email: "owner@aspen-chat.test", name: "Avery Holt", role: "admin" };
+    const one = { email: "one@aspen-chat.test", name: "Quinn Marsh", role: "staff" };
+    const two = { email: "two@aspen-chat.test", name: "Devon Reyes", role: "staff" };
+    const bossId = (await ask(D, boss, "me")).json.result.userId as number;
+    const oneId = (await ask(D, one, "me")).json.result.userId as number;
+    await ask(D, two, "me");
+    const key = `dm:${Math.min(oneId, bossId)}-${Math.max(oneId, bossId)}`;
+
+    // A direct message: the other person, by email, with a count. The words are not in the list.
+    const first = (await ask(D, one, "send", { channel: key, content: "Zebra crossing at noon" })).json.result;
+    expect(first.notices).toEqual([{ email: boss.email, kind: "dm", from: "Quinn Marsh", channel: "", key, unread: 1 }]);
+    const second = (await ask(D, one, "send", { channel: key, content: "And again" })).json.result;
+    expect(second.notices[0].unread).toBe(2);
+    expect(JSON.stringify(second.notices)).not.toContain("again");
+
+    // A channel: everyone but the sender.
+    const all = (await ask(D, boss, "send", { channel: "everyone", content: "Staff meeting moved" })).json.result;
+    expect(all.notices.map((n: any) => n.email).sort()).toEqual([one.email, two.email]);
+    expect(all.notices[0].kind).toBe("channel");
+    expect(all.notices[0].channel).toBe("general");
+
+    // The administrator has the conversation open on screen: no notice for it.
+    await ask(D, boss, "messages", { channel: key });
+    expect((await ask(D, one, "send", { channel: key, content: "Still there?" })).json.result.notices).toEqual([]);
+    // They look at something else: notices come back.
+    await ask(D, boss, "messages", { channel: "everyone" });
+    expect((await ask(D, one, "send", { channel: key, content: "One more" })).json.result.notices.length).toBe(1);
+
+    // Muted by the administrator: the message arrives, no notice, and the list says Muted.
+    expect((await ask(D, boss, "muteDm", { channel: key, muted: true })).json.result).toEqual({ channel: key, muted: true });
+    expect((await ask(D, one, "send", { channel: key, content: "Quiet one" })).json.result.notices).toEqual([]);
+    const rows = (await ask(D, boss, "channels")).json.result;
+    expect(rows.dms.find((d: any) => d.key === key).muted).toBe(true);
+    expect((await ask(D, boss, "messages", { channel: "everyone" })).status).toBe(200);
+    // Only their own mute: the sender's side is not muted.
+    expect((await ask(D, one, "channels")).json.result.dms.find((d: any) => d.key === key).muted).toBe(false);
+    await ask(D, boss, "muteDm", { channel: key, muted: false });
+    expect((await ask(D, one, "send", { channel: key, content: "Loud one" })).json.result.notices.length).toBe(1);
+
+    // Administrators only: a team member cannot mute a conversation that is not theirs with an administrator.
+    const twoId = (await ask(D, two, "me")).json.result.userId as number;
+    const side = `dm:${Math.min(oneId, twoId)}-${Math.max(oneId, twoId)}`;
+    expect((await ask(D, one, "muteDm", { channel: side, muted: true }, SECRET, "admins")).status).toBe(403);
+    // A channel is muted from the channel.
+    expect((await ask(D, one, "muteDm", { channel: "everyone", muted: true })).status).toBe(400);
+  });
 });

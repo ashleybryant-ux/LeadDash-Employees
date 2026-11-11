@@ -1,0 +1,1 @@
+ALTER TABLE `team_reads` ADD `muted` integer DEFAULT false NOT NULL;

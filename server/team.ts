@@ -274,6 +274,14 @@ export async function setNotify(orgId: number, me: Me, id: number, notifyMode: "
 }
 
 /** Public channels the person could join (they left, or never looked). */
+/** Mutes or unmutes a direct message for one person: its messages still arrive, with no notice. */
+export async function muteDm(orgId: number, me: Me, key: string, muted: boolean) {
+  const where = await channelFor(orgId, me.id, key);
+  if (!where.other) throw new TRPCError({ code: "BAD_REQUEST", message: "That is a channel. Mute it from the channel." });
+  db.team.muteDm(orgId, me.id, key, muted);
+  return { channel: key, muted };
+}
+
 export function joinable(orgId: number, me: number) {
   return db.team.channels(orgId).filter((c) => !c.archived && !c.private && !canSee(c, me)).map((c) => ({ id: c.id, name: c.name, purpose: c.purpose }));
 }
@@ -302,9 +310,9 @@ export async function channels(orgId: number, me: number, screen: Screen = asIs)
   const dms = [];
   for (const p of others) {
     const key = dmKey(me, p.userId);
-    dms.push({ key, kind: "dm" as const, name: p.name || p.email, sub: ROLE[p.role] ?? p.role, userId: p.userId, avatarUrl: p.avatarUrl, online: isOnline(orgId, p.userId), ...(await rowOf(key)) });
+    dms.push({ key, kind: "dm" as const, name: p.name || p.email, sub: ROLE[p.role] ?? p.role, userId: p.userId, avatarUrl: p.avatarUrl, online: isOnline(orgId, p.userId), muted: db.team.mutedDm(orgId, me, key), ...(await rowOf(key)) });
   }
-  const unread = chans.filter((c) => !c.muted).reduce((n, c) => n + c.unread, 0) + dms.reduce((n, c) => n + c.unread, 0);
+  const unread = chans.filter((c) => !c.muted).reduce((n, c) => n + c.unread, 0) + dms.filter((c) => !c.muted).reduce((n, c) => n + c.unread, 0);
   const mentions = chans.reduce((n, c) => n + c.mentions, 0);
   return { channels: chans, dms, counts: { unread, mentions, saved: db.team.saved(orgId, me).length }, joinable: joinable(orgId, me), admin: await isAdmin(orgId, me) };
 }
@@ -503,7 +511,7 @@ export async function messages(orgId: number, me: number, key: string, screen: S
     general: ch?.key === EVERYONE,
     createdBy: ch?.createdBy ?? null,
     notify: m?.notify ?? "all",
-    muted: !!m?.muted,
+    muted: where.other ? db.team.mutedDm(orgId, me, key) : !!m?.muted,
     online: where.other ? isOnline(orgId, where.other.userId) : false,
     memberCount: ch ? members.length : 2,
     members: members.slice(0, 6).map((p) => ({ userId: p.userId, name: p.name || p.email, avatarUrl: p.avatarUrl })),
@@ -557,6 +565,16 @@ async function messageFor(orgId: number, me: number, id: number) {
 }
 
 // The AI employees' answers run after the message is saved; tests wait on them.
+/**
+ * Who a sent message was for, kept beside the message it belongs to. The
+ * EHR's Team chat reads it to send its own notice (ehrChat.ts); nothing else
+ * needs it, so it is not part of what send returns.
+ */
+const heard = new WeakMap<object, { to: number[]; kind: "dm" | "channel" | "thread"; channelName: string }>();
+export function heardBy(msg: object) {
+  return heard.get(msg) ?? null;
+}
+
 const pending = new Set<Promise<unknown>>();
 export async function settled() {
   await links.settled();
@@ -606,6 +624,9 @@ export async function send(orgId: number, me: Me, key: string, content: string, 
     }
   }
   to = Array.from(new Set(to)).filter((id) => id !== me.id);
+  // A person who muted this direct message hears nothing about it.
+  if (where.other) to = to.filter((id) => !db.team.mutedDm(orgId, id, key));
+  heard.set(msg, { to, kind: where.other ? "dm" : parent ? "thread" : "channel", channelName: where.channel?.name ?? "" });
   if (to.length) {
     const title = where.other ? me.name : parent ? `${me.name} in a thread in ${chName}` : `${me.name} in ${chName}`;
     const url = parent ? `/chats/team/${key}?thread=${parent.id}` : `/chats/team/${key}`;

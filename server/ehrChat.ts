@@ -137,9 +137,26 @@ const ints = (v: unknown, max: number) => (Array.isArray(v) ? v.slice(0, max).ma
  * One Team chat call for the person the token names, in the workspace the token names.
  * The names match the app's own team chat procedures; anything else is refused.
  */
+/**
+ * NOTICES (2026-11-10)
+ * A team chat only workspace sends nothing out of this app (notify.ts). The
+ * EHR sends the notice, so a send here answers with who should hear about
+ * it: each person's email, the kind of conversation, and how many messages
+ * now wait for them. Never the message itself. Someone with that
+ * conversation open on screen is left out. The EHR takes the list off the
+ * answer before the browser sees it.
+ */
+const VIEWING_MS = 12_000;
+const viewing = new Map<string, { channel: string; at: number }>();
+const isViewing = (orgId: number, userId: number, channel: string) => {
+  const v = viewing.get(`${orgId}:${userId}`);
+  return !!v && v.channel === channel && Date.now() - v.at < VIEWING_MS;
+};
+
 const ADMINS_ONLY = "Your practice has Team chat set to administrators only. An administrator can open it to the whole team.";
 /** Calls that only make sense with channels, or that would read across conversations. */
 const NEEDS_ALL = new Set(["createChannel", "updateChannel", "archiveChannel", "addMembers", "leaveChannel", "joinChannel", "setNotify", "search", "details"]);
+type Notice = { email: string; kind: "dm" | "channel" | "thread"; from: string; channel: string; key: string; unread: number };
 
 export async function call(t: ChatToken, name: string, raw: unknown) {
   const { org, user, me, admin } = await seat(t);
@@ -158,7 +175,7 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
       return other != null && other !== user.id && (admin || adminIds.has(other));
     };
     if (NEEDS_ALL.has(name)) refuse();
-    if (["messages", "send", "markRead", "presence", "typing"].includes(name) && !allowedKey(str(i.channel, 40))) refuse();
+    if (["messages", "send", "markRead", "presence", "typing", "muteDm"].includes(name) && !allowedKey(str(i.channel, 40))) refuse();
     if (["thread", "edit", "remove", "react", "pin"].includes(name)) {
       const m = db.team.get(o, int(i.messageId));
       if (!m || !allowedKey(m.channel)) refuse();
@@ -166,7 +183,7 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
     if (name === "channels") {
       const all = await team.channels(o, user.id);
       const dms = all.dms.filter((d) => admin || adminIds.has(d.userId));
-      const unread = dms.reduce((n, d) => n + d.unread, 0);
+      const unread = dms.filter((d) => !d.muted).reduce((n, d) => n + d.unread, 0);
       return { channels: [], dms, counts: { unread, mentions: 0, saved: 0 }, joinable: [], admin, scope: "admins" as const };
     }
     if (name === "people") {
@@ -183,15 +200,37 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
       return { ...(await team.channels(o, user.id)), scope: "all" as const };
     case "people":
       return (await team.people(o)).map((p) => ({ userId: p.userId, name: p.name || p.email, role: p.role, avatarUrl: p.avatarUrl ?? null, online: team.isOnline(o, p.userId) }));
-    case "messages":
-      return team.messages(o, user.id, str(i.channel, 40));
+    case "messages": {
+      const out = await team.messages(o, user.id, str(i.channel, 40));
+      // The screen asks for the open conversation every few seconds: that is how we know it is on screen.
+      viewing.set(`${o}:${user.id}`, { channel: out.channel, at: Date.now() });
+      return out;
+    }
     case "thread":
       return team.thread(o, user.id, int(i.messageId));
     case "details":
       return team.details(o, user.id, str(i.channel, 40));
-    case "send":
+    case "send": {
       // Files come in a later step; a message here is text.
-      return team.send(o, me, str(i.channel, 40), str(i.content, 8000), [], { threadOf: i.threadOf == null ? null : int(i.threadOf), alsoToChannel: i.alsoToChannel === true });
+      const key = str(i.channel, 40);
+      const msg = await team.send(o, me, key, str(i.content, 8000), [], { threadOf: i.threadOf == null ? null : int(i.threadOf), alsoToChannel: i.alsoToChannel === true });
+      // Only a team chat only workspace: one with the employees sends its own notices.
+      const h = org.chatOnly ? team.heardBy(msg) : null;
+      const notices: Notice[] = [];
+      if (h && h.to.length) {
+        const list = await team.people(o);
+        for (const id of h.to) {
+          const p = list.find((x) => x.userId === id);
+          if (!p?.email || isViewing(o, id, key)) continue;
+          const read = db.team.read(o, id, key);
+          const unread = Math.max(1, db.team.unread(o, id, key, read?.lastReadId ?? 0).count);
+          notices.push({ email: p.email, kind: h.kind, from: me.name, channel: h.channelName, key, unread });
+        }
+      }
+      return { ...msg, notices };
+    }
+    case "muteDm":
+      return team.muteDm(o, me, str(i.channel, 40), i.muted === true);
     case "edit":
       return team.edit(o, me, int(i.messageId), str(i.content, 8000));
     case "remove":

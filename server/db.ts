@@ -2498,6 +2498,17 @@ export const team = {
     const rows = getDb().select().from(r).where(and(inOrgs(r.organizationId, orgs), eq(r.userId, userId), eq(r.channel, channel))).all();
     return rows.sort((a, b) => b.lastReadId - a.lastReadId)[0] ?? null;
   },
+  /** Whether the person muted this conversation (direct messages; a channel keeps its own with the membership). */
+  mutedDm(orgId: number, userId: number, channel: string) {
+    const r = schema.teamReads;
+    return getDb().select({ muted: r.muted }).from(r).where(and(eq(r.organizationId, orgId), eq(r.userId, userId), eq(r.channel, channel))).all().some((x) => x.muted);
+  },
+  muteDm(orgId: number, userId: number, channel: string, muted: boolean) {
+    const r = schema.teamReads;
+    const have = getDb().select().from(r).where(and(eq(r.organizationId, orgId), eq(r.userId, userId), eq(r.channel, channel))).limit(1).all()[0];
+    if (have) getDb().update(r).set({ muted }).where(eq(r.id, have.id)).run();
+    else getDb().insert(r).values({ organizationId: orgId, userId, channel, lastReadId: 0, muted }).run();
+  },
   markRead(orgId: number, userId: number, channel: string, lastId: number) {
     const r = schema.teamReads;
     const have = team.read(orgId, userId, channel);

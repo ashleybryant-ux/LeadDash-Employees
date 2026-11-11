@@ -2887,6 +2887,8 @@ export const teamReads = sqliteTable(
     channel: text("channel").notNull(),
     lastReadId: integer("lastReadId").notNull().default(0),
     readAt: integer("readAt", { mode: "timestamp" }),
+    /** The person muted this conversation: no notice for it. Channels keep theirs with the membership; this is for direct messages. */
+    muted: integer("muted", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [uniqueIndex("team_reads_unique").on(t.organizationId, t.userId, t.channel)]
 );
