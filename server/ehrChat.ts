@@ -25,6 +25,16 @@ import * as team from "./team";
  *
  * The workspace is always the one the token's location id names. Nothing in
  * the request body can choose another: a call carries no workspace id.
+ *
+ * WHO MAY TALK TO WHOM (2026-11-10)
+ * A practice starts with its team able to message its administrators and
+ * nobody else: a clinician writes to an administrator, an administrator
+ * writes to anyone, and there are no channels. The practice's administrator
+ * is asked in the EHR whether the whole team may chat with each other; once
+ * they say yes the token carries scope "all" and channels and every direct
+ * message open up. The scope rides in the signed token, so the browser
+ * cannot widen it, and it is enforced here on every call, not only by what
+ * the screen chooses to draw.
  */
 
 const TOKEN_MAX_AGE_S = 5 * 60;
@@ -34,6 +44,8 @@ export type ChatToken = {
   loc: string;
   practice: string;
   tz?: string;
+  /** "all": the whole team chats with each other. Anything else: team members and administrators only. */
+  scope?: "all" | "admins";
   user: { email: string; name?: string; role?: string };
   iat: number;
   exp: number;
@@ -96,13 +108,21 @@ export async function seat(t: ChatToken) {
   if (!user) user = await db.createUser({ email, role: "user", name: t.user.name?.trim() || null });
   else if (!user.name && t.user.name?.trim()) user = (await db.updateUser(user.id, { name: t.user.name.trim() })) ?? user;
   const members = await db.listMembers(org.id);
-  if (!members.some((m) => m.userId === user!.id)) {
-    const admin = String(t.user.role || "").toLowerCase() === "admin";
+  const admin = String(t.user.role || "").toLowerCase() === "admin";
+  const mine = members.find((m) => m.userId === user!.id);
+  if (!mine) {
     const role = admin ? (members.some((m) => m.role === "owner") ? "admin" : "owner") : "chat";
     await db.addOrganizationMember({ organizationId: org.id, userId: user.id, role, title: admin ? "Administrator" : "Staff" });
+  } else if (org.chatOnly) {
+    // The EHR is the record of who administers the practice: someone made an administrator there
+    // (or no longer one) is the same here the next time they call. Only in a team chat only
+    // workspace; a workspace with the employees keeps the roles its owner set.
+    const isAdminHere = mine.role === "owner" || mine.role === "admin";
+    if (admin && !isAdminHere) await db.updateMemberRole(org.id, user.id, "admin");
+    if (!admin && isAdminHere) await db.updateMemberRole(org.id, user.id, "chat");
   }
   team.ensureGeneral(org.id);
-  return { org, user, me: { id: user.id, name: user.name?.trim() || email } };
+  return { org, user, me: { id: user.id, name: user.name?.trim() || email }, admin };
 }
 
 const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
@@ -117,15 +137,50 @@ const ints = (v: unknown, max: number) => (Array.isArray(v) ? v.slice(0, max).ma
  * One Team chat call for the person the token names, in the workspace the token names.
  * The names match the app's own team chat procedures; anything else is refused.
  */
+const ADMINS_ONLY = "Your practice has Team chat set to administrators only. An administrator can open it to the whole team.";
+/** Calls that only make sense with channels, or that would read across conversations. */
+const NEEDS_ALL = new Set(["createChannel", "updateChannel", "archiveChannel", "addMembers", "leaveChannel", "joinChannel", "setNotify", "search", "details"]);
+
 export async function call(t: ChatToken, name: string, raw: unknown) {
-  const { org, user, me } = await seat(t);
+  const { org, user, me, admin } = await seat(t);
   const o = org.id;
   const i = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+
+  // Team members and administrators only, unless the practice opened it to the whole team.
+  if (t.scope !== "all") {
+    const refuse = () => {
+      throw new TRPCError({ code: "FORBIDDEN", message: ADMINS_ONLY });
+    };
+    const adminIds = new Set((await db.listMembers(o)).filter((m) => m.role === "owner" || m.role === "admin").map((m) => m.userId));
+    /** A direct message with one end an administrator: an administrator with anyone, anyone with an administrator. */
+    const allowedKey = (key: string) => {
+      const other = team.dmOther(key, user.id);
+      return other != null && other !== user.id && (admin || adminIds.has(other));
+    };
+    if (NEEDS_ALL.has(name)) refuse();
+    if (["messages", "send", "markRead", "presence", "typing"].includes(name) && !allowedKey(str(i.channel, 40))) refuse();
+    if (["thread", "edit", "remove", "react", "pin"].includes(name)) {
+      const m = db.team.get(o, int(i.messageId));
+      if (!m || !allowedKey(m.channel)) refuse();
+    }
+    if (name === "channels") {
+      const all = await team.channels(o, user.id);
+      const dms = all.dms.filter((d) => admin || adminIds.has(d.userId));
+      const unread = dms.reduce((n, d) => n + d.unread, 0);
+      return { channels: [], dms, counts: { unread, mentions: 0, saved: 0 }, joinable: [], admin, scope: "admins" as const };
+    }
+    if (name === "people") {
+      return (await team.people(o))
+        .filter((p) => admin || p.userId === user.id || adminIds.has(p.userId))
+        .map((p) => ({ userId: p.userId, name: p.name || p.email, role: p.role, avatarUrl: p.avatarUrl ?? null, online: team.isOnline(o, p.userId) }));
+    }
+  }
+
   switch (name) {
     case "me":
       return { userId: user.id, name: me.name, practice: org.name };
     case "channels":
-      return team.channels(o, user.id);
+      return { ...(await team.channels(o, user.id)), scope: "all" as const };
     case "people":
       return (await team.people(o)).map((p) => ({ userId: p.userId, name: p.name || p.email, role: p.role, avatarUrl: p.avatarUrl ?? null, online: team.isOnline(o, p.userId) }));
     case "messages":
