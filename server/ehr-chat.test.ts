@@ -180,7 +180,7 @@ describe("Team chat called from LeadDash EHR", () => {
     expect((await db.listAllEmployeesByOrg(org.id)).length).toBeGreaterThan(0);
     expect(JSON.stringify((await ask(A, staff, "messages", { channel: "everyone" })).json.result)).toContain("Room 3 projector is fixed.");
   });
-  it("a send answers with who should hear about it, never the message, and leaves out a muted or on-screen conversation", async () => {
+  it("a send answers with who should hear about it and the start of the message, and leaves out a muted or on-screen conversation", async () => {
     const D = { loc: "locDDDDchat000000004", practice: "Aspen Field Counseling", tz: "America/Chicago" };
     const boss = { email: "owner@aspen-chat.test", name: "Avery Holt", role: "admin" };
     const one = { email: "one@aspen-chat.test", name: "Quinn Marsh", role: "staff" };
@@ -190,12 +190,14 @@ describe("Team chat called from LeadDash EHR", () => {
     await ask(D, two, "me");
     const key = `dm:${Math.min(oneId, bossId)}-${Math.max(oneId, bossId)}`;
 
-    // A direct message: the other person, by email, with a count. The words are not in the list.
+    // A direct message: the other person only, by email, with a count and the start of the message.
     const first = (await ask(D, one, "send", { channel: key, content: "Zebra crossing at noon" })).json.result;
-    expect(first.notices).toEqual([{ email: boss.email, kind: "dm", from: "Quinn Marsh", channel: "", key, unread: 1 }]);
-    const second = (await ask(D, one, "send", { channel: key, content: "And again" })).json.result;
+    expect(first.notices).toEqual([{ email: boss.email, kind: "dm", from: "Quinn Marsh", channel: "", key, unread: 1, text: "Zebra crossing at noon" }]);
+    const second = (await ask(D, one, "send", { channel: key, content: "And again " + "x".repeat(400) })).json.result;
     expect(second.notices[0].unread).toBe(2);
-    expect(JSON.stringify(second.notices)).not.toContain("again");
+    expect(second.notices[0].text.length).toBe(200);
+    // The third person, who is not in this conversation, is not on the list.
+    expect(second.notices.map((n: any) => n.email)).toEqual([boss.email]);
 
     // A channel: everyone but the sender.
     const all = (await ask(D, boss, "send", { channel: "everyone", content: "Staff meeting moved" })).json.result;

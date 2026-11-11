@@ -141,10 +141,11 @@ const ints = (v: unknown, max: number) => (Array.isArray(v) ? v.slice(0, max).ma
  * NOTICES (2026-11-10)
  * A team chat only workspace sends nothing out of this app (notify.ts). The
  * EHR sends the notice, so a send here answers with who should hear about
- * it: each person's email, the kind of conversation, and how many messages
- * now wait for them. Never the message itself. Someone with that
+ * it: each person's email, the kind of conversation, how many messages now
+ * wait for them, and the start of the message, which the notice shows the
+ * way a chat app does (the owner's decision, 2026-11-10). Someone with that
  * conversation open on screen is left out. The EHR takes the list off the
- * answer before the browser sees it.
+ * answer before the browser sees it, so it reaches only the people it names.
  */
 const VIEWING_MS = 12_000;
 const viewing = new Map<string, { channel: string; at: number }>();
@@ -156,7 +157,7 @@ const isViewing = (orgId: number, userId: number, channel: string) => {
 const ADMINS_ONLY = "Your practice has Team chat set to administrators only. An administrator can open it to the whole team.";
 /** Calls that only make sense with channels, or that would read across conversations. */
 const NEEDS_ALL = new Set(["createChannel", "updateChannel", "archiveChannel", "addMembers", "leaveChannel", "joinChannel", "setNotify", "search", "details"]);
-type Notice = { email: string; kind: "dm" | "channel" | "thread"; from: string; channel: string; key: string; unread: number };
+type Notice = { email: string; kind: "dm" | "channel" | "thread"; from: string; channel: string; key: string; unread: number; text: string };
 
 export async function call(t: ChatToken, name: string, raw: unknown) {
   const { org, user, me, admin } = await seat(t);
@@ -224,7 +225,7 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
           if (!p?.email || isViewing(o, id, key)) continue;
           const read = db.team.read(o, id, key);
           const unread = Math.max(1, db.team.unread(o, id, key, read?.lastReadId ?? 0).count);
-          notices.push({ email: p.email, kind: h.kind, from: me.name, channel: h.channelName, key, unread });
+          notices.push({ email: p.email, kind: h.kind, from: me.name, channel: h.channelName, key, unread, text: (msg.content || "").replace(/\s+/g, " ").trim().slice(0, 200) });
         }
       }
       return { ...msg, notices };

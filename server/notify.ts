@@ -137,7 +137,7 @@ export async function notify(orgId: number, event: NotifyEvent, notice: Notice, 
   if (db.getReviewAccess()?.organizationId === orgId) return;
   const org = await db.getOrganizationById(orgId);
   // A team chat only workspace belongs to LeadDash EHR's Team chat: nothing leaves this app for it.
-  // A message there can name a client, and the EHR sends its own notice with initials only.
+  // The EHR sends that notice itself, to the phones signed in to LeadDash EHR (ehrChat.ts).
   if (org?.chatOnly) return;
   const people: User[] = (await db.notifyRecipients(orgId)).filter((p) => !opts.only || opts.only.includes(p.id));
   const pushIds: number[] = [];
