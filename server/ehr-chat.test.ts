@@ -287,4 +287,45 @@ describe("Team chat called from LeadDash EHR", () => {
     await ask(E, boss, "channels", { roster: chat.signRosterToken(E.loc, [{ email: "new@juniper-chat.test", name: "Noel Park", admin: false }], SECRET) });
     expect(await names(boss)).toEqual(["Noel Park", "Sage Ortiz"]);
   });
+  it("works the same once the practice also uses the employees: notices come from the EHR, the team still follows its list, and nobody the owner added is touched", async () => {
+    const G = { loc: "locGGGGchat000000007", practice: "Harbor Light Counseling", tz: "America/Chicago" };
+    const boss = { email: "owner@harbor-chat.test", name: "Morgan Reed", role: "admin" };
+    const one = { email: "one@harbor-chat.test", name: "Tatum Cole", role: "staff" };
+    const chat = await import("./ehrChat");
+    const bossId = (await ask(G, boss, "me")).json.result.userId as number;
+    const org = (await db.getOrganizationByEhrLocation(G.loc))!;
+    // The practice opens LeadDash Employees from the EHR: the workspace is no longer team chat only.
+    await db.updateOrganization(org.id, { chatOnly: false });
+    // Someone the owner added in LeadDash Employees, who is not on the EHR's staff list.
+    const outside = await db.createUser({ email: "bookkeeper@harbor-chat.test", role: "user", name: "Lee Park" });
+    await db.addOrganizationMember({ organizationId: org.id, userId: outside.id, role: "member", title: "Bookkeeper" });
+
+    const team = [
+      { email: boss.email, name: "Morgan Reed", admin: true },
+      { email: one.email, name: "Tatum Cole", admin: false },
+      { email: "lead@harbor-chat.test", name: "Jules Hart", admin: true },
+      { email: "temp@harbor-chat.test", name: "Robin Vale", admin: false },
+    ];
+    await ask(G, boss, "channels", { roster: chat.signRosterToken(G.loc, team, SECRET) });
+    const roles = async () => Object.fromEntries((await db.listMembers(org.id)).map((m) => [m.email, m.role]));
+    // Everyone on the list has a seat; new seats are chat seats, even for an administrator; the owner's own people are as they were.
+    expect(await roles()).toMatchObject({ [one.email]: "chat", "lead@harbor-chat.test": "chat", "temp@harbor-chat.test": "chat", "bookkeeper@harbor-chat.test": "member" });
+    // Someone left out of Team chat (or gone from the practice) loses a chat seat; the bookkeeper stays.
+    await ask(G, boss, "channels", { roster: chat.signRosterToken(G.loc, team.slice(0, 3), SECRET) });
+    const after = await roles();
+    expect(after["temp@harbor-chat.test"]).toBeUndefined();
+    expect(after["bookkeeper@harbor-chat.test"]).toBe("member");
+    expect(after["lead@harbor-chat.test"]).toBe("chat");
+
+    // Administrators only: a team member may direct message an administrator of the practice who holds a chat seat here.
+    const oneId = (await ask(G, one, "me")).json.result.userId as number;
+    const leadId = (await db.getUserByEmail("lead@harbor-chat.test"))!.id;
+    const dmTo = (a: number, b: number) => `dm:${Math.min(a, b)}-${Math.max(a, b)}`;
+    expect((await ask(G, one, "send", { channel: dmTo(oneId, leadId), content: "Question for you" }, SECRET, "admins")).status).toBe(200);
+    expect((await ask(G, one, "send", { channel: dmTo(oneId, outside.id), content: "hi" }, SECRET, "admins")).status).toBe(403);
+
+    // A send through the EHR's door still answers with who should hear about it, so the EHR sends the notice.
+    const sent = (await ask(G, one, "send", { channel: dmTo(oneId, bossId), content: "Are you in today?" })).json.result;
+    expect(sent.notices).toEqual([{ email: boss.email, kind: "dm", from: "Tatum Cole", channel: "", key: dmTo(oneId, bossId), unread: 1, text: "Are you in today?" }]);
+  });
 });

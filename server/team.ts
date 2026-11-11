@@ -581,7 +581,14 @@ export async function settled() {
   await Promise.all(Array.from(pending));
 }
 
-export async function send(orgId: number, me: Me, key: string, content: string, attachmentIds: number[], opts: { threadOf?: number | null; alsoToChannel?: boolean } = {}) {
+/**
+ * opts.byEhr (2026-11-11): the message came in through LeadDash EHR's Team
+ * chat. The EHR sends its own notice for it (a push, with a client's name
+ * shown as initials), so this app sends none: no email and no push carrying
+ * the message as typed. That holds in every workspace, including one where
+ * the practice also uses the employees.
+ */
+export async function send(orgId: number, me: Me, key: string, content: string, attachmentIds: number[], opts: { threadOf?: number | null; alsoToChannel?: boolean; byEhr?: boolean } = {}) {
   await ensureOnTeam(orgId, me.id);
   const where = await channelFor(orgId, me.id, key);
   const text = content.trim().slice(0, 8000);
@@ -627,7 +634,7 @@ export async function send(orgId: number, me: Me, key: string, content: string, 
   // A person who muted this direct message hears nothing about it.
   if (where.other) to = to.filter((id) => !db.team.mutedDm(orgId, id, key));
   heard.set(msg, { to, kind: where.other ? "dm" : parent ? "thread" : "channel", channelName: where.channel?.name ?? "" });
-  if (to.length) {
+  if (to.length && !opts.byEhr) {
     const title = where.other ? me.name : parent ? `${me.name} in a thread in ${chName}` : `${me.name} in ${chName}`;
     const url = parent ? `/chats/team/${key}?thread=${parent.id}` : `/chats/team/${key}`;
     await notify(orgId, "team_message", { title, body: text || "Sent a file", url, tag: `team-${key}` }, { only: to }).catch(() => null);

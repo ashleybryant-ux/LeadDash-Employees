@@ -91,9 +91,19 @@ export function readChatToken(token: string, secret = ENV.ehrLinkSecret, now = D
  * the practice, and it is read only when that practice is the one the call's
  * own token names. Each person on it is given a seat here (by email, with
  * their name and whether they administer the practice); someone no longer on
- * it loses theirs. Their messages stay. Only in a team chat only workspace:
- * one with the employees keeps the team its owner set.
+ * it loses theirs. Their messages stay.
+ *
+ * A workspace where the practice also uses the employees (it stops being
+ * team chat only the first time someone opens LeadDash Employees from the
+ * EHR) keeps the people and roles its owner set there: the list still seats
+ * everyone on the practice's team and still unseats a chat seat that is no
+ * longer on it, but it never removes or changes anyone the owner added in
+ * LeadDash Employees. Who administers the practice is remembered from the
+ * list for the direct message rule, without changing a role (2026-11-11;
+ * before this the list was ignored in such a workspace, so the team stopped
+ * updating and someone left out of Team chat stayed on everyone's list).
  */
+const ehrAdmins = new Map<number, Set<number>>();
 export type RosterPerson = { email: string; name?: string; admin?: boolean };
 type RosterToken = { use: "chat-roster"; loc: string; people: RosterPerson[]; iat: number; exp: number };
 
@@ -133,7 +143,8 @@ export function signRosterToken(loc: string, people: RosterPerson[], secret = EN
 }
 
 /** Seats everyone on the EHR's list and unseats whoever is no longer on it. The caller is never unseated. */
-async function syncRoster(orgId: number, people: RosterPerson[], callerId: number, callerEmail: string) {
+async function syncRoster(orgId: number, people: RosterPerson[], callerId: number, callerEmail: string, chatOnly: boolean) {
+  const adminsNow = new Set<number>();
   // A list that does not even hold the person asking is not the practice's team: nothing is taken from it.
   const whole = people.some((p) => p.email === callerEmail.trim().toLowerCase());
   const members = await db.listMembers(orgId);
@@ -144,21 +155,26 @@ async function syncRoster(orgId: number, people: RosterPerson[], callerId: numbe
     if (!user) user = await db.createUser({ email: p.email, role: "user", name: p.name || null });
     else if (!user.name && p.name) user = (await db.updateUser(user.id, { name: p.name })) ?? user;
     keep.add(user.id);
+    if (p.admin) adminsNow.add(user.id);
     if (user.id === callerId) continue; // seat() has just set the caller's own seat from their own token
     const mine = members.find((m) => m.userId === user!.id);
     if (!mine) {
-      const role = p.admin ? (hasOwner ? "admin" : "owner") : "chat";
+      // With the employees in the workspace, a new seat is a chat seat: its owner decides who runs the employees.
+      const role = !chatOnly ? "chat" : p.admin ? (hasOwner ? "admin" : "owner") : "chat";
       if (role === "owner") hasOwner = true;
       await db.addOrganizationMember({ organizationId: orgId, userId: user.id, role, title: p.admin ? "Administrator" : "Staff" });
-    } else {
+    } else if (chatOnly) {
       const isAdminHere = mine.role === "owner" || mine.role === "admin";
       if (p.admin && !isAdminHere) await db.updateMemberRole(orgId, user.id, "admin");
       if (!p.admin && isAdminHere) await db.updateMemberRole(orgId, user.id, "chat");
     }
   }
+  ehrAdmins.set(orgId, adminsNow);
   if (whole) {
     for (const m of members) {
       if (keep.has(m.userId) || m.role === "reviewer") continue;
+      // With the employees in the workspace, only a chat seat is ever taken away.
+      if (!chatOnly && m.role !== "chat") continue;
       await db.removeMember(orgId, m.userId);
     }
   }
@@ -254,9 +270,9 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
   const i = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
   // The practice's team, when the EHR sent it with this call (signed, and for this practice only).
-  if (org.chatOnly && typeof i.roster === "string") {
+  if (typeof i.roster === "string") {
     const people = readRosterToken(i.roster, t.loc);
-    if (people && people.length) await syncRoster(o, people, user.id, t.user.email);
+    if (people && people.length) await syncRoster(o, people, user.id, t.user.email, !!org.chatOnly);
   }
 
   // Team members and administrators only, unless the practice opened it to the whole team.
@@ -264,7 +280,8 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
     const refuse = () => {
       throw new TRPCError({ code: "FORBIDDEN", message: ADMINS_ONLY });
     };
-    const adminIds = new Set((await db.listMembers(o)).filter((m) => m.role === "owner" || m.role === "admin").map((m) => m.userId));
+    // Administrators: by their seat here, and by the practice's own list (someone who administers the practice in the EHR and holds a chat seat here).
+    const adminIds = new Set([...(await db.listMembers(o)).filter((m) => m.role === "owner" || m.role === "admin").map((m) => m.userId), ...Array.from(ehrAdmins.get(o) ?? [])]);
     /** A direct message with one end an administrator: an administrator with anyone, anyone with an administrator. */
     const allowedKey = (key: string) => {
       const other = team.dmOther(key, user.id);
@@ -320,9 +337,9 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
     case "send": {
       // Files come in a later step; a message here is text.
       const key = str(i.channel, 40);
-      const msg = await team.send(o, me, key, str(i.content, 8000), [], { threadOf: i.threadOf == null ? null : int(i.threadOf), alsoToChannel: i.alsoToChannel === true });
-      // Only a team chat only workspace: one with the employees sends its own notices.
-      const h = org.chatOnly ? team.heardBy(msg) : null;
+      // byEhr: this app sends no notice of its own for it, in any workspace. The EHR sends the notice from the list below.
+      const msg = await team.send(o, me, key, str(i.content, 8000), [], { threadOf: i.threadOf == null ? null : int(i.threadOf), alsoToChannel: i.alsoToChannel === true, byEhr: true });
+      const h = team.heardBy(msg);
       const notices: Notice[] = [];
       if (h && h.to.length) {
         const list = await team.people(o);
