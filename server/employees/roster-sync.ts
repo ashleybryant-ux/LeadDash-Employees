@@ -16,6 +16,8 @@ import { ROSTER, defaultTitles, departmentFor, onTeam, titleFor } from "./roster
  */
 export async function ensureRoster(organizationId: number) {
   const org = await db.getOrganizationById(organizationId);
+  // A team chat only workspace (LeadDash EHR's Team chat) has no AI employees.
+  if (org?.chatOnly) return 0;
   const orgType: OrgType = (org?.orgType as OrgType | undefined) ?? "business";
   const have = await db.listAllEmployeesByOrg(organizationId);
   let added = 0;

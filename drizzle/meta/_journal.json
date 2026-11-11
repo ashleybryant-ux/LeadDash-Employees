@@ -512,6 +512,13 @@
       "when": 1792845405380,
       "tag": "0072_scheduled_messages_travel_zone",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1794358544095,
+      "tag": "0073_workspace_chat_only",
+      "breakpoints": true
     }
   ]
 }

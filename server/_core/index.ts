@@ -71,6 +71,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
   // The door from LeadDash EHR: a practice opens this app from its Settings, and the EHR's agency screen sets portraits and voices.
   (await import("../ehrLink")).registerEhrLink(app);
+  // Team chat drawn in LeadDash EHR: its server calls here for the person, with a token it signed.
+  (await import("../ehrChat")).registerEhrChat(app);
   // The Claude and ChatGPT connector.
   (await import("../mcp")).registerMcp(app);
 

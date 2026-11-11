@@ -135,8 +135,11 @@ export async function notify(orgId: number, event: NotifyEvent, notice: Notice, 
   if (opts.channel === "chat") return;
   // The app review demo workspace never sends notices.
   if (db.getReviewAccess()?.organizationId === orgId) return;
-  const people: User[] = (await db.notifyRecipients(orgId)).filter((p) => !opts.only || opts.only.includes(p.id));
   const org = await db.getOrganizationById(orgId);
+  // A team chat only workspace belongs to LeadDash EHR's Team chat: nothing leaves this app for it.
+  // A message there can name a client, and the EHR sends its own notice with initials only.
+  if (org?.chatOnly) return;
+  const people: User[] = (await db.notifyRecipients(orgId)).filter((p) => !opts.only || opts.only.includes(p.id));
   const pushIds: number[] = [];
   addPing(people.map((p) => p.id), { orgId, orgName: org?.name ?? "", event, title: notice.title, body: notice.body.slice(0, 240), url: notice.url });
   for (const p of people) {

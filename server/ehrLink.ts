@@ -99,8 +99,14 @@ export async function openFromEhr(pass: EhrPass) {
     org = await db.createOrganization({ name: pass.practice, slug, plan: "growth", orgType: "healthcare", timezone: pass.tz || "America/Chicago", ehrLocationId: pass.loc });
     await ensureRoster(org.id);
     created = true;
-  } else if (org.orgType !== "healthcare") {
-    await db.updateOrganization(org.id, { orgType: "healthcare" });
+  } else {
+    if (org.orgType !== "healthcare") await db.updateOrganization(org.id, { orgType: "healthcare" });
+    // The practice had Team chat only until now: the employees join, and its channels and history stay.
+    if (org.chatOnly) {
+      await db.updateOrganization(org.id, { chatOnly: false });
+      await ensureRoster(org.id);
+      org = (await db.getOrganizationById(org.id)) ?? org;
+    }
   }
   const email = pass.user.email.trim().toLowerCase();
   let user = await db.getUserByEmail(email);

@@ -140,6 +140,13 @@ export const organizations = sqliteTable("organizations", {
    * follow-ups, first hellos, EHR announcements). They still answer whenever someone messages them.
    */
   quiet: integer("quiet", { mode: "boolean" }).notNull().default(false),
+  /**
+   * Team chat only: a practice's workspace made by LeadDash EHR's Team chat, with nothing in it
+   * but the people's channels and direct messages. No AI employees are added, nothing runs on its
+   * own, and no notice leaves this app for it (the EHR sends its own). Opening LeadDash Employees
+   * from the EHR later turns this off and the roster joins.
+   */
+  chatOnly: integer("chatOnly", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

@@ -1,0 +1,1 @@
+ALTER TABLE `organizations` ADD `chatOnly` integer DEFAULT false NOT NULL;
