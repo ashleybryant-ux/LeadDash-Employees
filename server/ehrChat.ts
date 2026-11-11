@@ -27,12 +27,16 @@ import * as team from "./team";
  * the request body can choose another: a call carries no workspace id.
  *
  * WHO MAY TALK TO WHOM (2026-11-10)
- * A practice starts with its team able to message its administrators and
- * nobody else: a clinician writes to an administrator, an administrator
- * writes to anyone, and there are no channels. The practice's administrator
- * is asked in the EHR whether the whole team may chat with each other; once
- * they say yes the token carries scope "all" and channels and every direct
- * message open up. The scope rides in the signed token, so the browser
+ * Channels are for everyone, always (the owner's decision the same evening;
+ * the first build hid them until the practice opened chat to the whole
+ * team). Direct messages are what the practice's rule limits: a practice
+ * starts with its team able to direct message its administrators and nobody
+ * else, and an administrator able to direct message anyone. The practice's
+ * administrator is asked in the EHR whether the whole team may message each
+ * other; once they say yes the token carries scope "all" and every direct
+ * message opens up. While it is administrators only, making, renaming,
+ * archiving and adding people to a channel is for administrators, so a
+ * private channel cannot stand in for the direct message the rule closes. The scope rides in the signed token, so the browser
  * cannot widen it, and it is enforced here on every call, not only by what
  * the screen chooses to draw.
  */
@@ -235,9 +239,13 @@ const isViewing = (orgId: number, userId: number, channel: string) => {
   return !!v && v.channel === channel && Date.now() - v.at < VIEWING_MS;
 };
 
-const ADMINS_ONLY = "Your practice has Team chat set to administrators only. An administrator can open it to the whole team.";
-/** Calls that only make sense with channels, or that would read across conversations. */
-const NEEDS_ALL = new Set(["createChannel", "updateChannel", "archiveChannel", "addMembers", "leaveChannel", "joinChannel", "setNotify", "search", "details"]);
+const ADMINS_ONLY = "Your practice has direct messages set to administrators only. An administrator can open them to the whole team.";
+const ADMIN_MAKES = "A practice administrator sets up channels while direct messages are set to administrators only.";
+/** While it is administrators only: for administrators alone, because each could build a private room between team members. */
+const ADMIN_ONLY_CALLS = new Set(["createChannel", "updateChannel", "archiveChannel", "addMembers"]);
+/** Reads across every conversation, old direct messages included: closed while it is administrators only. */
+const NEEDS_ALL = new Set(["search"]);
+const isDm = (key: string) => /^dm:\d+-\d+$/.test(key);
 type Notice = { email: string; kind: "dm" | "channel" | "thread"; from: string; channel: string; key: string; unread: number; text: string };
 
 export async function call(t: ChatToken, name: string, raw: unknown) {
@@ -263,16 +271,20 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
       return other != null && other !== user.id && (admin || adminIds.has(other));
     };
     if (NEEDS_ALL.has(name)) refuse();
-    if (["messages", "send", "markRead", "presence", "typing", "muteDm"].includes(name) && !allowedKey(str(i.channel, 40))) refuse();
+    if (ADMIN_ONLY_CALLS.has(name) && !admin) throw new TRPCError({ code: "FORBIDDEN", message: ADMIN_MAKES });
+    // A channel is open to whoever may see it (team.ts checks that); a direct message needs an administrator at one end.
+    const okKey = (key: string) => !isDm(key) || allowedKey(key);
+    if (["messages", "send", "markRead", "presence", "typing", "details"].includes(name) && !okKey(str(i.channel, 40))) refuse();
+    if (name === "muteDm" && !allowedKey(str(i.channel, 40)) && isDm(str(i.channel, 40))) refuse();
     if (["thread", "edit", "remove", "react", "pin"].includes(name)) {
       const m = db.team.get(o, int(i.messageId));
-      if (!m || !allowedKey(m.channel)) refuse();
+      if (!m || !okKey(m.channel)) refuse();
     }
     if (name === "channels") {
       const all = await team.channels(o, user.id);
       const dms = all.dms.filter((d) => admin || adminIds.has(d.userId));
-      const unread = dms.filter((d) => !d.muted).reduce((n, d) => n + d.unread, 0);
-      return { channels: [], dms, counts: { unread, mentions: 0, saved: 0 }, joinable: [], admin, scope: "admins" as const };
+      const unread = all.channels.filter((c) => !c.muted).reduce((n, c) => n + c.unread, 0) + dms.filter((d) => !d.muted).reduce((n, d) => n + d.unread, 0);
+      return { ...all, dms, counts: { ...all.counts, unread }, admin, scope: "admins" as const };
     }
     if (name === "people") {
       return (await team.people(o))
@@ -284,9 +296,8 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
   // For the EHR's server only (it does not forward this name from a browser): who is who, so it can add each person's picture.
   if (name === "directory") {
     const list = await team.people(o);
-    const admins = new Set(list.filter((m) => m.role === "owner" || m.role === "admin").map((m) => m.userId));
-    const open = t.scope === "all" || admin;
-    return list.filter((p) => open || p.userId === user.id || admins.has(p.userId)).map((p) => ({ userId: p.userId, email: p.email }));
+    // Everyone on the team: with channels for all, anyone's picture can sit beside a message.
+    return list.map((p) => ({ userId: p.userId, email: p.email }));
   }
 
   switch (name) {

@@ -105,7 +105,7 @@ describe("Team chat called from LeadDash EHR", () => {
     expect((await ask(B, other, "people")).json.result.map((p: any) => p.name)).toEqual(["Jordan Ellis"]);
   });
 
-  it("administrators only: a team member reaches administrators and nobody else, and there are no channels", async () => {
+  it("administrators only: channels are for everyone, and a team member direct messages administrators and nobody else", async () => {
     const C = { loc: "locCCCCchat000000003", practice: "Birch Lane Counseling", tz: "America/Chicago" };
     const boss = { email: "owner@birch-chat.test", name: "Riley Stone", role: "admin" };
     const one = { email: "one@birch-chat.test", name: "Casey Park", role: "staff" };
@@ -121,9 +121,10 @@ describe("Team chat called from LeadDash EHR", () => {
     expect(((await noScope.json()) as any).result.scope).toBe("admins");
 
     const dm = (a: number, b: number) => `dm:${Math.min(a, b)}-${Math.max(a, b)}`;
-    // A team member sees the administrator only, and no channels.
+    // A team member sees the channels, and for direct messages the administrator only.
     const mine = (await lim(one, "channels")).json.result;
-    expect(mine.channels).toEqual([]);
+    expect(mine.channels.map((c: any) => c.name)).toEqual(["general"]);
+    expect(mine.scope).toBe("admins");
     expect(mine.dms.map((d: any) => d.name)).toEqual(["Riley Stone"]);
     expect((await lim(one, "people")).json.result.map((p: any) => p.name).sort()).toEqual(["Casey Park", "Riley Stone"]);
     // The administrator sees everyone.
@@ -140,20 +141,33 @@ describe("Team chat called from LeadDash EHR", () => {
     for (const [name, body] of [
       ["send", { channel: dm(oneId, twoId), content: "hi" }],
       ["messages", { channel: dm(oneId, twoId) }],
-      ["send", { channel: "everyone", content: "hi all" }],
-      ["messages", { channel: "everyone" }],
-      ["createChannel", { name: "side", private: false }],
+      ["details", { channel: dm(oneId, twoId) }],
+      ["muteDm", { channel: dm(oneId, twoId), muted: true }],
+      ["createChannel", { name: "side", private: true, memberIds: [twoId] }],
       ["search", { q: "move" }],
     ] as const) {
       const r = await lim(one, name, body);
       expect(r.status, name).toBe(403);
       expect(r.json.error).toContain("administrators only");
     }
+    // Channels are for everyone: a team member reads and writes in # general, and so does the other team member.
+    const hello = await lim(one, "send", { channel: "everyone", content: "Good morning all" });
+    expect(hello.status).toBe(200);
+    expect(JSON.stringify((await lim(two, "messages", { channel: "everyone" })).json.result)).toContain("Good morning all");
+    expect((await lim(two, "react", { messageId: hello.json.result.id, emoji: "👋" })).status).toBe(200);
+    // An administrator sets up a channel and adds people; a team member cannot add anyone to it.
+    const made = await lim(boss, "createChannel", { name: "front desk", private: true, memberIds: [oneId] });
+    expect(made.status).toBe(200);
+    expect((await lim(one, "addMembers", { channelId: made.json.result.id, userIds: [twoId] })).status).toBe(403);
+    expect((await lim(one, "channels")).json.result.channels.map((c: any) => c.name).sort()).toEqual(["front-desk", "general"].sort());
+    // A private channel stays closed to someone who is not in it.
+    expect((await lim(two, "channels")).json.result.channels.map((c: any) => c.name)).toEqual(["general"]);
+    expect((await lim(two, "messages", { channel: made.json.result.key })).status).toBe(404);
     // Someone else's conversation with the administrator cannot be read or reacted to by its message id.
     expect((await lim(two, "thread", { messageId: sent.json.result.id })).status).toBe(403);
     expect((await lim(two, "react", { messageId: sent.json.result.id, emoji: "👀" })).status).toBe(403);
-    // Channels are off for the administrator too until the practice opens it.
-    expect((await lim(boss, "send", { channel: "everyone", content: "hello" })).status).toBe(403);
+    // The administrator posts in # general too.
+    expect((await lim(boss, "send", { channel: "everyone", content: "hello" })).status).toBe(200);
 
     // Opened to the whole team: channels and team member to team member work.
     expect((await ask(C, one, "send", { channel: dm(oneId, twoId), content: "Lunch?" })).status).toBe(200);
