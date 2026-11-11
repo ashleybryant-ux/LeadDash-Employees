@@ -79,6 +79,87 @@ export function readChatToken(token: string, secret = ENV.ehrLinkSecret, now = D
   return { token: t };
 }
 
+/**
+ * THE PRACTICE'S TEAM (2026-11-10)
+ * Team chat lists everyone on the practice's team, not only the people who
+ * have opened it. The EHR is the record of who is on the team, so it sends
+ * its list with a call now and then: the same link secret signs it, it names
+ * the practice, and it is read only when that practice is the one the call's
+ * own token names. Each person on it is given a seat here (by email, with
+ * their name and whether they administer the practice); someone no longer on
+ * it loses theirs. Their messages stay. Only in a team chat only workspace:
+ * one with the employees keeps the team its owner set.
+ */
+export type RosterPerson = { email: string; name?: string; admin?: boolean };
+type RosterToken = { use: "chat-roster"; loc: string; people: RosterPerson[]; iat: number; exp: number };
+
+export function readRosterToken(token: string, loc: string, secret = ENV.ehrLinkSecret, now = Date.now()): RosterPerson[] | null {
+  if (!secret) return null;
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) return null;
+  const [h, p, sig] = parts;
+  const a = Buffer.from(sig);
+  const b = Buffer.from(b64url(createHmac("sha256", secret).update(`${h}.${p}`).digest()));
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  let t: RosterToken;
+  try {
+    if (JSON.parse(fromB64url(h).toString("utf8")).alg !== "HS256") return null;
+    t = JSON.parse(fromB64url(p).toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (t.use !== "chat-roster" || !t.exp || t.exp * 1000 < now || t.loc !== loc || !Array.isArray(t.people)) return null;
+  const seen = new Set<string>();
+  const out: RosterPerson[] = [];
+  for (const x of t.people.slice(0, 1000)) {
+    const email = String(x?.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@") || seen.has(email)) continue;
+    seen.add(email);
+    out.push({ email, name: String(x?.name || "").trim().slice(0, 120), admin: x?.admin === true });
+  }
+  return out;
+}
+
+export function signRosterToken(loc: string, people: RosterPerson[], secret = ENV.ehrLinkSecret, ttlS = TOKEN_MAX_AGE_S) {
+  const now = Math.floor(Date.now() / 1000);
+  const h = b64url(Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })));
+  const p = b64url(Buffer.from(JSON.stringify({ use: "chat-roster", loc, people, iat: now, exp: now + ttlS })));
+  const sig = b64url(createHmac("sha256", secret).update(`${h}.${p}`).digest());
+  return `${h}.${p}.${sig}`;
+}
+
+/** Seats everyone on the EHR's list and unseats whoever is no longer on it. The caller is never unseated. */
+async function syncRoster(orgId: number, people: RosterPerson[], callerId: number, callerEmail: string) {
+  // A list that does not even hold the person asking is not the practice's team: nothing is taken from it.
+  const whole = people.some((p) => p.email === callerEmail.trim().toLowerCase());
+  const members = await db.listMembers(orgId);
+  let hasOwner = members.some((m) => m.role === "owner");
+  const keep = new Set<number>([callerId]);
+  for (const p of people) {
+    let user = await db.getUserByEmail(p.email);
+    if (!user) user = await db.createUser({ email: p.email, role: "user", name: p.name || null });
+    else if (!user.name && p.name) user = (await db.updateUser(user.id, { name: p.name })) ?? user;
+    keep.add(user.id);
+    if (user.id === callerId) continue; // seat() has just set the caller's own seat from their own token
+    const mine = members.find((m) => m.userId === user!.id);
+    if (!mine) {
+      const role = p.admin ? (hasOwner ? "admin" : "owner") : "chat";
+      if (role === "owner") hasOwner = true;
+      await db.addOrganizationMember({ organizationId: orgId, userId: user.id, role, title: p.admin ? "Administrator" : "Staff" });
+    } else {
+      const isAdminHere = mine.role === "owner" || mine.role === "admin";
+      if (p.admin && !isAdminHere) await db.updateMemberRole(orgId, user.id, "admin");
+      if (!p.admin && isAdminHere) await db.updateMemberRole(orgId, user.id, "chat");
+    }
+  }
+  if (whole) {
+    for (const m of members) {
+      if (keep.has(m.userId) || m.role === "reviewer") continue;
+      await db.removeMember(orgId, m.userId);
+    }
+  }
+}
+
 /** Signs a token the way the EHR does. Used by tests and by a local EHR. */
 export function signChatToken(payload: Omit<ChatToken, "iat" | "exp" | "use">, secret = ENV.ehrLinkSecret, ttlS = TOKEN_MAX_AGE_S) {
   const now = Math.floor(Date.now() / 1000);
@@ -164,6 +245,12 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
   const o = org.id;
   const i = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
+  // The practice's team, when the EHR sent it with this call (signed, and for this practice only).
+  if (org.chatOnly && typeof i.roster === "string") {
+    const people = readRosterToken(i.roster, t.loc);
+    if (people && people.length) await syncRoster(o, people, user.id, t.user.email);
+  }
+
   // Team members and administrators only, unless the practice opened it to the whole team.
   if (t.scope !== "all") {
     const refuse = () => {
@@ -192,6 +279,14 @@ export async function call(t: ChatToken, name: string, raw: unknown) {
         .filter((p) => admin || p.userId === user.id || adminIds.has(p.userId))
         .map((p) => ({ userId: p.userId, name: p.name || p.email, role: p.role, avatarUrl: p.avatarUrl ?? null, online: team.isOnline(o, p.userId) }));
     }
+  }
+
+  // For the EHR's server only (it does not forward this name from a browser): who is who, so it can add each person's picture.
+  if (name === "directory") {
+    const list = await team.people(o);
+    const admins = new Set(list.filter((m) => m.role === "owner" || m.role === "admin").map((m) => m.userId));
+    const open = t.scope === "all" || admin;
+    return list.filter((p) => open || p.userId === user.id || admins.has(p.userId)).map((p) => ({ userId: p.userId, email: p.email }));
   }
 
   switch (name) {

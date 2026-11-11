@@ -230,4 +230,47 @@ describe("Team chat called from LeadDash EHR", () => {
     // A channel is muted from the channel.
     expect((await ask(D, one, "muteDm", { channel: "everyone", muted: true })).status).toBe(400);
   });
+  it("lists the practice's whole team from the EHR's signed list, before anyone else has opened Team chat", async () => {
+    const E = { loc: "locEEEEchat000000005", practice: "Juniper Way Counseling", tz: "America/Chicago" };
+    const F = { loc: "locFFFFchat000000006", practice: "Willow Bend Therapy", tz: "America/Chicago" };
+    const boss = { email: "owner@juniper-chat.test", name: "Harper Lane", role: "admin" };
+    const chat = await import("./ehrChat");
+    const team = [
+      { email: boss.email, name: "Harper Lane", admin: true },
+      { email: "Kai@Juniper-chat.test", name: "Kai Monroe", admin: false },
+      { email: "sage@juniper-chat.test", name: "Sage Ortiz", admin: true },
+    ];
+    const names = async (u: typeof boss, scope: "all" | "admins" = "all") => ((await ask(E, u, "channels", {}, SECRET, scope)).json.result.dms as any[]).map((d) => d.name).sort();
+
+    // Alone at first.
+    expect(await names(boss)).toEqual([]);
+    // A list signed with another secret, one for another practice, or a plain array from a browser: ignored.
+    await ask(E, boss, "channels", { roster: chat.signRosterToken(E.loc, team, "some-other-secret-000000000") });
+    await ask(E, boss, "channels", { roster: chat.signRosterToken(F.loc, team, SECRET) });
+    await ask(E, boss, "channels", { roster: team });
+    expect(await names(boss)).toEqual([]);
+    // The EHR's own list for this practice: everyone is there, though only one person has ever opened Team chat.
+    await ask(E, boss, "channels", { roster: chat.signRosterToken(E.loc, team, SECRET) });
+    expect(await names(boss)).toEqual(["Kai Monroe", "Sage Ortiz"]);
+    // Administrators only: a team member sees the administrators, including the one who has never signed in.
+    const kai = { email: "kai@juniper-chat.test", name: "Kai Monroe", role: "staff" };
+    expect(await names(kai, "admins")).toEqual(["Harper Lane", "Sage Ortiz"]);
+    // Nobody landed in another practice.
+    expect(((await ask(F, { email: "owner@willow-chat.test", name: "Remy Vale", role: "admin" }, "channels")).json.result.dms as any[]).length).toBe(0);
+
+    // Who is who, for the EHR to add pictures: everyone for an administrator, administrators and self for a team member.
+    const dir = (await ask(E, boss, "directory")).json.result as any[];
+    expect(dir.map((d) => d.email).sort()).toEqual(["kai@juniper-chat.test", boss.email, "sage@juniper-chat.test"].sort());
+    expect(((await ask(E, kai, "directory", {}, SECRET, "admins")).json.result as any[]).map((d) => d.email).sort()).toEqual(["kai@juniper-chat.test", boss.email, "sage@juniper-chat.test"].sort());
+
+    // Someone leaves the practice: they are off the list. Someone made a team member is no longer an administrator.
+    const smaller = [team[0], { ...team[2], admin: false }];
+    await ask(E, boss, "channels", { roster: chat.signRosterToken(E.loc, smaller, SECRET) });
+    expect(await names(boss)).toEqual(["Sage Ortiz"]);
+    const org = (await db.getOrganizationByEhrLocation(E.loc))!;
+    expect((await db.listMembers(org.id)).find((m) => m.email === "sage@juniper-chat.test")!.role).toBe("chat");
+    // A list that does not hold the person asking takes nobody away.
+    await ask(E, boss, "channels", { roster: chat.signRosterToken(E.loc, [{ email: "new@juniper-chat.test", name: "Noel Park", admin: false }], SECRET) });
+    expect(await names(boss)).toEqual(["Noel Park", "Sage Ortiz"]);
+  });
 });
