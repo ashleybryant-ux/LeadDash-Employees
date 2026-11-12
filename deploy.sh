@@ -15,8 +15,34 @@ PORT_CHECK=$((PORT_LIVE + 50))
 echo "== git pull"
 git pull origin main
 
+# ---------------------------------------------------------------------------
+# FASTER DEPLOYS (2026-11-12)
+#   ./deploy.sh          everything, with the slow steps done only when needed
+#   ./deploy.sh --quick  the same without the tests, for a small change that
+#                        was already tested before it was pushed. The build,
+#                        the boot check and the health check still run.
+# Not for a database change: use the full deploy for those.
+# ---------------------------------------------------------------------------
+QUICK=0
+for arg in "$@"; do
+  if [ "$arg" = "--quick" ]; then QUICK=1; fi
+done
+
 echo "== npm ci"
-npm ci --no-audit --no-fund
+# Installing every package takes a minute or two and only matters when the
+# package list changed. The list's fingerprint is kept beside the installed
+# packages, and written only after an install finishes, so a half-finished
+# install is always done again.
+LOCK_NOW=$(sha256sum package-lock.json | cut -d' ' -f1)
+LOCK_DONE=$(cat node_modules/.leaddash-lock 2>/dev/null || true)
+PACKAGES_CHANGED=1
+if [ -d node_modules ] && [ "$LOCK_NOW" = "$LOCK_DONE" ]; then
+  PACKAGES_CHANGED=0
+  echo "packages unchanged since the last install; skipped"
+else
+  npm ci --no-audit --no-fund
+  echo "$LOCK_NOW" > node_modules/.leaddash-lock
+fi
 
 echo "== disk check"
 # A full disk breaks every app on this box, including LeadDash EHR on port 4000.
@@ -32,7 +58,13 @@ echo "== browser for BidPrime and agency portals"
 # Only the headless browser (about 100 MB, kept in ~/.cache/ms-playwright).
 # The full Chromium is not needed, so remove it if an earlier deploy downloaded it.
 rm -rf "$HOME"/.cache/ms-playwright/chromium-[0-9]*
-nice -n 19 npx playwright-core install --only-shell chromium || echo "Chromium download failed; BidPrime checks will say so in Morgan's chat."
+# The download check is skipped when the packages did not change and the
+# browser is already there. The launch check below runs every time.
+if [ "$PACKAGES_CHANGED" = "0" ] && ls -d "$HOME"/.cache/ms-playwright/chromium_headless_shell-* >/dev/null 2>&1; then
+  echo "browser already installed; download check skipped"
+else
+  nice -n 19 npx playwright-core install --only-shell chromium || echo "Chromium download failed; BidPrime checks will say so in Morgan's chat."
+fi
 if node -e "require('playwright-core').chromium.launch({args:['--no-sandbox']}).then(b=>b.close()).then(()=>process.exit(0),()=>process.exit(1))"; then
   echo "browser ready"
 else
@@ -41,7 +73,16 @@ else
 fi
 
 echo "== tests"
-nice -n 19 npm test --silent
+if [ "$QUICK" = "1" ]; then
+  echo "skipped (--quick). The build, the boot check and the health check still run."
+else
+  # The test that renders a real video is run by itself, after the others.
+  # Run beside 111 other files at low priority it was starved of processor
+  # time and took over ten minutes; alone it takes about one.
+  nice -n 19 npx vitest run --silent --exclude server/edits.test.ts
+  echo "== tests: the video render, by itself"
+  nice -n 19 npx vitest run --silent server/edits.test.ts
+fi
 
 echo "== memory check"
 # The build needs about 1.5 GB. On a small server, building without enough
