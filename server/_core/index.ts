@@ -73,6 +73,8 @@ async function startServer() {
   (await import("../ehrLink")).registerEhrLink(app);
   // Team chat drawn in LeadDash EHR: its server calls here for the person, with a token it signed.
   (await import("../ehrChat")).registerEhrChat(app);
+  // The Group Partner team, talked to from inside LeadDash EHR with the same signed token.
+  (await import("../ehrTeam")).registerEhrTeam(app);
   // The Claude and ChatGPT connector.
   (await import("../mcp")).registerMcp(app);
 
