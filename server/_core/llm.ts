@@ -164,7 +164,35 @@ export async function generateJson<T>(opts: {
       opts.timeoutMs
     );
   const first = opts.maxTokens ?? 4000;
-  let parsed = extractJson(await ask(first));
+  /* ============================================================
+   * THINKING ON THE BAA ROUTE (2026-11-14)
+   * ------------------------------------------------------------
+   * A conversation decision in a practice's workspace carries client
+   * information, so it could not use the direct reasoning route and
+   * ran here with no thinking at all: Harper read the forecast and
+   * then answered like a form. The gateway takes a reasoning model and
+   * a reasoning effort under the same signed BAA, so those decisions
+   * are thought through here. When the gateway refuses the request
+   * (a model it does not have, a setting it does not take), the plain
+   * call below still answers, and the refusal is remembered for ten
+   * minutes so every message does not pay for a failed try.
+   * ============================================================ */
+  let parsed: unknown;
+  if (opts.reason && gatewayReasoningReady()) {
+    try {
+      parsed = extractJson(await callGateway({
+        model: ENV.llmReasonModel,
+        messages,
+        max_tokens: Math.max(16_000, first),
+        reasoning_effort: ENV.chatEffort,
+        response_format: { type: "json_schema", json_schema: { name: opts.schemaName, schema: opts.schema, strict: true } },
+      }, Math.max(180_000, opts.timeoutMs ?? 0)));
+    } catch (err) {
+      gatewayReasoningOffUntil = Date.now() + 10 * 60_000;
+      console.warn(`[ai] reasoning on the gateway failed, answering without it: ${(err as Error).message.slice(0, 200)}`);
+    }
+  }
+  if (parsed === undefined) parsed = extractJson(await ask(first));
   // Cut off before the JSON closed (the answer ran past the token limit): ask once more with room to finish.
   if (parsed === undefined) parsed = extractJson(await ask(Math.min(32_000, Math.max(first * 3, 4000))));
   // Still not JSON (2026-11-14: Harper, after reading a long forecast, answered in prose and the person
@@ -176,6 +204,15 @@ export async function generateJson<T>(opts: {
   if (parsed === undefined) throw new Error("AI returned something that was not valid JSON");
   return parsed as T;
 }
+
+let gatewayReasoningOffUntil = 0;
+/** Reasoning on the gateway: switched on (LLM_REASONING), a key set, and not just refused. Off in tests unless one asks for it. */
+export function gatewayReasoningReady() {
+  if (process.env.NODE_ENV === "test" && process.env.LLM_REASONING_IN_TESTS !== "1") return false;
+  return ENV.llmReasoning && !!ENV.assemblyAiKey && Date.now() >= gatewayReasoningOffUntil;
+}
+/** For tests: forget a remembered refusal. */
+export function resetGatewayReasoning() { gatewayReasoningOffUntil = 0; }
 
 /**
  * The reasoning route is used when it is switched on (CHAT_REASONING, on by

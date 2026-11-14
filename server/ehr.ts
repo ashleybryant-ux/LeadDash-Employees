@@ -487,7 +487,12 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
  * practice's own days. Clients are named: the lines go only to the employee's
  * chat, which runs on providers under a BAA.
  */
-export async function read(orgId: number, what: EhrRead, from: string, to: string): Promise<{ text: string; facts: string }> {
+export async function read(orgId: number, what: EhrRead, from: string, to: string, opts: { named?: boolean } = {}): Promise<{ text: string; facts: string }> {
+  /* named: false is for the employees who do not work with client information
+   * (marketing, hiring, operations): the practice's numbers, with every client
+   * row and name left out. Their other tools (web search, pictures, voices) run
+   * on providers with no BAA, so a client's name must never be in their chat. */
+  const named = opts.named !== false;
   const c = await connection(orgId);
   if (!c) return { text: "LeadDash EHR isn't connected yet. Connect it on Integrations with the key from LeadDash EHR, and I can read it.", facts: "" };
   if (!DAY.test(from) || !DAY.test(to)) return { text: "Which days should I read?", facts: "" };
@@ -501,18 +506,34 @@ export async function read(orgId: number, what: EhrRead, from: string, to: strin
     return { text: /404/.test(why) ? "LeadDash EHR doesn't have that read yet. It needs its latest update deployed." : `I couldn't read LeadDash EHR: ${why}`, facts: "" };
   }
   if (!raw || raw.ok === false) return { text: `LeadDash EHR said: ${String(raw?.error ?? "no answer")}`, facts: "" };
-  rememberNames(orgId, [...rows(raw.payments), ...rows(raw.refunds), ...rows(raw.claims), ...rows(raw.appointments)].map((r) => String(r.name ?? "")));
+  if (!named) raw = withoutClients(what, raw);
+  else rememberNames(orgId, [...rows(raw.payments), ...rows(raw.refunds), ...rows(raw.claims), ...rows(raw.appointments)].map((r) => String(r.name ?? "")));
   const range = a === b ? longDate(a) : `${longDate(a)} to ${longDate(b)}`;
   if (MORE[what]) {
     // The EHR already worked these out; the employee reads the figures as they are and reasons from them.
     const { ok: _ok, practice: _practice, ...data } = raw as Record<string, unknown>;
     let body = JSON.stringify(data);
     if (body.length > 24_000) body = `${body.slice(0, 24_000)} (cut here: the rest did not fit)`;
-    return { text: `I read the ${what === "forecast" ? "revenue forecast" : what === "referrals" ? "referral sources" : "retention report"} from LeadDash EHR.`, facts: `${MORE[what]}\n${body}` };
+    return { text: `I read the ${what === "forecast" ? "revenue forecast" : what === "referrals" ? "referral sources" : "retention report"} from LeadDash EHR.`, facts: `${MORE[what]}${named ? "" : NO_NAMES}\n${body}` };
   }
   // Sessions carry each client's balance and paperwork still out, from the last snapshot, so one read answers "who tomorrow owes or has forms out".
-  const snap = what === "appointments" ? (snapshotOf(orgId)?.data ?? null) : null;
-  return { text: `I read ${what} for ${range} from LeadDash EHR.`, facts: formatRead(what, raw, range, snap) };
+  const snap = named && what === "appointments" ? (snapshotOf(orgId)?.data ?? null) : null;
+  const facts = formatRead(what, raw, range, snap);
+  return { text: `I read ${what} for ${range} from LeadDash EHR.`, facts: named ? facts : `${facts.split("\n").filter((l) => !/^No (payments|claims) in this range\.$/.test(l) && !/^Balances and paperwork have not been read/.test(l)).join("\n")}${NO_NAMES}` };
+}
+
+const NO_NAMES = "\nYou read the practice's totals. No client is named to you and no single client's row is included; answer from the totals and never ask for a client's name.";
+/** The same read with every client row taken out: the counts and totals stay. */
+export function withoutClients(what: EhrRead, raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...raw };
+  if (what === "payments") { out.payments = []; out.refunds = []; }
+  if (what === "claims") out.claims = [];
+  if (what === "appointments") out.appointments = [];
+  if (what === "retention" && out.retention && typeof out.retention === "object") {
+    const { clients: _clients, ...rest } = out.retention as Record<string, unknown>;
+    out.retention = rest;
+  }
+  return out;
 }
 
 type Row = Record<string, unknown>;

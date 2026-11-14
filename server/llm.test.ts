@@ -30,6 +30,51 @@ describe("AI request plumbing", () => {
     expect(body.response_format.type).toBe("json_schema");
   });
 
+  it("thinks a conversation decision through on the gateway when it carries client information, and still answers if the gateway refuses", async () => {
+    const { resetGatewayReasoning } = await import("./_core/llm");
+    process.env.LLM_REASONING_IN_TESTS = "1";
+    resetGatewayReasoning();
+    try {
+      const bodies: any[] = [];
+      const ok = vi.fn(async (_url: string, init: any) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ choices: [{ message: { content: '{"reply":"Thought through."}' } }] }), { status: 200 }); });
+      vi.stubGlobal("fetch", ok);
+      const out = await generateJson<{ reply: string }>({ system: "s", prompt: "p", schemaName: "chat_decision", schema: { type: "object" }, reason: true, clientInfo: true, maxTokens: 3000 });
+      expect(out.reply).toBe("Thought through.");
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0].model).toBe("claude-sonnet-5-5");
+      expect(bodies[0].reasoning_effort).toBe("medium");
+      expect(bodies[0].max_tokens).toBe(16000);
+      expect(bodies[0].temperature).toBeUndefined();
+      expect(ok.mock.calls[0][0]).toBe("https://llm-gateway.assemblyai.com/v1/chat/completions");
+
+      // Refused: the plain call answers, and the next message does not try again at once.
+      bodies.length = 0;
+      const refuses = vi.fn(async (_url: string, init: any) => {
+        const b = JSON.parse(init.body); bodies.push(b);
+        if (b.reasoning_effort) return new Response("model not available", { status: 400 });
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"reply":"Plain."}' } }] }), { status: 200 });
+      });
+      vi.stubGlobal("fetch", refuses);
+      const second = await generateJson<{ reply: string }>({ system: "s", prompt: "p", schemaName: "chat_decision", schema: { type: "object" }, reason: true, clientInfo: true });
+      expect(second.reply).toBe("Plain.");
+      expect(bodies.map((b) => b.model)).toEqual(["claude-sonnet-5-5", "claude-sonnet-4-6"]);
+      bodies.length = 0;
+      await generateJson<{ reply: string }>({ system: "s", prompt: "p", schemaName: "chat_decision", schema: { type: "object" }, reason: true, clientInfo: true });
+      expect(bodies.map((b) => b.model)).toEqual(["claude-sonnet-4-6"]);
+
+      // A draft (no reasoning asked for) is unchanged.
+      resetGatewayReasoning();
+      bodies.length = 0;
+      vi.stubGlobal("fetch", ok);
+      await generateJson({ system: "s", prompt: "p", schemaName: "x", schema: { type: "object" } });
+      expect(bodies[0].model).toBe("claude-sonnet-4-6");
+      expect(bodies[0].reasoning_effort).toBeUndefined();
+    } finally {
+      delete process.env.LLM_REASONING_IN_TESTS;
+      resetGatewayReasoning();
+    }
+  });
+
   it("with SEARCH_PROVIDER=openai, runs the search on OpenAI and collects the queries, sources and tagged JSON", async () => {
     ENV.searchProvider = "openai";
     const response = {

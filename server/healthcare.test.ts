@@ -265,6 +265,56 @@ describe("A healthcare practice workspace", () => {
     expect(r.reply!.content).toContain("Two ADHD evaluations were paid in the last two weeks at $525 each.");
   });
 
+  it("an employee outside client information reads the practice's numbers from LeadDash EHR with no client named", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-ehr-everyone");
+    const me = caller(owner);
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    const asked: string[] = [];
+    vi.spyOn(ehr.tools, "fetchJson").mockImplementation(async (url: string) => {
+      asked.push(url);
+      if (url.endsWith("/api/employees/ping")) return { ok: true, practice: "Legacy Family Services", locationId: "loc_1" };
+      if (url.includes("/api/employees/payments")) {
+        return {
+          ok: true, from: "2026-10-08", to: "2026-10-08", today: "2026-10-08",
+          days: [{ date: "2026-10-08", weekday: "Thursday", insuranceCents: 12_050, clientCents: 9_500, refundsCents: 0, netCents: 21_550, payments: 2 }],
+          totals: { insuranceCents: 12_050, clientCents: 9_500, refundsCents: 0, netCents: 21_550, payments: 2 },
+          payments: [{ date: "2026-10-08", kind: "insurance", payer: "BCBS of Oklahoma", method: "era", name: "Jane Moore", initials: "J.M.", amountCents: 12_050, unappliedCents: 0 }],
+          paymentsTotal: 2, refunds: [{ date: "2026-10-08", kind: "refund", label: "Refund", name: "Sam Price", initials: "S.P.", amountCents: 100 }],
+        };
+      }
+      if (url.includes("/api/employees/more/retention")) return { ok: true, retention: { practice: { newClients: 12 }, clients: [{ name: "Jane Moore", sessions: 1 }] } };
+      return snapshot();
+    });
+    await me.ehr.connect({ organizationId: orgId, url: "https://api.health.leaddash.io", key: "ld-emp-0123456789abcdefghij" });
+    const quinn = (await db.getEmployeeByKind(orgId, "hiring"))!;
+    const blank = { reply: "", action: "none", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+    const prompts: string[] = [];
+    const systems: string[] = [];
+    const llm = await import("./_core/llm");
+    vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => {
+      if (opts.schemaName !== "chat_decision") return {} as any;
+      prompts.push(opts.prompt);
+      systems.push(opts.system ?? "");
+      if (prompts.length === 1) return { ...blank, action: "ehr_read", target: "payments", date: "2026-10-08", count: 1, plan: "then retention", reply: "Reading." } as any;
+      if (prompts.length === 2) return { ...blank, action: "ehr_read", target: "retention", date: "2026-05-01", count: 160, reply: "Reading." } as any;
+      return { ...blank, reply: "$215.50 came in Thursday and 12 new clients started." } as any;
+    });
+    const r = await me.chat.send({ organizationId: orgId, employeeId: quinn.id, text: "Is there enough work coming in to hire another clinician?" });
+    expect(asked.some((u) => u.includes("/api/employees/payments?from=2026-10-08&to=2026-10-08"))).toBe(true);
+    expect(systems[0]).toContain("ehr_read: read LeadDash EHR");
+    expect(systems[0]).toContain("You get totals only: no client is named to you.");
+    const seen = prompts.join("\n");
+    expect(seen).toContain("Thursday Oct 8, 2026: $215.50 net");
+    expect(seen).toContain('"newClients":12');
+    expect(seen).toContain("No client is named to you");
+    expect(seen).not.toContain("Jane Moore");
+    expect(seen).not.toContain("Sam Price");
+    expect(seen).not.toContain("J.M.");
+    expect(r.reply!.content).toContain("12 new clients started");
+    // Nothing a totals-only read saw is kept as a client name for this workspace.
+    expect(ehr.knownNames(orgId)).not.toContain("Jane Moore");
+  });
+
   it("Harper still answers, in plain sentences, when his structured answer cannot be read", async () => {
     const { orgId, owner } = await makeWorkspace("hc-ehr-unreadable");
     const me = caller(owner);

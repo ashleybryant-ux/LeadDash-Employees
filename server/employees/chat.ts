@@ -452,6 +452,13 @@ async function teamFacts(emp: AIEmployee) {
     const practice = org?.orgType === "healthcare" ? `${await (await import("../ehr")).ehrFacts(emp.organizationId)}\nThe practice's client appointments and sessions are on the LeadDash EHR calendar (ehr_read with appointments)${cals.length ? "; the calendars below are the owner's own meetings" : "; no personal calendar is connected, so a question about appointments or sessions always means the EHR"}.` : "";
     return `${cals.length ? `\nCalendars you check: ${cals.map((c) => `${c.name}${c.holds === "default" ? " (holds go here unless another is named)" : c.holds === "no" ? " (never put holds here)" : ""}${c.detail === "busy" ? " (busy times only: you never see event names)" : ""}`).join("; ")}.` : ""}${practice}${desk}`;
   }
+  /* Anyone else in a practice: connected, and what they can read (totals, no client named). */
+  if (await inPractice(emp)) {
+    const v = await (await import("../ehr")).view(emp.organizationId);
+    return v.connected
+      ? `\nLeadDash EHR: connected as ${v.practice}. You can read the practice's own numbers with ehr_read whenever they bear on your work: money in, claims, sessions on the calendar, the revenue forecast with open hours and what each service brings in, where new clients come from, and who stays. You get totals only: no client is named to you. Use them: a plan built on the practice's real numbers beats general advice.`
+      : "\nLeadDash EHR: not connected yet, so the practice's numbers cannot be read.";
+  }
   return "";
 }
 
@@ -1936,7 +1943,7 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       toDay.setUTCDate(toDay.getUTCDate() + days - 1);
       const hrs = await import("../workHours");
       await hrs.gate(org);
-      const r = await ehr.read(org, what, from, toDay.toISOString().slice(0, 10));
+      const r = await ehr.read(org, what, from, toDay.toISOString().slice(0, 10), { named: await worksWithEhr(emp) });
       if (r.facts) await hrs.charge(org, emp.id, "ehr", 1, what).catch(() => 0);
       return { text: r.text, cards: [], queries: [], facts: r.facts || undefined, quiet: Boolean(r.facts), answer: Boolean(r.facts) };
     }
@@ -2131,6 +2138,17 @@ export function findHold(holds: OutboundItem[], want: { date: string; time: stri
 
 /** Actions that only talk about the work; a project task needs one that does it. */
 /** A practice's client-information employees (Avery among them) read LeadDash EHR, whatever their own action list says. */
+/**
+ * Every employee in a practice reads LeadDash EHR (2026-11-14, the owner's
+ * rule: reading the practice's own records is what sets these employees
+ * apart). The ones who work with client information get every row, named.
+ * The rest (marketing, hiring, operations) get the same reads as totals with
+ * no client in them, because their other tools run on providers with no BAA.
+ */
+async function inPractice(emp: AIEmployee) {
+  const org = await db.getOrganizationById(emp.organizationId);
+  return Boolean(org && org.orgType === "healthcare");
+}
 async function worksWithEhr(emp: AIEmployee) {
   const org = await db.getOrganizationById(emp.organizationId);
   return Boolean(org && org.orgType === "healthcare" && (await import("./roster")).worksWithClientInfo(emp.kind, org.orgType));
@@ -2145,7 +2163,7 @@ const NOT_WORK = new Set(["task_find", "task_due", "task_lists", "task_undo", "n
  */
 export async function doTask(emp: AIEmployee, task: { title: string; details: string; doneWhen: string; project: string; due: string; feedback: string; from: string }) {
   const actions = (ACTIONS[emp.kind] ?? []).filter((a) => !NOT_WORK.has(a));
-  if (!actions.includes("ehr_read") && (await worksWithEhr(emp))) actions.push("ehr_read");
+  if (!actions.includes("ehr_read") && (await inPractice(emp))) actions.push("ehr_read");
   if (!actions.length) return { action: "none", text: "", cards: [] as ChatCard[], refs: [] as Ref[] };
   const request = `Task: ${task.title}${task.details ? `\nDetails: ${task.details}` : ""}${task.doneWhen ? `\nDone when: ${task.doneWhen}` : ""}\nProject: ${task.project}\nDue: ${task.due}${task.feedback ? `\nSent back because: ${task.feedback}. Fix exactly that.` : ""}`;
   const { system } = await tasks.systemPromptAbout(
@@ -2383,7 +2401,7 @@ export async function sendChatMessage(opts: {
     // Work handed over by a teammate is done here, never handed on again (no loops between employees).
     const actions = (ACTIONS[emp.kind] ?? ["none"]).filter((a) => a !== "none" && !(opts.forwarded && a === "hand_off"));
     // In a practice, every employee that works with client information can read LeadDash EHR.
-    if (!actions.includes("ehr_read") && (await worksWithEhr(emp))) actions.push("ehr_read");
+    if (!actions.includes("ehr_read") && (await inPractice(emp))) actions.push("ehr_read");
     // The files this message can use: the ones sent with it, else the latest ones sent in this chat.
     const recentIds = new Set(history.slice(-12).map((m) => m.id));
     const files = sent.length ? sent : db.recentChatFiles(opts.organizationId, emp.id, 6).filter((f) => f.messageId != null && recentIds.has(f.messageId)).slice(0, 4);

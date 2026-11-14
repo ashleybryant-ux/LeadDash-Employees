@@ -36,6 +36,16 @@ export const ENV = {
   llmGatewayUrl: process.env.LLM_GATEWAY_URL || "https://llm-gateway.assemblyai.com/v1/chat/completions",
   llmModel: process.env.LLM_MODEL || "claude-sonnet-4-6",
   /**
+   * Thinking for chats that carry client information (2026-11-14). Those chats
+   * may not use the direct reasoning route until that provider's BAA is signed,
+   * so a practice's employees answered without thinking the request through.
+   * The gateway (under a signed BAA) offers the same reasoning models, so a
+   * decision an employee makes in conversation runs there on this model with
+   * reasoning on. LLM_REASONING=off turns it off; CHAT_EFFORT sets how hard it thinks.
+   */
+  llmReasoning: (process.env.LLM_REASONING || "on").toLowerCase() !== "off",
+  llmReasonModel: process.env.LLM_REASON_MODEL || "claude-sonnet-5-5",
+  /**
    * Who runs web searches (grants, speaking events, video trends, license
    * checks): "anthropic" (the default: the Anthropic key, its web search tool)
    * or "openai" (the OpenAI key, Responses API web search tool). No search
