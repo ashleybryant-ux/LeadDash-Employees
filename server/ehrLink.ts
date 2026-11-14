@@ -182,6 +182,43 @@ export function registerEhrLink(app: Express) {
     }
   });
 
+  /**
+   * GROUP PARTNER TURNS THE EMPLOYEES ON (2026-11-14)
+   * A Group Partner practice was told "Your LeadDash employees are not turned
+   * on for this practice yet" until an administrator pressed Open LeadDash
+   * Employees once. Having Group Partner is the reason to have them, so the
+   * EHR's server now turns them on itself the first time the practice opens
+   * Your LeadDash team: it sends the same pass the Open button makes, from
+   * its own server, with the shared secret. The workspace is found or made,
+   * the employees join (a Team chat only workspace keeps its channels and
+   * history), the EHR connection is stored, and the Group Partner five are
+   * brought onto the team. Nobody is signed in by this. Only the EHR's
+   * server can call it, and the practice is the one the signed pass names.
+   */
+  app.post("/api/ehr-link/turn-on", async (req, res) => {
+    if (!fromEhrServer(req)) return res.status(401).json({ ok: false, error: "Not from LeadDash EHR" });
+    const read = readPass(String(((req.body ?? {}) as { pass?: string }).pass || ""));
+    if ("error" in read) return res.status(400).json({ ok: false, error: read.error });
+    try {
+      const { org, created } = await openFromEhr(read.pass);
+      const { PARTNER_TEAM } = await import("./ehrTeam");
+      const bench = await import("./employees/bench");
+      const emps = await db.listAllEmployeesByOrg(org.id);
+      let broughtOn = 0;
+      for (const p of PARTNER_TEAM) {
+        const emp = emps.find((e) => e.kind === p.kind);
+        if (!emp || emp.status !== "paused") continue;
+        // One who cannot come on today (away, or the plan's limit) is left for the practice to bring on.
+        try { await bench.bringOn(org.id, emp.id); broughtOn += 1; } catch (err) { console.error("[ehr-link] turn-on could not bring on %s: %s", p.kind, err instanceof Error ? err.message : err); }
+      }
+      await db.logAction({ organizationId: org.id, actorType: "system", actorName: "LeadDash EHR", action: "Employees turned on", details: `Group Partner, from LeadDash EHR${broughtOn ? `, ${broughtOn} brought onto the team` : ""}` });
+      res.json({ ok: true, created, broughtOn });
+    } catch (err) {
+      console.error("[ehr-link] turn-on failed:", err);
+      res.status(500).json({ ok: false, error: "The employees could not be turned on." });
+    }
+  });
+
   app.get("/api/ehr-link/roster", (req, res) => {
     if (!fromEhrServer(req)) return res.status(401).json({ ok: false, error: "Not from LeadDash EHR" });
     res.json({ ok: true, roster: rosterView() });

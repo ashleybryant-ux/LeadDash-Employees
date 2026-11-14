@@ -62,6 +62,49 @@ describe("The Group Partner team called from LeadDash EHR", () => {
     expect(await db.listAllEmployeesByOrg((await db.getOrganizationByEhrLocation(C.loc))!.id)).toHaveLength(0);
   });
 
+  it("turns the employees on for a Group Partner practice when the EHR's server asks, and only then", async () => {
+    const D = { loc: "locDDDDteam000000004", practice: "Birch Lane Counseling", tz: "America/Chicago" };
+    const link = await import("./ehrLink");
+    const app = express();
+    app.use(express.json());
+    link.registerEhrLink(app);
+    const s2 = app.listen(0);
+    await new Promise((r) => s2.once("listening", r));
+    const at = `http://127.0.0.1:${(s2.address() as AddressInfo).port}/api/ehr-link/turn-on`;
+    const pass = link.signPass({ ...D, url: "https://api.health.leaddash.io", key: "ldemp_test_key", user: admin }, SECRET);
+    try {
+      // A Team chat only workspace first: channels and history are kept when the employees join.
+      const chat = await import("./ehrChat");
+      await chat.seat({ ...D, use: "chat", scope: "all", user: admin, iat: 0, exp: 0 });
+      expect((await ask(D, admin, "team")).status).toBe(412);
+      // Not the EHR's server: refused, and nothing changes.
+      const noSecret = await fetch(at, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pass }) });
+      expect(noSecret.status).toBe(401);
+      const wrongSecret = await fetch(at, { method: "POST", headers: { "content-type": "application/json", "x-leaddash-link": "another-secret-0123456789-xx" }, body: JSON.stringify({ pass }) });
+      expect(wrongSecret.status).toBe(401);
+      // The right secret with a pass somebody else signed: refused.
+      const forged = await fetch(at, { method: "POST", headers: { "content-type": "application/json", "x-leaddash-link": SECRET }, body: JSON.stringify({ pass: link.signPass({ ...D, url: "https://api.health.leaddash.io", key: "k", user: admin }, "another-secret") }) });
+      expect(forged.status).toBe(400);
+      expect((await ask(D, admin, "team")).status).toBe(412);
+      // The EHR's server, with its pass.
+      const ok = await fetch(at, { method: "POST", headers: { "content-type": "application/json", "x-leaddash-link": SECRET }, body: JSON.stringify({ pass }) });
+      expect(ok.status).toBe(200);
+      const org = (await db.getOrganizationByEhrLocation(D.loc))!;
+      expect(org.chatOnly).toBe(false);
+      const r = await ask(D, admin, "team");
+      expect(r.status).toBe(200);
+      expect(r.json.result.team.map((e: any) => e.name)).toEqual(["Harper", "Avery", "Malik", "Camille", "Quinn"]);
+      // Asked twice: the same workspace, nothing doubled.
+      const again = await fetch(at, { method: "POST", headers: { "content-type": "application/json", "x-leaddash-link": SECRET }, body: JSON.stringify({ pass }) });
+      expect(again.status).toBe(200);
+      expect((await db.getOrganizationByEhrLocation(D.loc))!.id).toBe(org.id);
+      // Another practice is untouched by it.
+      expect((await ask(C, admin, "team")).status).toBe(412);
+    } finally {
+      s2.close();
+    }
+  });
+
   it("is for practice administrators only", async () => {
     await open(A, admin);
     const r = await ask(A, staff, "team");
