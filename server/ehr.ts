@@ -462,10 +462,21 @@ export async function ehrFacts(orgId: number, kind: EmployeeKind | "" = "") {
 // Reads on request: an employee asked a question reads exactly the days it needs
 // ==========================================
 
-export const READS = ["payments", "claims", "appointments"] as const;
+export const READS = ["payments", "claims", "appointments", "forecast", "referrals", "retention"] as const;
 export type EhrRead = (typeof READS)[number];
 /** The most days one read covers, as the EHR allows. */
-export const READ_MAX_DAYS: Record<EhrRead, number> = { payments: 400, claims: 400, appointments: 120 };
+export const READ_MAX_DAYS: Record<EhrRead, number> = { payments: 400, claims: 400, appointments: 120, forecast: 62, referrals: 400, retention: 400 };
+/**
+ * Reads the EHR works out for the practice (2026-11-14): the revenue forecast
+ * with what each service brings in, where clients come from, and who stays.
+ * The owner's rule is that an employee reads whatever LeadDash EHR knows that
+ * bears on the question, so the answer is a decision and not a shrug.
+ */
+const MORE: Partial<Record<EhrRead, string>> = {
+  forecast: `The revenue forecast from LeadDash EHR. Amounts in fields ending in Cents are cents (divide by 100). goal.monthlyCents is the monthly revenue goal the practice set. collectedCents has come in this month, expectedCents is what sessions already held or booked should still bring this month, projectedCents is the two together. weeks is the month week by week. byClinician has each clinician's collected, expected and open hours left this month. ahead is this month and the next two from what is already booked. plan holds what closes the gap: gapCents, what clients owe today (owedByClientsCents, not in the projection), sessions held with no claim sent (unfiled), open hours and what filling them is worth, what an average session brings (perSessionCents), what an insurance and a cash pay session bring and how long payers take (lagDays), and services: for each billing code over the last 90 days, how many sessions were paid, what a paid one brought in on average (perSessionCents), what arrived in the last 14 days (recentCount sessions, recentCents), how long one takes (minutes) and how many more would close the gap (toCloseGap). basis says how much history the figures rest on. No client is named in it.`,
+  referrals: `Where new clients came from over the last 12 months, from LeadDash EHR (the chart's Referred by, from the intake form's "How did you hear about us?"), beside what those clients have paid. Amounts ending in Cents are cents. rows: each source with newClients, collectedCents, perClientCents and sessionsPerClient. notOnFile: clients with no source recorded. recent: the newest clients' sources. best: the source whose clients pay the most each; most: the source with the most clients.`,
+  retention: `The client retention report from LeadDash EHR for clients whose first session fell in the range: how many came back, how many reached each checkpoint session, at which session the rest stopped, by clinician, and the clients who stopped (trimmed to the first 60). A client counts as stopped after the practice's own number of days with nothing booked.`,
+};
 
 const dollars = (cents: number) => `$${(Math.round(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -484,7 +495,7 @@ export async function read(orgId: number, what: EhrRead, from: string, to: strin
   const s = settingsOf(c);
   let raw: Record<string, unknown>;
   try {
-    raw = (await tools.fetchJson(`${s.url}/api/employees/${what}?from=${a}&to=${b}`, keyOf(c), 90_000)) as Record<string, unknown>;
+    raw = (await tools.fetchJson(`${s.url}/api/employees/${MORE[what] ? `more/${what}` : what}?from=${a}&to=${b}`, keyOf(c), 90_000)) as Record<string, unknown>;
   } catch (err) {
     const why = (err instanceof Error ? err.message : String(err)).slice(0, 200);
     return { text: /404/.test(why) ? "LeadDash EHR doesn't have that read yet. It needs its latest update deployed." : `I couldn't read LeadDash EHR: ${why}`, facts: "" };
@@ -492,6 +503,13 @@ export async function read(orgId: number, what: EhrRead, from: string, to: strin
   if (!raw || raw.ok === false) return { text: `LeadDash EHR said: ${String(raw?.error ?? "no answer")}`, facts: "" };
   rememberNames(orgId, [...rows(raw.payments), ...rows(raw.refunds), ...rows(raw.claims), ...rows(raw.appointments)].map((r) => String(r.name ?? "")));
   const range = a === b ? longDate(a) : `${longDate(a)} to ${longDate(b)}`;
+  if (MORE[what]) {
+    // The EHR already worked these out; the employee reads the figures as they are and reasons from them.
+    const { ok: _ok, practice: _practice, ...data } = raw as Record<string, unknown>;
+    let body = JSON.stringify(data);
+    if (body.length > 24_000) body = `${body.slice(0, 24_000)} (cut here: the rest did not fit)`;
+    return { text: `I read the ${what === "forecast" ? "revenue forecast" : what === "referrals" ? "referral sources" : "retention report"} from LeadDash EHR.`, facts: `${MORE[what]}\n${body}` };
+  }
   // Sessions carry each client's balance and paperwork still out, from the last snapshot, so one read answers "who tomorrow owes or has forms out".
   const snap = what === "appointments" ? (snapshotOf(orgId)?.data ?? null) : null;
   return { text: `I read ${what} for ${range} from LeadDash EHR.`, facts: formatRead(what, raw, range, snap) };

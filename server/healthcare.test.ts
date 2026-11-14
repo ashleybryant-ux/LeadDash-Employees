@@ -229,6 +229,42 @@ describe("A healthcare practice workspace", () => {
     expect(r.reply!.content).not.toContain("I read payments");
   });
 
+  it("Harper reads the revenue forecast and what each service brings in before he answers how to close the gap", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-ehr-forecast");
+    const me = caller(owner);
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    const asked: string[] = [];
+    vi.spyOn(ehr.tools, "fetchJson").mockImplementation(async (url: string) => {
+      asked.push(url);
+      if (url.endsWith("/api/employees/ping")) return { ok: true, practice: "Legacy Family Services", locationId: "loc_1" };
+      if (url.includes("/api/employees/more/forecast")) {
+        return { ok: true, practice: "Legacy Family Services", forecast: { goal: { monthlyCents: 4_000_000 }, projectedCents: 723_000, plan: { gapCents: 3_277_000, openHours: 226, services: [{ code: "96130", name: "ADHD Evaluation", paidSessions: 2, perSessionCents: 52_500, recentCount: 2, recentCents: 105_000, minutes: 120, toCloseGap: 63 }] } } };
+      }
+      return snapshot();
+    });
+    await me.ehr.connect({ organizationId: orgId, url: "https://api.health.leaddash.io", key: "ld-emp-0123456789abcdefghij" });
+    const harper = (await db.getEmployeeByKind(orgId, "billing"))!;
+    const blank = { reply: "", action: "none", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+    const prompts: string[] = [];
+    const systems: string[] = [];
+    const llm = await import("./_core/llm");
+    vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => {
+      if (opts.schemaName !== "chat_decision") return {} as any;
+      prompts.push(opts.prompt);
+      systems.push(opts.system ?? "");
+      if (prompts.length === 1) return { ...blank, action: "ehr_read", target: "forecast", date: "2026-11-14", count: 1, reply: "Reading the forecast." } as any;
+      return { ...blank, reply: "Two ADHD evaluations were paid in the last two weeks at $525 each." } as any;
+    });
+    const r = await me.chat.send({ organizationId: orgId, employeeId: harper.id, text: "How can I fill the income gap?" });
+    expect(asked).toContain("https://api.health.leaddash.io/api/employees/more/forecast?from=2026-11-14&to=2026-11-14");
+    expect(prompts[1]).toContain("The revenue forecast from LeadDash EHR.");
+    expect(prompts[1]).toContain('"name":"ADHD Evaluation"');
+    expect(prompts[1]).toContain('"perSessionCents":52500');
+    expect(prompts[1]).not.toContain('"ok":true');
+    expect(systems.join("\n")).toContain("is answered from the practice's own records, never with general advice");
+    expect(r.reply!.content).toContain("Two ADHD evaluations were paid in the last two weeks at $525 each.");
+  });
+
   it("Avery reads tomorrow's sessions from the LeadDash EHR calendar, with each client's balance and paperwork, when the practice has no personal calendar connected", async () => {
     const { orgId, owner } = await makeWorkspace("hc-ehr-sessions");
     const me = caller(owner);
