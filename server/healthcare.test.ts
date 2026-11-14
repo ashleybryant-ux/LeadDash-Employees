@@ -265,6 +265,41 @@ describe("A healthcare practice workspace", () => {
     expect(r.reply!.content).toContain("Two ADHD evaluations were paid in the last two weeks at $525 each.");
   });
 
+  it("Harper still answers, in plain sentences, when his structured answer cannot be read", async () => {
+    const { orgId, owner } = await makeWorkspace("hc-ehr-unreadable");
+    const me = caller(owner);
+    await me.organizations.update({ id: orgId, orgType: "healthcare" });
+    vi.spyOn(ehr.tools, "fetchJson").mockImplementation(async (url: string) => {
+      if (url.endsWith("/api/employees/ping")) return { ok: true, practice: "Legacy Family Services", locationId: "loc_1" };
+      if (url.includes("/api/employees/more/forecast")) return { ok: true, forecast: { plan: { gapCents: 3_277_000, openHours: 226 } } };
+      return snapshot();
+    });
+    await me.ehr.connect({ organizationId: orgId, url: "https://api.health.leaddash.io", key: "ld-emp-0123456789abcdefghij" });
+    const harper = (await db.getEmployeeByKind(orgId, "billing"))!;
+    const blank = { reply: "", action: "none", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+    const llm = await import("./_core/llm");
+    let asks = 0;
+    vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => {
+      if (opts.schemaName !== "chat_decision") return {} as any;
+      asks += 1;
+      if (asks === 1) return { ...blank, action: "ehr_read", target: "forecast", date: "2026-11-14", count: 1, reply: "Reading." } as any;
+      throw new Error("AI returned something that was not valid JSON");
+    });
+    const plain: string[] = [];
+    vi.spyOn(llm, "generateText").mockImplementation(async (opts: any) => { plain.push(`${opts.system}\n${opts.prompt}`); return "With 226 open hours left, filling them all still leaves a gap this month."; });
+    const r = await me.chat.send({ organizationId: orgId, employeeId: harper.id, text: "Based on the schedule, what is actually possible to close the gap?" });
+    expect(r.reply!.content).toContain("With 226 open hours left, filling them all still leaves a gap this month.");
+    expect(r.reply!.content).not.toContain("not valid JSON");
+    expect(plain[0]).toContain('"openHours":226');
+    expect(plain[0]).toContain("answer the person directly in plain sentences");
+
+    // The very first decision unreadable: still an answer, never the error.
+    asks = 100;
+    const again = await me.chat.send({ organizationId: orgId, employeeId: harper.id, text: "And next month?" });
+    expect(again.reply!.content).not.toContain("not valid JSON");
+    expect(again.reply!.content).toContain("With 226 open hours left");
+  });
+
   it("Avery reads tomorrow's sessions from the LeadDash EHR calendar, with each client's balance and paperwork, when the practice has no personal calendar connected", async () => {
     const { orgId, owner } = await makeWorkspace("hc-ehr-sessions");
     const me = caller(owner);

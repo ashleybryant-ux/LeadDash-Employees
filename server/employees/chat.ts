@@ -2406,6 +2406,23 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     // A healthcare workspace's chats can hold client information, so they stay on the BAA-covered route.
     const clientInfo = brain.org?.orgType === "healthcare";
     const decide = (prompt: string) => generateJson<Decision>({ system, prompt, schemaName: "chat_decision", schema: decisionSchema(emp.kind, actions), maxTokens: 3000, reason: true, clientInfo });
+    /* ============================================================
+     * AN ANSWER, EVEN WHEN THE DECISION COMES BACK MALFORMED (2026-11-14)
+     * ------------------------------------------------------------
+     * The decision is asked for as JSON. When the model answers in a
+     * shape that cannot be read (it happened to Harper after he read a
+     * long forecast), the person was shown "I couldn't do that. AI
+     * returned something that was not valid JSON". The work was done:
+     * what was missing was the wording. So the employee is asked once
+     * more for the answer as plain sentences, on the same route, from
+     * the same conversation and whatever the steps so far found. No
+     * action is started from it.
+     * ============================================================ */
+    const sayPlainly = async (prompt: string) => {
+      const { generateText } = await import("../_core/llm");
+      return generateText({ system: `${system}\n\nFor this message only: answer the person directly in plain sentences, no JSON and no code. You cannot start an action in this message; answer from what you already know and what your steps found, with the figures.`, prompt, maxTokens: 2500 });
+    };
+    const unreadable = (err: unknown) => err instanceof Error && /not valid JSON/i.test(err.message);
     // Jobs of 3 work hours or more ask first on a plan; "Go ahead" runs the job asked about, "Not now" drops it.
     const hrs = await import("../workHours");
     const metered = !scheduled && hrs.meteredSync(opts.organizationId);
@@ -2413,7 +2430,14 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     if (answered && "no" in answered) return { user: userMsg, reply: await reply("Okay, I won't start it.") };
     const goAhead = !!answered && "go" in answered;
     const bigAsk = (d: Decision) => (metered && !goAhead ? bigJobText(emp.kind, d.action) : null);
-    const decision = goAhead ? (answered as { go: Decision }).go : await decide(base);
+    let decision: Decision;
+    try {
+      decision = goAhead ? (answered as { go: Decision }).go : await decide(base);
+    } catch (err) {
+      if (!unreadable(err)) throw err;
+      console.warn(`[chat] ${emp.name}: the decision could not be read; answering in plain sentences`);
+      return { user: userMsg, reply: await reply(await sayPlainly(base)) };
+    }
     const quick = (list?: string[]) => (!scheduled && list?.length ? [choicesCard(list)] : []);
     // Something new and lasting: saved to the Brain so nobody has to be told twice.
     let learned = "";
@@ -2450,7 +2474,16 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
     let final: Decision | null = null;
     for (let i = 0; i < 4; i++) {
       const done = steps.map((s, n) => `Step ${n + 1}: ${s.d.action} (${stepFields(s.d)}). Result: ${s.r.text || "done"}${s.r.facts ? `\nWhat it found:\n${s.r.facts}` : ""}`).join("\n\n");
-      const next = await decide(`${base}\n\nYou are part way through this request. Your plan after the last step was: ${steps[steps.length - 1].d.plan || "finish up"}.\n${done}\n\nChoose the next action, or "none" when the request is done or you need the person. With "none", "reply" is the whole message the person sees: what you did, what you decided and why, and anything from the results they still need to do (a button to press). Never repeat a step that already ran.`);
+      const stepPrompt = `${base}\n\nYou are part way through this request. Your plan after the last step was: ${steps[steps.length - 1].d.plan || "finish up"}.\n${done}\n\nChoose the next action, or "none" when the request is done or you need the person. With "none", "reply" is the whole message the person sees: what you did, what you decided and why, and anything from the results they still need to do (a button to press). Never repeat a step that already ran.`;
+      let next: Decision;
+      try {
+        next = await decide(stepPrompt);
+      } catch (err) {
+        if (!unreadable(err)) throw err;
+        console.warn(`[chat] ${emp.name}: a step's decision could not be read; summing up in plain sentences`);
+        final = { ...steps[steps.length - 1].d, action: "none", plan: "", choices: [], reply: await sayPlainly(`${base}\n\nYou have finished reading for this request.\n${done}\n\nWrite the whole answer the person sees now.`) };
+        break;
+      }
       // A step chosen again with the same fields would loop: the steps so far speak for themselves.
       if (steps.some((s) => s.d.action === next.action && stepFields(s.d) === stepFields(next))) break;
       const nextAsk = bigAsk(next);

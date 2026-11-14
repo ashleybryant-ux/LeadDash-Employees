@@ -167,6 +167,12 @@ export async function generateJson<T>(opts: {
   let parsed = extractJson(await ask(first));
   // Cut off before the JSON closed (the answer ran past the token limit): ask once more with room to finish.
   if (parsed === undefined) parsed = extractJson(await ask(Math.min(32_000, Math.max(first * 3, 4000))));
+  // Still not JSON (2026-11-14: Harper, after reading a long forecast, answered in prose and the person
+  // was shown "not valid JSON"). Asked once more, told plainly what shape the answer has to be.
+  if (parsed === undefined) {
+    messages.push({ role: "user", content: "Your last answer was not valid JSON. Answer again with exactly one JSON object that matches the schema and nothing before or after it. Keep every text field under 300 words." });
+    parsed = extractJson(await ask(Math.min(32_000, Math.max(first * 3, 4000))));
+  }
   if (parsed === undefined) throw new Error("AI returned something that was not valid JSON");
   return parsed as T;
 }
