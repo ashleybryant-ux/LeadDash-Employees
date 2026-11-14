@@ -121,6 +121,28 @@ describe("The Group Partner team called from LeadDash EHR", () => {
     expect((await db.listAllEmployeesByOrg(org.id)).length).toBeGreaterThan(5);
   });
 
+  it("Group Partner seats all five: one the plan kept on the bench is brought on when the team is opened", async () => {
+    const bench = await import("./employees/bench");
+    const { PARTNER_TEAM } = await import("./ehrTeam");
+    expect(bench.PARTNER_KINDS.slice().sort()).toEqual(PARTNER_TEAM.map((p) => p.kind).sort());
+    const D = { loc: "locDDDDteam000000004", practice: "Birch Lane Counseling", tz: "America/Chicago" };
+    const boss = { email: "owner@birch-team.test", name: "Lena Ortiz", role: "admin" };
+    const { org } = await open(D, boss);
+    const all = await db.listAllEmployeesByOrg(org.id);
+    for (const e of all) await db.updateEmployee(e.id, org.id, { status: "paused" });
+    // The Employees app's own rule for an EHR practice with no plan: Avery cannot come on.
+    const avery = all.find((e) => e.kind === "inbox")!;
+    await expect(bench.bringOn(org.id, avery.id)).rejects.toThrow();
+    expect((await bench.benchView(org.id)).employees.find((e) => e.kind === "inbox")!.canBringOn).toBe(false);
+    const r = await ask(D, boss, "team");
+    expect(r.status).toBe(200);
+    expect(r.json.result.team.map((e: any) => e.kind)).toEqual(["billing", "inbox", "leads", "compliance", "hiring"]);
+    expect(r.json.result.team.every((e: any) => e.onTeam)).toBe(true);
+    // Nobody outside the five came on with them.
+    const on = (await db.listAllEmployeesByOrg(org.id)).filter((e) => e.status !== "paused").map((e) => e.kind).sort();
+    expect(on).toEqual(["billing", "compliance", "hiring", "inbox", "leads"]);
+  });
+
   it("refuses an employee outside the five, and one from another practice", async () => {
     const org = (await db.getOrganizationByEhrLocation(A.loc))!;
     const outside = (await db.listAllEmployeesByOrg(org.id)).find((e) => !["billing", "inbox", "leads", "compliance", "hiring"].includes(e.kind))!;

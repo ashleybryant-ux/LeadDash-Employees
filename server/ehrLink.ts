@@ -209,7 +209,7 @@ export function registerEhrLink(app: Express) {
         const emp = emps.find((e) => e.kind === p.kind);
         if (!emp || emp.status !== "paused") continue;
         // One who cannot come on today (away, or the plan's limit) is left for the practice to bring on.
-        try { await bench.bringOn(org.id, emp.id); broughtOn += 1; } catch (err) { console.error("[ehr-link] turn-on could not bring on %s: %s", p.kind, err instanceof Error ? err.message : err); }
+        try { await bench.bringOn(org.id, emp.id, { partner: true }); broughtOn += 1; } catch (err) { console.error("[ehr-link] turn-on could not bring on %s: %s", p.kind, err instanceof Error ? err.message : err); }
       }
       await db.logAction({ organizationId: org.id, actorType: "system", actorName: "LeadDash EHR", action: "Employees turned on", details: `Group Partner, from LeadDash EHR${broughtOn ? `, ${broughtOn} brought onto the team` : ""}` });
       res.json({ ok: true, created, broughtOn });

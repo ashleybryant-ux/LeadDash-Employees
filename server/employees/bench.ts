@@ -24,6 +24,13 @@ import * as interview from "./interview";
 /** The three who read from LeadDash EHR: leads (not booked), claims and payments, team and licenses. */
 export const EHR_KINDS: EmployeeKind[] = ["leads", "billing", "compliance"];
 export const EHR_GROUP = "Works with LeadDash EHR";
+/**
+ * Your LeadDash team in LeadDash EHR (Group Partner): these five always have a
+ * seat. The limits below (three to start, five while someone is onboarding)
+ * were written for the Employees app's own bench and kept Avery off a Group
+ * Partner practice's team with no way to bring him on (2026-11-14).
+ */
+export const PARTNER_KINDS: EmployeeKind[] = ["billing", "inbox", "leads", "compliance", "hiring"];
 export const START_LIMIT = 5;
 /** Vacation lasts at least this long; a terminated employee is rehirable after TERMINATE_DAYS. */
 export const VACATION_MIN_DAYS = 30;
@@ -160,7 +167,7 @@ const hired = (e: Pick<AIEmployee, "status">) => e.status !== "paused";
 export const namesText = (names: string[]) => (names.length < 3 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 
 /** Where the workspace stands: who can be brought on next, and why not. */
-export async function limits(orgId: number) {
+export async function limits(orgId: number, opts: { partner?: boolean } = {}) {
   const org = await db.getOrganizationById(orgId);
   if (!org) throw new TRPCError({ code: "NOT_FOUND", message: "That workspace isn't here." });
   const emps = await db.listEmployeesByOrg(orgId);
@@ -182,6 +189,8 @@ export async function limits(orgId: number) {
     /** The person still onboarding who holds up the next hire, by name. */
     waitingOn: startFull ? onboarding.map((e) => e.name) : [],
     canBringOn(kind: string) {
+      // Asked for by Your LeadDash team in LeadDash EHR (Group Partner): its five always have room.
+      if (opts.partner && PARTNER_KINDS.includes(kind as EmployeeKind)) return true;
       if (ehrStart) return EHR_KINDS.includes(kind as EmployeeKind);
       return !startFull;
     },
@@ -194,8 +203,8 @@ export function limitMessage(l: Awaited<ReturnType<typeof limits>>, name: string
 }
 
 /** The bench page: every employee, the bios, the limits and what an interview answer uses. */
-export async function benchView(orgId: number) {
-  const l = await limits(orgId);
+export async function benchView(orgId: number, opts: { partner?: boolean } = {}) {
+  const l = await limits(orgId, opts);
   const { withPortrait } = await import("../ehrLink");
   const { JOBS } = await import("../workHours");
   const emps = (await db.listEmployeesByOrg(orgId)).map(withPortrait);
@@ -229,11 +238,11 @@ export async function benchView(orgId: number) {
 }
 
 /** One click: the employee joins the team and, in their chat, thanks the owner and offers to start onboarding. */
-export async function bringOn(orgId: number, employeeId: number) {
+export async function bringOn(orgId: number, employeeId: number, opts: { partner?: boolean } = {}) {
   const emp = await db.getEmployeeForOrg(employeeId, orgId);
   if (!emp) throw new TRPCError({ code: "NOT_FOUND", message: "That employee is not in this workspace." });
   if (hired(emp)) return emp;
-  const l = await limits(orgId);
+  const l = await limits(orgId, opts);
   const away = interview.readState(emp).away;
   if (away) {
     const a = awayView(emp, todayIn(l.tz))!;

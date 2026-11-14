@@ -92,7 +92,15 @@ export async function teamCall(t: ChatToken, name: string, raw: unknown) {
 
   if (name === "team") {
     const bench = await import("./employees/bench");
-    const v = await bench.benchView(o);
+    /* Group Partner means the five are on the team (the owner's rule, 2026-11-14):
+     * one still on the bench, and not away, is brought on here, so nobody
+     * is shown "not on your team yet" with nothing to press. */
+    for (const e of await db.listAllEmployeesByOrg(o)) {
+      if (!KINDS.has(e.kind) || e.status !== "paused") continue;
+      try { await bench.bringOn(o, e.id, { partner: true }); await db.logAction({ organizationId: o, actorType: "system", actorName: e.name, action: "Employee brought onto the team", details: `${e.name}, with Group Partner` }); }
+      catch (err) { /* away (vacation, or not rehirable yet): shown as away */ }
+    }
+    const v = await bench.benchView(o, { partner: true });
     const summaries = await db.chatSummaries(o, user.id, visible).catch(() => [] as { employeeId: number; unread?: number }[]);
     return {
       practice: org.name,
@@ -149,7 +157,7 @@ export async function teamCall(t: ChatToken, name: string, raw: unknown) {
   if (name === "bringOn") {
     const emp = await employee(int(i.employeeId));
     const bench = await import("./employees/bench");
-    await bench.bringOn(o, emp.id);
+    await bench.bringOn(o, emp.id, { partner: true });
     await db.logAction({ organizationId: o, actorType: "human_user", actorName: me.name, action: "Employee brought onto the team", details: `${emp.name}, from LeadDash EHR` });
     return { ok: true };
   }
