@@ -77,7 +77,11 @@ describe("Camille's reminders", () => {
     const s = await rm.approve(orgId, "notes", "Owner");
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0][0]).toBe("https://api.health.leaddash.io/api/employees/remind");
-    expect(post.mock.calls[0][2]).toEqual({ userIds: ["u1", "u3"], subject: "Notes to sign", text: "Hi Dana, you have 3 notes past 48 hours. Camille" });
+    expect(post.mock.calls[0][2]).toEqual({ userIds: ["u1", "u3"], subject: "Notes to sign", text: "Hi Dana, you have 3 notes past 48 hours. Camille", email: "fallback", link: "team-chat", employeeId: expect.any(Number) });
+    expect(s.text).toContain("in Team chat");
+    // Kept for the person it reached, and for nobody it did not reach.
+    expect(db.nudges.forStaff(orgId, ["u1"])).toHaveLength(1);
+    expect(db.nudges.forStaff(orgId, ["u3"])).toHaveLength(0);
     expect(s.text).toContain("Sent to Dana Whitfield");
     expect(s.text).toContain("Not sent to Priya Shah (no email on file)");
     expect(s.reminder!.status).toBe("sent");

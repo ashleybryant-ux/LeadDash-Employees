@@ -50,7 +50,8 @@ export type ChatToken = {
   tz?: string;
   /** "all": the whole team chats with each other. Anything else: team members and administrators only. */
   scope?: "all" | "admins";
-  user: { email: string; name?: string; role?: string };
+  /** `id` and `ids`: the person's staff id in LeadDash EHR, and every id that is the same person there (reminders from an employee are kept by staff id). */
+  user: { email: string; name?: string; role?: string; id?: string; ids?: string[] };
   iat: number;
   exp: number;
 };

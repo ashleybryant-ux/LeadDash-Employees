@@ -259,11 +259,17 @@ export async function approve(orgId: number, target: string, by: string): Promis
 export async function sendNow(r: ComplianceReminder, tz: string, now = new Date()): Promise<Outcome> {
   const people = recipientsOf(r);
   try {
-    const res = await (await ehr()).remind(r.organizationId, { userIds: people.map((p) => p.id), subject: r.subject, text: r.body });
+    /* The reminder is kept for each person in LeadDash EHR (a pop-up and Team chat, nudges.ts), so the phone notice comes first and the email goes only to someone no phone notice reached. */
+    const camille = await db.getEmployeeByKind(r.organizationId, "compliance");
+    const res = await (await ehr()).remind(r.organizationId, { userIds: people.map((p) => p.id), subject: r.subject, text: r.body, email: "fallback", link: "team-chat", ...(camille ? { employeeId: camille.id } : {}) });
     const when = now;
     const reached = res.sent.map((s) => s.name || people.find((p) => p.id === s.id)?.name || "someone");
     const missed = res.skipped.map((s) => `${s.name || people.find((p) => p.id === s.id)?.name || "someone"} (${s.reason})`);
-    const result = [reached.length ? `Sent to ${reached.join(", ")}` : "", missed.length ? `Not sent to ${missed.join(", ")}` : ""].filter(Boolean).join(". ");
+    // How it reached them besides Team chat, said as it happened: a phone notice, or an email where no phone took one.
+    const pushed = res.sent.some((x) => Number((x as { push?: number }).push) > 0);
+    const mailed = res.sent.some((x) => (x as { email?: boolean }).email === true);
+    const also = pushed && mailed ? ", with a phone notice or an email" : pushed ? ", with a phone notice" : mailed ? ", with an email" : "";
+    const result = [reached.length ? `Sent to ${reached.join(", ")} in Team chat${also}` : "", missed.length ? `Not sent to ${missed.join(", ")}` : ""].filter(Boolean).join(". ");
     if (!reached.length) {
       const next = db.reminders.update(r.id, { status: "failed", lastResult: result || "Nobody could be reached." });
       return { ok: false, reminder: next, text: `It didn't go out. ${next.lastResult}.` };
@@ -271,6 +277,12 @@ export async function sendNow(r: ComplianceReminder, tz: string, now = new Date(
     let after = nextAfter(r.sendAt && new Date(r.sendAt).getTime() <= when.getTime() ? new Date(r.sendAt) : when, r.repeat, tz);
     // A server that was down past several times sends once, then picks up at the next time still ahead.
     for (let i = 0; after && after.getTime() <= when.getTime() && i < 60; i++) after = nextAfter(after, r.repeat, tz);
+    try {
+      const emp = camille;
+      if (emp) await (await import("../nudges")).deliver(r.organizationId, emp, { id: r.id, subject: r.subject, body: r.body }, res.sent.map((s) => ({ id: String(s.id), name: s.name || people.find((p) => p.id === s.id)?.name || "" })));
+    } catch (err) {
+      console.error("[reminders] could not keep the reminder for the team member:", err instanceof Error ? err.message : err);
+    }
     const next = db.reminders.update(r.id, { status: after ? "scheduled" : "sent", sendAt: after ?? r.sendAt, lastSentAt: when, sentCount: r.sentCount + 1, lastResult: result });
     return { ok: true, reminder: next, text: `${result}.${after ? ` Next one goes out ${whenLine(next, tz)}.` : ""}` };
   } catch (err) {

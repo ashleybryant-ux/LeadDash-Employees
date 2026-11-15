@@ -639,8 +639,17 @@ export function forgetTeam(orgId?: number) {
 
 export type RemindResult = { sent: { id: string; name: string; email: boolean; push: number }[]; skipped: { id: string; name?: string; reason: string }[] };
 
+/** One team member's open work in LeadDash EHR (notes waiting on a signature, plans due): what an employee checks when told a reminder is completed. */
+export async function staffWork(orgId: number, staffId: string): Promise<{ unsignedNotes: number; oldestUnsigned: string | null; plansDue: number } | null> {
+  const c = await connection(orgId);
+  if (!c) return null;
+  const raw = (await tools.fetchJson(`${settingsOf(c).url}/api/employees/staff-work?userId=${encodeURIComponent(staffId)}`, keyOf(c), 30_000)) as { ok?: boolean; unsignedNotes?: number; oldestUnsigned?: string | null; plansDue?: number };
+  if (!raw || raw.ok === false) return null;
+  return { unsignedNotes: Number(raw.unsignedNotes) || 0, oldestUnsigned: raw.oldestUnsigned || null, plansDue: Number(raw.plansDue) || 0 };
+}
+
 /** Sends one reminder through LeadDash EHR to the team members named. */
-export async function remind(orgId: number, input: { userIds: string[]; subject: string; text: string }): Promise<RemindResult> {
+export async function remind(orgId: number, input: { userIds: string[]; subject: string; text: string; email?: "fallback"; link?: "team-chat"; employeeId?: number }): Promise<RemindResult> {
   const c = await connection(orgId);
   if (!c) throw new Error("LeadDash EHR isn't connected.");
   const raw = (await tools.postJson(`${settingsOf(c).url}/api/employees/remind`, keyOf(c), input)) as Partial<RemindResult> & { ok?: boolean; error?: string };

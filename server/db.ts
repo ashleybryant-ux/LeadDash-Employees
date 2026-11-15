@@ -2409,6 +2409,52 @@ export const reminders = {
   },
 };
 
+/** Reminders employees sent to team members, and each person's conversation with an employee (2026-11-14). Every read names the workspace. */
+export const nudges = {
+  add(row: typeof schema.staffNudges.$inferInsert) {
+    return getDb().insert(schema.staffNudges).values(row).returning().all()[0];
+  },
+  get(orgId: number, id: number) {
+    const t = schema.staffNudges;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.id, id))).limit(1).all()[0] ?? null;
+  },
+  update(orgId: number, id: number, patch: Partial<typeof schema.staffNudges.$inferInsert>) {
+    const t = schema.staffNudges;
+    return getDb().update(t).set(patch).where(and(eq(t.organizationId, orgId), eq(t.id, id))).returning().all()[0] ?? null;
+  },
+  /** One person's, newest first. */
+  forStaff(orgId: number, staffIds: string[]) {
+    const t = schema.staffNudges;
+    if (!staffIds.length) return [];
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), inArray(t.staffId, staffIds))).orderBy(desc(t.id)).limit(200).all();
+  },
+  /** The ones made from one reminder (one per person it reached each time it went out), newest first. */
+  ofReminder(orgId: number, reminderId: number) {
+    const t = schema.staffNudges;
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), eq(t.reminderId, reminderId))).orderBy(desc(t.id)).limit(200).all();
+  },
+  /** The workspace's, newest first. */
+  list(orgId: number, limit = 200) {
+    const t = schema.staffNudges;
+    return getDb().select().from(t).where(eq(t.organizationId, orgId)).orderBy(desc(t.id)).limit(limit).all();
+  },
+  say(row: typeof schema.staffMessages.$inferInsert) {
+    return getDb().insert(schema.staffMessages).values(row).returning().all()[0];
+  },
+  thread(orgId: number, staffIds: string[], employeeId: number, limit = 200) {
+    const t = schema.staffMessages;
+    if (!staffIds.length) return [];
+    return getDb().select().from(t).where(and(eq(t.organizationId, orgId), inArray(t.staffId, staffIds), eq(t.employeeId, employeeId))).orderBy(desc(t.id)).limit(limit).all().reverse();
+  },
+  /** The employees who have written to this person. */
+  employeesFor(orgId: number, staffIds: string[]): number[] {
+    const t = schema.staffMessages;
+    if (!staffIds.length) return [];
+    const rows = getDb().select({ employeeId: t.employeeId }).from(t).where(and(eq(t.organizationId, orgId), inArray(t.staffId, staffIds))).all();
+    return Array.from(new Set(rows.map((r) => r.employeeId)));
+  },
+};
+
 export const team = {
   messages(orgs: Orgs, channel: string, limit = 300) {
     const t = schema.teamMessages;

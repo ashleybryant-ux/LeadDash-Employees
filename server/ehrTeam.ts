@@ -72,6 +72,18 @@ function cardTitles(raw: string | null): string[] {
   }
 }
 
+/** The buttons under an employee's message (a question with fixed answers), so the EHR can offer them. */
+function choicesOf(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const cards = JSON.parse(raw) as { type?: string; options?: unknown }[];
+    const c = (Array.isArray(cards) ? cards : []).find((x) => x && x.type === "choices" && Array.isArray(x.options));
+    return c ? (c.options as unknown[]).map((o) => String(o).trim().slice(0, 60)).filter(Boolean).slice(0, 4) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function teamCall(t: ChatToken, name: string, raw: unknown) {
   if (String(t.user.role || "").toLowerCase() !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Your LeadDash team is for practice administrators." });
   // Looked up before anyone is seated: a practice with no workspace gets nothing made for it here.
@@ -131,11 +143,26 @@ export async function teamCall(t: ChatToken, name: string, raw: unknown) {
     await db.markChatRead(o, emp.id, user.id);
     const { workingOn } = await import("./employees/chat");
     const w = await workingOn(o, emp).catch(() => ({ busy: false, what: "" }));
+    const nudges = await import("./nudges");
+    const lastId = rows.length ? rows[rows.length - 1].id : 0;
     return {
       employee: { id: emp.id, name: emp.name },
       working: w,
-      messages: rows.map((m) => ({ id: m.id, from: m.role === "user" ? "person" : m.role === "employee" ? "employee" : "note", author: m.authorName, mine: m.role === "user" && m.userId === user.id, text: m.content, cards: cardTitles(m.cards), at: m.createdAt })),
+      messages: rows.map((m) => ({ id: m.id, from: m.role === "user" ? "person" : m.role === "employee" ? "employee" : "note", author: m.authorName, mine: m.role === "user" && m.userId === user.id, text: m.content, cards: cardTitles(m.cards), at: m.createdAt,
+        // Only the newest message keeps its buttons: an answered question does not ask again.
+        choices: m.role === "employee" && m.id === lastId ? choicesOf(m.cards) : [],
+        // Under "Sent to ...": whether each person has read it, said it is completed, and what the check found.
+        standing: m.role === "employee" ? nudges.standing(o, emp.id, m.createdAt, m.content) : [],
+      })),
     };
+  }
+
+  /* Reminders the employees have sent the team: who each went to and where it stands. No client is ever named in one. */
+  if (name === "nudges") {
+    const nudges = await import("./nudges");
+    const names = new Map<number, string>();
+    for (const e of await db.listAllEmployeesByOrg(o)) if (KINDS.has(e.kind)) names.set(e.id, e.name);
+    return { reminders: nudges.board(o).filter((n) => names.has(n.employeeId)).map((n) => ({ ...n, from: names.get(n.employeeId) })) };
   }
 
   if (name === "send") {

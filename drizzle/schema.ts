@@ -3895,6 +3895,59 @@ export const complianceReminders = sqliteTable(
 export type ComplianceReminder = typeof complianceReminders.$inferSelect;
 
 /**
+ * A reminder an employee sent to one person on the practice's team, and where
+ * it stands (2026-11-14). The person is a LeadDash EHR team member (staffId is
+ * their id there); they see it in LeadDash EHR as a pop-up and in Team chat,
+ * and never sign in to this app. "said_done" is their Completed; the employee
+ * then checks LeadDash EHR and sets verified, not_done or unverifiable.
+ */
+export const NUDGE_STATUSES = ["sent", "read", "said_done", "verified", "not_done", "unverifiable"] as const;
+export const staffNudges = sqliteTable(
+  "staff_nudges",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    reminderId: integer("reminderId"),
+    staffId: text("staffId").notNull(),
+    staffName: text("staffName").notNull().default(""),
+    subject: text("subject").notNull(),
+    body: text("body").notNull(),
+    /** What the employee can check afterwards: notes, plans, or other (nothing in LeadDash EHR to check). */
+    kind: text("kind", { enum: ["notes", "plans", "other"] }).notNull().default("other"),
+    /** JSON of what LeadDash EHR showed for this person when it was sent. */
+    baseline: text("baseline").notNull().default("{}"),
+    status: text("status", { enum: NUDGE_STATUSES }).notNull().default("sent"),
+    readAt: integer("readAt", { mode: "timestamp" }),
+    doneAt: integer("doneAt", { mode: "timestamp" }),
+    checkedAt: integer("checkedAt", { mode: "timestamp" }),
+    /** What the check found, in a sentence. */
+    result: text("result").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("staff_nudges_org_staff_idx").on(t.organizationId, t.staffId, t.status)]
+);
+export type StaffNudge = typeof staffNudges.$inferSelect;
+
+/** The conversation between an employee and one team member, shown in LeadDash EHR Team chat (2026-11-14). */
+export const staffMessages = sqliteTable(
+  "staff_messages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    employeeId: integer("employeeId").notNull(),
+    staffId: text("staffId").notNull(),
+    /** Who said it: the employee, or the person. */
+    side: text("side", { enum: ["employee", "person"] }).notNull(),
+    content: text("content").notNull(),
+    nudgeId: integer("nudgeId"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("staff_messages_thread_idx").on(t.organizationId, t.staffId, t.employeeId)]
+);
+export type StaffMessage = typeof staffMessages.$inferSelect;
+
+/**
  * A time on someone's calendar to do a task (2026-10-12). Found from their
  * work hours, their other task times and, for the workspace owner, the
  * connected calendars. A time that ends with the task still open moves to
