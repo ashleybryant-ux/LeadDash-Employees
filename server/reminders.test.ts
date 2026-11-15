@@ -116,6 +116,19 @@ describe("Camille's reminders", () => {
     expect(s.reminder!.status).toBe("failed");
   });
 
+  it("a reminder that names the staff member it is for is not refused, even when a client shares the name", async () => {
+    const { orgId } = await practice("rm-staff-name");
+    // A client record with a team member's full name, and one whose first name and last initial sit inside a team member's name.
+    ehr.rememberNames(orgId, ["Dana Whitfield", "Dana W", "Marcus Long", "Avery Price"]);
+    const ok = await rm.draft(orgId, { to: "Dana Whitfield", subject: "Notes to sign", body: "Dana Whitfield, you have 62 notes waiting on your signature. Marcus Lee has 3.", date: "", time: "", repeat: "" });
+    expect(ok.text).not.toContain("names a client");
+    expect(ok.ok).toBe(true);
+    // A real client in the same message is still refused.
+    const bad = await rm.draft(orgId, { to: "Dana Whitfield", subject: "Notes to sign", body: "Dana Whitfield, please sign the note for Avery Price.", date: "", time: "", repeat: "" });
+    expect(bad.ok).toBe(false);
+    expect(bad.text).toContain("names a client");
+  });
+
   it("gives Camille the team, expiring licenses and her reminders", async () => {
     const { orgId } = await practice("rm-prompt");
     await rm.draft(orgId, { to: "everyone", subject: "HIPAA training", body: "HIPAA training is due by Oct 30, 2026.", date: "", time: "", repeat: "" });

@@ -141,10 +141,29 @@ export function showText(r: ComplianceReminder, tz: string) {
 }
 
 /** A client of the practice named in the text (the names the employees have seen in LeadDash EHR). */
+/**
+ * Whether a reminder's text names a client. The team's own names are taken
+ * out of the text first, and a client record that shares a team member's
+ * name is not counted: a reminder to staff says who it is for ("Ashley, you
+ * have 62 notes to sign"), and "remind Ashley" was refused as naming a
+ * client, over and over, because a staff name also matched a client's
+ * (2026-11-14). Everything else is still checked the same way.
+ */
 async function namesAClient(orgId: number, text: string) {
   const e = await ehr();
   const known = e.knownNames(orgId);
-  return known.length > 0 && e.redactText("hide", text, known) !== text;
+  if (!known.length) return false;
+  let staff: string[] = [];
+  try { staff = ((await e.team(orgId)) ?? []).flatMap((m) => [m.name, m.signsAs.split(",")[0]]).map((n) => n.trim()).filter((n) => n.split(/\s+/).length >= 2); } catch { staff = []; }
+  const flat = (n: string) => n.toLowerCase().replace(/\s+/g, " ").trim();
+  const staffSet = new Set(staff.map(flat));
+  const clients = known.filter((n) => !staffSet.has(flat(n)));
+  // The staff names themselves, longest first, leave the text before the client names are looked for.
+  let rest = text;
+  for (const n of Array.from(new Set(staff)).sort((a, b) => b.length - a.length)) {
+    rest = rest.replace(new RegExp(`(?<![\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}(?![\\p{L}\\p{N}])`, "giu"), " ");
+  }
+  return clients.length > 0 && e.redactText("hide", rest, clients) !== rest;
 }
 
 async function tzOf(orgId: number) {
