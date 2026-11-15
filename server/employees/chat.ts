@@ -2498,7 +2498,16 @@ ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
       }
     }
     if (!decision.action || decision.action === "none" || !actions.includes(decision.action)) {
-      return { user: userMsg, reply: await reply(`${decision.reply || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
+      /* A decision with no words in it (2026-11-14): an owner asked Avery to go through her email a second time and got
+       * "Could you say a bit more about what you need?" because the model returned no reply, or named an action this
+       * employee does not have. The request was clear, so the answer is written in plain sentences from the same
+       * prompt; the question is kept only for when that comes back empty too. */
+      let words = (decision.reply || "").trim();
+      if (!words) {
+        console.warn(`[chat] ${emp.name}: a decision came back with no reply${decision.action && decision.action !== "none" ? ` (action "${decision.action}" is not one of theirs)` : ""}; answering in plain sentences`);
+        words = (await sayPlainly(base).catch(() => "")).trim();
+      }
+      return { user: userMsg, reply: await reply(`${words || "Could you say a bit more about what you need?"}${learned}`, quick(decision.choices)) };
     }
     const firstAsk = bigAsk(decision);
     if (firstAsk) {

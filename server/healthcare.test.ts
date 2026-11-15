@@ -348,6 +348,15 @@ describe("A healthcare practice workspace", () => {
     const again = await me.chat.send({ organizationId: orgId, employeeId: harper.id, text: "And next month?" });
     expect(again.reply!.content).not.toContain("not valid JSON");
     expect(again.reply!.content).toContain("With 226 open hours left");
+
+    // A decision with no words in it, or an action that is not his: an answer, never "say a bit more".
+    vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => (opts.schemaName === "chat_decision" ? ({ ...blank } as any) : ({} as any)));
+    const empty = await me.chat.send({ organizationId: orgId, employeeId: harper.id, text: "Can you go through my email and tell me what is urgent?" });
+    expect(empty.reply!.content).toContain("With 226 open hours left");
+    expect(empty.reply!.content).not.toContain("say a bit more");
+    vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => (opts.schemaName === "chat_decision" ? ({ ...blank, action: "read_inbox" } as any) : ({} as any)));
+    const notHis = await me.chat.send({ organizationId: orgId, employeeId: harper.id, text: "Can you go through my email?" });
+    expect(notHis.reply!.content).toContain("With 226 open hours left");
   });
 
   it("Avery reads tomorrow's sessions from the LeadDash EHR calendar, with each client's balance and paperwork, when the practice has no personal calendar connected", async () => {
