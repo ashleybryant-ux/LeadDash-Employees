@@ -4,6 +4,7 @@ import type { AIEmployee, DeskDecision, DeskWaiting, EmployeeKind, LaunchTask } 
 import { notify } from "../notify";
 import { partsIn, zonedToUtc } from "./schedule";
 import { handoff } from "./team";
+import { cleanInbox, DEFAULT_INBOX, type InboxRules } from "./inbox";
 
 /**
  * Avery's desk: one queue for everything that needs a person.
@@ -81,6 +82,8 @@ export type DeskRules = {
   wait: string;
   briefTime: string;
   briefDays: number[];
+  /** What Avery does with the inbox (see ./inbox). */
+  inbox: InboxRules;
 };
 
 export const DEFAULT_RULES: DeskRules = {
@@ -93,6 +96,7 @@ export const DEFAULT_RULES: DeskRules = {
   wait: "Cold pitches, newsletters, invites with no agenda",
   briefTime: "07:30",
   briefDays: [1, 2, 3, 4, 5],
+  inbox: DEFAULT_INBOX,
 };
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -141,6 +145,7 @@ export function cleanRules(r: Partial<DeskRules>): DeskRules {
     wait: text(r.wait, d.wait),
     briefTime: hhmm(r.briefTime, d.briefTime) || d.briefTime,
     briefDays: days(r.briefDays, d.briefDays),
+    inbox: cleanInbox(r.inbox),
   };
 }
 

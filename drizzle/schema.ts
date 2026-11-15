@@ -2077,7 +2077,8 @@ export const accountLinks = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     organizationId: integer("organizationId").notNull(),
-    purpose: text("purpose", { enum: ["calendar", "send", "press"] }).notNull(),
+    /** inbox: a Gmail mailbox Avery reads and files (its own Google client; see server/employees/inbox.ts). */
+    purpose: text("purpose", { enum: ["calendar", "send", "press", "inbox"] }).notNull(),
     kind: text("kind", { enum: ["google", "link"] }).notNull(),
     name: text("name").notNull(),
     color: text("color").notNull().default("#1b6b4a"),
@@ -2103,6 +2104,50 @@ export const accountLinks = sqliteTable(
 );
 
 export type AccountLink = typeof accountLinks.$inferSelect;
+
+// ==========================================
+// Avery's inbox
+// ==========================================
+
+/**
+ * One row per email Avery read. Who it is from, the subject and what he did
+ * are kept in the clear so the list can be drawn; the body is kept encrypted
+ * and is only opened to show the email or to write the reply.
+ */
+export const inboxMessages = sqliteTable(
+  "inbox_messages",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    organizationId: integer("organizationId").notNull(),
+    linkId: integer("linkId").notNull(),
+    /** Gmail's id for the message, its thread, and its Message-ID header (a reply names it). */
+    externalId: text("externalId").notNull(),
+    threadId: text("threadId").notNull().default(""),
+    messageId: text("messageId").notNull().default(""),
+    fromName: text("fromName").notNull().default(""),
+    fromEmail: text("fromEmail").notNull().default(""),
+    subject: text("subject").notNull().default(""),
+    receivedAt: integer("receivedAt", { mode: "timestamp" }).notNull(),
+    bodyEncrypted: text("bodyEncrypted"),
+    /** needs: waits on a person. filed: Avery put it away. done: answered or skipped. */
+    state: text("state", { enum: ["needs", "filed", "done"] }).notNull(),
+    /** What Avery did: wrote a reply, left it for a decision, or filed it. */
+    did: text("did", { enum: ["drafted", "decision", "filed"] }).notNull(),
+    /** Where a filed email went: Newsletters, Receipts, Meetings, Social. */
+    label: text("label").notNull().default(""),
+    /** One line on what the sender wants. */
+    why: text("why").notNull().default(""),
+    reply: text("reply").notNull().default(""),
+    replyState: text("replyState", { enum: ["none", "draft", "sent", "skipped"] }).notNull().default("none"),
+    sentAt: integer("sentAt", { mode: "timestamp" }),
+    sentBy: text("sentBy"),
+    createdAt: createdAt(),
+    updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  },
+  (t) => [uniqueIndex("inbox_messages_org_external_unique").on(t.organizationId, t.linkId, t.externalId), index("inbox_messages_org_state_idx").on(t.organizationId, t.state)]
+);
+
+export type InboxMessage = typeof inboxMessages.$inferSelect;
 
 // ==========================================
 // Elena's mini drama studio

@@ -1863,7 +1863,7 @@ export function clearOpenFindings(orgId: number) {
 // Extra Google accounts and calendar links
 // ==========================================
 
-export function listAccountLinks(orgId: number, purpose?: "calendar" | "send" | "press") {
+export function listAccountLinks(orgId: number, purpose?: "calendar" | "send" | "press" | "inbox") {
   const all = getDb().select().from(accountLinks).where(eq(accountLinks.organizationId, orgId)).orderBy(accountLinks.id).all();
   return purpose ? all.filter((l) => l.purpose === purpose) : all;
 }
@@ -1880,6 +1880,41 @@ export function updateAccountLink(id: number, orgId: number, data: Partial<typeo
 export function deleteAccountLink(id: number, orgId: number) {
   getDb().delete(accountLinks).where(and(eq(accountLinks.id, id), eq(accountLinks.organizationId, orgId))).run();
 }
+
+// ==========================================
+// Avery's inbox (every read and write names the workspace)
+// ==========================================
+
+export const inbox = {
+  list(orgId: number, state: "needs" | "filed" | "done", limit = 200) {
+    return getDb().select().from(schema.inboxMessages).where(and(eq(schema.inboxMessages.organizationId, orgId), eq(schema.inboxMessages.state, state))).orderBy(desc(schema.inboxMessages.receivedAt)).limit(limit).all();
+  },
+  since(orgId: number, from: Date) {
+    return getDb().select().from(schema.inboxMessages).where(and(eq(schema.inboxMessages.organizationId, orgId), gte(schema.inboxMessages.receivedAt, from))).all();
+  },
+  get(orgId: number, id: number) {
+    return getDb().select().from(schema.inboxMessages).where(and(eq(schema.inboxMessages.id, id), eq(schema.inboxMessages.organizationId, orgId))).limit(1).all()[0] || null;
+  },
+  has(orgId: number, linkId: number, externalIds: string[]) {
+    if (!externalIds.length) return new Set<string>();
+    const rows = getDb().select({ x: schema.inboxMessages.externalId }).from(schema.inboxMessages).where(and(eq(schema.inboxMessages.organizationId, orgId), eq(schema.inboxMessages.linkId, linkId), inArray(schema.inboxMessages.externalId, externalIds))).all();
+    return new Set(rows.map((r) => r.x));
+  },
+  add(row: typeof schema.inboxMessages.$inferInsert) {
+    return getDb().insert(schema.inboxMessages).values(row).onConflictDoNothing().returning().all()[0] || null;
+  },
+  update(orgId: number, id: number, data: Partial<typeof schema.inboxMessages.$inferInsert>) {
+    getDb().update(schema.inboxMessages).set({ ...data, updatedAt: new Date() }).where(and(eq(schema.inboxMessages.id, id), eq(schema.inboxMessages.organizationId, orgId))).run();
+    return inbox.get(orgId, id);
+  },
+  clear(orgId: number, linkId: number) {
+    getDb().delete(schema.inboxMessages).where(and(eq(schema.inboxMessages.organizationId, orgId), eq(schema.inboxMessages.linkId, linkId))).run();
+  },
+  /** Every connected mailbox on the server, for the timer. */
+  links() {
+    return getDb().select().from(accountLinks).where(eq(accountLinks.purpose, "inbox")).all();
+  },
+};
 
 // ==========================================
 // Elena's mini drama studio

@@ -7,6 +7,7 @@ import { ErrorLine, FolderTabs, UnderlineTabs } from "../ui";
 import { fmtDate, fmtTime } from "../meta";
 import type { Outputs } from "../types";
 import Drafts from "../work/Drafts";
+import InboxTab from "./InboxTab";
 
 /**
  * Avery's Desk: one queue for everything that needs a person.
@@ -119,19 +120,23 @@ const DAY_CHIPS = WEEK.slice(0, 5).map((d) => ({ key: d, label: DAY_NAMES[d] }))
 // The Desk
 // ==========================================
 
-type Tab = "today" | "decisions" | "waiting" | "drafts" | "rules";
+type Tab = "today" | "inbox" | "decisions" | "waiting" | "drafts" | "rules";
 
 export default function AveryDesk({ emp }: { emp: EmployeeRow }) {
   const orgId = useOrg();
   const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const initial = params?.get("tab");
-  const [tab, setTab] = React.useState<Tab>(initial && ["today", "decisions", "waiting", "drafts", "rules"].includes(initial) ? (initial as Tab) : "today");
+  const [tab, setTab] = React.useState<Tab>(initial && ["today", "inbox", "decisions", "waiting", "drafts", "rules"].includes(initial) ? (initial as Tab) : "today");
   const [openKey, setOpenKey] = React.useState<string | null>(params?.get("d") ?? null);
   const today = trpc.desk.today.useQuery({ organizationId: orgId }, { refetchInterval: 120_000 });
   const dec = trpc.desk.decisions.useQuery({ organizationId: orgId }, { refetchInterval: 60_000 });
   const wait = trpc.desk.waiting.useQuery({ organizationId: orgId });
   const items = trpc.assistant.listItems.useQuery({ organizationId: orgId });
   const drafts = (items.data ?? []).filter((i) => (i.kind === "email_draft" || i.kind === "calendar_hold") && (i.status === "pending_approval" || i.status === "changes_requested")).length;
+  // The inbox is the owner's own mail: the tab is there only for the owner and admins, once it is turned on.
+  const mail = trpc.inbox.setup.useQuery({ organizationId: orgId });
+  const inboxOn = Boolean(mail.data?.connected && mail.data.mine);
+  const inboxCount = trpc.inbox.view.useQuery({ organizationId: orgId }, { enabled: inboxOn, refetchInterval: 60_000 }).data?.counts.needs ?? 0;
   const openDecision = (key: string) => {
     setOpenKey(key);
     setTab("decisions");
@@ -143,6 +148,7 @@ export default function AveryDesk({ emp }: { emp: EmployeeRow }) {
         onChange={setTab}
         tabs={[
           { key: "today", label: "Today" },
+          ...(inboxOn ? [{ key: "inbox" as Tab, label: `Inbox (${inboxCount})` }] : []),
           { key: "decisions", label: `Decisions (${dec.data?.open.length ?? 0})` },
           { key: "waiting", label: `Waiting (${(wait.data?.owed.length ?? 0) + (wait.data?.promises.length ?? 0)})` },
           { key: "drafts", label: `Drafts (${drafts})` },
@@ -150,6 +156,7 @@ export default function AveryDesk({ emp }: { emp: EmployeeRow }) {
         ]}
       />
       {tab === "today" && (today.data ? <TodayTab t={today.data} empKind={emp.kind} onDecide={openDecision} /> : <div className="ld-card ld-empty">{today.isLoading ? "Loading..." : "Couldn't load today."}</div>)}
+      {tab === "inbox" && (inboxOn ? <InboxTab /> : <div className="ld-card ld-empty">{mail.isLoading ? "Loading..." : "The inbox is not turned on."}</div>)}
       {tab === "decisions" && (dec.data ? <DecisionsTab v={dec.data} openKey={openKey} setOpenKey={setOpenKey} /> : <div className="ld-card ld-empty">{dec.isLoading ? "Loading..." : "Couldn't load decisions."}</div>)}
       {tab === "waiting" && (wait.data ? <WaitingTab v={wait.data} /> : <div className="ld-card ld-empty">{wait.isLoading ? "Loading..." : "Couldn't load the list."}</div>)}
       {tab === "drafts" && <Drafts emp={emp} embedded />}
@@ -613,7 +620,7 @@ function WaitingRow({ w, open, onToggle }: { w: W; open: boolean; onToggle: () =
 // Rules
 // ==========================================
 
-type Section = "who" | "duties" | "time" | "first" | null;
+type Section = "who" | "duties" | "time" | "first" | "inbox" | null;
 
 function RulesTab() {
   const orgId = useOrg();
@@ -629,7 +636,7 @@ function RulesTab() {
     },
   });
   if (!q.data) return <div className="ld-card ld-empty">{q.isLoading ? "Loading..." : "Couldn't load the rules."}</div>;
-  const { rules, categories, duties, never, owner, role, team } = q.data;
+  const { rules, categories, duties, never, owner, role, team, inboxOn, inboxChoices } = q.data;
   const teamLabel = team.length && team.length <= 2 ? team.join(" or ") : "your team";
   const isOwner = role === "owner";
   const canEdit = role === "owner" || role === "admin";
@@ -801,6 +808,39 @@ function RulesTab() {
           <Lane rows={[["First", rules.first], ["Normal", rules.normal], ["Can wait", rules.wait]]} />
         </Card>
       )}
+
+      {/* Inbox: only where the owner turned inbox reading on */}
+      {inboxOn &&
+        (edit === "inbox" && draft ? (
+          <Card label="Inbox" buttons={saveBtns(() => save.mutate({ organizationId: orgId, rules: { inbox: draft.inbox } }))}>
+            <Form>
+              <span style={{ fontWeight: 700, alignSelf: "start", paddingTop: 6 }}>Files by himself</span>
+              <Chips label="Files by himself" options={inboxChoices.files.map((f) => ({ key: f.key, label: f.label }))} value={draft.inbox.files} onToggle={(k) => setDraft({ ...draft, inbox: { ...draft.inbox, files: toggle(draft.inbox.files, k as string) } })} />
+              <span style={{ fontWeight: 700, alignSelf: "start", paddingTop: 6 }}>Drafts replies for</span>
+              <Chips label="Drafts replies for" options={inboxChoices.drafts.map((f) => ({ key: f.key, label: f.label }))} value={draft.inbox.drafts} onToggle={(k) => setDraft({ ...draft, inbox: { ...draft.inbox, drafts: toggle(draft.inbox.drafts, k as string) } })} />
+              <span style={{ fontWeight: 700, alignSelf: "start", paddingTop: 6 }}>Sends without asking</span>
+              <Chips label="Sends without asking" options={[{ key: "yes", label: "Meeting confirmations" }, { key: "no", label: "Nothing" }]} value={[draft.inbox.autoSend ? "yes" : "no"]} onToggle={(k) => setDraft({ ...draft, inbox: { ...draft.inbox, autoSend: k === "yes" } })} />
+              <label htmlFor="inbox-never" style={{ fontWeight: 700 }}>Never opens mail labeled</label>
+              <input id="inbox-never" className="ld-in" style={{ maxWidth: 260 }} value={draft.inbox.never} onChange={(e) => setDraft({ ...draft, inbox: { ...draft.inbox, never: e.target.value } })} />
+              <span style={{ fontWeight: 700, alignSelf: "start", paddingTop: 6 }}>Checks for new mail every</span>
+              <Chips label="Checks for new mail every" options={inboxChoices.every.map((n) => ({ key: n, label: n === 60 ? "Hour" : `${n} minutes` }))} value={[draft.inbox.every]} onToggle={(k) => setDraft({ ...draft, inbox: { ...draft.inbox, every: Number(k) } })} />
+            </Form>
+            <ErrorLine error={save.error} />
+          </Card>
+        ) : (
+          <Card label="Inbox" buttons={editBtn("inbox")}>
+            <Lane
+              rows={[
+                ["Reads", "New mail in the inbox"],
+                ["Files by himself", inboxChoices.files.filter((f) => rules.inbox.files.includes(f.key)).map((f) => f.label).join(", ") || "Nothing"],
+                ["Drafts replies for", inboxChoices.drafts.filter((f) => rules.inbox.drafts.includes(f.key)).map((f) => f.label).join(", ") || "Nothing"],
+                ["Sends without asking", rules.inbox.autoSend ? "Meeting confirmations" : "Nothing"],
+                ["Never opens", rules.inbox.never ? `Mail labeled ${rules.inbox.never}` : "Nothing is left out"],
+                ["Checks for new mail", rules.inbox.every === 60 ? "Every hour" : `Every ${rules.inbox.every} minutes`],
+              ]}
+            />
+          </Card>
+        ))}
 
       <Card label="How Avery ranks a decision">
         <Lane

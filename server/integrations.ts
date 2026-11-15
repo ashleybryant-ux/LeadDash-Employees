@@ -9,6 +9,7 @@ import { decryptJson, encryptJson, hasSecretsKey } from "./_core/crypto";
 import { uploadsRoot } from "./storage";
 import type { OutboundItem, Provider } from "../drizzle/schema";
 import { payloadFor, postChannels, type Payload, type SocialChannel } from "@shared/post-model";
+import { registerInbox } from "./employees/inbox";
 
 /**
  * One-click connections. LeadDash registers one app with each company
@@ -342,6 +343,8 @@ export function authorizeUrl(key: AppKey, state: string, verifier?: string, scop
 }
 
 export function registerOAuth(app: Express) {
+  // Avery's inbox signs in through its own Google client; its routes come first so "inbox" is not taken for an app name.
+  registerInbox(app);
   // An extra Google account: same Google app and callback, its own scopes.
   // Registered before /api/oauth/:app/start, or "link" is taken for an app name ("Unknown connection.").
   app.get("/api/oauth/link/start", async (req, res) => {

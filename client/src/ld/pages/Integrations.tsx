@@ -82,6 +82,7 @@ export default function Integrations() {
     const e = params.get("error");
     if (c === "calendar") return { ok: true, text: "The calendar is connected. Pick which of its calendars Avery checks with Edit." };
     if (c === "sending") return { ok: true, text: "The sending address is connected." };
+    if (c === "inbox") return { ok: true, text: "Avery is reading the inbox. What needs you is on his Desk under Inbox." };
     if (c) return { ok: true, text: `${CATALOG.find((x) => x.app === c)?.name ?? "Account"} is connected.` };
     if (e) return { ok: false, text: e };
     return null;
@@ -111,6 +112,7 @@ export default function Integrations() {
       <WebsiteLogins />
       <Calendars />
       <SendingAddresses />
+      <AveryInbox />
       <PressInbox />
       {notice && (
         <div role="status" className="ld-card" style={{ padding: "12px 16px", borderColor: notice.ok ? "var(--ld-accent)" : "#e2a7a1", background: notice.ok ? "#f1f8f4" : "#fdf3f2", fontSize: 14, fontWeight: 600, color: notice.ok ? "var(--ld-accent-dark)" : "var(--ld-bad)" }}>
@@ -849,6 +851,55 @@ const SENDERS: { kind: string; name: string }[] = [
   { kind: "speaking", name: "Taylor" },
   { kind: "onboarding", name: "Imani" },
 ];
+
+/**
+ * Avery's inbox: reading and filing a Gmail mailbox. Offered only where the server
+ * says so (a LeadDash address, for now), and only to the owner and admins.
+ * Turning it off deletes the email Avery kept.
+ */
+function AveryInbox() {
+  const { currentOrgId } = useTenant();
+  const utils = trpc.useUtils();
+  const q = trpc.inbox.setup.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
+  const [asking, setAsking] = React.useState(false);
+  const off = trpc.inbox.disconnect.useMutation({ onSuccess: async () => { setAsking(false); await utils.inbox.invalidate(); } });
+  const s = q.data;
+  if (!s || !s.offered) return null;
+  const last = s.lastRead ? new Date(s.lastRead).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "Not yet";
+  return (
+    <div className="ld-card ld-resultcard" style={{ padding: "16px 18px", display: "grid", gridTemplateColumns: "minmax(0,1fr) 128px", gap: 20, alignItems: "start" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+        <span className="ld-lbl">Avery's inbox</span>
+        {s.connected ? (
+          <div className="ld-logins" style={{ display: "grid", gridTemplateColumns: "200px minmax(0,1fr)", gap: "8px 16px", fontSize: 14, alignItems: "center" }}>
+            <b>Mailbox</b><span style={CLIP}>{s.email}</span>
+            <b>Last read</b><span>{last}</span>
+            {s.problem && <><b>Problem</b><span style={{ color: "var(--ld-bad)", fontWeight: 700 }}>{s.problem}</span></>}
+          </div>
+        ) : (
+          <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>Avery reads your Gmail inbox, files what needs no one and drafts replies. Nothing is sent without you.</span>
+        )}
+        {asking && <span style={{ fontSize: 14, fontWeight: 700 }}>Turn off inbox reading? The email Avery kept is deleted.</span>}
+        <ErrorLine error={off.error} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {!s.connected ? (
+          <button type="button" className="ld-btn p" onClick={() => { window.location.href = `/api/oauth/inbox/start?organizationId=${currentOrgId}`; }}>Turn on</button>
+        ) : asking ? (
+          <>
+            <button type="button" className="ld-btn danger" disabled={off.isPending} onClick={() => off.mutate({ organizationId: currentOrgId })}>Turn off</button>
+            <button type="button" className="ld-btn" onClick={() => setAsking(false)}>Cancel</button>
+          </>
+        ) : (
+          <>
+            <a className="ld-btn" href="/chats/inbox/work?tab=inbox">Open inbox</a>
+            <button type="button" className="ld-btn" onClick={() => setAsking(true)}>Turn off</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** Sending addresses: a second Gmail some employees send from. */
 function SendingAddresses() {

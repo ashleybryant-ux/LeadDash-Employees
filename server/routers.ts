@@ -74,6 +74,7 @@ import * as newsroom from "./employees/newsroom";
 import * as cold from "./employees/cold";
 import * as coldreply from "./employees/coldreply";
 import * as desk from "./employees/desk";
+import * as inboxWork from "./employees/inbox";
 import * as precall from "./employees/precall";
 import * as pitching from "./employees/pitching";
 import * as presslib from "./employees/presslib";
@@ -236,6 +237,11 @@ function personName(user: User) {
 }
 
 const orgInput = z.object({ organizationId: z.number().int().positive() });
+/** Avery's inbox is one person's own mail: a member of the workspace, and the person who connected it. Nobody else, support included. */
+async function inboxMine(ctx: TrpcContext & { user: User }, organizationId: number) {
+  await requireMember(ctx, organizationId, "admin");
+  if (!inboxWork.mayUse(organizationId, ctx.user.id)) throw new TRPCError({ code: "FORBIDDEN", message: "The inbox belongs to the person who connected it." });
+}
 /** A reference picture for a Scene: her upload and, if she said, what it's for. */
 const sceneRefInput = z.object({ url: z.string().max(500), note: z.string().max(200).optional(), seen: z.string().max(400).optional() });
 
@@ -1613,11 +1619,13 @@ export const appRouter = router({
     rules: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       const m = await requireMember(ctx, input.organizationId);
       const team = (await db.listMembers(input.organizationId)).filter((x) => x.role !== "owner" && x.role !== "reviewer").map((x) => (x.name || x.email).split(" ")[0]);
-      return { rules: desk.rulesOf(input.organizationId), categories: desk.CATEGORIES, duties: desk.DUTIES, never: desk.NEVER, owner: await desk.ownerName(input.organizationId), role: m.role, team };
+      return { inboxOn: inboxWork.mayUse(input.organizationId, ctx.user.id), inboxChoices: { files: inboxWork.FILE_KINDS, drafts: inboxWork.DRAFT_KINDS, every: inboxWork.EVERY }, rules: desk.rulesOf(input.organizationId), categories: desk.CATEGORIES, duties: desk.DUTIES, never: desk.NEVER, owner: await desk.ownerName(input.organizationId), role: m.role, team };
     }),
     saveRules: protectedProcedure.input(orgInput.extend({ rules: z.record(z.string(), z.unknown()) })).mutation(async ({ ctx, input }) => {
       const m = await requireMember(ctx, input.organizationId, "admin");
       const r = input.rules as Partial<desk.DeskRules>;
+      // What Avery does with the inbox is set only by the person whose inbox it is.
+      if (r.inbox !== undefined && !inboxWork.mayUse(input.organizationId, ctx.user.id)) delete r.inbox;
       const cur = desk.rulesOf(input.organizationId);
       const changesWho = (r.onlyYou !== undefined && JSON.stringify([...r.onlyYou].sort()) !== JSON.stringify([...cur.onlyYou].sort())) || (r.spendLimitCents !== undefined && r.spendLimitCents !== cur.spendLimitCents);
       if (changesWho && m.role !== "owner") throw new TRPCError({ code: "FORBIDDEN", message: `Only ${await desk.ownerName(input.organizationId)} can change who decides.` });
@@ -1632,6 +1640,58 @@ export const appRouter = router({
     undo: protectedProcedure.input(orgInput.extend({ logId: z.number().int() })).mutation(async ({ ctx, input }) => {
       await requireDecide(ctx, input.organizationId, "guideline");
       return desk.undoGuideline(input.organizationId, input.logId, personName(ctx.user));
+    }),
+  }),
+
+  // ==========================================
+  // Avery's inbox: the owner's own mail, so the owner and admins only
+  // ==========================================
+  inbox: router({
+    /** Integrations and the Desk ask this: is it offered here, is it on, and is it this person's. */
+    setup: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      const m = await requireMember(ctx, input.organizationId);
+      if (m.role !== "owner" && m.role !== "admin") return { offered: false, connected: false, email: "", lastRead: "", problem: "", mine: false };
+      return inboxWork.setup(input.organizationId, ctx.user);
+    }),
+    view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
+      await inboxMine(ctx, input.organizationId);
+      const org = await db.getOrganizationById(input.organizationId);
+      return { ...inboxWork.view(input.organizationId, ctx.user, org?.timezone || "America/Chicago"), practice: org?.orgType === "healthcare" };
+    }),
+    open: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
+      await inboxMine(ctx, input.organizationId);
+      return inboxWork.open(input.organizationId, input.id);
+    }),
+    read: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await inboxMine(ctx, input.organizationId);
+      return inboxWork.read(input.organizationId);
+    }),
+    saveReply: protectedProcedure.input(orgInput.extend({ id: z.number().int(), text: z.string().max(8000) })).mutation(async ({ ctx, input }) => {
+      await inboxMine(ctx, input.organizationId);
+      inboxWork.saveReply(input.organizationId, input.id, input.text);
+      return inboxWork.open(input.organizationId, input.id);
+    }),
+    send: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await inboxMine(ctx, input.organizationId);
+      await inboxWork.send(input.organizationId, input.id, personName(ctx.user));
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), userId: ctx.user.id, action: "Sent a reply from the inbox", details: "" });
+      return { sent: true };
+    }),
+    skip: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await inboxMine(ctx, input.organizationId);
+      inboxWork.skip(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    moveBack: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      await inboxMine(ctx, input.organizationId);
+      await inboxWork.moveBack(input.organizationId, input.id);
+      return { ok: true };
+    }),
+    disconnect: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
+      await inboxMine(ctx, input.organizationId);
+      await inboxWork.disconnect(input.organizationId);
+      await db.logAction({ organizationId: input.organizationId, actorType: "human_user", actorName: personName(ctx.user), userId: ctx.user.id, action: "Turned off inbox reading", details: "" });
+      return { ok: true };
     }),
   }),
 

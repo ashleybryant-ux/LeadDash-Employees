@@ -72,7 +72,7 @@ const ACTIONS: Record<string, string[]> = {
   social: ["none", "report", "write_post", "post_graphic", "schedule_posts", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   blog: ["none", "report", "write_article", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   website: ["none", "report", "site_audit", "mockup_site", "ask_layout", "build_page", "restore_page", "change_page", "plan_page", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
-  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "desk_brief", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
+  inbox: ["none", "report", "draft_reply", "write_email", "check_schedule", "calendar_hold", "meeting_link", "sat_in_notes", "sitting_in", "join_or_skip", "send_notes", "desk_brief", "inbox_send", "inbox_skip", "decide", "send_back", "add_waiting", "add_promise", "to_nora", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   developer: ["none", "report", "fix_code", "merge_change", "change_request", "check_status", "ask_teammate", "add_guideline", "start_onboarding"],
   onboarding: ["none", "report", "onboard_hire", "offboard", "onboard_customer", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
   hiring: ["none", "report", "find_people", "write_job_post", "publish_job", "unpublish_job", "check_status", "ask_teammate", "add_guideline", "save_files", "start_onboarding"],
@@ -121,6 +121,8 @@ const ACTION_HELP: Record<string, string> = {
   cold_research: "cold_research: research the next best leads on the list (progressive enrichment). Put how many in `count` (default 100, at most 1000) and a state in `target` if she named one.",
   cold_review: "cold_review: she asks how cold email is doing, what's working, or for the weekly review now.",
   cold_replies: "cold_replies: check Instantly for new replies now.",
+  inbox_send: "inbox_send: the person tells you to send a reply you already wrote for an email in the Inbox list in your facts. Put that email's number (the digits after #) in `target`. One email per action; never send one the person did not name.",
+  inbox_skip: "inbox_skip: the person says an email in the Inbox list needs no reply or to set it aside. Put its number in `target`.",
   desk_brief: "desk_brief: the person asks what needs them, for the brief, for their decisions or what you handled (\"what needs me?\", \"show all decisions\", \"what did you handle?\"). Put \"handled\" in `focus` when they ask what was handled, else \"\".",
   decide: "decide: the person makes a decision on your desk in chat (\"approve option B\", \"go with A for the price\"). Put words from the decision's title in `target` and the option label they picked in `focus` ('' to take your suggestion).",
   send_back: "send_back: the person says no to a decision on your desk or wants it changed. Put words from its title in `target` and what they said in `notes`.",
@@ -417,7 +419,10 @@ async function connectedFacts(emp: AIEmployee) {
   const tasksLine = "\nTasks and projects live in Projects, this app's own task manager (folders, lists, tasks, launches): use the task_ actions for them. It replaced ClickUp; never send work to ClickUp.";
   /* Email (2026-11-14): Avery told an owner "connect Gmail and I'll sort what's urgent". The Google connection
    * sends email and makes calendar events; nothing here reads an inbox, connected or not. Said to every employee. */
-  const mailLine = "\nEmail: nobody on this team can read an email inbox, whether or not Google is connected. The Google connection on Integrations only sends emails a person approves and adds calendar events. Never say that connecting Gmail or Google will let you read, check, go through or sort an inbox. Asked to go through someone's email, say plainly that you cannot read the inbox, and offer what works: they paste the messages here and you sort what is urgent and draft the replies.";
+  /* Inbox reading (2026-11-15): where the owner turned it on, Avery does read the mailbox, and only he does. */
+  const reads = (await import("./inbox")).linkOf(emp.organizationId);
+  const noMail = "\nEmail: nobody on this team can read an email inbox, whether or not Google is connected. The Google connection on Integrations only sends emails a person approves and adds calendar events. Never say that connecting Gmail or Google will let you read, check, go through or sort an inbox. Asked to go through someone's email, say plainly that you cannot read the inbox, and offer what works: they paste the messages here and you sort what is urgent and draft the replies.";
+  const mailLine = reads ? "\nEmail: Avery reads one connected inbox for the person who connected it, and files and drafts replies there; no other employee can read email, and what is in that inbox is for that person only." : noMail;
   if (!on.length) return `${tasksLine}${mailLine}\nConnected tools on Integrations: none yet.`;
   return `${tasksLine}${mailLine}\nConnected tools on Integrations: ${on.map((p) => `${TOOL_NAMES[p] ?? p}${TOOL_USERS[p] ? ` (${TOOL_USERS[p]})` : ""}`).join("; ")}. Never say a connected tool isn't connected. If none of your actions use it, say it's connected and which teammate works in it.`;
 }
@@ -800,6 +805,25 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
       const r = await cold.weeklyReview(org);
       if (!r) return { text: "Nothing has gone out yet, so there's nothing to review. Start a campaign on my Campaigns tab first.", cards: [], queries: [] };
       return { text: "Here's the review.", cards: [], queries: [] };
+    }
+    case "inbox_send":
+    case "inbox_skip": {
+      const inbox = await import("./inbox");
+      if (!inbox.mayUse(org, ctx.userId)) return { text: "The inbox belongs to the person who connected it. I can't send or set aside email from it for you.", cards: [], queries: [] };
+      const id = Number(String(d.target).replace(/[^0-9]/g, ""));
+      const m = id ? db.inbox.get(org, id) : null;
+      if (!m || m.state !== "needs") return { text: "I don't see that email on my Inbox list. Tell me who it is from.", cards: [], queries: [] };
+      if (d.action === "inbox_skip") {
+        inbox.skip(org, id);
+        return { text: `Set aside: "${m.subject}" from ${m.fromName}.`, cards: [], queries: [] };
+      }
+      if (m.replyState !== "draft") return { text: `There is no reply written for "${m.subject}" yet. Open it on my Desk under Inbox to write one.`, cards: [], queries: [] };
+      try {
+        await inbox.send(org, id, ctx.who ?? "The owner");
+        return { text: `Sent to ${m.fromName}.`, cards: [], queries: [] };
+      } catch (err) {
+        return { text: `I couldn't send the reply to ${m.fromName}: ${err instanceof Error ? err.message : String(err)}`, cards: [], queries: [] };
+      }
     }
     case "desk_brief": {
       const desk = await import("./desk");
@@ -2440,7 +2464,7 @@ export async function sendChatMessage(opts: {
 Right now it is ${await nowIn(opts.organizationId)}. Turn words like "today", "tomorrow" or "Friday" into exact dates.
 Work it out before you act: in "thinking", say what they want and what you know, then choose. When the message asks you to do your job now, choose the matching action and fill its fields. Otherwise choose "none" and answer in "reply".
 Fill every field; use "" or [] for fields the action does not use.
-Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${taggedFacts}${await connectedFacts(emp)}${historyFacts(emp.organizationId)}${await webFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
+Never ask the person for a password or login in chat; sign-ins are saved on Integrations.${taggedFacts}${await connectedFacts(emp)}${emp.kind === "inbox" ? await (await import("./inbox")).inboxFactsFor(emp.organizationId, opts.userId) : ""}${historyFacts(emp.organizationId)}${await webFacts(emp)}${await bidprimeFacts(emp)}${await applyFacts(emp)}${await leadershipFacts(emp)}${await teamFacts(emp)}
 ${scheduled ? "This message comes from a scheduled task: never ask a question and leave choices empty; do the job." : `${TALK}${talkFor(emp)}\n${REMEMBER}`}${opts.spoken ? `\n${ONE_ON_ONE}` : ""}${filesText(files)}
 Actions you can take:
 ${actions.map((a) => "- " + ACTION_HELP[a]).join("\n") || "- none"}`
