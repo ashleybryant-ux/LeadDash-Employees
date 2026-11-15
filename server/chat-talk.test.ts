@@ -239,6 +239,8 @@ describe("every employee knows what's connected and works in Projects", () => {
     await caller(owner).chat.send({ organizationId: orgId, employeeId: avery.id, text: "Where do tasks live?" });
     expect(systems[0]).toContain("Tasks and projects live in Projects, this app's own task manager");
     expect(systems[0]).toContain("Connected tools on Integrations: ClickUp (only for importing old ClickUp tasks into Projects; tasks live in Projects here");
+    // No employee promises to read an inbox once Gmail is connected: the Google connection only sends.
+    expect(systems[0]).toContain("nobody on this team can read an email inbox, whether or not Google is connected");
     expect(systems[0]).toContain("Never say a connected tool isn't connected");
     expect(systems[0]).not.toContain("clickup_due");
     expect(systems[0]).toContain("task_due:");

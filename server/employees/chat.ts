@@ -415,8 +415,11 @@ const TOOL_USERS: Record<string, string> = { clickup: "only for importing old Cl
 async function connectedFacts(emp: AIEmployee) {
   const on = (await db.listConnectionsByOrg(emp.organizationId)).filter((c) => c.status === "connected").map((c) => c.provider);
   const tasksLine = "\nTasks and projects live in Projects, this app's own task manager (folders, lists, tasks, launches): use the task_ actions for them. It replaced ClickUp; never send work to ClickUp.";
-  if (!on.length) return `${tasksLine}\nConnected tools on Integrations: none yet.`;
-  return `${tasksLine}\nConnected tools on Integrations: ${on.map((p) => `${TOOL_NAMES[p] ?? p}${TOOL_USERS[p] ? ` (${TOOL_USERS[p]})` : ""}`).join("; ")}. Never say a connected tool isn't connected. If none of your actions use it, say it's connected and which teammate works in it.`;
+  /* Email (2026-11-14): Avery told an owner "connect Gmail and I'll sort what's urgent". The Google connection
+   * sends email and makes calendar events; nothing here reads an inbox, connected or not. Said to every employee. */
+  const mailLine = "\nEmail: nobody on this team can read an email inbox, whether or not Google is connected. The Google connection on Integrations only sends emails a person approves and adds calendar events. Never say that connecting Gmail or Google will let you read, check, go through or sort an inbox. Asked to go through someone's email, say plainly that you cannot read the inbox, and offer what works: they paste the messages here and you sort what is urgent and draft the replies.";
+  if (!on.length) return `${tasksLine}${mailLine}\nConnected tools on Integrations: none yet.`;
+  return `${tasksLine}${mailLine}\nConnected tools on Integrations: ${on.map((p) => `${TOOL_NAMES[p] ?? p}${TOOL_USERS[p] ? ` (${TOOL_USERS[p]})` : ""}`).join("; ")}. Never say a connected tool isn't connected. If none of your actions use it, say it's connected and which teammate works in it.`;
 }
 
 /** Simone and Nora see recent meetings (Avery's notes), huddles and their action items (and Nora her projects), so they never say they have no notes. */
