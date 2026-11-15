@@ -862,6 +862,7 @@ function AveryInbox() {
   const utils = trpc.useUtils();
   const q = trpc.inbox.setup.useQuery({ organizationId: currentOrgId }, { enabled: currentOrgId > 0 });
   const [asking, setAsking] = React.useState(false);
+  const [picked, setPicked] = React.useState("");
   const off = trpc.inbox.disconnect.useMutation({ onSuccess: async () => { setAsking(false); await utils.inbox.invalidate(); } });
   const s = q.data;
   if (!s || !s.offered) return null;
@@ -877,14 +878,29 @@ function AveryInbox() {
             {s.problem && <><b>Problem</b><span style={{ color: "var(--ld-bad)", fontWeight: 700 }}>{s.problem}</span></>}
           </div>
         ) : (
-          <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>Avery reads your Gmail inbox, files what needs no one and drafts replies. Nothing is sent without you.</span>
+          <>
+            <span style={{ fontSize: 14, color: "var(--ld-text2)" }}>Avery reads your Gmail inbox, files what needs no one and drafts replies. Nothing is sent without you.</span>
+            {s.domains.length > 1 && (
+              <div role="group" aria-label="Mailbox on" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 14 }}>
+                <b>Mailbox on</b>
+                {s.domains.map((d) => {
+                  const on = (picked || s.domains[0]) === d;
+                  return (
+                    <button key={d} type="button" aria-pressed={on} className="ld-sug" style={{ borderRadius: 8, height: 32, fontWeight: 700, background: on ? "var(--ld-accent-bg)" : "var(--ld-surface)", borderColor: on ? "var(--ld-accent)" : undefined }} onClick={() => setPicked(d)}>
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
         {asking && <span style={{ fontSize: 14, fontWeight: 700 }}>Turn off inbox reading? The email Avery kept is deleted.</span>}
         <ErrorLine error={off.error} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {!s.connected ? (
-          <button type="button" className="ld-btn p" onClick={() => { window.location.href = `/api/oauth/inbox/start?organizationId=${currentOrgId}`; }}>Turn on</button>
+          <button type="button" className="ld-btn p" onClick={() => { window.location.href = `/api/oauth/inbox/start?organizationId=${currentOrgId}&domain=${encodeURIComponent(picked || s.domains[0] || "")}`; }}>Turn on</button>
         ) : asking ? (
           <>
             <button type="button" className="ld-btn danger" disabled={off.isPending} onClick={() => off.mutate({ organizationId: currentOrgId })}>Turn off</button>

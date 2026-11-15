@@ -159,6 +159,7 @@ function Opened({ id, onDone }: { id: number; onDone: () => void }) {
         ) : (
           m.reply && <div id={`inbox-reply-${id}`} className="ld-card" style={{ padding: "12px 14px", fontSize: 13, whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.5 }}>{m.reply}</div>
         )}
+        {m.masked && <span style={{ fontSize: 13 }}>Set client names to Show to edit the reply.</span>}
         <ErrorLine error={save.error || send.error || skip.error} />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {draft !== null ? (
@@ -169,7 +170,7 @@ function Opened({ id, onDone }: { id: number; onDone: () => void }) {
           ) : (
             <>
               {m.reply && <button type="button" className="ld-btn p sm" disabled={busy} onClick={() => send.mutate({ organizationId: orgId, id })}>{send.isPending ? "Sending..." : "Send"}</button>}
-              <button type="button" className="ld-btn sm" disabled={busy} onClick={() => setDraft(m.reply)}>{m.reply ? "Edit" : "Write"}</button>
+              {!m.masked && <button type="button" className="ld-btn sm" disabled={busy} onClick={() => setDraft(m.reply)}>{m.reply ? "Edit" : "Write"}</button>}
               <button type="button" className="ld-btn sm" disabled={busy} onClick={() => skip.mutate({ organizationId: orgId, id })}>Skip</button>
             </>
           )}

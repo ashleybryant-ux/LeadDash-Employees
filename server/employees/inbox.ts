@@ -10,10 +10,12 @@
  * approved for the app practices connect with (that one sends email and
  * adds calendar events only). So this file never uses that client: it
  * signs in through GOOGLE_INBOX_CLIENT_ID / GOOGLE_INBOX_CLIENT_SECRET, a
- * Google project set to Internal, where only a mailbox on LeadDash's own
- * Google domain (INBOX_GOOGLE_DOMAIN) can sign in. The Connect row is only
- * offered to a person signed in with an address on that domain, and the
- * mailbox is checked again when Google sends the person back.
+ * Google project set to Internal, where only a mailbox in that Google
+ * Workspace (INBOX_GOOGLE_DOMAIN) can sign in. A second Workspace, such as
+ * the owner's own practice, gets its own Internal project and its own keys
+ * (GOOGLE_INBOX2_...). The Connect row is only offered to a person signed
+ * in with an address on one of those domains, and the mailbox is checked
+ * against the domain that was picked when Google sends the person back.
  *
  * What is kept: who the email is from, the subject, when it came, one line
  * on what the sender wants, the reply Avery wrote, and the body (encrypted).
@@ -76,14 +78,32 @@ export function cleanInbox(r: Partial<InboxRules> | undefined): InboxRules {
 // The Google client for this job only
 // ==========================================
 
-const clientId = () => (process.env.GOOGLE_INBOX_CLIENT_ID || "").trim();
-const clientSecret = () => (process.env.GOOGLE_INBOX_CLIENT_SECRET || "").trim();
-export const domain = () => (process.env.INBOX_GOOGLE_DOMAIN || "leaddash.io").trim().toLowerCase();
-export const ready = () => Boolean(clientId() && clientSecret() && hasSecretsKey());
+/**
+ * One Google project per Google Workspace, because an Internal project only lets its own Workspace sign in.
+ * The first is GOOGLE_INBOX_CLIENT_ID / GOOGLE_INBOX_CLIENT_SECRET / INBOX_GOOGLE_DOMAIN (leaddash.io unless set);
+ * a second and third are GOOGLE_INBOX2_... / INBOX2_GOOGLE_DOMAIN and GOOGLE_INBOX3_... / INBOX3_GOOGLE_DOMAIN.
+ * A domain value may list several domains of the same Workspace, separated by commas.
+ */
+type Client = { id: string; secret: string; domains: string[] };
+function clients(): Client[] {
+  const out: Client[] = [];
+  for (const n of ["", "2", "3"]) {
+    const id = (process.env[`GOOGLE_INBOX${n}_CLIENT_ID`] || "").trim();
+    const secret = (process.env[`GOOGLE_INBOX${n}_CLIENT_SECRET`] || "").trim();
+    const taken = out.flatMap((c) => c.domains);
+    const domains = (process.env[`INBOX${n}_GOOGLE_DOMAIN`] || (n === "" ? "leaddash.io" : "")).toLowerCase().split(",").map((d) => d.trim().replace(/^@/, "")).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d) && !taken.includes(d));
+    if (id && secret && domains.length) out.push({ id, secret, domains });
+  }
+  return out;
+}
+const domainOf = (email: string | null | undefined) => String(email || "").toLowerCase().split("@")[1] || "";
+const clientFor = (domain: string) => clients().find((c) => c.domains.includes(domain)) ?? null;
+/** Every mailbox domain that can connect on this server. */
+export const domains = () => clients().flatMap((c) => c.domains);
+export const ready = () => hasSecretsKey() && clients().length > 0;
 const redirectUri = () => `${ENV.appUrl}/api/oauth/inbox/callback`;
-const onDomain = (email: string | null | undefined) => String(email || "").toLowerCase().split("@")[1] === domain();
-/** The Connect row is drawn only for a person whose own address is on LeadDash's Google domain. */
-export const mayConnect = (email: string | null | undefined) => ready() && onDomain(email);
+/** The Connect row is drawn only for a person whose own address is on one of those domains. */
+export const mayConnect = (email: string | null | undefined) => ready() && Boolean(clientFor(domainOf(email)));
 
 type Tokens = { accessToken: string; refreshToken: string | null; expiresAt: number | null };
 /** by: the person who connected the mailbox. It is their mail, so only they see it. */
@@ -126,7 +146,9 @@ async function tokenOf(link: AccountLink) {
   if (!t?.accessToken) throw Object.assign(new Error("reconnect"), { status: 401 });
   if (t.expiresAt && t.expiresAt > Date.now() + 90_000) return t.accessToken;
   if (!t.refreshToken) throw Object.assign(new Error("reconnect"), { status: 401 });
-  const d = await form("https://oauth2.googleapis.com/token", { grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: clientId(), client_secret: clientSecret() });
+  const c = clientFor(domainOf(link.email));
+  if (!c) throw Object.assign(new Error("reconnect"), { status: 401 });
+  const d = await form("https://oauth2.googleapis.com/token", { grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: c.id, client_secret: c.secret });
   const next: Tokens = { accessToken: d.access_token, refreshToken: d.refresh_token || t.refreshToken, expiresAt: d.expires_in ? Date.now() + Number(d.expires_in) * 1000 : null };
   // Only if the mailbox is still connected: a disconnect during this call stays a disconnect.
   if (db.getAccountLink(link.id, link.organizationId)) db.updateAccountLink(link.id, link.organizationId, { secretsEncrypted: encryptJson(next), status: "connected", error: null });
@@ -139,7 +161,7 @@ export const linkOf = (orgId: number) => db.listAccountLinks(orgId, "inbox")[0] 
 // Connect and disconnect
 // ==========================================
 
-type Pending = { orgId: number; userId: number; exp: number };
+type Pending = { orgId: number; userId: number; domain: string; exp: number };
 const pending = new Map<string, Pending>();
 
 async function canManage(req: Request, orgId: number) {
@@ -162,9 +184,14 @@ export function registerInbox(app: Express) {
     if (!mayConnect(user.email)) return back(res, { error: "Reading the inbox is not available for this account yet." });
     const now = Date.now();
     pending.forEach((v, k) => v.exp < now && pending.delete(k));
+    // Which Workspace's mailbox: the one picked on the card, else the domain of the person's own address.
+    const asked = String(req.query.domain || "").toLowerCase();
+    const domain = domains().includes(asked) ? asked : domainOf(user.email);
+    const c = clientFor(domain);
+    if (!c) return back(res, { error: "Reading the inbox is not available for that mailbox yet." });
     const state = crypto.randomBytes(24).toString("base64url");
-    pending.set(state, { orgId, userId: user.id, exp: now + 10 * 60_000 });
-    const q = new URLSearchParams({ client_id: clientId(), redirect_uri: redirectUri(), response_type: "code", scope: SCOPES.join(" "), access_type: "offline", prompt: "consent select_account", hd: domain(), state });
+    pending.set(state, { orgId, userId: user.id, domain, exp: now + 10 * 60_000 });
+    const q = new URLSearchParams({ client_id: c.id, redirect_uri: redirectUri(), response_type: "code", scope: SCOPES.join(" "), access_type: "offline", prompt: "consent select_account", hd: domain, state });
     res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${q.toString()}`);
   });
 
@@ -178,7 +205,7 @@ export function registerInbox(app: Express) {
     const code = String(req.query.code || "");
     if (req.query.error || !code) return back(res, { error: "Google sign-in was cancelled." });
     try {
-      const row = await finishConnect(p.orgId, code, user.id);
+      const row = await finishConnect(p.orgId, code, user.id, p.domain);
       await db.logAction({ organizationId: p.orgId, actorType: "human_user", actorName: user.name?.trim() || user.email, action: "Turned on inbox reading", details: row.email ?? "" });
       read(p.orgId).catch(() => null);
       back(res, { connected: "inbox" });
@@ -186,19 +213,22 @@ export function registerInbox(app: Express) {
       const wrong = err instanceof Error && err.message === "wrong-account";
       console.warn("[inbox] connect failed:", wrong ? "wrong account" : (err as { status?: number })?.status ?? "error");
       const taken = err instanceof Error && err.message === "taken";
-      back(res, { error: wrong ? `Choose a mailbox on ${domain()}.` : taken ? "Someone else already connected an inbox in this workspace." : "Google did not connect. Turn it on again." });
+      back(res, { error: wrong ? `Choose a mailbox on ${p.domain}.` : taken ? "Someone else already connected an inbox in this workspace." : "Google did not connect. Turn it on again." });
     }
   });
 
   if (process.env.NODE_ENV !== "test") setInterval(() => tick().catch(() => null), 60_000).unref();
 }
 
-export async function finishConnect(orgId: number, code: string, userId: number) {
-  const d = await form("https://oauth2.googleapis.com/token", { code, grant_type: "authorization_code", client_id: clientId(), client_secret: clientSecret(), redirect_uri: redirectUri() });
+export async function finishConnect(orgId: number, code: string, userId: number, domain = domains()[0] ?? "") {
+  const c = clientFor(domain);
+  if (!c) throw new Error("not-ready");
+  const d = await form("https://oauth2.googleapis.com/token", { code, grant_type: "authorization_code", client_id: c.id, client_secret: c.secret, redirect_uri: redirectUri() });
   if (!d.access_token || !d.refresh_token) throw new Error("no-token");
   const me = await g(d.access_token, "/profile");
   const email = String(me.emailAddress || "").toLowerCase();
-  if (!onDomain(email)) {
+  // The mailbox has to be on the domain that was picked: one Workspace's keys never read another's mail.
+  if (domainOf(email) !== domain) {
     await form("https://oauth2.googleapis.com/revoke", { token: d.refresh_token }).catch(() => null);
     throw new Error("wrong-account");
   }
@@ -470,9 +500,10 @@ const row = (m: InboxMessage) => ({ id: m.id, fromName: m.fromName, fromEmail: m
 /** Integrations and the Desk: offered to a LeadDash address, and once on, shown only to the person who connected it. */
 export function setup(orgId: number, user: { id: number; email: string | null }) {
   const link = linkOf(orgId);
-  if (link && syncOf(link).by !== user.id) return { offered: false, connected: false, email: "", lastRead: "", problem: "", mine: false };
+  if (link && syncOf(link).by !== user.id) return { offered: false, connected: false, email: "", lastRead: "", problem: "", mine: false, domains: [] as string[] };
   const s = link ? syncOf(link) : {};
-  return { offered: Boolean(link) || mayConnect(user.email), connected: Boolean(link), email: link?.email ?? "", lastRead: s.lastRead ?? "", problem: s.problem ?? "", mine: Boolean(link) };
+  const offered = Boolean(link) || mayConnect(user.email);
+  return { offered, connected: Boolean(link), email: link?.email ?? "", lastRead: s.lastRead ?? "", problem: s.problem ?? "", mine: Boolean(link), domains: offered && !link ? domains() : [] };
 }
 
 export function view(orgId: number, user: { id: number; email: string | null }, tz: string) {

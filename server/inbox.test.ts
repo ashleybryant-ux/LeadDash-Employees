@@ -147,8 +147,8 @@ describe("Avery's inbox", () => {
     await inbox.read(w.orgId);
     const c = caller(w.owner);
     const dana = db.inbox.list(w.orgId, "needs")[0];
-    const edited = await c.inbox.saveReply({ organizationId: w.orgId, id: dana.id, text: "Hi Dana,\n\n2:00 PM works. Bring the budget.\n\nOwner" });
-    expect(edited.reply).toContain("Bring the budget");
+    await c.inbox.saveReply({ organizationId: w.orgId, id: dana.id, text: "Hi Dana,\n\n2:00 PM works. Bring the budget.\n\nOwner" });
+    expect((await c.inbox.open({ organizationId: w.orgId, id: dana.id })).reply).toContain("Bring the budget");
     expect(google.calls.some((x) => x.url.includes("/messages/send"))).toBe(false);
     await c.inbox.send({ organizationId: w.orgId, id: dana.id });
     await c.inbox.send({ organizationId: w.orgId, id: dana.id });
@@ -187,6 +187,57 @@ describe("Avery's inbox", () => {
     expect(db.inbox.list(w.orgId, "filed")).toHaveLength(0);
     expect(google.calls.some((x) => x.url.includes("/revoke"))).toBe(true);
     expect(await inbox.read(w.orgId)).toEqual({ added: 0, needs: 0 });
+  });
+
+  it("a second Google Workspace has its own keys: its mailbox uses them, and one Workspace's keys never take the other's mailbox", async () => {
+    process.env.GOOGLE_INBOX2_CLIENT_ID = "practice-client";
+    process.env.GOOGLE_INBOX2_CLIENT_SECRET = "practice-secret";
+    process.env.INBOX2_GOOGLE_DOMAIN = "practice.example, leaddash.io";
+    try {
+      // leaddash.io stays with the first set of keys even when the second lists it.
+      expect(inbox.domains()).toEqual(["leaddash.io", "practice.example"]);
+      expect(inbox.mayConnect("owner@practice.example")).toBe(true);
+      const w = await makeWorkspace("inbox7");
+      google.email = "owner@practice.example";
+      // Picked leaddash.io, signed in to a practice mailbox: refused.
+      await expect(inbox.finishConnect(w.orgId, "code", w.owner.id, "leaddash.io")).rejects.toThrow("wrong-account");
+      const link = await inbox.finishConnect(w.orgId, "code", w.owner.id, "practice.example");
+      expect(link.email).toBe("owner@practice.example");
+      const tokens = google.calls.filter((c) => c.url.includes("/token")).map((c) => String(c.body));
+      expect(tokens[0]).toContain("client_id=inbox-client");
+      expect(tokens[1]).toContain("client_id=practice-client");
+      await expect(inbox.finishConnect(w.orgId, "code", w.owner.id, "elsewhere.example")).rejects.toThrow("not-ready");
+    } finally {
+      delete process.env.GOOGLE_INBOX2_CLIENT_ID;
+      delete process.env.GOOGLE_INBOX2_CLIENT_SECRET;
+      delete process.env.INBOX2_GOOGLE_DOMAIN;
+    }
+  });
+
+  it("in a practice, the client names switch covers the inbox and the reply cannot be edited while names are hidden", async () => {
+    const w = await makeWorkspace("inbox8");
+    await mockSorter();
+    await inbox.finishConnect(w.orgId, "code", w.owner.id);
+    await inbox.read(w.orgId);
+    const id = db.inbox.list(w.orgId, "needs")[0].id;
+    const c = caller(w.owner);
+    const shown = await c.inbox.open({ organizationId: w.orgId, id });
+    expect(shown.masked).toBe(false);
+    expect(shown.fromName).toBe("Dana Whitfield");
+    const ehr = await import("./ehr");
+    vi.spyOn(ehr, "forScreen").mockImplementation((_org: number, mode: any, t: string) => (mode === "show" ? t : t.replace(/Dana Whitfield|Dana/g, ehr.HIDDEN)));
+    await db.updateOrganization(w.orgId, { orgType: "healthcare" });
+    await c.ehr.setNameMode({ mode: "hide" });
+    const v = await c.inbox.view({ organizationId: w.orgId });
+    expect(v.practice).toBe(true);
+    expect(v.needs[0].fromName).toBe(ehr.HIDDEN);
+    expect(v.needs[0].why).not.toContain("Dana");
+    const hidden = await c.inbox.open({ organizationId: w.orgId, id });
+    expect(hidden.masked).toBe(true);
+    expect(hidden.reply).not.toContain("Dana");
+    await expect(c.inbox.saveReply({ organizationId: w.orgId, id, text: "x" })).rejects.toThrow("Set client names to Show");
+    // What is kept is untouched, so the reply that goes out has the real name.
+    expect(db.inbox.get(w.orgId, id)!.reply).toContain("Hi Dana");
   });
 
   it("cleans the rules: only known choices, and the label name cannot break the search", () => {

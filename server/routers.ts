@@ -1650,17 +1650,24 @@ export const appRouter = router({
     /** Integrations and the Desk ask this: is it offered here, is it on, and is it this person's. */
     setup: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       const m = await requireMember(ctx, input.organizationId);
-      if (m.role !== "owner" && m.role !== "admin") return { offered: false, connected: false, email: "", lastRead: "", problem: "", mine: false };
+      if (m.role !== "owner" && m.role !== "admin") return { offered: false, connected: false, email: "", lastRead: "", problem: "", mine: false, domains: [] as string[] };
       return inboxWork.setup(input.organizationId, ctx.user);
     }),
     view: protectedProcedure.input(orgInput).query(async ({ ctx, input }) => {
       await inboxMine(ctx, input.organizationId);
       const org = await db.getOrganizationById(input.organizationId);
-      return { ...inboxWork.view(input.organizationId, ctx.user, org?.timezone || "America/Chicago"), practice: org?.orgType === "healthcare" };
+      // In a practice the Show, Initial and Hide switch covers the inbox like every other screen.
+      const names = await clientNamesFor(ctx, input.organizationId);
+      const v = inboxWork.view(input.organizationId, ctx.user, org?.timezone || "America/Chicago");
+      const seen = <T extends { fromName: string; subject: string; why: string }>(m: T): T => ({ ...m, fromName: names.screen(m.fromName), subject: names.screen(m.subject), why: names.screen(m.why) });
+      return { ...v, needs: v.needs.map(seen), filed: v.filed.map(seen), practice: org?.orgType === "healthcare" };
     }),
     open: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).query(async ({ ctx, input }) => {
       await inboxMine(ctx, input.organizationId);
-      return inboxWork.open(input.organizationId, input.id);
+      const names = await clientNamesFor(ctx, input.organizationId);
+      const m = inboxWork.open(input.organizationId, input.id);
+      // With names shortened or hidden the reply cannot be edited on screen: saving would keep the shortened text.
+      return { ...m, fromName: names.screen(m.fromName), subject: names.screen(m.subject), why: names.screen(m.why), body: names.screen(m.body), reply: names.screen(m.reply), masked: names.mode !== "show" };
     }),
     read: protectedProcedure.input(orgInput).mutation(async ({ ctx, input }) => {
       await inboxMine(ctx, input.organizationId);
@@ -1668,8 +1675,9 @@ export const appRouter = router({
     }),
     saveReply: protectedProcedure.input(orgInput.extend({ id: z.number().int(), text: z.string().max(8000) })).mutation(async ({ ctx, input }) => {
       await inboxMine(ctx, input.organizationId);
+      if ((await clientNamesFor(ctx, input.organizationId)).mode !== "show") throw new TRPCError({ code: "BAD_REQUEST", message: "Set client names to Show to edit the reply." });
       inboxWork.saveReply(input.organizationId, input.id, input.text);
-      return inboxWork.open(input.organizationId, input.id);
+      return { ok: true };
     }),
     send: protectedProcedure.input(orgInput.extend({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
       await inboxMine(ctx, input.organizationId);
