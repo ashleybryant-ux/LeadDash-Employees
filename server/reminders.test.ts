@@ -129,6 +129,38 @@ describe("Camille's reminders", () => {
     expect(bad.text).toContain("names a client");
   });
 
+  it("told to remind someone, Camille writes the reminder and sends it in the same turn; offered by her, it waits", async () => {
+    const { toldToSend } = await import("./employees/chat");
+    expect(toldToSend("remind Ashley")).toBe(true);
+    expect(toldToSend("yes")).toBe(true);
+    expect(toldToSend("Send it")).toBe(true);
+    expect(toldToSend("Use counts only")).toBe(true);
+    expect(toldToSend("show me what it would say first")).toBe(false);
+    expect(toldToSend("draft a reminder for Dana")).toBe(false);
+    expect(toldToSend("how many unsigned notes are there?")).toBe(false);
+
+    const { orgId, me } = await practice("rm-told");
+    const post = vi.spyOn(ehr.tools, "postJson").mockResolvedValue({ ok: true, sent: [{ id: "u1", name: "Dana Whitfield", email: true, push: 1 }], skipped: [] });
+    const camille = (await db.getEmployeeByKind(orgId, "compliance"))!;
+    const blank = { reply: "", action: "none", plan: "", focus: "", topic: "", platforms: [], count: 0, title: "", notes: "", page: "", goal: "", from: "", subject: "", message: "", url: "", oppKind: "", target: "", to: "", date: "", time: "", attendees: "", teammate: "", choices: [] };
+    const llm = await import("./_core/llm");
+    vi.spyOn(llm, "generateJson").mockImplementation(async (opts: any) => {
+      if (opts.schemaName !== "chat_decision") return {} as any;
+      return { ...blank, action: "remind_draft", to: "Dana Whitfield", title: "Unsigned notes to sign", notes: "Hi Dana, you have 62 unsigned notes in LeadDash EHR. Please sign them this week.", reply: "On it." } as any;
+    });
+    const r = await me.chat.send({ organizationId: orgId, employeeId: camille.id, text: "remind Dana" });
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][0]).toBe("https://api.health.leaddash.io/api/employees/remind");
+    expect(r.reply!.content).not.toContain("It goes out when you say");
+    expect(r.reply!.content).toContain("Unsigned notes to sign");
+    expect(db.reminders.list(orgId)[0].status).toBe("sent");
+
+    // She wrote it without being told to send: it waits.
+    const again = await me.chat.send({ organizationId: orgId, employeeId: camille.id, text: "what would it say to Dana?" });
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(again.reply!.content).toContain("It goes out when you say");
+  });
+
   it("gives Camille the team, expiring licenses and her reminders", async () => {
     const { orgId } = await practice("rm-prompt");
     await rm.draft(orgId, { to: "everyone", subject: "HIPAA training", body: "HIPAA training is due by Oct 30, 2026.", date: "", time: "", repeat: "" });

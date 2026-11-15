@@ -529,7 +529,7 @@ TALK_BY_KIND.billing = `- A question about revenue, the goal, the gap, growth, w
 - Then decide like the practice's billing lead, with the numbers: which service brings in the most per session and how many more of it closes the gap, whether the open hours have room for that, what was paid in the last two weeks and what that says is working, what money is already earned and only waiting (what clients owe, sessions with no claim sent, claims unanswered), which referral source brings the clients who pay the most, and where clients are dropping off. Give a recommendation, in order, with the amount each step is worth. Say plainly when the month cannot be closed and what closes the next one.
 - Every figure you give is one you read. When the records do not hold something, say what is missing and what would let you answer; never fill it in.`;
 TALK_BY_KIND.compliance = `- You read the practice's team from LeadDash EHR (names, roles, licenses and their expiry dates, who has an email); the team and its licenses are in your facts. You never change anything in LeadDash EHR.
-- Reminders happen in this chat. When the person asks for one, choose remind_draft right away and write the message yourself; ask only for what you can't work out (usually who, when it isn't clear), one question with tap-to-answer choices. Show it and wait: nothing goes out until they say to (remind_send). Changes are remind_change, stopping is remind_cancel.
+- Reminders happen in this chat. When the person tells you to remind someone (\"remind Ashley\", \"yes\", \"send it\"), choose remind_draft right away and write the message yourself with counts only: it is sent as soon as it is written, and you never ask them to confirm what they just told you to do. Ask only for what you can't work out (usually who, when it isn't clear), one question with tap-to-answer choices. When you are the one offering a reminder, or they ask to see it first, it waits until they say to send it (remind_send). Changes are remind_change, stopping is remind_cancel.
 - When you report unsigned notes, plans due or licenses expiring, offer the reminder with choices like "Remind them", "Remind them Monday at 9".
 - A reminder carries counts and dates only, never a client's name, initials or anything from a chart.`;
 TALK_BY_KIND.blog = `- Every article has a main keyword: the search term it should rank for. When the person names one, put it in "target". When they haven't, still choose write_article with "target" empty: you ask "Which search term should this rank for?" with their saved search terms and your suggestions as choices.
@@ -1963,6 +1963,21 @@ async function runAction(emp: AIEmployee, d: Decision, ctx: RunCtx = {}): Promis
             : d.action === "remind_send"
               ? await rm.approve(org, d.target, ctx.who ?? "the owner")
               : rm.cancel(org, d.target);
+      /* ============================================================
+       * ASKED TO REMIND SOMEONE, SHE REMINDS THEM (2026-11-14)
+       * ------------------------------------------------------------
+       * "Remind Ashley" got a draft and "It goes out when you say",
+       * and a yes got the question again. A person who tells her to
+       * remind someone has already said to send it: the reminder is
+       * written and sent in the same turn (or scheduled, when they
+       * gave a time), and she shows what went out. She still waits
+       * when she is the one offering the reminder, or when the person
+       * asked to see it first.
+       * ============================================================ */
+      if (d.action === "remind_draft" && out.ok && out.reminder && toldToSend(String(ctx.said ?? ""))) {
+        const sent = await rm.approve(org, out.reminder.subject, ctx.who ?? "the owner");
+        return { text: `${sent.text}\n\n${rm.showText(db.reminders.get(org, out.reminder.id) ?? out.reminder, (await db.getOrganizationById(org))?.timezone || "America/Chicago")}`, cards: [], queries: [] };
+      }
       return { text: out.text, cards: out.ask?.length ? [choicesCard(out.ask)] : [], queries: [] };
     }
     case "check_schedule": {
@@ -2138,6 +2153,13 @@ export function findHold(holds: OutboundItem[], want: { date: string; time: stri
 
 /** Actions that only talk about the work; a project task needs one that does it. */
 /** A practice's client-information employees (Avery among them) read LeadDash EHR, whatever their own action list says. */
+/** Whether the person's own words tell the employee to send a reminder now, and not to show it first. */
+export function toldToSend(said: string) {
+  const t = said.toLowerCase();
+  if (/\b(draft|show me|let me see|preview|before (it|you) (goes?|send)|don'?t send|do not send|not yet|what would it say)\b/.test(t)) return false;
+  return /\b(remind|send|nudge|ping|notify|tell (him|her|them)|go ahead|do it|use counts only)\b/.test(t) || /^\s*(yes|yep|yeah|ok|okay|sure|please do|please)\b[\s.!]*$/.test(t);
+}
+
 /**
  * Every employee in a practice reads LeadDash EHR (2026-11-14, the owner's
  * rule: reading the practice's own records is what sets these employees
